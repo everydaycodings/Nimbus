@@ -30,7 +30,11 @@ pnpm-debug.log*
 
 # env files
 .env*.local
+.env
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# clerk configuration (can include secrets)
+/.clerk/
