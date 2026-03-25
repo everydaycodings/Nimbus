@@ -26,15 +26,9 @@ export default function RootLayout({
       className={cn("antialiased", fontMono.variable, "font-sans", inter.variable, spaceGroteskHeading.variable)}
     >
       <body>
-        <ClerkProvider>
+        <ClerkProvider afterSignOutUrl="/auth/login">
           <header>
-            <Show when="signed-out">
-              <SignInButton />
-              <SignUpButton />
-            </Show>
-            <Show when="signed-in">
-              <UserButton />
-            </Show>
+            
           </header>
           <ThemeProvider>{children}</ThemeProvider>
         </ClerkProvider>

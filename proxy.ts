@@ -1,6 +1,31 @@
-import { clerkMiddleware } from "@clerk/nextjs/server";
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
 
-export default clerkMiddleware();
+// Public routes
+const isPublicRoute = createRouteMatcher([
+  "/auth/login(.*)",
+  "/auth/register(.*)",
+]);
+
+export default clerkMiddleware(async (auth, req) => {
+  const { userId } = await auth();
+
+  // Allow auth pages
+  if (isPublicRoute(req)) {
+    // If already logged in → redirect away
+    if (userId) {
+      return NextResponse.redirect(new URL("/", req.url));
+    }
+    return NextResponse.next();
+  }
+
+  // Block everything else if not logged in
+  if (!userId) {
+    return NextResponse.redirect(new URL("/auth/login", req.url));
+  }
+
+  return NextResponse.next();
+});
 
 export const config = {
   matcher: [
@@ -8,4 +33,3 @@ export const config = {
     "/(api|trpc)(.*)",
   ],
 };
-

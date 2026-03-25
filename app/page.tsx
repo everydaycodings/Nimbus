@@ -1,19 +1,21 @@
 'use client'
+
 import { useEffect, useState } from 'react'
-import { useSession, useUser } from '@clerk/nextjs'
+import { useSession, useUser, UserButton } from '@clerk/nextjs'
 import { createClient } from '@supabase/supabase-js'
+
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Card, CardContent } from '@/components/ui/card'
 
 export default function Home() {
   const [tasks, setTasks] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [name, setName] = useState('')
-  // The `useUser()` hook is used to ensure that Clerk has loaded data about the signed in user
+
   const { user } = useUser()
-  // The `useSession()` hook is used to get the Clerk session object
-  // The session object is used to get the Clerk session token
   const { session } = useSession()
 
-  // Create a custom Supabase client that injects the Clerk session token into the request headers
   function createClerkSupabaseClient() {
     return createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -22,58 +24,85 @@ export default function Home() {
         async accessToken() {
           return session?.getToken() ?? null
         },
-      },
+      }
     )
   }
 
-  // Create a `client` object for accessing Supabase data using the Clerk token
   const client = createClerkSupabaseClient()
 
-  // This `useEffect` will wait for the User object to be loaded before requesting
-  // the tasks for the signed in user
   useEffect(() => {
     if (!user) return
 
     async function loadTasks() {
       setLoading(true)
-      const { data, error } = await client.from('tasks').select()
-      if (!error) setTasks(data)
+      const { data } = await client.from('tasks').select()
+      setTasks(data || [])
       setLoading(false)
     }
 
     loadTasks()
   }, [user])
 
-  async function createTask(e: React.FormEvent<HTMLFormElement>) {
+  async function createTask(e: React.FormEvent) {
     e.preventDefault()
-    // Insert task into the "tasks" database
-    await client.from('tasks').insert({
-      name,
-    })
-    window.location.reload()
+    if (!name.trim()) return
+
+    await client.from('tasks').insert({ name })
+    setName('')
+
+    const { data } = await client.from('tasks').select()
+    setTasks(data || [])
   }
 
   return (
-    <div>
-      <h1>Tasks</h1>
+    <div className="min-h-screen bg-background text-foreground">
 
-      {loading && <p>Loading...</p>}
+      {/* 🔝 Header */}
+      <header className="flex items-center justify-between border-b px-6 py-4">
+        <h1 className="text-xl font-semibold">☁️ Nimbus</h1>
 
-      {!loading && tasks.length > 0 && tasks.map((task: any) => <p key={task.id}>{task.name}</p>)}
+        <div className="flex items-center">
+          <UserButton />
+        </div>
+      </header>
 
-      {!loading && tasks.length === 0 && <p>No tasks found</p>}
+      {/* 📦 Main */}
+      <main className="max-w-2xl mx-auto p-6 space-y-6">
 
-      <form onSubmit={createTask}>
-        <input
-          autoFocus
-          type="text"
-          name="name"
-          placeholder="Enter new task"
-          onChange={(e) => setName(e.target.value)}
-          value={name}
-        />
-        <button type="submit">Add</button>
-      </form>
+        {/* ➕ Add Task */}
+        <Card>
+          <CardContent className="p-4">
+            <form onSubmit={createTask} className="flex gap-2">
+              <Input
+                placeholder="Enter task..."
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+              <Button type="submit">Add</Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        {/* 📋 Tasks */}
+        <div className="space-y-3">
+          {loading && (
+            <p className="text-muted-foreground">Loading...</p>
+          )}
+
+          {!loading && tasks.length === 0 && (
+            <p className="text-muted-foreground">No tasks yet</p>
+          )}
+
+          {tasks.map((task) => (
+            <Card key={task.id}>
+              <CardContent className="p-4">
+                {task.name}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+      </main>
     </div>
   )
 }
