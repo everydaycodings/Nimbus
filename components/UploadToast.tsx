@@ -14,6 +14,7 @@ type Meta = {
 export function UploadToast() {
   const uploads = useUploadStore((s) => s.uploads);
   const { cancelUpload } = useUpload();
+  const speedCache = useRef<Record<string, number>>({});
 
   const metaRef = useRef<Record<string, Meta>>({});
   const [, forceUpdate] = useState(0); // for re-render
@@ -58,7 +59,7 @@ export function UploadToast() {
   return (
     <div className="fixed bottom-6 right-6 w-96 z-50">
       <div className="rounded-2xl border border-border bg-background shadow-2xl p-4 flex flex-col gap-4">
-        
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <p className="text-sm font-semibold">
@@ -72,9 +73,19 @@ export function UploadToast() {
             const meta = metaRef.current[f.id];
 
             let eta = "";
-            if (meta?.speed > 0 && f.progress < 100) {
+
+            const currentSpeed = meta?.speed;
+
+            // ✅ fallback to previous speed
+            if (currentSpeed && currentSpeed > 0) {
+              speedCache.current[f.id] = currentSpeed;
+            }
+
+            const speed = speedCache.current[f.id];
+
+            if (f.progress < 100 && speed && speed > 0) {
               const remaining = 100 - f.progress;
-              const seconds = remaining / meta.speed;
+              const seconds = remaining / speed;
 
               if (seconds < 60) eta = `${Math.round(seconds)}s left`;
               else eta = `${Math.round(seconds / 60)}m left`;
@@ -86,46 +97,53 @@ export function UploadToast() {
                 className="flex flex-col gap-1.5"
               >
                 {/* Top row */}
-                <div className="flex items-center gap-2">
-                  <span className="flex-1 truncate text-xs text-foreground">
-                    {f.name}  {/* ETA */}
-                {f.status === "uploading" && eta && (
-                  <span className="text-[12px] ml-1 text-muted-foreground">
-                    (ETA: {eta})
-                  </span>
-                )}
-                  </span>
+                <div className="flex flex-col gap-1.5">
 
-                  {/* % */}
-                  <span className="text-[11px] text-muted-foreground w-10 text-right">
-                    {f.progress}%
-                  </span>
+                  {/* Top row */}
+                  <div className="flex items-center gap-2">
+                    <span className="flex-1 truncate text-xs text-foreground">
+                      {f.name}
+                    </span>
 
-                  {/* Cancel */}
-                  {f.status === "uploading" && (
-                    <button
-                      onClick={() => cancelUpload(f.id)}
-                      className="p-1 rounded-md hover:bg-muted transition"
-                    >
-                      <X size={12} />
-                    </button>
+                    <span className="text-[11px] text-muted-foreground w-10 text-right">
+                      {f.progress}%
+                    </span>
+
+                    {f.status === "uploading" && (
+                      <button
+                        onClick={() => cancelUpload(f.id)}
+                        className="p-1 rounded-md hover:bg-muted transition"
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Progress bar */}
+                  <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full transition-all duration-300"
+                      style={{
+                        width: `${f.progress}%`,
+                        backgroundColor:
+                          f.status === "error"
+                            ? "#ef4444"
+                            : f.status === "cancelled"
+                              ? "#f59e0b"
+                              : "#2da07a",
+                      }}
+                    />
+                  </div>
+
+                  {/* ✅ ETA (best position) */}
+                  {f.status === "uploading" && eta && (
+                    <div className="flex justify-between text-[10px] text-muted-foreground">
+                      <span>{eta}</span>
+                      {/* optional: speed later */}
+                      {/* <span>2.3 MB/s</span> */}
+                    </div>
                   )}
-                </div>
 
-                {/* Progress bar */}
-                <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-                  <div
-                    className="h-full transition-all duration-300"
-                    style={{
-                      width: `${f.progress}%`,
-                      backgroundColor:
-                        f.status === "error"
-                          ? "#ef4444"
-                          : f.status === "cancelled"
-                          ? "#f59e0b"
-                          : "#2da07a",
-                    }}
-                  />
                 </div>
 
                 {/* Status */}

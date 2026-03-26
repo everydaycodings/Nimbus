@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { calculateStorageUsage } from "@/lib/storage";
 import {
   House,
   FolderSimple,
@@ -15,16 +16,18 @@ import {
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { UploadZone } from "@/components/UploadZone"; // ✅ NEW
+import { StorageUsage } from "./StorageUsage";
+import { getFiles } from "@/actions/files";
 
 const navItems = [
-  { name: "Home",     icon: House,        href: "/"        },
-  { name: "My Files", icon: FolderSimple, href: "/files"   },
-  { name: "Recent",   icon: Clock,        href: "/recent"  },
-  { name: "Starred",  icon: Star,         href: "/starred" },
-  { name: "Trash",    icon: Trash,        href: "/trash"   },
+  { name: "Home", icon: House, href: "/" },
+  { name: "My Files", icon: FolderSimple, href: "/files" },
+  { name: "Recent", icon: Clock, href: "/recent" },
+  { name: "Starred", icon: Star, href: "/starred" },
+  { name: "Trash", icon: Trash, href: "/trash" },
 ];
 
-const TEAL     = "#2da07a";
+const TEAL = "#2da07a";
 const TEAL_DIM = "rgba(45,160,122,0.12)";
 
 function formatBytes(bytes: number) {
@@ -37,16 +40,19 @@ interface SidebarProps {
   storageLimit: number;
 }
 
+const { files } = await getFiles(null);
+
 export function Sidebar({ storageUsed, storageLimit }: SidebarProps) {
   const [open, setOpen] = useState(true);
   const pathname = usePathname();
   const router = useRouter(); // ✅ NEW
 
-  const usedPct  = Math.min(100, Math.round((storageUsed / storageLimit) * 100));
-  const usedFmt  = formatBytes(storageUsed);
-  const limitFmt = formatBytes(storageLimit);
-
-  const barColor = usedPct >= 90 ? "#ef4444" : TEAL;
+  const {
+    imageBytes,
+    videoBytes,
+    docBytes,
+    otherBytes,
+  } = calculateStorageUsage(files);
 
   return (
     <aside
@@ -77,9 +83,11 @@ export function Sidebar({ storageUsed, storageLimit }: SidebarProps) {
         )}
       </div>
 
-      {/* ── Upload Zone (FIXED) ── */}
       <div className={cn("px-3 mb-5", !open && "px-2")}>
-        <UploadZone onUploadComplete={() => router.refresh()} />
+        <UploadZone
+          open={open} // ✅ THIS FIXES IT
+          onUploadComplete={() => router.refresh()}
+        />
       </div>
 
       {/* ── Navigation ── */}
@@ -126,48 +134,17 @@ export function Sidebar({ storageUsed, storageLimit }: SidebarProps) {
         <div className="border-t border-border" />
       </div>
 
-      {/* ── Storage Section ── */}
-      {open ? (
-        <div className="px-3 mt-4">
-          <div className="flex items-center gap-2 mb-2">
-            <HardDrive size={15} weight="duotone" className="text-muted-foreground" />
-            <span className="text-xs font-medium text-muted-foreground">
-              Storage
-            </span>
-            <span className="ml-auto text-xs text-muted-foreground">
-              {usedFmt} / {limitFmt}
-            </span>
-          </div>
-
-          <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-            <div
-              className="h-full rounded-full transition-all duration-500"
-              style={{ width: `${usedPct}%`, backgroundColor: barColor }}
-            />
-          </div>
-
-          <p className="mt-1.5 text-[11px] text-muted-foreground">
-            {usedPct}% used
-            {usedPct >= 90 && (
-              <span className="ml-1 text-red-400 font-medium">
-                — storage almost full
-              </span>
-            )}
-          </p>
-        </div>
-      ) : (
-        <div className="flex justify-center mt-4">
-          <div
-            className="w-8 h-8 rounded-full flex items-center justify-center"
-            title={`${usedFmt} / ${limitFmt} used`}
-            style={{
-              background: `conic-gradient(${barColor} ${usedPct * 3.6}deg, var(--muted) 0deg)`,
-            }}
-          >
-            <div className="w-5 h-5 bg-background rounded-full" />
-          </div>
-        </div>
-      )}
+      <StorageUsage
+        total={storageLimit}
+        used={storageUsed}
+        open={open}
+        categories={[
+          { label: "Images", size: imageBytes, color: "#22c55e" },
+          { label: "Videos", size: videoBytes, color: "#3b82f6" },
+          { label: "Docs", size: docBytes, color: "#eab308" },
+          { label: "Other", size: otherBytes, color: "#ef4444" },
+        ]}
+      />
 
       {/* ── Collapse Button ── */}
       <button

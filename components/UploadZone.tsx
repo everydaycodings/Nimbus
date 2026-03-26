@@ -45,61 +45,85 @@ export function UploadZone({
   return (
     <div
       className={cn(
-        "relative flex flex-col",
-        isDragging && "bg-[#2da07a]/5 ring-2 ring-inset ring-[#2da07a]/30 rounded-xl"
+        "relative flex flex-col transition-all duration-200",
+        isDragging && "scale-[1.01]"
       )}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
       {/* ✅ Upload Button */}
-      <div className={cn("px-3 mb-4", !open && "px-2")}>
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          className={cn(
-            "flex items-center gap-2.5 w-full rounded-xl px-3 py-2.5 text-sm font-medium",
-            "bg-secondary border border-border text-secondary-foreground",
-            "hover:bg-accent hover:text-accent-foreground",
-            "transition-all duration-150",
-            !open && "justify-center px-0"
-          )}
-        >
-          <CloudArrowUp
-            size={18}
-            weight="duotone"
-            style={{ color: "#2da07a" }}
-            className="flex-shrink-0"
-          />
-          {open && <span>Upload files</span>}
-        </button>
+      <div className={cn("px-3 mb-4", !open && "px-2 flex justify-center")}>
+  <button
+    onClick={() => fileInputRef.current?.click()}
+    title={!open ? "Upload files" : undefined}
+    className={cn(
+      "flex items-center gap-2.5 rounded-xl text-sm font-medium",
+      "bg-secondary border border-border text-secondary-foreground",
+      "hover:bg-accent hover:text-accent-foreground",
+      "transition-all duration-150",
 
-        {/* Hidden input */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          className="hidden"
-          onChange={(e) => {
-            if (e.target.files) {
-              uploadMany(e.target.files);
-              e.target.value = "";
-            }
-          }}
-        />
-      </div>
+      // ✅ OPEN
+      open && "w-full px-3 py-2.5",
 
-      {/* ── Drag Overlay ── */}
+      // ✅ CLOSED (THIS WAS MISSING)
+      !open && "w-10 h-10 justify-center p-0"
+    )}
+  >
+    <CloudArrowUp
+      size={18}
+      weight="duotone"
+      style={{ color: "#2da07a" }}
+    />
+
+    {open && <span>Upload files</span>}
+  </button>
+
+  <input
+    ref={fileInputRef}
+    type="file"
+    multiple
+    className="hidden"
+    onChange={(e) => {
+      if (e.target.files) {
+        uploadMany(e.target.files);
+        e.target.value = "";
+      }
+    }}
+  />
+</div>
+  
+      {/* 🌟 DRAG OVERLAY (UPGRADED) */}
       {isDragging && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="flex flex-col items-center gap-2">
-            <CloudArrowUp
-              size={40}
-              weight="duotone"
-              style={{ color: "#2da07a" }}
-            />
-            <p className="text-sm font-medium" style={{ color: "#2da07a" }}>
-              Drop files to upload
-            </p>
+        <div className="absolute inset-0 z-50 flex items-center justify-center">
+          
+          {/* Background blur + tint */}
+          <div className="absolute inset-0 bg-black/20 backdrop-blur-sm rounded-xl" />
+  
+          {/* Center Card */}
+          <div className="relative flex flex-col items-center gap-3 px-6 py-5 rounded-2xl border border-white/10 bg-background/80 backdrop-blur-md shadow-2xl animate-in fade-in zoom-in-95">
+            
+            {/* Icon */}
+            <div
+              className="w-12 h-12 rounded-full flex items-center justify-center"
+              style={{ backgroundColor: "rgba(45,160,122,0.15)" }}
+            >
+              <CloudArrowUp
+                size={26}
+                weight="duotone"
+                style={{ color: "#2da07a" }}
+              />
+            </div>
+  
+            {/* Text */}
+            <div className="text-center">
+              <p className="text-sm font-semibold text-foreground">
+                Drop files to upload
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Release to start uploading instantly
+              </p>
+            </div>
           </div>
         </div>
       )}
