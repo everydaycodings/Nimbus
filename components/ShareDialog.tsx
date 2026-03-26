@@ -12,6 +12,7 @@ import {
   Eye,
   PencilSimple,
   Globe,
+  Clock,
 } from "@phosphor-icons/react";
 import {
   shareWithUser,
@@ -36,7 +37,7 @@ type Tab = "people" | "link";
 interface SharedUser {
   user_id: string;
   role:    "viewer" | "editor";
-  users:   {
+  users: {
     id:         string;
     email:      string;
     full_name:  string | null;
@@ -54,45 +55,72 @@ interface ShareLink {
 
 const TEAL = "#2da07a";
 
+// ── Expiry options ────────────────────────────────────────────
+const EXPIRY_OPTIONS: { label: string; minutes: number | null }[] = [
+  { label: "5 minutes",  minutes: 5           },
+  { label: "1 hour",     minutes: 60          },
+  { label: "24 hours",   minutes: 60 * 24     },
+  { label: "3 days",     minutes: 60 * 24 * 3 },
+  { label: "1 week",     minutes: 60 * 24 * 7 },
+  { label: "1 month",    minutes: 60 * 24 * 30},
+  { label: "Never",      minutes: null        },
+];
+
+function getExpiryLabel(expiresAt: string | null): string {
+  if (!expiresAt) return "Never expires";
+  const exp  = new Date(expiresAt);
+  const now  = new Date();
+  const diff = exp.getTime() - now.getTime();
+  if (diff <= 0) return "Expired";
+
+  const mins  = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days  = Math.floor(diff / 86400000);
+
+  if (mins  < 60)  return `Expires in ${mins}m`;
+  if (hours < 24)  return `Expires in ${hours}h`;
+  if (days  < 30)  return `Expires in ${days}d`;
+  return `Expires ${exp.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+}
+
 function normalizeSharedUsers(raw: any[]): SharedUser[] {
-    return (raw ?? [])
-      .map((p) => {
-        const u = Array.isArray(p.users) ? p.users[0] : p.users;
-        if (!u) return null;
-  
-        return {
-          user_id: String(p.user_id),
-          role: p.role as "viewer" | "editor",
-          users: {
-            id: String(u.id),
-            email: String(u.email),
-            full_name: u.full_name ?? null,
-            avatar_url: u.avatar_url ?? null,
-          },
-        };
-      })
-      .filter((x): x is SharedUser => x !== null);
-  }
+  return (raw ?? [])
+    .map((p) => {
+      const u = Array.isArray(p.users) ? p.users[0] : p.users;
+      if (!u) return null;
+      return {
+        user_id: String(p.user_id),
+        role:    p.role as "viewer" | "editor",
+        users: {
+          id:         String(u.id),
+          email:      String(u.email),
+          full_name:  u.full_name  ?? null,
+          avatar_url: u.avatar_url ?? null,
+        },
+      };
+    })
+    .filter((x): x is SharedUser => x !== null);
+}
 
 export function ShareDialog({ resourceId, resourceName, resourceType, onClose }: Props) {
-  const [tab,           setTab]           = useState<Tab>("people");
-  const [email,         setEmail]         = useState("");
-  const [role,          setRole]          = useState<"viewer" | "editor">("viewer");
-  const [sharedUsers,   setSharedUsers]   = useState<SharedUser[]>([]);
-  const [shareLinks,    setShareLinks]    = useState<ShareLink[]>([]);
-  const [error,         setError]         = useState<string | null>(null);
-  const [copied,        setCopied]        = useState<string | null>(null);
-  const [isPending,     startTransition]  = useTransition();
+  const [tab,          setTab]          = useState<Tab>("people");
+  const [email,        setEmail]        = useState("");
+  const [role,         setRole]         = useState<"viewer" | "editor">("viewer");
+  const [linkRole,     setLinkRole]     = useState<"viewer" | "editor">("viewer");
+  const [expiryMins,   setExpiryMins]   = useState<number | null>(60 * 24 * 7); // default 1 week
+  const [sharedUsers,  setSharedUsers]  = useState<SharedUser[]>([]);
+  const [shareLinks,   setShareLinks]   = useState<ShareLink[]>([]);
+  const [error,        setError]        = useState<string | null>(null);
+  const [copied,       setCopied]       = useState<string | null>(null);
+  const [isPending,    startTransition] = useTransition();
 
-  // Load existing shares on mount
   useEffect(() => {
     getSharedUsers(resourceId, resourceType).then((data) =>
-        setSharedUsers(normalizeSharedUsers(data))
+      setSharedUsers(normalizeSharedUsers(data))
     );
     getShareLinks(resourceId, resourceType).then(setShareLinks);
   }, [resourceId, resourceType]);
 
-  // Close on Escape
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", handler);
@@ -102,7 +130,6 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
   const handleShareWithUser = () => {
     if (!email.trim()) return;
     setError(null);
-
     startTransition(async () => {
       try {
         await shareWithUser(resourceId, resourceType, email.trim(), role);
@@ -131,10 +158,21 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
     });
   };
 
-  const handleCreateLink = (linkRole: "viewer" | "editor") => {
+  const handleCreateLink = () => {
+    setError(null);
     startTransition(async () => {
       try {
-        const link = await createShareLink(resourceId, resourceType, linkRole, 7);
+        // Convert minutes to days for the action (null = never)
+        const expiresInDays = expiryMins === null
+          ? undefined
+          : expiryMins / (60 * 24);
+
+        const link = await createShareLink(
+          resourceId,
+          resourceType,
+          linkRole,
+          expiresInDays
+        );
         setShareLinks((prev) => [link, ...prev]);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to create link");
@@ -160,6 +198,8 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
     if (name) return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
     return email[0].toUpperCase();
   };
+
+  const selectedExpiry = EXPIRY_OPTIONS.find((o) => o.minutes === expiryMins) ?? EXPIRY_OPTIONS[6];
 
   return (
     <div
@@ -206,7 +246,6 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
           {/* ── People tab ── */}
           {tab === "people" && (
             <div className="flex flex-col gap-4">
-              {/* Add person */}
               <div className="flex gap-2">
                 <input
                   type="email"
@@ -223,11 +262,10 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
                   )}
                   disabled={isPending}
                 />
-                {/* Role picker */}
                 <select
                   value={role}
                   onChange={(e) => setRole(e.target.value as "viewer" | "editor")}
-                  className="px-2 py-2 rounded-xl text-sm bg-secondary border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-[#2da07a]/30 cursor-pointer"
+                  className="px-2 py-2 rounded-xl text-sm bg-secondary border border-border text-foreground focus:outline-none cursor-pointer"
                 >
                   <option value="viewer">Viewer</option>
                   <option value="editor">Editor</option>
@@ -237,9 +275,7 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
                   disabled={isPending || !email.trim()}
                   className={cn(
                     "px-3 py-2 rounded-xl text-sm font-medium text-white transition-all flex-shrink-0",
-                    isPending || !email.trim()
-                      ? "opacity-50 cursor-not-allowed"
-                      : "hover:opacity-90"
+                    isPending || !email.trim() ? "opacity-50 cursor-not-allowed" : "hover:opacity-90"
                   )}
                   style={{ backgroundColor: TEAL }}
                 >
@@ -249,8 +285,7 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
 
               {error && <p className="text-xs text-red-400 -mt-2">{error}</p>}
 
-              {/* Shared with list */}
-              {sharedUsers.length > 0 && (
+              {sharedUsers.length > 0 ? (
                 <div className="flex flex-col gap-1">
                   <p className="text-xs font-medium text-muted-foreground mb-1">
                     Shared with {sharedUsers.length} {sharedUsers.length === 1 ? "person" : "people"}
@@ -260,15 +295,12 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
                       key={su.user_id}
                       className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-accent transition-colors group"
                     >
-                      {/* Avatar */}
                       <div
                         className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0 text-white"
                         style={{ backgroundColor: TEAL }}
                       >
                         {getInitials(su.users.full_name, su.users.email)}
                       </div>
-
-                      {/* Info */}
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-foreground truncate">
                           {su.users.full_name ?? su.users.email}
@@ -277,20 +309,14 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
                           <p className="text-xs text-muted-foreground truncate">{su.users.email}</p>
                         )}
                       </div>
-
-                      {/* Role selector */}
                       <select
                         value={su.role}
-                        onChange={(e) =>
-                          handleUpdateRole(su.user_id, e.target.value as "viewer" | "editor")
-                        }
+                        onChange={(e) => handleUpdateRole(su.user_id, e.target.value as "viewer" | "editor")}
                         className="text-xs bg-transparent text-muted-foreground focus:outline-none cursor-pointer hover:text-foreground transition-colors"
                       >
                         <option value="viewer">Viewer</option>
                         <option value="editor">Editor</option>
                       </select>
-
-                      {/* Remove */}
                       <button
                         onClick={() => handleRemoveUser(su.user_id)}
                         className="p-1 rounded-lg opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all"
@@ -300,14 +326,10 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
                     </div>
                   ))}
                 </div>
-              )}
-
-              {sharedUsers.length === 0 && (
+              ) : (
                 <div className="flex flex-col items-center justify-center py-6 text-center">
                   <UserPlus size={32} weight="duotone" className="text-muted-foreground/40 mb-2" />
-                  <p className="text-xs text-muted-foreground">
-                    Not shared with anyone yet
-                  </p>
+                  <p className="text-xs text-muted-foreground">Not shared with anyone yet</p>
                 </div>
               )}
             </div>
@@ -316,42 +338,97 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
           {/* ── Link tab ── */}
           {tab === "link" && (
             <div className="flex flex-col gap-4">
-              {/* Create link buttons */}
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handleCreateLink("viewer")}
-                  disabled={isPending}
-                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-sm font-medium bg-secondary border border-border text-secondary-foreground hover:bg-accent transition-all"
-                >
-                  <Eye size={15} weight="duotone" />
-                  Viewer link
-                </button>
-                <button
-                  onClick={() => handleCreateLink("editor")}
-                  disabled={isPending}
-                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-sm font-medium bg-secondary border border-border text-secondary-foreground hover:bg-accent transition-all"
-                >
-                  <PencilSimple size={15} weight="duotone" />
-                  Editor link
-                </button>
+
+              {/* ── Link config card ── */}
+              <div className="rounded-xl border border-border bg-secondary p-4 flex flex-col gap-3">
+                {/* Access level */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {linkRole === "viewer"
+                      ? <Eye size={15} weight="duotone" className="text-muted-foreground" />
+                      : <PencilSimple size={15} weight="duotone" className="text-muted-foreground" />
+                    }
+                    <span className="text-sm text-foreground font-medium">Access</span>
+                  </div>
+                  <div className="flex rounded-lg overflow-hidden border border-border text-xs">
+                    <button
+                      onClick={() => setLinkRole("viewer")}
+                      className={cn(
+                        "px-3 py-1.5 transition-colors",
+                        linkRole === "viewer"
+                          ? "text-white"
+                          : "text-muted-foreground hover:text-foreground bg-transparent"
+                      )}
+                      style={linkRole === "viewer" ? { backgroundColor: TEAL } : {}}
+                    >
+                      Viewer
+                    </button>
+                    <button
+                      onClick={() => setLinkRole("editor")}
+                      className={cn(
+                        "px-3 py-1.5 transition-colors border-l border-border",
+                        linkRole === "editor"
+                          ? "text-white"
+                          : "text-muted-foreground hover:text-foreground bg-transparent"
+                      )}
+                      style={linkRole === "editor" ? { backgroundColor: TEAL } : {}}
+                    >
+                      Editor
+                    </button>
+                  </div>
+                </div>
+
+                {/* Expiry picker */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Clock size={15} weight="duotone" className="text-muted-foreground" />
+                    <span className="text-sm text-foreground font-medium">Expires</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 justify-end">
+                    {EXPIRY_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.label}
+                        onClick={() => setExpiryMins(opt.minutes)}
+                        className={cn(
+                          "px-2.5 py-1 rounded-lg text-xs font-medium transition-all border",
+                          expiryMins === opt.minutes
+                            ? "text-white border-transparent"
+                            : "text-muted-foreground border-border hover:text-foreground hover:border-foreground/20 bg-transparent"
+                        )}
+                        style={expiryMins === opt.minutes ? { backgroundColor: TEAL, borderColor: TEAL } : {}}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
-              <p className="text-xs text-muted-foreground -mt-2">
-                Links expire after 7 days. Anyone with the link can access this {resourceType}.
-              </p>
+              {/* Create button */}
+              {error && <p className="text-xs text-red-400 -mt-2">{error}</p>}
+              <button
+                onClick={handleCreateLink}
+                disabled={isPending}
+                className={cn(
+                  "w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white transition-all",
+                  isPending ? "opacity-50 cursor-not-allowed" : "hover:opacity-90"
+                )}
+                style={{ backgroundColor: TEAL }}
+              >
+                <LinkIcon size={15} />
+                {isPending
+                  ? "Creating..."
+                  : `Create ${linkRole} link · ${selectedExpiry.label}`
+                }
+              </button>
 
               {/* Existing links */}
               {shareLinks.length > 0 && (
                 <div className="flex flex-col gap-2">
-                  <p className="text-xs font-medium text-muted-foreground">
-                    Active links
-                  </p>
+                  <p className="text-xs font-medium text-muted-foreground">Active links</p>
                   {shareLinks.map((link) => {
-                    const url      = `${typeof window !== "undefined" ? window.location.origin : ""}/share/${link.token}`;
-                    const expired  = link.expires_at && new Date(link.expires_at) < new Date();
-                    const expLabel = link.expires_at
-                      ? `Expires ${new Date(link.expires_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
-                      : "Never expires";
+                    const url     = `${typeof window !== "undefined" ? window.location.origin : ""}/share/${link.token}`;
+                    const expired = link.expires_at && new Date(link.expires_at) < new Date();
 
                     return (
                       <div
@@ -369,21 +446,15 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
                         />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-medium text-foreground capitalize">
-                              {link.role}
-                            </span>
+                            <span className="text-xs font-medium text-foreground capitalize">{link.role}</span>
                             <span className="text-xs text-muted-foreground">·</span>
-                            <span className={cn(
-                              "text-xs",
-                              expired ? "text-red-400" : "text-muted-foreground"
-                            )}>
-                              {expired ? "Expired" : expLabel}
+                            <span className={cn("text-xs", expired ? "text-red-400" : "text-muted-foreground")}>
+                              {expired ? "Expired" : getExpiryLabel(link.expires_at)}
                             </span>
                           </div>
                           <p className="text-xs text-muted-foreground truncate">{url}</p>
                         </div>
 
-                        {/* Copy */}
                         {!expired && (
                           <button
                             onClick={() => copyLink(link.token)}
@@ -397,7 +468,6 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
                           </button>
                         )}
 
-                        {/* Delete */}
                         <button
                           onClick={() => handleDeleteLink(link.id)}
                           className="p-1.5 rounded-lg text-muted-foreground hover:text-red-400 hover:bg-accent transition-colors flex-shrink-0"
@@ -412,8 +482,8 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
               )}
 
               {shareLinks.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-6 text-center">
-                  <LinkIcon size={32} weight="duotone" className="text-muted-foreground/40 mb-2" />
+                <div className="flex flex-col items-center justify-center py-4 text-center">
+                  <LinkIcon size={28} weight="duotone" className="text-muted-foreground/40 mb-2" />
                   <p className="text-xs text-muted-foreground">No links created yet</p>
                 </div>
               )}

@@ -1,27 +1,34 @@
+// middleware.ts
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
-// Public routes
+const isAuthRoute = createRouteMatcher([
+  "/auth/login(.*)",
+  "/auth/register(.*)",
+]);
+
 const isPublicRoute = createRouteMatcher([
   "/auth/login(.*)",
   "/auth/register(.*)",
   "/api/webhooks(.*)",
-  "/share(.*)",
+  "/share/(.*)",
+  "/api/share/(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
   const { userId } = await auth();
 
-  // Allow auth pages
+  // Logged-in user trying to visit auth pages → redirect to home
+  if (isAuthRoute(req) && userId) {
+    return NextResponse.redirect(new URL("/", req.url));
+  }
+
+  // Public route → always allow through (logged in or not)
   if (isPublicRoute(req)) {
-    // If already logged in → redirect away
-    if (userId) {
-      return NextResponse.redirect(new URL("/", req.url));
-    }
     return NextResponse.next();
   }
 
-  // Block everything else if not logged in
+  // Protected route + not logged in → redirect to login
   if (!userId) {
     return NextResponse.redirect(new URL("/auth/login", req.url));
   }

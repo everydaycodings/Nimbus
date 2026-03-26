@@ -20,6 +20,8 @@ interface Props {
   };
 }
 
+const TEAL = "#2da07a";
+
 export function FileListClient({ initialFiles, initialFolders, user }: Props) {
   const router = useRouter();
   const [files, setFiles] = useState(initialFiles);
@@ -58,8 +60,15 @@ export function FileListClient({ initialFiles, initialFolders, user }: Props) {
 
   // ── Folder navigation ─────────────────────────────────────
   const openFolder = async (id: string, name: string) => {
-    setBreadcrumbs(prev => [...prev, { id, name }]);
+    setBreadcrumbs((prev) => {
+      // ❌ prevent duplicate if already last
+      if (prev[prev.length - 1]?.id === id) return prev;
+  
+      return [...prev, { id, name }];
+    });
+  
     setCurrentFolder(id);
+  
     const data = await getFiles(id);
     setFiles(data.files);
     setFolders(data.folders);
@@ -114,7 +123,7 @@ export function FileListClient({ initialFiles, initialFolders, user }: Props) {
                   onClick={() => navigateToBreadcrumb(i)}
                   className={cn(
                     "transition-colors",
-                    i === breadcrumbs.length - 1
+                    i === breadcrumbs.length - 2
                       ? "text-foreground font-medium"
                       : "text-muted-foreground hover:text-foreground"
                   )}
@@ -148,11 +157,10 @@ export function FileListClient({ initialFiles, initialFolders, user }: Props) {
           {/* New Folder Button */}
           <button
             onClick={() => setShowCreateFolder(true)}
-            className="px-3 py-2 rounded-xl text-sm font-medium 
-    bg-primary text-primary-foreground 
-    hover:opacity-90 cursor-pointer transition-all"
+            className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium bg-secondary border border-border text-secondary-foreground hover:bg-accent hover:text-accent-foreground transition-all"
           >
-            + New Folder
+            <FolderPlus size={16} weight="duotone" style={{ color: TEAL }} />
+            New folder
           </button>
 
         </div>

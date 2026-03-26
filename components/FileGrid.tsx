@@ -14,70 +14,63 @@ import {
   DotsThree,
   ArrowCounterClockwise,
   DownloadSimple,
+  ShareNetwork,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { toggleStar, trashItem, restoreItem, renameItem } from "@/actions/files";
 import { MoveDialog } from "@/components/MoveDialog";
 import { FilePreviewDialog } from "@/components/FilePreviewDialog";
-import { useDownload } from "@/hooks/useDownload";
-import { ShareNetwork } from "@phosphor-icons/react";
 import { ShareDialog } from "@/components/ShareDialog";
+import { useDownload } from "@/hooks/useDownload";
 
-// ── Types ─────────────────────────────────────────────────────
 interface FileItem {
-  id: string;
-  name: string;
-  mime_type: string;
-  size: number;
+  id:         string;
+  name:       string;
+  mime_type:  string;
+  size:       number;
   created_at: string;
   is_starred: boolean;
-  s3_key: string;
+  s3_key:     string;
 }
 
 interface FolderItem {
-  id: string;
-  name: string;
+  id:         string;
+  name:       string;
   created_at: string;
   is_starred: boolean;
 }
 
 interface FileGridProps {
-  files: FileItem[];
-  folders: FolderItem[];
-  showRestore?: boolean;
+  files:         FileItem[];
+  folders:       FolderItem[];
+  showRestore?:  boolean;
   onFolderOpen?: (id: string, name: string) => void;
-  onRefresh?: () => void;
+  onRefresh?:    () => void;
 }
 
-// ── Helpers ───────────────────────────────────────────────────
 function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  if (bytes < 1024)       return `${bytes} B`;
+  if (bytes < 1024 ** 2)  return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 ** 3)  return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
   return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
 }
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", {
     month: "short",
-    day: "numeric",
-    year: "numeric",
+    day:   "numeric",
+    year:  "numeric",
   });
 }
 
 function FileIcon({ mimeType, size = 20 }: { mimeType: string; size?: number }) {
-  if (mimeType.startsWith("image/"))
-    return <Image size={size} weight="duotone" className="text-purple-400" />;
-  if (mimeType.startsWith("video/"))
-    return <VideoIcon size={size} weight="duotone" className="text-blue-400" />;
-  if (mimeType.startsWith("audio/"))
-    return <MusicNote size={size} weight="duotone" className="text-pink-400" />;
-  if (mimeType === "application/pdf")
-    return <FilePdf size={size} weight="duotone" className="text-red-400" />;
+  if (mimeType.startsWith("image/"))  return <Image     size={size} weight="duotone" className="text-purple-400" />;
+  if (mimeType.startsWith("video/"))  return <VideoIcon  size={size} weight="duotone" className="text-blue-400" />;
+  if (mimeType.startsWith("audio/"))  return <MusicNote  size={size} weight="duotone" className="text-pink-400" />;
+  if (mimeType === "application/pdf") return <FilePdf    size={size} weight="duotone" className="text-red-400" />;
   return <File size={size} weight="duotone" className="text-muted-foreground" />;
 }
 
-// ── Row ───────────────────────────────────────────────────────
 function ItemRow({
   id,
   name,
@@ -88,26 +81,25 @@ function ItemRow({
   onFolderOpen,
   onRefresh,
 }: {
-  id: string;
-  name: string;
-  type: "file" | "folder";
-  meta?: { mimeType?: string; size?: number; date: string };
-  isStarred: boolean;
-  showRestore?: boolean;
+  id:            string;
+  name:          string;
+  type:          "file" | "folder";
+  meta?:         { mimeType?: string; size?: number; date: string };
+  isStarred:     boolean;
+  showRestore?:  boolean;
   onFolderOpen?: (id: string, name: string) => void;
-  onRefresh?: () => void;
+  onRefresh?:    () => void;
 }) {
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuOpen,       setMenuOpen]       = useState(false);
   const [showMoveDialog, setShowMoveDialog] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [newName, setNewName] = useState(name);
-  const [isPending, startTransition] = useTransition();
+  const [showPreview,    setShowPreview]    = useState(false);
+  const [showShare,      setShowShare]      = useState(false);
+  const [renaming,       setRenaming]       = useState(false);
+  const [newName,        setNewName]        = useState(name);
+  const [isPending,      startTransition]   = useTransition();
 
-  // ✅ NEW
-  const [showPreview, setShowPreview] = useState(false);
   const { download, downloading } = useDownload();
   const isDownloading = downloading.has(id);
-  const [showShareDialog, setShowShareDialog] = useState(false);
 
   const handleStar = () => {
     startTransition(async () => {
@@ -144,76 +136,72 @@ function ItemRow({
     });
   };
 
+  // ── What happens when the clickable area (icon + name) is clicked ──
+  const handleMainClick = () => {
+    if (renaming) return;
+    if (type === "file")   setShowPreview(true);
+    if (type === "folder") onFolderOpen?.(id, name);
+  };
+
   return (
     <>
+      {/* Outer row — NO onClick here, just layout + hover group */}
       <div
         className={cn(
-          "group flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150",
-          "hover:bg-accent cursor-pointer",
+          "group flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 hover:bg-accent",
           isPending && "opacity-50 pointer-events-none"
         )}
-        // ✅ SINGLE CLICK → PREVIEW
-        onClick={() => {
-          if (type === "file" && !renaming) setShowPreview(true);
-        }}
-        onDoubleClick={() => {
-          if (type === "folder" && !renaming) onFolderOpen?.(id, name);
-        }}
       >
-        {/* Icon */}
-        <div className="flex-shrink-0 w-8 h-8 flex items-center justify-center">
-          {type === "folder" ? (
-            <FolderSimple size={22} weight="fill" className="text-[#2da07a]" />
-          ) : (
-            <FileIcon mimeType={meta?.mimeType ?? ""} size={22} />
-          )}
+        {/* ── Clickable area: icon + name only ── */}
+        <div
+          className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
+          onClick={handleMainClick}
+        >
+          {/* Icon */}
+          <div className="flex-shrink-0 w-8 h-8 flex items-center justify-center">
+            {type === "folder" ? (
+              <FolderSimple size={22} weight="fill" className="text-[#2da07a]" />
+            ) : (
+              <FileIcon mimeType={meta?.mimeType ?? ""} size={22} />
+            )}
+          </div>
+
+          {/* Name + meta */}
+          <div className="flex-1 min-w-0">
+            {renaming ? (
+              <input
+                autoFocus
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onBlur={handleRename}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter")  handleRename();
+                  if (e.key === "Escape") { setRenaming(false); setNewName(name); }
+                }}
+                // Stop click from bubbling to the clickable area
+                onClick={(e) => e.stopPropagation()}
+                className="w-full text-sm font-medium bg-secondary border border-[#2da07a]/40 rounded-lg px-2 py-0.5 text-foreground focus:outline-none focus:ring-1 focus:ring-[#2da07a]/30"
+              />
+            ) : (
+              <p className="text-sm font-medium text-foreground truncate">{name}</p>
+            )}
+            {meta && !renaming && (
+              <p className="text-xs text-muted-foreground">
+                {meta.size !== undefined ? `${formatBytes(meta.size)} · ` : ""}
+                {formatDate(meta.date)}
+              </p>
+            )}
+          </div>
         </div>
 
-        {/* Name + meta */}
-        <div className="flex-1 min-w-0">
-          {renaming ? (
-            <input
-              autoFocus
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              onBlur={handleRename}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleRename();
-                if (e.key === "Escape") {
-                  setRenaming(false);
-                  setNewName(name);
-                }
-              }}
-              onClick={(e) => e.stopPropagation()}
-              className="w-full text-sm font-medium bg-secondary border border-[#2da07a]/40 rounded-lg px-2 py-0.5 text-foreground focus:outline-none focus:ring-1 focus:ring-[#2da07a]/30"
-            />
-          ) : (
-            <p
-              className="text-sm font-medium text-foreground truncate"
-              onDoubleClick={() => !showRestore && setRenaming(true)}
-            >
-              {name}
-            </p>
-          )}
-
-          {meta && !renaming && (
-            <p className="text-xs text-muted-foreground">
-              {meta.size !== undefined ? `${formatBytes(meta.size)} · ` : ""}
-              {formatDate(meta.date)}
-            </p>
-          )}
-        </div>
-
-        {/* Hover actions */}
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        {/* ── Actions — completely separate from clickable area ── */}
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
           {!showRestore && (
             <>
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleStar();
-                }}
+                onClick={handleStar}
                 className="p-1.5 rounded-lg hover:bg-muted transition-colors"
+                title={isStarred ? "Unstar" : "Star"}
               >
                 <Star
                   size={15}
@@ -223,47 +211,39 @@ function ItemRow({
               </button>
 
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleTrash();
-                }}
-                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-red-400"
+                onClick={() => setShowShare(true)}
+                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                title="Share"
+              >
+                <ShareNetwork size={15} />
+              </button>
+
+              {type === "file" && (
+                <button
+                  onClick={() => download(id, name)}
+                  disabled={isDownloading}
+                  className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                  title="Download"
+                >
+                  <DownloadSimple size={15} />
+                </button>
+              )}
+
+              <button
+                onClick={handleTrash}
+                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-red-400 transition-colors"
+                title="Move to trash"
               >
                 <Trash size={15} />
               </button>
             </>
           )}
-          {!showRestore && (
-            <button
-              onClick={(e) => { e.stopPropagation(); setShowShareDialog(true); }}
-              className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-              title="Share"
-            >
-              <ShareNetwork size={15} />
-            </button>
-          )}
-
-          {/* ✅ DOWNLOAD BUTTON */}
-          {type === "file" && !showRestore && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                download(id, name);
-              }}
-              disabled={isDownloading}
-              className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground"
-            >
-              <DownloadSimple size={15} />
-            </button>
-          )}
 
           {showRestore && (
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleRestore();
-              }}
-              className="p-1.5 rounded-lg hover:bg-muted"
+              onClick={handleRestore}
+              className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+              title="Restore"
             >
               <ArrowCounterClockwise size={15} />
             </button>
@@ -272,11 +252,8 @@ function ItemRow({
           {/* Context menu */}
           <div className="relative">
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setMenuOpen(!menuOpen);
-              }}
-              className="p-1.5 rounded-lg hover:bg-muted"
+              onClick={() => setMenuOpen(!menuOpen)}
+              className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
             >
               <DotsThree size={15} weight="bold" />
             </button>
@@ -285,79 +262,52 @@ function ItemRow({
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
                 <div className="absolute right-0 top-8 z-20 w-44 bg-popover border border-border rounded-xl shadow-lg py-1 text-sm">
-                  {!showRestore && (
+                  {!showRestore ? (
                     <>
                       <button
-                        onClick={() => {
-                          setRenaming(true);
-                          setMenuOpen(false);
-                        }}
-                        className="w-full text-left px-3 py-1.5 hover:bg-accent"
+                        onClick={() => { setRenaming(true); setMenuOpen(false); }}
+                        className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                       >
                         Rename
                       </button>
-
                       <button
-                        onClick={() => {
-                          setShowMoveDialog(true);
-                          setMenuOpen(false);
-                        }}
-                        className="w-full text-left px-3 py-1.5 hover:bg-accent"
+                        onClick={() => { setShowMoveDialog(true); setMenuOpen(false); }}
+                        className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                       >
                         Move to...
                       </button>
-
                       <button
-                        onClick={() => { setShowShareDialog(true); setMenuOpen(false); }}
+                        onClick={() => { setShowShare(true); setMenuOpen(false); }}
                         className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                       >
                         Share
                       </button>
-
-                      {/* ✅ CONTEXT DOWNLOAD */}
                       {type === "file" && (
                         <button
-                          onClick={() => {
-                            download(id, name);
-                            setMenuOpen(false);
-                          }}
-                          className="w-full text-left px-3 py-1.5 hover:bg-accent"
+                          onClick={() => { download(id, name); setMenuOpen(false); }}
+                          className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                         >
                           Download
                         </button>
                       )}
-
                       <button
-                        onClick={() => {
-                          handleStar();
-                          setMenuOpen(false);
-                        }}
-                        className="w-full text-left px-3 py-1.5 hover:bg-accent"
+                        onClick={() => { handleStar(); setMenuOpen(false); }}
+                        className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                       >
                         {isStarred ? "Unstar" : "Star"}
                       </button>
-
                       <div className="my-1 border-t border-border" />
-
                       <button
-                        onClick={() => {
-                          handleTrash();
-                          setMenuOpen(false);
-                        }}
-                        className="w-full text-left px-3 py-1.5 text-red-400 hover:bg-accent"
+                        onClick={() => { handleTrash(); setMenuOpen(false); }}
+                        className="w-full text-left px-3 py-1.5 text-red-400 hover:bg-accent transition-colors"
                       >
                         Move to trash
                       </button>
                     </>
-                  )}
-
-                  {showRestore && (
+                  ) : (
                     <button
-                      onClick={() => {
-                        handleRestore();
-                        setMenuOpen(false);
-                      }}
-                      className="w-full text-left px-3 py-1.5 hover:bg-accent"
+                      onClick={() => { handleRestore(); setMenuOpen(false); }}
+                      className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                     >
                       Restore
                     </button>
@@ -369,7 +319,7 @@ function ItemRow({
         </div>
       </div>
 
-      {/* Move dialog */}
+      {/* Dialogs */}
       {showMoveDialog && (
         <MoveDialog
           itemId={id}
@@ -379,17 +329,14 @@ function ItemRow({
           onClose={() => setShowMoveDialog(false)}
         />
       )}
-
-      {showShareDialog && (
+      {showShare && (
         <ShareDialog
           resourceId={id}
           resourceName={name}
           resourceType={type}
-          onClose={() => setShowShareDialog(false)}
+          onClose={() => setShowShare(false)}
         />
       )}
-
-      {/* ✅ PREVIEW DIALOG */}
       {showPreview && (
         <FilePreviewDialog
           fileId={id}
@@ -402,7 +349,6 @@ function ItemRow({
   );
 }
 
-// ── Main FileGrid ─────────────────────────────────────────────
 export function FileGrid({
   files,
   folders,
@@ -417,45 +363,61 @@ export function FileGrid({
       <div className="flex flex-col items-center justify-center h-64 text-center">
         <FolderSimple size={48} weight="duotone" className="text-muted-foreground/40 mb-3" />
         <p className="text-sm text-muted-foreground">No files here yet</p>
-        <p className="text-xs text-muted-foreground/60 mt-1">
-          Upload something to get started
-        </p>
+        <p className="text-xs text-muted-foreground/60 mt-1">Upload something to get started</p>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col">
-      {folders.map((folder) => (
-        <ItemRow
-          key={folder.id}
-          id={folder.id}
-          name={folder.name}
-          type="folder"
-          isStarred={folder.is_starred}
-          meta={{ date: folder.created_at }}
-          showRestore={showRestore}
-          onFolderOpen={onFolderOpen}
-          onRefresh={onRefresh}
-        />
-      ))}
+      {/* Column headers */}
+      <div className="flex items-center gap-3 px-3 py-1.5 mb-1">
+        <div className="w-8" />
+        <p className="flex-1 text-xs font-medium text-muted-foreground uppercase tracking-wide">Name</p>
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide pr-8">Modified</p>
+      </div>
+      <div className="border-t border-border mb-1" />
 
-      {files.map((file) => (
-        <ItemRow
-          key={file.id}
-          id={file.id}
-          name={file.name}
-          type="file"
-          isStarred={file.is_starred}
-          meta={{
-            mimeType: file.mime_type,
-            size: file.size,
-            date: file.created_at,
-          }}
-          showRestore={showRestore}
-          onRefresh={onRefresh}
-        />
-      ))}
+      {folders.length > 0 && (
+        <div className="mb-2">
+          <p className="px-3 py-1 text-xs text-muted-foreground/60 font-medium">Folders</p>
+          {folders.map((folder) => (
+            <ItemRow
+              key={folder.id}
+              id={folder.id}
+              name={folder.name}
+              type="folder"
+              isStarred={folder.is_starred}
+              meta={{ date: folder.created_at }}
+              showRestore={showRestore}
+              onFolderOpen={onFolderOpen}
+              onRefresh={onRefresh}
+            />
+          ))}
+        </div>
+      )}
+
+      {files.length > 0 && (
+        <div>
+          <p className="px-3 py-1 text-xs text-muted-foreground/60 font-medium">Files</p>
+          {files.map((file) => (
+            <ItemRow
+              key={file.id}
+              id={file.id}
+              name={file.name}
+              type="file"
+              isStarred={file.is_starred}
+              meta={{
+                mimeType: file.mime_type,
+                size:     file.size,
+                date:     file.created_at,
+              }}
+              showRestore={showRestore}
+              onRefresh={onRefresh}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
