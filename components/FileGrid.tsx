@@ -20,6 +20,8 @@ import { toggleStar, trashItem, restoreItem, renameItem } from "@/actions/files"
 import { MoveDialog } from "@/components/MoveDialog";
 import { FilePreviewDialog } from "@/components/FilePreviewDialog";
 import { useDownload } from "@/hooks/useDownload";
+import { ShareNetwork } from "@phosphor-icons/react";
+import { ShareDialog } from "@/components/ShareDialog";
 
 // ── Types ─────────────────────────────────────────────────────
 interface FileItem {
@@ -105,6 +107,7 @@ function ItemRow({
   const [showPreview, setShowPreview] = useState(false);
   const { download, downloading } = useDownload();
   const isDownloading = downloading.has(id);
+  const [showShareDialog, setShowShareDialog] = useState(false);
 
   const handleStar = () => {
     startTransition(async () => {
@@ -230,6 +233,15 @@ function ItemRow({
               </button>
             </>
           )}
+          {!showRestore && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowShareDialog(true); }}
+              className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+              title="Share"
+            >
+              <ShareNetwork size={15} />
+            </button>
+          )}
 
           {/* ✅ DOWNLOAD BUTTON */}
           {type === "file" && !showRestore && (
@@ -295,6 +307,13 @@ function ItemRow({
                         Move to...
                       </button>
 
+                      <button
+                        onClick={() => { setShowShareDialog(true); setMenuOpen(false); }}
+                        className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                      >
+                        Share
+                      </button>
+
                       {/* ✅ CONTEXT DOWNLOAD */}
                       {type === "file" && (
                         <button
@@ -358,6 +377,15 @@ function ItemRow({
           itemType={type}
           onSuccess={() => onRefresh?.()}
           onClose={() => setShowMoveDialog(false)}
+        />
+      )}
+
+      {showShareDialog && (
+        <ShareDialog
+          resourceId={id}
+          resourceName={name}
+          resourceType={type}
+          onClose={() => setShowShareDialog(false)}
         />
       )}
 

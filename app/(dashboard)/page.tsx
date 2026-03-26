@@ -1,66 +1,52 @@
-'use client'
+// app/(dashboard)/recent/page.tsx
+"use client";
 
-import { useEffect, useState } from 'react'
-import { useSession, useUser, UserButton } from '@clerk/nextjs'
-import { createClient } from '@supabase/supabase-js'
+import { useState, useEffect, useCallback } from "react";
+import { Clock } from "@phosphor-icons/react";
+import { FileGrid } from "@/components/FileGrid";
+import { getRecentFiles } from "@/actions/files";
 
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Card, CardContent } from '@/components/ui/card'
+export default function RecentPage() {
+  const [files,   setFiles]   = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-export default function Home() {
-  const [tasks, setTasks] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [name, setName] = useState('')
-
-  const { user } = useUser()
-  const { session } = useSession()
-
-  function createClerkSupabaseClient() {
-    return createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_KEY!,
-      {
-        async accessToken() {
-          return session?.getToken() ?? null
-        },
-      }
-    )
-  }
-
-  const client = createClerkSupabaseClient()
+  const refresh = useCallback(async () => {
+    const data = await getRecentFiles();
+    setFiles(data);
+  }, []);
 
   useEffect(() => {
-    if (!user) return
-
-    async function loadTasks() {
-      setLoading(true)
-      const { data } = await client.from('tasks').select()
-      setTasks(data || [])
-      setLoading(false)
-    }
-
-    loadTasks()
-  }, [user])
-
-  async function createTask(e: React.FormEvent) {
-    e.preventDefault()
-    if (!name.trim()) return
-
-    await client.from('tasks').insert({ name })
-    setName('')
-
-    const { data } = await client.from('tasks').select()
-    setTasks(data || [])
-  }
+    refresh().finally(() => setLoading(false));
+  }, [refresh]);
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="flex flex-col h-full p-6">
+      <div className="flex items-center gap-2 mb-6">
+        <Clock size={20} weight="duotone" className="text-muted-foreground" />
+        <h1 className="text-lg font-semibold text-foreground">Recent</h1>
+      </div>
 
-      {/* 📦 Main */}
-      <main className="max-w-2xl mx-auto p-6 space-y-6">
-
-      </main>
+      {loading ? (
+        <div className="flex flex-col gap-2">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="h-10 rounded-xl bg-muted animate-pulse" />
+          ))}
+        </div>
+      ) : files.length === 0 ? (
+        <div className="flex flex-col items-center justify-center h-64 text-center">
+          <Clock size={48} weight="duotone" className="text-muted-foreground/40 mb-3" />
+          <p className="text-sm text-muted-foreground">No recent files</p>
+          <p className="text-xs text-muted-foreground/60 mt-1">
+            Files you upload will appear here
+          </p>
+        </div>
+      ) : (
+        <FileGrid
+          files={files}
+          folders={[]}
+          onRefresh={refresh}
+        />
+      )}
     </div>
-  )
+  );
 }
