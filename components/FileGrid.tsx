@@ -7,7 +7,7 @@ import {
   File,
   Image,
   FilePdf,
-  FileVideo,
+  VideoIcon,
   MusicNote,
   Star,
   Trash,
@@ -69,7 +69,7 @@ function FileIcon({ mimeType, size = 20 }: { mimeType: string; size?: number }) 
   if (mimeType.startsWith("image/"))
     return <Image size={size} weight="duotone" className="text-purple-400" />;
   if (mimeType.startsWith("video/"))
-    return <FileVideo size={size} weight="duotone" className="text-blue-400" />;
+    return <VideoIcon size={size} weight="duotone" className="text-blue-400" />;
   if (mimeType.startsWith("audio/"))
     return <MusicNote size={size} weight="duotone" className="text-pink-400" />;
   if (mimeType === "application/pdf")

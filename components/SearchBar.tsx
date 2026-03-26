@@ -9,7 +9,7 @@ import {
   FolderSimple,
   Image,
   FilePdf,
-  FileVideo,
+  VideoIcon,
   MusicNote,
   Spinner,
   X,
@@ -28,7 +28,7 @@ interface SearchResult {
 function FileIcon({ mimeType }: { mimeType?: string }) {
   if (!mimeType) return <FolderSimple size={16} weight="fill" className="text-[#2da07a]" />;
   if (mimeType.startsWith("image/"))  return <Image     size={16} weight="duotone" className="text-purple-400" />;
-  if (mimeType.startsWith("video/"))  return <FileVideo  size={16} weight="duotone" className="text-blue-400" />;
+  if (mimeType.startsWith("video/"))  return <VideoIcon  size={16} weight="duotone" className="text-blue-400" />;
   if (mimeType.startsWith("audio/"))  return <MusicNote  size={16} weight="duotone" className="text-pink-400" />;
   if (mimeType === "application/pdf") return <FilePdf    size={16} weight="duotone" className="text-red-400" />;
   return <File size={16} weight="duotone" className="text-muted-foreground" />;

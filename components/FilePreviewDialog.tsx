@@ -8,7 +8,7 @@ import {
   ArrowsOut,
   File,
   FilePdf,
-  FileVideo,
+  VideoIcon,
   MusicNote,
   Image as ImageIcon,
 } from "@phosphor-icons/react";
@@ -35,7 +35,7 @@ function FileTypeIcon({ mimeType }: { mimeType: string }) {
   const cls = "text-muted-foreground/40";
   if (mimeType.startsWith("image/"))  return <ImageIcon size={64} weight="duotone" className={cls} />;
   if (mimeType === "application/pdf") return <FilePdf   size={64} weight="duotone" className="text-red-400/40" />;
-  if (mimeType.startsWith("video/"))  return <FileVideo size={64} weight="duotone" className="text-blue-400/40" />;
+  if (mimeType.startsWith("video/"))  return <VideoIcon size={64} weight="duotone" className="text-blue-400/40" />;
   if (mimeType.startsWith("audio/"))  return <MusicNote size={64} weight="duotone" className="text-pink-400/40" />;
   return <File size={64} weight="duotone" className={cls} />;
 }

@@ -13,7 +13,7 @@ interface Props {
 }
 
 export function CreateFolderDialog({ parentFolderId, onSuccess, onClose }: Props) {
-  const [name, setName]           = useState("Untitled folder");
+  const [name, setName]           = useState("");
   const [error, setError]         = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -96,7 +96,7 @@ export function CreateFolderDialog({ parentFolderId, onSuccess, onClose }: Props
         <div className="flex items-center justify-end gap-2 mt-4">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+            className="px-3 py-1.5 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent cursor-pointer transition-all"
           >
             Cancel
           </button>
@@ -104,7 +104,7 @@ export function CreateFolderDialog({ parentFolderId, onSuccess, onClose }: Props
             onClick={handleSubmit}
             disabled={isPending || !name.trim()}
             className={cn(
-              "px-4 py-1.5 rounded-xl text-sm font-medium text-white transition-all",
+              "px-4 py-1.5 rounded-xl text-sm font-medium text-white cursor-pointer transition-all",
               isPending || !name.trim()
                 ? "opacity-50 cursor-not-allowed"
                 : "hover:opacity-90"

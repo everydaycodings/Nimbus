@@ -8,24 +8,26 @@ import { FileGrid } from "@/components/FileGrid";
 import { getFiles } from "@/actions/files";
 import { useUpload } from "@/hooks/useUpload";
 import { cn } from "@/lib/utils";
+import { CreateFolderDialog } from "./CreateFolderDialog";
 
 interface Props {
-  initialFiles:   any[];
+  initialFiles: any[];
   initialFolders: any[];
   user: {
-    id:             string;
-    storage_used:   number;
-    storage_limit:  number;
+    id: string;
+    storage_used: number;
+    storage_limit: number;
   };
 }
 
 export function FileListClient({ initialFiles, initialFolders, user }: Props) {
-  const router                          = useRouter();
-  const [files,   setFiles]             = useState(initialFiles);
-  const [folders, setFolders]           = useState(initialFolders);
+  const router = useRouter();
+  const [files, setFiles] = useState(initialFiles);
+  const [folders, setFolders] = useState(initialFolders);
   const [currentFolder, setCurrentFolder] = useState<string | null>(null);
-  const [breadcrumbs, setBreadcrumbs]   = useState<{ id: string; name: string }[]>([]);
-  const [isDragging, setIsDragging]     = useState(false);
+  const [breadcrumbs, setBreadcrumbs] = useState<{ id: string; name: string }[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const [showCreateFolder, setShowCreateFolder] = useState(false);
 
   const refresh = useCallback(async () => {
     const data = await getFiles(currentFolder);
@@ -64,7 +66,7 @@ export function FileListClient({ initialFiles, initialFolders, user }: Props) {
   };
 
   const navigateToBreadcrumb = async (index: number) => {
-    const crumb   = breadcrumbs[index];
+    const crumb = breadcrumbs[index];
     const newCrumbs = breadcrumbs.slice(0, index + 1);
     setBreadcrumbs(newCrumbs);
     setCurrentFolder(crumb.id);
@@ -93,8 +95,9 @@ export function FileListClient({ initialFiles, initialFolders, user }: Props) {
     >
       {/* ── Header ── */}
       <div className="flex items-center justify-between mb-6">
-        <div>
-          {/* Breadcrumbs */}
+
+        {/* Left: Breadcrumbs */}
+        <div className="flex flex-col gap-1">
           <div className="flex items-center gap-1 text-sm">
             <button
               onClick={navigateToRoot}
@@ -102,9 +105,11 @@ export function FileListClient({ initialFiles, initialFolders, user }: Props) {
             >
               My Files
             </button>
+
             {breadcrumbs.map((crumb, i) => (
               <span key={crumb.id} className="flex items-center gap-1">
                 <span className="text-muted-foreground">/</span>
+
                 <button
                   onClick={() => navigateToBreadcrumb(i)}
                   className={cn(
@@ -121,11 +126,17 @@ export function FileListClient({ initialFiles, initialFolders, user }: Props) {
           </div>
         </div>
 
-        {/* Actions */}
+        {/* Right: Actions */}
         <div className="flex items-center gap-2">
-          <label className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium bg-secondary border border-border text-secondary-foreground hover:bg-accent hover:text-accent-foreground transition-all cursor-pointer">
+
+          {/* Upload */}
+          <label className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium 
+    bg-secondary border border-border text-secondary-foreground 
+    hover:bg-accent hover:text-accent-foreground transition-all cursor-pointer">
+
             <CloudArrowUp size={16} weight="duotone" style={{ color: "#2da07a" }} />
             Upload
+
             <input
               type="file"
               multiple
@@ -133,7 +144,28 @@ export function FileListClient({ initialFiles, initialFolders, user }: Props) {
               onChange={(e) => e.target.files && uploadMany(e.target.files)}
             />
           </label>
+
+          {/* New Folder Button */}
+          <button
+            onClick={() => setShowCreateFolder(true)}
+            className="px-3 py-2 rounded-xl text-sm font-medium 
+    bg-primary text-primary-foreground 
+    hover:opacity-90 cursor-pointer transition-all"
+          >
+            + New Folder
+          </button>
+
         </div>
+
+        {/* Dialog */}
+        {showCreateFolder && (
+          <CreateFolderDialog
+            parentFolderId={currentFolder}
+            onSuccess={refresh}
+            onClose={() => setShowCreateFolder(false)}
+          />
+        )}
+
       </div>
 
       {/* ── Drag overlay hint ── */}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { calculateStorageUsage } from "@/lib/storage";
@@ -40,12 +40,17 @@ interface SidebarProps {
   storageLimit: number;
 }
 
-const { files } = await getFiles(null);
 
 export function Sidebar({ storageUsed, storageLimit }: SidebarProps) {
   const [open, setOpen] = useState(true);
   const pathname = usePathname();
   const router = useRouter(); // ✅ NEW
+
+  const [files, setFiles] = useState<any[]>([]);
+
+  useEffect(() => {
+    getFiles(null).then((data) => setFiles(data.files));
+  }, []);
 
   const {
     imageBytes,
@@ -83,15 +88,15 @@ export function Sidebar({ storageUsed, storageLimit }: SidebarProps) {
         )}
       </div>
 
-      <div className={cn("px-3 mb-5", !open && "px-2")}>
+      {/* <div className={cn("px-3 mb-5", !open && "px-2")}>
         <UploadZone
           open={open} // ✅ THIS FIXES IT
           onUploadComplete={() => router.refresh()}
         />
-      </div>
+      </div> */}
 
       {/* ── Navigation ── */}
-      <nav className="flex flex-col gap-0.5 px-2">
+      <nav className="flex flex-col gap-0.5 px-2 my-5">
         {navItems.map((item) => {
           const isActive = pathname === item.href;
 
