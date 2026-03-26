@@ -10,7 +10,7 @@ interface UploadOptions {
 const xhrMap = new Map<string, XMLHttpRequest>();
 
 export function useUpload(options: UploadOptions = {}) {
-  const { addUpload, updateUpload, removeUpload } = useUploadStore();
+  const { addUpload, updateUpload, removeUpload, uploads } = useUploadStore();
 
   const upload = async (file: File) => {
     const tempId = crypto.randomUUID();
@@ -21,6 +21,7 @@ export function useUpload(options: UploadOptions = {}) {
       name: file.name,
       progress: 0,
       status: "uploading",
+      fileId: null, // 🔥 important
     });
 
     try {
@@ -43,7 +44,10 @@ export function useUpload(options: UploadOptions = {}) {
 
       const { presignedUrl, fileId } = await presignRes.json();
 
-      // ── Step 2: Upload to S3 with cancel support ──
+      // 🔥 Save fileId for cancel support
+      updateUpload(tempId, { fileId });
+
+      // ── Step 2: Upload to S3 ──
       await uploadToS3(presignedUrl, file, tempId, (progress) => {
         updateUpload(tempId, { progress });
       });
@@ -56,7 +60,8 @@ export function useUpload(options: UploadOptions = {}) {
       });
 
       if (!completeRes.ok) {
-        throw new Error("Failed to finalize upload");
+        const { error } = await completeRes.json();
+        throw new Error(error ?? "Failed to finalize upload");
       }
 
       updateUpload(tempId, {
@@ -66,7 +71,6 @@ export function useUpload(options: UploadOptions = {}) {
 
       options.onSuccess?.(fileId);
 
-      // auto remove after delay
       setTimeout(() => {
         removeUpload(tempId);
       }, 2000);
@@ -75,7 +79,7 @@ export function useUpload(options: UploadOptions = {}) {
       const message = err instanceof Error ? err.message : "Upload failed";
 
       updateUpload(tempId, {
-        status: "error",
+        status: message === "Upload cancelled" ? "cancelled" : "error",
       });
 
       options.onError?.(message);
@@ -87,12 +91,29 @@ export function useUpload(options: UploadOptions = {}) {
   };
 
   // ❌ Cancel upload
-  const cancelUpload = (id: string) => {
+  const cancelUpload = async (id: string) => {
     const xhr = xhrMap.get(id);
 
     if (xhr) {
-      xhr.abort(); // 🔥 real cancel
+      xhr.abort();
       xhrMap.delete(id);
+    }
+
+    // 🔥 Get fileId from store
+    const uploadItem = uploads.find((u) => u.id === id);
+
+    if (uploadItem?.fileId) {
+      try {
+        await fetch("/api/upload/cancel", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ fileId: uploadItem.fileId }),
+        });
+      } catch (e) {
+        console.error("Cancel API failed", e);
+      }
     }
 
     updateUpload(id, { status: "cancelled" });
@@ -105,7 +126,7 @@ export function useUpload(options: UploadOptions = {}) {
   return { upload, uploadMany, cancelUpload };
 }
 
-// ── Upload helper with cancel tracking ──
+// ── Upload helper ──
 function uploadToS3(
   presignedUrl: string,
   file: File,
@@ -115,7 +136,6 @@ function uploadToS3(
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
 
-    // ✅ Save xhr for cancel
     xhrMap.set(id, xhr);
 
     xhr.upload.addEventListener("progress", (e) => {
@@ -130,7 +150,7 @@ function uploadToS3(
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve();
       } else {
-        reject(new Error(`S3 upload failed with status ${xhr.status}`));
+        reject(new Error(`S3 upload failed (${xhr.status})`));
       }
     });
 

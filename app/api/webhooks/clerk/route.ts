@@ -4,7 +4,7 @@ import { headers } from "next/headers";
 import { WebhookEvent } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 
-console.log("🔥 Clerk webhook received");
+
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -58,7 +58,6 @@ export async function POST(req: Request) {
       return new Response("DB insert failed", { status: 500 });
     }
 
-    console.log("[webhook] user created:", data.id);
   }
 
   if (type === "user.updated") {
@@ -76,7 +75,6 @@ export async function POST(req: Request) {
       return new Response("DB update failed", { status: 500 });
     }
 
-    console.log("[webhook] user updated:", data.id);
   }
 
   if (type === "user.deleted") {
@@ -90,7 +88,6 @@ export async function POST(req: Request) {
       return new Response("DB delete failed", { status: 500 });
     }
 
-    console.log("[webhook] user deleted:", data.id);
   }
 
   return new Response("OK", { status: 200 });

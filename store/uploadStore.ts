@@ -7,6 +7,7 @@ export type UploadItem = {
   name: string;
   progress: number;
   status: "uploading" | "complete" | "error" | "cancelled";
+  fileId?: string | null; // 🔥 ADD THIS
 };
 
 type UploadStore = {
