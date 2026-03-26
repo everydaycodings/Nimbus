@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import { Sidebar } from "@/components/sidebar";
 import { Navbar } from "@/components/navbar";
+import { UploadToast } from "@/components/UploadToast";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -45,6 +46,7 @@ export default async function DashboardLayout({
         <Navbar />
         <main className="flex-1 overflow-y-auto">
           {children}
+          <UploadToast />
         </main>
       </div>
     </div>

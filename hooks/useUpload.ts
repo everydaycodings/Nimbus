@@ -1,5 +1,4 @@
-// hooks/useUpload.ts
-import { useState } from "react";
+import { useUploadStore } from "@/store/uploadStore";
 
 interface UploadOptions {
   parentFolderId?: string;
@@ -7,39 +6,32 @@ interface UploadOptions {
   onError?: (error: string) => void;
 }
 
-interface UploadingFile {
-  id:       string;
-  name:     string;
-  progress: number;
-  status:   "uploading" | "complete" | "error";
-}
+// 🔥 Store active XHRs for cancel support
+const xhrMap = new Map<string, XMLHttpRequest>();
 
 export function useUpload(options: UploadOptions = {}) {
-  const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
-
-  const updateFile = (id: string, patch: Partial<UploadingFile>) => {
-    setUploadingFiles(prev =>
-      prev.map(f => (f.id === id ? { ...f, ...patch } : f))
-    );
-  };
+  const { addUpload, updateUpload, removeUpload } = useUploadStore();
 
   const upload = async (file: File) => {
     const tempId = crypto.randomUUID();
 
-    setUploadingFiles(prev => [
-      ...prev,
-      { id: tempId, name: file.name, progress: 0, status: "uploading" },
-    ]);
+    // ✅ Add to global store
+    addUpload({
+      id: tempId,
+      name: file.name,
+      progress: 0,
+      status: "uploading",
+    });
 
     try {
-      // Step 1: Get presigned URL
+      // ── Step 1: Get presigned URL ──
       const presignRes = await fetch("/api/upload/presign", {
-        method:  "POST",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name:           file.name,
-          mimeType:       file.type || "application/octet-stream",
-          size:           file.size,
+          name: file.name,
+          mimeType: file.type || "application/octet-stream",
+          size: file.size,
           parentFolderId: options.parentFolderId,
         }),
       });
@@ -51,14 +43,14 @@ export function useUpload(options: UploadOptions = {}) {
 
       const { presignedUrl, fileId } = await presignRes.json();
 
-      // Step 2: Upload directly to S3 with progress tracking
-      await uploadToS3(presignedUrl, file, (progress) => {
-        updateFile(tempId, { progress });
+      // ── Step 2: Upload to S3 with cancel support ──
+      await uploadToS3(presignedUrl, file, tempId, (progress) => {
+        updateUpload(tempId, { progress });
       });
 
-      // Step 3: Mark complete in Supabase
+      // ── Step 3: Mark complete ──
       const completeRes = await fetch("/api/upload/complete", {
-        method:  "POST",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fileId }),
       });
@@ -67,16 +59,25 @@ export function useUpload(options: UploadOptions = {}) {
         throw new Error("Failed to finalize upload");
       }
 
-      updateFile(tempId, { progress: 100, status: "complete" });
+      updateUpload(tempId, {
+        progress: 100,
+        status: "complete",
+      });
+
       options.onSuccess?.(fileId);
 
+      // auto remove after delay
       setTimeout(() => {
-        setUploadingFiles(prev => prev.filter(f => f.id !== tempId));
+        removeUpload(tempId);
       }, 2000);
 
     } catch (err) {
       const message = err instanceof Error ? err.message : "Upload failed";
-      updateFile(tempId, { status: "error" });
+
+      updateUpload(tempId, {
+        status: "error",
+      });
+
       options.onError?.(message);
     }
   };
@@ -85,16 +86,37 @@ export function useUpload(options: UploadOptions = {}) {
     Array.from(files).forEach(upload);
   };
 
-  return { upload, uploadMany, uploadingFiles };
+  // ❌ Cancel upload
+  const cancelUpload = (id: string) => {
+    const xhr = xhrMap.get(id);
+
+    if (xhr) {
+      xhr.abort(); // 🔥 real cancel
+      xhrMap.delete(id);
+    }
+
+    updateUpload(id, { status: "cancelled" });
+
+    setTimeout(() => {
+      removeUpload(id);
+    }, 1000);
+  };
+
+  return { upload, uploadMany, cancelUpload };
 }
 
+// ── Upload helper with cancel tracking ──
 function uploadToS3(
   presignedUrl: string,
   file: File,
+  id: string,
   onProgress: (progress: number) => void
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
+
+    // ✅ Save xhr for cancel
+    xhrMap.set(id, xhr);
 
     xhr.upload.addEventListener("progress", (e) => {
       if (e.lengthComputable) {
@@ -103,6 +125,8 @@ function uploadToS3(
     });
 
     xhr.addEventListener("load", () => {
+      xhrMap.delete(id);
+
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve();
       } else {
@@ -110,11 +134,21 @@ function uploadToS3(
       }
     });
 
-    xhr.addEventListener("error", () => reject(new Error("Network error")));
-    xhr.addEventListener("abort", () => reject(new Error("Upload aborted")));
+    xhr.addEventListener("error", () => {
+      xhrMap.delete(id);
+      reject(new Error("Network error"));
+    });
+
+    xhr.addEventListener("abort", () => {
+      xhrMap.delete(id);
+      reject(new Error("Upload cancelled"));
+    });
 
     xhr.open("PUT", presignedUrl);
-    xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+    xhr.setRequestHeader(
+      "Content-Type",
+      file.type || "application/octet-stream"
+    );
     xhr.send(file);
   });
 }

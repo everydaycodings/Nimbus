@@ -1,9 +1,8 @@
-// components/Sidebar.tsx
 "use client";
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   House,
   FolderSimple,
@@ -11,18 +10,18 @@ import {
   Trash,
   CaretDoubleLeft,
   CaretDoubleRight,
-  CloudArrowUp,
   Clock,
   HardDrive,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
+import { UploadZone } from "@/components/UploadZone"; // ✅ NEW
 
 const navItems = [
-  { name: "Home",     icon: House,         href: "/"        },
-  { name: "My Files", icon: FolderSimple,  href: "/files"   },
-  { name: "Recent",   icon: Clock,         href: "/recent"  },
-  { name: "Starred",  icon: Star,          href: "/starred" },
-  { name: "Trash",    icon: Trash,         href: "/trash"   },
+  { name: "Home",     icon: House,        href: "/"        },
+  { name: "My Files", icon: FolderSimple, href: "/files"   },
+  { name: "Recent",   icon: Clock,        href: "/recent"  },
+  { name: "Starred",  icon: Star,         href: "/starred" },
+  { name: "Trash",    icon: Trash,        href: "/trash"   },
 ];
 
 const TEAL     = "#2da07a";
@@ -34,19 +33,19 @@ function formatBytes(bytes: number) {
 }
 
 interface SidebarProps {
-  storageUsed:  number; // bytes
-  storageLimit: number; // bytes
+  storageUsed: number;
+  storageLimit: number;
 }
 
 export function Sidebar({ storageUsed, storageLimit }: SidebarProps) {
   const [open, setOpen] = useState(true);
-  const pathname        = usePathname();
+  const pathname = usePathname();
+  const router = useRouter(); // ✅ NEW
 
   const usedPct  = Math.min(100, Math.round((storageUsed / storageLimit) * 100));
   const usedFmt  = formatBytes(storageUsed);
   const limitFmt = formatBytes(storageLimit);
 
-  // Colour shifts to red when > 90%
   const barColor = usedPct >= 90 ? "#ef4444" : TEAL;
 
   return (
@@ -78,26 +77,16 @@ export function Sidebar({ storageUsed, storageLimit }: SidebarProps) {
         )}
       </div>
 
-      {/* ── Upload Button ── */}
+      {/* ── Upload Zone (FIXED) ── */}
       <div className={cn("px-3 mb-5", !open && "px-2")}>
-        <button
-          className={cn(
-            "flex items-center gap-2.5 w-full rounded-xl px-3 py-2.5 text-sm font-medium",
-            "bg-secondary border border-border text-secondary-foreground",
-            "hover:bg-accent hover:text-accent-foreground",
-            "transition-all duration-150",
-            !open && "justify-center px-0"
-          )}
-        >
-          <CloudArrowUp size={18} weight="duotone" style={{ color: TEAL }} className="flex-shrink-0" />
-          {open && <span>Upload files</span>}
-        </button>
+        <UploadZone onUploadComplete={() => router.refresh()} />
       </div>
 
-      {/* ── Nav ── */}
+      {/* ── Navigation ── */}
       <nav className="flex flex-col gap-0.5 px-2">
         {navItems.map((item) => {
           const isActive = pathname === item.href;
+
           return (
             <Link
               key={item.name}
@@ -118,7 +107,9 @@ export function Sidebar({ storageUsed, storageLimit }: SidebarProps) {
                 className="flex-shrink-0 transition-colors duration-150"
                 style={isActive ? { color: TEAL } : {}}
               />
+
               {open && <span className="truncate">{item.name}</span>}
+
               {isActive && open && (
                 <span
                   className="ml-auto w-1.5 h-1.5 rounded-full"
@@ -135,26 +126,32 @@ export function Sidebar({ storageUsed, storageLimit }: SidebarProps) {
         <div className="border-t border-border" />
       </div>
 
-      {/* ── Storage Bar ── */}
+      {/* ── Storage Section ── */}
       {open ? (
         <div className="px-3 mt-4">
           <div className="flex items-center gap-2 mb-2">
             <HardDrive size={15} weight="duotone" className="text-muted-foreground" />
-            <span className="text-xs font-medium text-muted-foreground">Storage</span>
+            <span className="text-xs font-medium text-muted-foreground">
+              Storage
+            </span>
             <span className="ml-auto text-xs text-muted-foreground">
               {usedFmt} / {limitFmt}
             </span>
           </div>
+
           <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
             <div
               className="h-full rounded-full transition-all duration-500"
               style={{ width: `${usedPct}%`, backgroundColor: barColor }}
             />
           </div>
+
           <p className="mt-1.5 text-[11px] text-muted-foreground">
             {usedPct}% used
             {usedPct >= 90 && (
-              <span className="ml-1 text-red-400 font-medium">— storage almost full</span>
+              <span className="ml-1 text-red-400 font-medium">
+                — storage almost full
+              </span>
             )}
           </p>
         </div>
@@ -172,7 +169,7 @@ export function Sidebar({ storageUsed, storageLimit }: SidebarProps) {
         </div>
       )}
 
-      {/* ── Collapse Toggle ── */}
+      {/* ── Collapse Button ── */}
       <button
         onClick={() => setOpen(!open)}
         className={cn(
@@ -181,20 +178,21 @@ export function Sidebar({ storageUsed, storageLimit }: SidebarProps) {
           "w-6 h-6 rounded-full bg-background border border-border shadow-sm",
           "text-muted-foreground transition-all duration-150"
         )}
-        onMouseEnter={e => {
-          e.currentTarget.style.color        = TEAL;
-          e.currentTarget.style.borderColor  = `${TEAL}66`;
+        onMouseEnter={(e) => {
+          e.currentTarget.style.color = TEAL;
+          e.currentTarget.style.borderColor = `${TEAL}66`;
         }}
-        onMouseLeave={e => {
-          e.currentTarget.style.color        = "";
-          e.currentTarget.style.borderColor  = "";
+        onMouseLeave={(e) => {
+          e.currentTarget.style.color = "";
+          e.currentTarget.style.borderColor = "";
         }}
         aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
       >
-        {open
-          ? <CaretDoubleLeft  size={11} weight="bold" />
-          : <CaretDoubleRight size={11} weight="bold" />
-        }
+        {open ? (
+          <CaretDoubleLeft size={11} weight="bold" />
+        ) : (
+          <CaretDoubleRight size={11} weight="bold" />
+        )}
       </button>
     </aside>
   );

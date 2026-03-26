@@ -33,7 +33,7 @@ export function FileListClient({ initialFiles, initialFolders, user }: Props) {
     setFolders(data.folders);
   }, [currentFolder]);
 
-  const { uploadMany, uploadingFiles } = useUpload({
+  const { uploadMany } = useUpload({
     parentFolderId: currentFolder ?? undefined,
     onSuccess: () => refresh(),
   });
@@ -135,24 +135,6 @@ export function FileListClient({ initialFiles, initialFolders, user }: Props) {
           </label>
         </div>
       </div>
-
-      {/* ── Upload progress ── */}
-      {uploadingFiles.length > 0 && (
-        <div className="mb-4 flex flex-col gap-2">
-          {uploadingFiles.map((f) => (
-            <div key={f.id} className="flex items-center gap-3 px-3 py-2 rounded-xl bg-secondary border border-border text-sm">
-              <span className="flex-1 truncate text-muted-foreground">{f.name}</span>
-              <div className="w-24 h-1.5 rounded-full bg-muted overflow-hidden">
-                <div
-                  className="h-full rounded-full transition-all"
-                  style={{ width: `${f.progress}%`, backgroundColor: "#2da07a" }}
-                />
-              </div>
-              <span className="text-xs text-muted-foreground w-8 text-right">{f.progress}%</span>
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* ── Drag overlay hint ── */}
       {isDragging && (
