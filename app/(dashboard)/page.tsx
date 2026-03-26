@@ -55,52 +55,10 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-
-      {/* 🔝 Header */}
-      <header className="flex items-center justify-between border-b px-6 py-4">
-        <h1 className="text-xl font-semibold">☁️ Nimbus</h1>
-
-        <div className="flex items-center">
-          <UserButton />
-        </div>
-      </header>
+    <div className="min-h-screen bg-background">
 
       {/* 📦 Main */}
       <main className="max-w-2xl mx-auto p-6 space-y-6">
-
-        {/* ➕ Add Task */}
-        <Card>
-          <CardContent className="p-4">
-            <form onSubmit={createTask} className="flex gap-2">
-              <Input
-                placeholder="Enter task..."
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-              <Button type="submit">Add</Button>
-            </form>
-          </CardContent>
-        </Card>
-
-        {/* 📋 Tasks */}
-        <div className="space-y-3">
-          {loading && (
-            <p className="text-muted-foreground">Loading...</p>
-          )}
-
-          {!loading && tasks.length === 0 && (
-            <p className="text-muted-foreground">No tasks yet</p>
-          )}
-
-          {tasks.map((task) => (
-            <Card key={task.id}>
-              <CardContent className="p-4">
-                {task.name}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
 
       </main>
     </div>
