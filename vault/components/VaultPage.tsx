@@ -11,14 +11,14 @@ import {
   EyeIcon,
 } from "@phosphor-icons/react";
 import { getVaults, getVaultFiles, deleteVault, deleteVaultFile } from "@/vault/actions/vault.actions";
-import { CreateVaultDialog }  from "@/vault/components/CreateVaultDialog";
-import { UnlockVaultDialog }  from "@/vault/components/UnlockVaultDialog";
-import { useVaultUpload }     from "@/vault/hooks/useVaultUpload";
-import { useVaultDownload }   from "@/vault/hooks/useVaultDownload";
+import { CreateVaultDialog } from "@/vault/components/CreateVaultDialog";
+import { UnlockVaultDialog } from "@/vault/components/UnlockVaultDialog";
+import { useVaultUpload } from "@/vault/hooks/useVaultUpload";
+import { useVaultDownload } from "@/vault/hooks/useVaultDownload";
 import { deriveKey, base64ToBuffer } from "@/vault/lib/crypto";
 import { loadVaultSession, clearVaultSession } from "@/vault/lib/session";
 import { canPreviewVaultFile } from "@/vault/hooks/useVaultDownload";
-import { cn } from "@/lib/utils";
+import { ConfirmVaultDeleteDialog } from "./ConfirmVaultDeleteDialog";
 
 const TEAL = "#2da07a";
 
@@ -29,27 +29,27 @@ function formatBytes(bytes: number) {
 }
 
 function FileIcon({ mimeType, size = 18 }: { mimeType: string; size?: number }) {
-  if (mimeType.startsWith("image/"))  return <Image    size={size} weight="duotone" className="text-purple-400" />;
-  if (mimeType.startsWith("video/"))  return <FileVideo size={size} weight="duotone" className="text-blue-400" />;
-  if (mimeType.startsWith("audio/"))  return <MusicNote size={size} weight="duotone" className="text-pink-400" />;
-  if (mimeType === "application/pdf") return <FilePdf   size={size} weight="duotone" className="text-red-400" />;
+  if (mimeType.startsWith("image/")) return <Image size={size} weight="duotone" className="text-purple-400" />;
+  if (mimeType.startsWith("video/")) return <FileVideo size={size} weight="duotone" className="text-blue-400" />;
+  if (mimeType.startsWith("audio/")) return <MusicNote size={size} weight="duotone" className="text-pink-400" />;
+  if (mimeType === "application/pdf") return <FilePdf size={size} weight="duotone" className="text-red-400" />;
   return <File size={size} weight="duotone" className="text-muted-foreground" />;
 }
 
 interface VaultFile {
-  id:                 string;
-  name:               string;
+  id: string;
+  name: string;
   original_mime_type: string;
-  size:               number;
-  created_at:         string;
+  size: number;
+  created_at: string;
 }
 
 interface Vault {
-  id:                 string;
-  name:               string;
-  salt:               string;
+  id: string;
+  name: string;
+  salt: string;
   verification_token: string;
-  created_at:         string;
+  created_at: string;
 }
 
 // ── Opened vault view ─────────────────────────────────────────
@@ -59,13 +59,14 @@ function OpenVault({
   onLock,
   onRefreshVaults,
 }: {
-  vault:           Vault;
-  cryptoKey:       CryptoKey;
-  onLock:          () => void;
+  vault: Vault;
+  cryptoKey: CryptoKey;
+  onLock: () => void;
   onRefreshVaults: () => void;
 }) {
-  const [files,   setFiles]   = useState<VaultFile[]>([]);
+  const [files, setFiles] = useState<VaultFile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const { uploadMany, uploads } = useVaultUpload(vault.id, cryptoKey);
   const { download, preview, decrypting } = useVaultDownload(cryptoKey);
@@ -130,98 +131,84 @@ function OpenVault({
         </div>
       </div>
 
-      {/* Upload progress */}
-      {uploads.length > 0 && (
-        <div className="mb-4 flex flex-col gap-2">
-          {uploads.map((u) => (
-            <div key={u.id} className="flex items-center gap-3 px-3 py-2 rounded-xl bg-secondary border border-border text-sm">
-              <File size={14} className="text-muted-foreground flex-shrink-0" />
-              <span className="flex-1 truncate text-muted-foreground text-xs">{u.name}</span>
-              {u.status === "encrypting" && <span className="text-xs text-muted-foreground">Encrypting...</span>}
-              {u.status === "uploading"  && (
-                <>
-                  <div className="w-20 h-1 rounded-full bg-muted overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width: `${u.progress}%`, backgroundColor: TEAL }} />
-                  </div>
-                  <span className="text-xs text-muted-foreground">{u.progress}%</span>
-                </>
-              )}
-              {u.status === "complete" && <span className="text-xs font-medium" style={{ color: TEAL }}>Done</span>}
-              {u.status === "error"    && <span className="text-xs text-red-400">{u.error}</span>}
-            </div>
-          ))}
-        </div>
-      )}
-
       {/* File list */}
       {files.map((file) => {
-  const previewable = canPreviewVaultFile(file.original_mime_type, file.size);
+        const previewable = canPreviewVaultFile(file.original_mime_type, file.size);
 
-  return (
-    <div key={file.id} className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-accent transition-colors">
-      <FileIcon mimeType={file.original_mime_type} />
+        return (
+          <div key={file.id} className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-accent transition-colors">
+            <FileIcon mimeType={file.original_mime_type} />
 
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-foreground truncate">{file.name}</p>
-        <div className="flex items-center gap-2">
-          <p className="text-xs text-muted-foreground">{formatBytes(file.size)}</p>
-          {/* Show a "Download only" badge for large files */}
-          {!previewable && (
-            <span className="text-[10px] text-muted-foreground border border-border rounded-full px-1.5 py-0.5">
-              Download only
-            </span>
-          )}
-        </div>
-      </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-foreground truncate">{file.name}</p>
+              <div className="flex items-center gap-2">
+                <p className="text-xs text-muted-foreground">{formatBytes(file.size)}</p>
+                {/* Show a "Download only" badge for large files */}
+                {!previewable && (
+                  <span className="text-[10px] text-muted-foreground border border-border rounded-full px-1.5 py-0.5">
+                    Download only
+                  </span>
+                )}
+              </div>
+            </div>
 
-      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        {/* Preview button — only if previewable */}
-        {previewable && (
-          <button
-            onClick={async () => {
-              const url = await preview(file.id, file.original_mime_type);
-              if (url) window.open(url, "_blank");
-            }}
-            className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-            title="Preview"
-          >
-            <EyeIcon size={14} />
-          </button>
-        )}
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              {/* Preview button — only if previewable */}
+              {previewable && (
+                <button
+                  onClick={async () => {
+                    const url = await preview(file.id, file.original_mime_type);
+                    if (url) window.open(url, "_blank");
+                  }}
+                  className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                  title="Preview"
+                >
+                  <EyeIcon size={14} />
+                </button>
+              )}
 
-        {/* Download — always available */}
-        <button
-          onClick={() => download(file.id, file.name, file.original_mime_type)}
-          disabled={decrypting.has(file.id)}
-          className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-          title={decrypting.has(file.id) ? "Decrypting..." : "Decrypt & download"}
-        >
-          <DownloadSimple size={14} />
-        </button>
+              {/* Download — always available */}
+              <button
+                onClick={() => download(file.id, file.name, file.original_mime_type)}
+                disabled={decrypting.has(file.id)}
+                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                title={decrypting.has(file.id) ? "Decrypting..." : "Decrypt & download"}
+              >
+                <DownloadSimple size={14} />
+              </button>
 
-        <button
-          onClick={() => handleDelete(file.id)}
-          className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-red-400 transition-colors"
-          title="Delete"
-        >
-          <Trash size={14} />
-        </button>
-      </div>
-    </div>
-  );
-})}
+              <button
+                onClick={() => setDeleteId(file.id)}
+                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-red-400 transition-colors"
+                title="Delete"
+              >
+                <Trash size={14} />
+              </button>
+              <ConfirmVaultDeleteDialog
+                open={!!deleteId}
+                onClose={() => setDeleteId(null)}
+                onConfirm={() => {
+                  if (deleteId) handleDelete(deleteId);
+                }}
+                title="Delete file?"
+                description="This file will be permanently deleted from your vault."
+              />
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 // ── Main vault page ───────────────────────────────────────────
 export function VaultPage() {
-  const [vaults,          setVaults]          = useState<Vault[]>([]);
-  const [loading,         setLoading]         = useState(true);
-  const [showCreate,      setShowCreate]      = useState(false);
-  const [unlockTarget,    setUnlockTarget]    = useState<Vault | null>(null);
-  const [openVault,       setOpenVault]       = useState<Vault | null>(null);
-  const [openKey,         setOpenKey]         = useState<CryptoKey | null>(null);
+  const [vaults, setVaults] = useState<Vault[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [unlockTarget, setUnlockTarget] = useState<Vault | null>(null);
+  const [openVault, setOpenVault] = useState<Vault | null>(null);
+  const [openKey, setOpenKey] = useState<CryptoKey | null>(null);
 
   const loadVaults = useCallback(async () => {
     const data = await getVaults();
@@ -240,8 +227,8 @@ export function VaultPage() {
     try {
       const { deriveKey: dk, verifyPassword: vp, base64ToBuffer: btb } = await import("@/vault/lib/crypto");
       const salt = btb(vault.salt);
-      const key  = await dk(saved, salt);
-      const ok   = await vp(key, vault.verification_token);
+      const key = await dk(saved, salt);
+      const ok = await vp(key, vault.verification_token);
       if (ok) {
         setOpenVault(vault);
         setOpenKey(key);

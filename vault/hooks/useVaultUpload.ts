@@ -46,7 +46,7 @@ export function useVaultUpload(vaultId: string, key: CryptoKey) {
         source: "vault",
       })
       
-      setTimeout(() => removeUpload(tempId), 4000)
+      setTimeout(() => removeUpload(tempId), 3000)
       return
     }
 
@@ -113,7 +113,7 @@ export function useVaultUpload(vaultId: string, key: CryptoKey) {
         progress: 100,
         status: "complete",
       })
-      setTimeout(() => removeUpload(tempId), 2000)
+      setTimeout(() => removeUpload(tempId), 3000)
     } catch (err) {
       const msg =
   typeof err === "string"
