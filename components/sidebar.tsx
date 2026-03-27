@@ -13,6 +13,7 @@ import {
   CaretDoubleRight,
   Clock,
   HardDrive,
+  VaultIcon,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { UploadZone } from "@/components/UploadZone"; // ✅ NEW
@@ -22,6 +23,7 @@ import { getFiles } from "@/actions/files";
 const navItems = [
   { name: "Home", icon: House, href: "/" },
   { name: "My Files", icon: FolderSimple, href: "/files" },
+  { name: "Private Vault", icon: VaultIcon, href: "/vault" },
   { name: "Recent", icon: Clock, href: "/recent" },
   { name: "Starred", icon: Star, href: "/starred" },
   { name: "Trash", icon: Trash, href: "/trash" },
