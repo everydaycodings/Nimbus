@@ -28,36 +28,36 @@ import { useDownload } from "@/hooks/useDownload";
 type Layout = "list" | "grid";
 
 interface FileItem {
-  id:         string;
-  name:       string;
-  mime_type:  string;
-  size:       number;
+  id: string;
+  name: string;
+  mime_type: string;
+  size: number;
   created_at: string;
   is_starred: boolean;
-  s3_key:     string;
+  s3_key: string;
 }
 
 interface FolderItem {
-  id:         string;
-  name:       string;
+  id: string;
+  name: string;
   created_at: string;
   is_starred: boolean;
 }
 
 interface FileGridProps {
-  files:         FileItem[];
-  folders:       FolderItem[];
-  showRestore?:  boolean;
+  files: FileItem[];
+  folders: FolderItem[];
+  showRestore?: boolean;
   onFolderOpen?: (id: string, name: string) => void;
-  onRefresh?:    () => void;
+  onRefresh?: () => void;
 }
 
 const TEAL = "#2da07a";
 
 function formatBytes(bytes: number) {
-  if (bytes < 1024)       return `${bytes} B`;
-  if (bytes < 1024 ** 2)  return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 ** 3)  return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
   return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
 }
 
@@ -68,10 +68,10 @@ function formatDate(iso: string) {
 }
 
 function FileIcon({ mimeType, size = 20 }: { mimeType: string; size?: number }) {
-  if (mimeType.startsWith("image/"))  return <Image    size={size} weight="duotone" className="text-purple-400" />;
-  if (mimeType.startsWith("video/"))  return <FileVideo size={size} weight="duotone" className="text-blue-400" />;
-  if (mimeType.startsWith("audio/"))  return <MusicNote size={size} weight="duotone" className="text-pink-400" />;
-  if (mimeType === "application/pdf") return <FilePdf   size={size} weight="duotone" className="text-red-400" />;
+  if (mimeType.startsWith("image/")) return <Image size={size} weight="duotone" className="text-purple-400" />;
+  if (mimeType.startsWith("video/")) return <FileVideo size={size} weight="duotone" className="text-blue-400" />;
+  if (mimeType.startsWith("audio/")) return <MusicNote size={size} weight="duotone" className="text-pink-400" />;
+  if (mimeType === "application/pdf") return <FilePdf size={size} weight="duotone" className="text-red-400" />;
   return <File size={size} weight="duotone" className="text-muted-foreground" />;
 }
 
@@ -116,21 +116,21 @@ function ContextMenu({
       <div
         className="fixed z-50 w-44 bg-popover border border-border rounded-xl shadow-xl py-1 text-sm"
         style={{ transform: "translateY(8px)" }}
-        // Position is set via CSS trick below — we use absolute on a non-clipped ancestor
+      // Position is set via CSS trick below — we use absolute on a non-clipped ancestor
       >
         {!showRestore ? (
           <>
-            <button onClick={() => { onRename();   onClose(); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Rename</button>
-            <button onClick={() => { onMove();     onClose(); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Move to...</button>
-            <button onClick={() => { onShare();    onClose(); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Share</button>
+            <button onClick={() => { onRename(); onClose(); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Rename</button>
+            <button onClick={() => { onMove(); onClose(); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Move to...</button>
+            <button onClick={() => { onShare(); onClose(); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Share</button>
             {type === "file" && (
               <button onClick={() => { onDownload(); onClose(); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Download</button>
             )}
-            <button onClick={() => { onStar();    onClose(); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
+            <button onClick={() => { onStar(); onClose(); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
               {isStarred ? "Unstar" : "Star"}
             </button>
             <div className="my-1 border-t border-border" />
-            <button onClick={() => { onTrash();   onClose(); }} className="w-full text-left px-3 py-1.5 text-red-400 hover:bg-accent transition-colors">Move to trash</button>
+            <button onClick={() => { onTrash(); onClose(); }} className="w-full text-left px-3 py-1.5 text-red-400 hover:bg-accent transition-colors">Move to trash</button>
           </>
         ) : (
           <button onClick={() => { onRestore(); onClose(); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Restore</button>
@@ -151,7 +151,7 @@ function DotsMenu({
   onDownload: () => void; onStar: () => void; onTrash: () => void; onRestore: () => void;
   size?: number;
 }) {
-  const [open,    setOpen]    = useState(false);
+  const [open, setOpen] = useState(false);
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
   const btnRef = useState<HTMLButtonElement | null>(null);
 
@@ -160,8 +160,8 @@ function DotsMenu({
     const rect = e.currentTarget.getBoundingClientRect();
     // Position the menu below and right-aligned to the button
     setMenuPos({
-      top:  rect.bottom + window.scrollY + 4,
-      left: rect.right  + window.scrollX - 176, // 176 = w-44
+      top: rect.bottom + window.scrollY + 4,
+      left: rect.right + window.scrollX - 176, // 176 = w-44
     });
     setOpen(!open);
   };
@@ -184,17 +184,17 @@ function DotsMenu({
           >
             {!showRestore ? (
               <>
-                <button onClick={() => { onRename();   setOpen(false); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Rename</button>
-                <button onClick={() => { onMove();     setOpen(false); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Move to...</button>
-                <button onClick={() => { onShare();    setOpen(false); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Share</button>
+                <button onClick={() => { onRename(); setOpen(false); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Rename</button>
+                <button onClick={() => { onMove(); setOpen(false); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Move to...</button>
+                <button onClick={() => { onShare(); setOpen(false); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Share</button>
                 {type === "file" && (
                   <button onClick={() => { onDownload(); setOpen(false); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Download</button>
                 )}
-                <button onClick={() => { onStar();    setOpen(false); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
+                <button onClick={() => { onStar(); setOpen(false); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
                   {isStarred ? "Unstar" : "Star"}
                 </button>
                 <div className="my-1 border-t border-border" />
-                <button onClick={() => { onTrash();   setOpen(false); }} className="w-full text-left px-3 py-1.5 text-red-400 hover:bg-accent transition-colors">Move to trash</button>
+                <button onClick={() => { onTrash(); setOpen(false); }} className="w-full text-left px-3 py-1.5 text-red-400 hover:bg-accent transition-colors">Move to trash</button>
               </>
             ) : (
               <button onClick={() => { onRestore(); setOpen(false); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Restore</button>
@@ -218,18 +218,18 @@ function ListRow({
   onFolderOpen?: (id: string, name: string) => void; onRefresh?: () => void;
 }) {
   const [showMoveDialog, setShowMoveDialog] = useState(false);
-  const [showPreview,    setShowPreview]    = useState(false);
-  const [showShare,      setShowShare]      = useState(false);
-  const [renaming,       setRenaming]       = useState(false);
-  const [newName,        setNewName]        = useState(name);
-  const [isPending,      startTransition]   = useTransition();
-  const { download, downloading }           = useDownload();
-  const isDownloading                       = downloading.has(id);
+  const [showPreview, setShowPreview] = useState(false);
+  const [showShare, setShowShare] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [newName, setNewName] = useState(name);
+  const [isPending, startTransition] = useTransition();
+  const { download, downloading } = useDownload();
+  const isDownloading = downloading.has(id);
 
-  const handleStar    = () => startTransition(async () => { await toggleStar(id, type, isStarred); onRefresh?.(); });
-  const handleTrash   = () => startTransition(async () => { await trashItem(id, type); onRefresh?.(); });
+  const handleStar = () => startTransition(async () => { await toggleStar(id, type, isStarred); onRefresh?.(); });
+  const handleTrash = () => startTransition(async () => { await trashItem(id, type); onRefresh?.(); });
   const handleRestore = () => startTransition(async () => { await restoreItem(id, type); onRefresh?.(); });
-  const handleRename  = () => {
+  const handleRename = () => {
     const trimmed = newName.trim();
     if (!trimmed || trimmed === name) { setRenaming(false); setNewName(name); return; }
     startTransition(async () => { await renameItem(id, type, trimmed); setRenaming(false); onRefresh?.(); });
@@ -237,7 +237,7 @@ function ListRow({
 
   const handleMainClick = () => {
     if (renaming) return;
-    if (type === "file")   setShowPreview(true);
+    if (type === "file") setShowPreview(true);
     if (type === "folder") onFolderOpen?.(id, name);
   };
 
@@ -261,7 +261,7 @@ function ListRow({
                 onChange={(e) => setNewName(e.target.value)}
                 onBlur={handleRename}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter")  handleRename();
+                  if (e.key === "Enter") handleRename();
                   if (e.key === "Escape") { setRenaming(false); setNewName(name); }
                 }}
                 onClick={(e) => e.stopPropagation()}
@@ -313,8 +313,8 @@ function ListRow({
       </div>
 
       {showMoveDialog && <MoveDialog itemId={id} itemName={name} itemType={type} onSuccess={() => onRefresh?.()} onClose={() => setShowMoveDialog(false)} />}
-      {showShare      && <ShareDialog resourceId={id} resourceName={name} resourceType={type} onClose={() => setShowShare(false)} />}
-      {showPreview    && <FilePreviewDialog fileId={id} fileName={name} mimeType={meta?.mimeType ?? ""} onClose={() => setShowPreview(false)} />}
+      {showShare && <ShareDialog resourceId={id} resourceName={name} resourceType={type} onClose={() => setShowShare(false)} />}
+      {showPreview && <FilePreviewDialog fileId={id} fileName={name} mimeType={meta?.mimeType ?? ""} onClose={() => setShowPreview(false)} />}
     </>
   );
 }
@@ -331,18 +331,18 @@ function GridCard({
   onFolderOpen?: (id: string, name: string) => void; onRefresh?: () => void;
 }) {
   const [showMoveDialog, setShowMoveDialog] = useState(false);
-  const [showPreview,    setShowPreview]    = useState(false);
-  const [showShare,      setShowShare]      = useState(false);
-  const [renaming,       setRenaming]       = useState(false);
-  const [newName,        setNewName]        = useState(name);
-  const [isPending,      startTransition]   = useTransition();
-  const { download, downloading }           = useDownload();
-  const isDownloading                       = downloading.has(id);
+  const [showPreview, setShowPreview] = useState(false);
+  const [showShare, setShowShare] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [newName, setNewName] = useState(name);
+  const [isPending, startTransition] = useTransition();
+  const { download, downloading } = useDownload();
+  const isDownloading = downloading.has(id);
 
-  const handleStar    = () => startTransition(async () => { await toggleStar(id, type, isStarred); onRefresh?.(); });
-  const handleTrash   = () => startTransition(async () => { await trashItem(id, type); onRefresh?.(); });
+  const handleStar = () => startTransition(async () => { await toggleStar(id, type, isStarred); onRefresh?.(); });
+  const handleTrash = () => startTransition(async () => { await trashItem(id, type); onRefresh?.(); });
   const handleRestore = () => startTransition(async () => { await restoreItem(id, type); onRefresh?.(); });
-  const handleRename  = () => {
+  const handleRename = () => {
     const trimmed = newName.trim();
     if (!trimmed || trimmed === name) { setRenaming(false); setNewName(name); return; }
     startTransition(async () => { await renameItem(id, type, trimmed); setRenaming(false); onRefresh?.(); });
@@ -350,7 +350,7 @@ function GridCard({
 
   const handleMainClick = () => {
     if (renaming) return;
-    if (type === "file")   setShowPreview(true);
+    if (type === "file") setShowPreview(true);
     if (type === "folder") onFolderOpen?.(id, name);
   };
 
@@ -382,18 +382,20 @@ function GridCard({
                 onChange={(e) => setNewName(e.target.value)}
                 onBlur={handleRename}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter")  handleRename();
+                  if (e.key === "Enter") handleRename();
                   if (e.key === "Escape") { setRenaming(false); setNewName(name); }
                 }}
                 onClick={(e) => e.stopPropagation()}
                 className="w-full text-xs font-medium bg-secondary border border-[#2da07a]/40 rounded-md px-1.5 py-0.5 text-foreground focus:outline-none"
               />
             ) : (
-              <p className="text-xs font-medium text-foreground truncate">{name}</p>
+              <p className="text-xs font-medium text-foreground">{name}</p>
             )}
             {meta && !renaming && (
-              <p className="text-[10px] text-muted-foreground truncate">
-                {meta.size !== undefined ? formatBytes(meta.size) : formatDate(meta.date)}
+              <p className="text-[10px] text-muted-foreground">
+                {meta.size != null
+                  ? `${formatBytes(meta.size)} • ${formatDate(meta.date)}`
+                  : formatDate(meta.date)}
               </p>
             )}
           </div>
@@ -428,8 +430,8 @@ function GridCard({
       </div>
 
       {showMoveDialog && <MoveDialog itemId={id} itemName={name} itemType={type} onSuccess={() => onRefresh?.()} onClose={() => setShowMoveDialog(false)} />}
-      {showShare      && <ShareDialog resourceId={id} resourceName={name} resourceType={type} onClose={() => setShowShare(false)} />}
-      {showPreview    && <FilePreviewDialog fileId={id} fileName={name} mimeType={meta?.mimeType ?? ""} onClose={() => setShowPreview(false)} />}
+      {showShare && <ShareDialog resourceId={id} resourceName={name} resourceType={type} onClose={() => setShowShare(false)} />}
+      {showPreview && <FilePreviewDialog fileId={id} fileName={name} mimeType={meta?.mimeType ?? ""} onClose={() => setShowPreview(false)} />}
     </>
   );
 }
