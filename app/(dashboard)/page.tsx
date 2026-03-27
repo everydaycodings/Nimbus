@@ -17,6 +17,7 @@ import { useUploadStore } from "@/store/uploadStore";
 import { cn } from "@/lib/utils";
 import { UploadFolderButton } from "@/components/UploadFolderButton";
 import { ActionsDropdown } from "@/components/UploadDropdown";
+import { useRouter } from "next/navigation";
 
 const TEAL = "#2da07a";
 
@@ -29,6 +30,7 @@ export default function HomePage() {
 
   // Read uploads from global store
   const uploads = useUploadStore((s) => s.uploads);
+  const router = useRouter();
 
   const refresh = useCallback(async () => {
     const data = await getFiles(null);
@@ -156,7 +158,7 @@ export default function HomePage() {
           files={files}
           folders={folders}
           onFolderOpen={(id) => {
-            window.location.href = `/files?folder=${id}`;
+            router.push(`/files?folder=${id}`);
           }}
           onRefresh={refresh}
         />

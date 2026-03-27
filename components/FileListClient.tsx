@@ -10,6 +10,8 @@ import { useUpload } from "@/hooks/useUpload";
 import { cn } from "@/lib/utils";
 import { CreateFolderDialog } from "./CreateFolderDialog";
 import { ActionsDropdown } from "./UploadDropdown";
+import { useSearchParams } from "next/navigation";
+import { useEffect } from "react";
 
 interface Props {
   initialFiles: any[];
@@ -31,6 +33,21 @@ export function FileListClient({ initialFiles, initialFolders, user }: Props) {
   const [breadcrumbs, setBreadcrumbs] = useState<{ id: string; name: string }[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [showCreateFolder, setShowCreateFolder] = useState(false);
+  const searchParams = useSearchParams();
+  const reset = searchParams.get("reset");
+  useEffect(() => {
+    if (reset) {
+      navigateToRoot();
+      router.replace("/files"); // clean URL
+    }
+  }, [reset]);
+  useEffect(() => {
+    const folderId = searchParams.get("folder");
+  
+    if (folderId) {
+      openFolder(folderId, ""); // name optional or fetch later
+    }
+  }, [searchParams]);
 
   const refresh = useCallback(async () => {
     const data = await getFiles(currentFolder);
@@ -124,7 +141,7 @@ export function FileListClient({ initialFiles, initialFolders, user }: Props) {
                   onClick={() => navigateToBreadcrumb(i)}
                   className={cn(
                     "transition-colors",
-                    i === breadcrumbs.length - 2
+                    i === breadcrumbs.length - 1
                       ? "text-foreground font-medium"
                       : "text-muted-foreground hover:text-foreground"
                   )}
