@@ -2,7 +2,7 @@
 
 import { useUploadStore } from "@/store/uploadStore";
 import { useUpload } from "@/hooks/useUpload";
-import { X } from "@phosphor-icons/react";
+import { CaretDownIcon, CaretUpIcon, X } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 
 type Meta = {
@@ -14,10 +14,12 @@ type Meta = {
 export function UploadToast() {
   const uploads = useUploadStore((s) => s.uploads);
   const { cancelUpload } = useUpload();
-  const speedCache = useRef<Record<string, number>>({});
 
+  const speedCache = useRef<Record<string, number>>({});
   const metaRef = useRef<Record<string, Meta>>({});
-  const [, forceUpdate] = useState(0); // for re-render
+  const [, forceUpdate] = useState(0);
+
+  const [isMinimized, setIsMinimized] = useState(false);
 
   // 🔥 Calculate speed + ETA
   useEffect(() => {
@@ -56,6 +58,33 @@ export function UploadToast() {
 
   if (uploads.length === 0) return null;
 
+  // 🔥 TOTAL PROGRESS + ETA
+  const totalProgress =
+    uploads.reduce((acc, f) => acc + f.progress, 0) / uploads.length;
+
+  let totalEta = "";
+
+  const activeUploads = uploads.filter((f) => f.progress < 100);
+
+  if (activeUploads.length > 0) {
+    let totalSeconds = 0;
+
+    activeUploads.forEach((f) => {
+      const meta = metaRef.current[f.id];
+      const speed = meta?.speed || speedCache.current[f.id];
+
+      if (speed && speed > 0) {
+        const remaining = 100 - f.progress;
+        totalSeconds += remaining / speed;
+      }
+    });
+
+    if (totalSeconds > 0) {
+      if (totalSeconds < 60) totalEta = `${Math.round(totalSeconds)}s left`;
+      else totalEta = `${Math.round(totalSeconds / 60)}m left`;
+    }
+  }
+
   return (
     <div className="fixed bottom-6 right-6 w-96 z-50">
       <div className="rounded-2xl border border-border bg-background shadow-2xl p-4 flex flex-col gap-4">
@@ -65,39 +94,63 @@ export function UploadToast() {
           <p className="text-sm font-semibold">
             Uploading {uploads.length} file{uploads.length > 1 && "s"}
           </p>
+
+          <button
+            onClick={() => setIsMinimized((p) => !p)}
+            className="p-1.5 rounded-md hover:bg-muted transition flex items-center justify-center"
+          >
+            {isMinimized ? (
+              <CaretUpIcon size={16} weight="bold" />
+            ) : (
+              <CaretDownIcon size={16} weight="bold" />
+            )}
+          </button>
         </div>
 
-        {/* Files */}
-        <div className="flex flex-col gap-3">
-          {uploads.map((f) => {
-            const meta = metaRef.current[f.id];
+        {/* 🔥 MINIMIZED VIEW */}
+        {isMinimized ? (
+          <div className="flex flex-col gap-2">
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>{Math.round(totalProgress)}%</span>
+              <span>{totalEta}</span>
+            </div>
 
-            let eta = "";
-
-            const currentSpeed = meta?.speed;
-
-            // ✅ fallback to previous speed
-            if (currentSpeed && currentSpeed > 0) {
-              speedCache.current[f.id] = currentSpeed;
-            }
-
-            const speed = speedCache.current[f.id];
-
-            if (f.progress < 100 && speed && speed > 0) {
-              const remaining = 100 - f.progress;
-              const seconds = remaining / speed;
-
-              if (seconds < 60) eta = `${Math.round(seconds)}s left`;
-              else eta = `${Math.round(seconds / 60)}m left`;
-            }
-
-            return (
+            <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
               <div
-                key={f.id}
-                className="flex flex-col gap-1.5"
-              >
-                {/* Top row */}
-                <div className="flex flex-col gap-1.5">
+                className="h-full transition-all duration-300"
+                style={{
+                  width: `${totalProgress}%`,
+                  backgroundColor: "#2da07a",
+                }}
+              />
+            </div>
+          </div>
+        ) : (
+          /* 🔥 FULL VIEW */
+          <div className="flex flex-col gap-3">
+            {uploads.map((f) => {
+              const meta = metaRef.current[f.id];
+
+              let eta = "";
+              const currentSpeed = meta?.speed;
+
+              // cache speed
+              if (currentSpeed && currentSpeed > 0) {
+                speedCache.current[f.id] = currentSpeed;
+              }
+
+              const speed = speedCache.current[f.id];
+
+              if (f.progress < 100 && speed && speed > 0) {
+                const remaining = 100 - f.progress;
+                const seconds = remaining / speed;
+
+                if (seconds < 60) eta = `${Math.round(seconds)}s left`;
+                else eta = `${Math.round(seconds / 60)}m left`;
+              }
+
+              return (
+                <div key={f.id} className="flex flex-col gap-1.5">
 
                   {/* Top row */}
                   <div className="flex items-center gap-2">
@@ -135,39 +188,36 @@ export function UploadToast() {
                     />
                   </div>
 
-                  {/* ✅ ETA (best position) */}
+                  {/* ETA */}
                   {f.status === "uploading" && eta && (
                     <div className="flex justify-between text-[10px] text-muted-foreground">
                       <span>{eta}</span>
-                      {/* optional: speed later */}
-                      {/* <span>2.3 MB/s</span> */}
                     </div>
                   )}
 
+                  {/* Status */}
+                  {f.status === "error" && (
+                    <span className="text-[10px] text-red-400">
+                      Upload failed
+                    </span>
+                  )}
+
+                  {f.status === "cancelled" && (
+                    <span className="text-[10px] text-yellow-500">
+                      Cancelled
+                    </span>
+                  )}
+
+                  {f.status === "complete" && (
+                    <span className="text-[10px] text-green-500">
+                      Completed
+                    </span>
+                  )}
                 </div>
-
-                {/* Status */}
-                {f.status === "error" && (
-                  <span className="text-[10px] text-red-400">
-                    Upload failed
-                  </span>
-                )}
-
-                {f.status === "cancelled" && (
-                  <span className="text-[10px] text-yellow-500">
-                    Cancelled
-                  </span>
-                )}
-
-                {f.status === "complete" && (
-                  <span className="text-[10px] text-green-500">
-                    Completed
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
