@@ -2,7 +2,7 @@
 
 import { useUploadStore } from "@/store/uploadStore";
 import { useUpload } from "@/hooks/useUpload";
-import { CaretDownIcon, CaretUpIcon, X } from "@phosphor-icons/react";
+import { CaretDownIcon, CaretUpIcon, LockIcon, X } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 
 type Meta = {
@@ -154,9 +154,15 @@ export function UploadToast() {
 
                   {/* Top row */}
                   <div className="flex items-center gap-2">
-                    <span className="flex-1 truncate text-xs text-foreground">
-                      {f.name}
-                    </span>
+                    <div className="flex items-center gap-2 flex-1 min-w-0 text-xs text-foreground">
+                      {f.source === "vault" && (
+                        <div className="flex items-center justify-center w-4 h-4 rounded-md bg-[#2da07a]/10">
+                          <LockIcon size={11} weight="fill" className="text-[#2da07a]" />
+                        </div>
+                      )}
+
+                      <span className="truncate">{f.name}</span>
+                    </div>
 
                     <span className="text-[11px] text-muted-foreground w-10 text-right">
                       {f.progress}%
@@ -197,9 +203,11 @@ export function UploadToast() {
 
                   {/* Status */}
                   {f.status === "error" && (
-                    <span className="text-[10px] text-red-400">
-                      Upload failed
-                    </span>
+                    <div className="text-[10px] text-red-400 flex items-center gap-1">
+                      <span className="truncate">
+                        {f.error || "Upload failed"}
+                      </span>
+                    </div>
                   )}
 
                   {f.status === "cancelled" && (

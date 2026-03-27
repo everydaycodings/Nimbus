@@ -1,108 +1,136 @@
 // vault/hooks/useVaultUpload.ts
-"use client";
+"use client"
 
-import { useState } from "react";
-import { encryptFile, VAULT_MAX_FILE_SIZE, VAULT_MAX_FILE_SIZE_LABEL } from "@/vault/lib/crypto";
-import { getVaultPresignedUrl, saveVaultFile } from "@/vault/actions/vault.actions";
+import { useState } from "react"
+import {
+  encryptFile,
+  VAULT_MAX_FILE_SIZE,
+  VAULT_MAX_FILE_SIZE_LABEL,
+} from "@/vault/lib/crypto"
+import {
+  getVaultPresignedUrl,
+  saveVaultFile,
+} from "@/vault/actions/vault.actions"
+import { useUploadStore } from "@/store/uploadStore"
 
 export interface VaultUploadItem {
-  id:       string;
-  name:     string;
-  progress: number;
-  status:   "encrypting" | "uploading" | "complete" | "error";
-  error?:   string;
+  id: string
+  name: string
+  progress: number
+  status: "encrypting" | "uploading" | "complete" | "error"
+  error?: string
 }
 
 export function useVaultUpload(vaultId: string, key: CryptoKey) {
-  const [uploads, setUploads] = useState<VaultUploadItem[]>([]);
+  const [uploads, setUploads] = useState<VaultUploadItem[]>([])
+  const addUpload = useUploadStore((s) => s.addUpload)
+  const updateUpload = useUploadStore((s) => s.updateUpload)
+  const removeUpload = useUploadStore((s) => s.removeUpload)
 
   const update = (id: string, patch: Partial<VaultUploadItem>) =>
-    setUploads((prev) => prev.map((u) => (u.id === id ? { ...u, ...patch } : u)));
+    setUploads((prev) =>
+      prev.map((u) => (u.id === id ? { ...u, ...patch } : u))
+    )
 
   const uploadFile = async (file: File) => {
-    const tempId = crypto.randomUUID();
+    const tempId = crypto.randomUUID()
 
     // ── Size check before doing anything ─────────────────────
     if (file.size > VAULT_MAX_FILE_SIZE) {
-      setUploads((prev) => [
-        ...prev,
-        {
-          id:     tempId,
-          name:   file.name,
-          progress: 0,
-          status: "error",
-          error:  `File exceeds the ${VAULT_MAX_FILE_SIZE_LABEL} vault limit`,
-        },
-      ]);
-      // Auto-remove the error entry after 5s
-      setTimeout(() => setUploads((prev) => prev.filter((u) => u.id !== tempId)), 5000);
-      return;
+      addUpload({
+        id: tempId,
+        name: file.name,
+        progress: 0,
+        status: "error",
+        error: `File exceeds the ${VAULT_MAX_FILE_SIZE_LABEL} vault limit`,
+        source: "vault",
+      })
+      
+      setTimeout(() => removeUpload(tempId), 4000)
+      return
     }
 
-    setUploads((prev) => [
-      ...prev,
-      { id: tempId, name: file.name, progress: 0, status: "encrypting" },
-    ]);
+    addUpload({
+      id: tempId,
+      name: file.name,
+      progress: 0,
+      status: "uploading", // UploadToast expects this
+      source: "vault", // For differentiating from other upload types
+    })
 
     try {
       // Step 1: Encrypt in browser
-      const encryptedBlob = await encryptFile(file, key);
+      const encryptedBlob = await encryptFile(file, key)
 
-      update(tempId, { status: "uploading", progress: 0 });
+      updateUpload(tempId, {
+        progress: 0,
+      })
 
       // Step 2: Get presigned URL
       const { presignedUrl, s3Key, bucket } = await getVaultPresignedUrl({
         vaultId,
         fileName: file.name,
         mimeType: file.type || "application/octet-stream",
-        size:     encryptedBlob.size,
-      });
+        size: encryptedBlob.size,
+      })
 
       // Step 3: Upload to S3 with progress
       await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
+        const xhr = new XMLHttpRequest()
 
         xhr.upload.addEventListener("progress", (e) => {
           if (e.lengthComputable) {
-            update(tempId, { progress: Math.round((e.loaded / e.total) * 100) });
+            updateUpload(tempId, {
+              progress: Math.round((e.loaded / e.total) * 100),
+            })
           }
-        });
+        })
 
         xhr.addEventListener("load", () =>
           xhr.status >= 200 && xhr.status < 300
             ? resolve()
-            : reject(new Error(`S3 upload failed (${xhr.status})`))
-        );
-        xhr.addEventListener("error", () => reject(new Error("Network error")));
-        xhr.addEventListener("abort", () => reject(new Error("Cancelled")));
+            : reject(new Error(`Upload failed (${xhr.status} ${xhr.statusText})`))
+        )
+        xhr.addEventListener("error", () => reject(new Error("Network error")))
+        xhr.addEventListener("abort", () => reject(new Error("Cancelled")))
 
-        xhr.open("PUT", presignedUrl);
-        xhr.setRequestHeader("Content-Type", "application/octet-stream");
-        xhr.send(encryptedBlob);
-      });
+        xhr.open("PUT", presignedUrl)
+        xhr.setRequestHeader("Content-Type", "application/octet-stream")
+        xhr.send(encryptedBlob)
+      })
 
       // Step 4: Save metadata in Supabase
       await saveVaultFile({
         vaultId,
-        name:             file.name,
+        name: file.name,
         originalMimeType: file.type || "application/octet-stream",
-        size:             file.size,
+        size: file.size,
         s3Key,
-        s3Bucket:         bucket,
-      });
+        s3Bucket: bucket,
+      })
 
-      update(tempId, { progress: 100, status: "complete" });
-      setTimeout(() => setUploads((prev) => prev.filter((u) => u.id !== tempId)), 2000);
-
+      updateUpload(tempId, {
+        progress: 100,
+        status: "complete",
+      })
+      setTimeout(() => removeUpload(tempId), 2000)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Upload failed";
-      update(tempId, { status: "error", error: msg });
+      const msg =
+  typeof err === "string"
+    ? err
+    : err instanceof Error
+    ? err.message
+    : JSON.stringify(err) || "Upload failed"
+      updateUpload(tempId, {
+        status: "error",
+        error: msg, // 🔥 THIS IS STEP 2
+      })
     }
-  };
+  }
 
   const uploadMany = (files: FileList | File[]) => {
-    Array.from(files).forEach(uploadFile);
-  };
+    Array.from(files).forEach(uploadFile)
+  }
 
-  return { uploadMany, uploads };
+  return { uploadMany, uploads }
 }

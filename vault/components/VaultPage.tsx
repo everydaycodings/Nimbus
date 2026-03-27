@@ -147,7 +147,7 @@ function OpenVault({
                 </>
               )}
               {u.status === "complete" && <span className="text-xs font-medium" style={{ color: TEAL }}>Done</span>}
-              {u.status === "error"    && <span className="text-xs text-red-400">Failed</span>}
+              {u.status === "error"    && <span className="text-xs text-red-400">{u.error}</span>}
             </div>
           ))}
         </div>
@@ -288,7 +288,7 @@ export function VaultPage() {
         </div>
         <button
           onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-white hover:opacity-90 transition-all"
+          className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-white hover:opacity-90 transition-all cursor-pointer"
           style={{ backgroundColor: TEAL }}
         >
           <Plus size={15} weight="bold" />
@@ -312,7 +312,7 @@ export function VaultPage() {
           </p>
           <button
             onClick={() => setShowCreate(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white hover:opacity-90 transition-all"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white hover:opacity-90 transition-all cursor-pointer"
             style={{ backgroundColor: TEAL }}
           >
             <Plus size={15} weight="bold" />
