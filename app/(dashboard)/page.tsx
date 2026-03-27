@@ -16,15 +16,16 @@ import { useUpload } from "@/hooks/useUpload";
 import { useUploadStore } from "@/store/uploadStore";
 import { cn } from "@/lib/utils";
 import { UploadFolderButton } from "@/components/UploadFolderButton";
+import { ActionsDropdown } from "@/components/UploadDropdown";
 
 const TEAL = "#2da07a";
 
 export default function HomePage() {
-  const [files,            setFiles]            = useState<any[]>([]);
-  const [folders,          setFolders]          = useState<any[]>([]);
-  const [loading,          setLoading]          = useState(true);
+  const [files, setFiles] = useState<any[]>([]);
+  const [folders, setFolders] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showCreateFolder, setShowCreateFolder] = useState(false);
-  const [isDragging,       setIsDragging]       = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   // Read uploads from global store
   const uploads = useUploadStore((s) => s.uploads);
@@ -45,7 +46,7 @@ export default function HomePage() {
   });
 
   // ── Drag and drop ─────────────────────────────────────────
-  const handleDragOver  = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
+  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
   const handleDragLeave = (e: React.DragEvent) => {
     // Only hide overlay when leaving the container entirely
     if (!e.currentTarget.contains(e.relatedTarget as Node)) {
@@ -85,27 +86,11 @@ export default function HomePage() {
         </div>
 
         <div className="flex items-center gap-2">
-        <label className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium bg-secondary border border-border text-secondary-foreground hover:bg-accent hover:text-accent-foreground transition-all cursor-pointer">
-            <CloudArrowUp size={16} weight="duotone" style={{ color: TEAL }} />
-            Upload
-            <input
-              type="file"
-              multiple
-              className="hidden"
-              onChange={(e) => e.target.files && uploadMany(e.target.files)}
-            />
-          </label>
-          <button
-            onClick={() => setShowCreateFolder(true)}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium bg-secondary border border-border text-secondary-foreground hover:bg-accent hover:text-accent-foreground transition-all"
-          >
-            <FolderPlus size={16} weight="duotone" style={{ color: TEAL }} />
-            New folder
-          </button>
-          <UploadFolderButton
-  parentFolderId={null}
-  onSuccess={() => refresh()}
-/>
+          <ActionsDropdown
+            uploadMany={uploadMany}
+            setShowCreateFolder={setShowCreateFolder}
+            refresh={refresh}
+          />
         </div>
       </div>
 

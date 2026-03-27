@@ -9,6 +9,7 @@ import { getFiles } from "@/actions/files";
 import { useUpload } from "@/hooks/useUpload";
 import { cn } from "@/lib/utils";
 import { CreateFolderDialog } from "./CreateFolderDialog";
+import { ActionsDropdown } from "./UploadDropdown";
 
 interface Props {
   initialFiles: any[];
@@ -137,32 +138,11 @@ export function FileListClient({ initialFiles, initialFolders, user }: Props) {
 
         {/* Right: Actions */}
         <div className="flex items-center gap-2">
-
-          {/* Upload */}
-          <label className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium 
-    bg-secondary border border-border text-secondary-foreground 
-    hover:bg-accent hover:text-accent-foreground transition-all cursor-pointer">
-
-            <CloudArrowUp size={16} weight="duotone" style={{ color: "#2da07a" }} />
-            Upload
-
-            <input
-              type="file"
-              multiple
-              className="hidden"
-              onChange={(e) => e.target.files && uploadMany(e.target.files)}
-            />
-          </label>
-
-          {/* New Folder Button */}
-          <button
-            onClick={() => setShowCreateFolder(true)}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium bg-secondary border border-border text-secondary-foreground hover:bg-accent hover:text-accent-foreground transition-all"
-          >
-            <FolderPlus size={16} weight="duotone" style={{ color: TEAL }} />
-            New folder
-          </button>
-
+          <ActionsDropdown
+            uploadMany={uploadMany}
+            setShowCreateFolder={setShowCreateFolder}
+            refresh={refresh}
+          />
         </div>
 
         {/* Dialog */}
