@@ -15,6 +15,7 @@ import { getFiles } from "@/actions/files";
 import { useUpload } from "@/hooks/useUpload";
 import { useUploadStore } from "@/store/uploadStore";
 import { cn } from "@/lib/utils";
+import { UploadFolderButton } from "@/components/UploadFolderButton";
 
 const TEAL = "#2da07a";
 
@@ -101,6 +102,10 @@ export default function HomePage() {
             <FolderPlus size={16} weight="duotone" style={{ color: TEAL }} />
             New folder
           </button>
+          <UploadFolderButton
+  parentFolderId={null}
+  onSuccess={() => refresh()}
+/>
         </div>
       </div>
 
