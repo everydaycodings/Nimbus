@@ -7,7 +7,7 @@ import {
   File,
   Image,
   FilePdf,
-  FileVideo,
+  VideoIcon,
   MusicNote,
   Star,
   Trash,
@@ -69,7 +69,7 @@ function formatDate(iso: string) {
 
 function FileIcon({ mimeType, size = 20 }: { mimeType: string; size?: number }) {
   if (mimeType.startsWith("image/")) return <Image size={size} weight="duotone" className="text-purple-400" />;
-  if (mimeType.startsWith("video/")) return <FileVideo size={size} weight="duotone" className="text-blue-400" />;
+  if (mimeType.startsWith("video/")) return <VideoIcon size={size} weight="duotone" className="text-blue-400" />;
   if (mimeType.startsWith("audio/")) return <MusicNote size={size} weight="duotone" className="text-pink-400" />;
   if (mimeType === "application/pdf") return <FilePdf size={size} weight="duotone" className="text-red-400" />;
   return <File size={size} weight="duotone" className="text-muted-foreground" />;
@@ -389,7 +389,7 @@ function GridCard({
                 className="w-full text-xs font-medium bg-secondary border border-[#2da07a]/40 rounded-md px-1.5 py-0.5 text-foreground focus:outline-none"
               />
             ) : (
-              <p className="text-xs font-medium text-foreground">{name}</p>
+              <p className="text-xs font-medium text-foreground truncate">{name}</p>
             )}
             {meta && !renaming && (
               <p className="text-[10px] text-muted-foreground">
