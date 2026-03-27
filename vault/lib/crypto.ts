@@ -9,8 +9,9 @@
 const PBKDF2_ITERATIONS = 310_000
 const SALT_BYTES = 16
 const IV_BYTES = 12
-export const VAULT_MAX_FILE_SIZE = 50 * 1024 * 1024 // 50 MB
-export const VAULT_MAX_FILE_SIZE_LABEL = "50 MB"
+export const VAULT_MAX_FILE_SIZE = 500 * 1024 * 1024 // 500 MB
+export const VAULT_MAX_PREVIEW_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
+export const VAULT_MAX_FILE_SIZE_LABEL = "500 MB"
 
 // ── Key derivation ────────────────────────────────────────────
 export async function deriveKey(

@@ -2,7 +2,7 @@
 "use client";
 
 import { useState } from "react";
-import { decryptFile, VAULT_MAX_FILE_SIZE } from "@/vault/lib/crypto";
+import { decryptFile, VAULT_MAX_PREVIEW_FILE_SIZE } from "@/vault/lib/crypto";
 import { getVaultDownloadUrl }              from "@/vault/actions/vault.actions";
 
 // ── Can this file be previewed? ───────────────────────────────
@@ -14,11 +14,12 @@ export function canPreviewVaultFile(
   mimeType:     string,
   originalSize: number
 ): boolean {
-  if (originalSize > VAULT_MAX_FILE_SIZE) return false;
+  if (originalSize > VAULT_MAX_PREVIEW_FILE_SIZE) return false;
   return (
     mimeType.startsWith("image/") ||
     mimeType === "application/pdf" ||
-    mimeType.startsWith("audio/")
+    mimeType.startsWith("audio/") ||
+    mimeType.startsWith("video/")
   );
 }
 

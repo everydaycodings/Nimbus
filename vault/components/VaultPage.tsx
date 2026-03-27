@@ -1,24 +1,23 @@
 // vault/components/VaultPage.tsx
-// Main vault page — list vaults, unlock, browse files
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import {
   LockKey, LockKeyOpen, Plus, Trash, File,
   Image, FilePdf, FileVideo, MusicNote,
-  CloudArrowUp, DownloadSimple, ShieldCheck,
-  LockSimple,
-  EyeIcon,
+  CloudArrowUp, ShieldCheck,
+  LockSimple, Eye,
 } from "@phosphor-icons/react";
 import { getVaults, getVaultFiles, deleteVault, deleteVaultFile } from "@/vault/actions/vault.actions";
 import { CreateVaultDialog } from "@/vault/components/CreateVaultDialog";
 import { UnlockVaultDialog } from "@/vault/components/UnlockVaultDialog";
 import { useVaultUpload } from "@/vault/hooks/useVaultUpload";
-import { useVaultDownload } from "@/vault/hooks/useVaultDownload";
-import { deriveKey, base64ToBuffer } from "@/vault/lib/crypto";
+import { useVaultDownload, canPreviewVaultFile } from "@/vault/hooks/useVaultDownload";
+import { deriveKey, base64ToBuffer, verifyPassword } from "@/vault/lib/crypto";
 import { loadVaultSession, clearVaultSession } from "@/vault/lib/session";
-import { canPreviewVaultFile } from "@/vault/hooks/useVaultDownload";
-import { ConfirmVaultDeleteDialog } from "./ConfirmVaultDeleteDialog";
+import { VaultPreviewWrapper } from "@/vault/components/VaultPreviewWrapper";
+// Reuse the same preview dialog from the main app
+import { FilePreviewDialog } from "@/components/FilePreviewDialog";
 
 const TEAL = "#2da07a";
 
@@ -52,6 +51,14 @@ interface Vault {
   created_at: string;
 }
 
+// ── Preview state: holds a decrypted object URL + metadata ────
+interface VaultPreviewState {
+  objectUrl: string;
+  fileName: string;
+  mimeType: string;
+  fileId: string; // used as key for FilePreviewDialog
+}
+
 // ── Opened vault view ─────────────────────────────────────────
 function OpenVault({
   vault,
@@ -66,7 +73,14 @@ function OpenVault({
 }) {
   const [files, setFiles] = useState<VaultFile[]>([]);
   const [loading, setLoading] = useState(true);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [previewing, setPreviewing] = useState<{
+    fileId: string;
+    fileName: string;
+    mimeType: string;
+  } | null>(null);
+
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false); // fileId being loaded
 
   const { uploadMany, uploads } = useVaultUpload(vault.id, cryptoKey);
   const { download, preview, decrypting } = useVaultDownload(cryptoKey);
@@ -80,12 +94,14 @@ function OpenVault({
     refresh().finally(() => setLoading(false));
   }, [refresh]);
 
-  // Refresh after uploads complete
   useEffect(() => {
-    if (uploads.every((u) => u.status === "complete")) refresh();
+    if (uploads.every((u) => u.status === "complete" || u.status === "error")) {
+      refresh();
+    }
   }, [uploads]);
 
   const handleDelete = async (fileId: string) => {
+    if (!confirm("Permanently delete this file from the vault?")) return;
     await deleteVaultFile(fileId);
     refresh();
   };
@@ -96,6 +112,32 @@ function OpenVault({
     await deleteVault(vault.id);
     onRefreshVaults();
     onLock();
+  };
+
+  // Decrypt and open in the shared FilePreviewDialog
+  const handlePreview = async (file: VaultFile) => {
+    setPreviewing({
+      fileId: file.id,
+      fileName: file.name,
+      mimeType: file.original_mime_type,
+    });
+
+    setPreviewLoading(true);
+
+    try {
+      const url = await preview(file.id, file.original_mime_type);
+      setPreviewUrl(url || null);
+    } catch {
+      alert("Failed to decrypt file");
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const closePreview = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+    setPreviewing(null);
   };
 
   return (
@@ -110,13 +152,17 @@ function OpenVault({
           </span>
         </div>
         <div className="flex items-center gap-2">
-          {/* Upload */}
           <label className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium bg-secondary border border-border text-secondary-foreground hover:bg-accent transition-all cursor-pointer">
             <CloudArrowUp size={15} weight="duotone" style={{ color: TEAL }} />
             Add files
-            <input type="file" multiple className="hidden" onChange={(e) => e.target.files && uploadMany(e.target.files)} />
+            <span className="text-[10px] text-muted-foreground">max 500 MB</span>
+            <input
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => e.target.files && uploadMany(e.target.files)}
+            />
           </label>
-          {/* Lock */}
           <button
             onClick={() => { clearVaultSession(vault.id); onLock(); }}
             className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium bg-secondary border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
@@ -124,82 +170,161 @@ function OpenVault({
             <LockSimple size={15} />
             Lock
           </button>
-          {/* Delete vault */}
-          <button onClick={handleDeleteVault} className="p-2 rounded-xl text-muted-foreground hover:text-red-400 hover:bg-accent transition-colors">
+          <button
+            onClick={handleDeleteVault}
+            className="p-2 rounded-xl text-muted-foreground hover:text-red-400 hover:bg-accent transition-colors"
+          >
             <Trash size={15} />
           </button>
         </div>
       </div>
 
-      {/* File list */}
-      {files.map((file) => {
-        const previewable = canPreviewVaultFile(file.original_mime_type, file.size);
-
-        return (
-          <div key={file.id} className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-accent transition-colors">
-            <FileIcon mimeType={file.original_mime_type} />
-
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground truncate">{file.name}</p>
-              <div className="flex items-center gap-2">
-                <p className="text-xs text-muted-foreground">{formatBytes(file.size)}</p>
-                {/* Show a "Download only" badge for large files */}
-                {!previewable && (
-                  <span className="text-[10px] text-muted-foreground border border-border rounded-full px-1.5 py-0.5">
-                    Download only
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              {/* Preview button — only if previewable */}
-              {previewable && (
-                <button
-                  onClick={async () => {
-                    const url = await preview(file.id, file.original_mime_type);
-                    if (url) window.open(url, "_blank");
-                  }}
-                  className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                  title="Preview"
-                >
-                  <EyeIcon size={14} />
-                </button>
+      {/* Upload progress */}
+      {uploads.length > 0 && (
+        <div className="mb-4 flex flex-col gap-2">
+          {uploads.map((u) => (
+            <div
+              key={u.id}
+              className={`flex items-center gap-3 px-3 py-2 rounded-xl border text-sm ${u.status === "error" ? "border-red-500/20 bg-red-500/5" : "border-border bg-secondary"
+                }`}
+            >
+              <File size={14} className="text-muted-foreground flex-shrink-0" />
+              <span className="flex-1 truncate text-muted-foreground text-xs">{u.name}</span>
+              {u.status === "encrypting" && <span className="text-xs text-muted-foreground">Encrypting...</span>}
+              {u.status === "uploading" && (
+                <>
+                  <div className="w-20 h-1 rounded-full bg-muted overflow-hidden">
+                    <div className="h-full rounded-full transition-all" style={{ width: `${u.progress}%`, backgroundColor: TEAL }} />
+                  </div>
+                  <span className="text-xs text-muted-foreground">{u.progress}%</span>
+                </>
               )}
-
-              {/* Download — always available */}
-              <button
-                onClick={() => download(file.id, file.name, file.original_mime_type)}
-                disabled={decrypting.has(file.id)}
-                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-                title={decrypting.has(file.id) ? "Decrypting..." : "Decrypt & download"}
-              >
-                <DownloadSimple size={14} />
-              </button>
-
-              <button
-                onClick={() => setDeleteId(file.id)}
-                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-red-400 transition-colors"
-                title="Delete"
-              >
-                <Trash size={14} />
-              </button>
-              <ConfirmVaultDeleteDialog
-                open={!!deleteId}
-                onClose={() => setDeleteId(null)}
-                onConfirm={() => {
-                  if (deleteId) handleDelete(deleteId);
-                }}
-                title="Delete file?"
-                description="This file will be permanently deleted from your vault."
-              />
+              {u.status === "complete" && <span className="text-xs font-medium" style={{ color: TEAL }}>Done</span>}
+              {u.status === "error" && <span className="text-xs text-red-400">{u.error ?? "Failed"}</span>}
             </div>
+          ))}
+        </div>
+      )}
+
+      {/* File list */}
+      {loading ? (
+        <div className="flex flex-col gap-2">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="h-10 rounded-xl bg-muted animate-pulse" />
+          ))}
+        </div>
+      ) : files.length === 0 ? (
+        <div className="flex flex-col items-center justify-center flex-1 py-16 text-center">
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4" style={{ backgroundColor: `${TEAL}18` }}>
+            <ShieldCheck size={28} weight="duotone" style={{ color: TEAL }} />
           </div>
-        );
-      })}
+          <p className="text-sm font-medium text-foreground mb-1">Vault is empty</p>
+          <p className="text-xs text-muted-foreground">Add files — they'll be encrypted before upload</p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-0.5">
+          {/* Column headers */}
+          <div className="flex items-center gap-3 px-3 py-1.5">
+            <div className="w-[18px]" />
+            <p className="flex-1 text-xs font-medium text-muted-foreground uppercase tracking-wide">Name</p>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Size</p>
+            <div className="w-20" />
+          </div>
+          <div className="border-t border-border mb-1" />
+
+          {files.map((file) => {
+            const isPreviewable = canPreviewVaultFile(file.original_mime_type, file.size);
+            const isDecrypting = decrypting.has(file.id);
+            const isLoadingPrev = previewLoading && previewing?.fileId === file.id;
+
+            return (
+              <div
+                key={file.id}
+                className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-accent transition-colors"
+              >
+                <FileIcon mimeType={file.original_mime_type} />
+
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-foreground truncate">{file.name}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-muted-foreground">{formatBytes(file.size)}</p>
+                    {!isPreviewable && (
+                      <span className="text-[10px] text-muted-foreground border border-border rounded-full px-1.5 py-0.5">
+                        Download only
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                  {/* Preview — only for previewable types under size limit */}
+                  {isPreviewable && (
+                    <button
+                      onClick={() => handlePreview(file)}
+                      disabled={isLoadingPrev}
+                      className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                      title="Preview"
+                    >
+                      {isLoadingPrev
+                        ? <span className="text-[10px] text-muted-foreground">...</span>
+                        : <Eye size={14} />
+                      }
+                    </button>
+                  )}
+
+                  {/* Download — always available */}
+                  <button
+                    onClick={() => download(file.id, file.name, file.original_mime_type)}
+                    disabled={isDecrypting}
+                    className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                    title={isDecrypting ? "Decrypting..." : "Decrypt & download"}
+                  >
+                    <DownloadSimple size={14} />
+                  </button>
+
+                  {/* Delete */}
+                  <button
+                    onClick={() => handleDelete(file.id)}
+                    className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-red-400 transition-colors"
+                    title="Delete"
+                  >
+                    <Trash size={14} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Vault preview dialog ─────────────────────────────────
+          We pass the decrypted objectUrl as a fake "fileId" so
+          FilePreviewDialog uses it via getPreviewUrl override below.
+          Instead we inject the url directly via a wrapper.        */}
+      {previewing && (
+        <VaultPreviewWrapper
+          objectUrl={previewUrl}
+          fileName={previewing.fileName}
+          mimeType={previewing.mimeType}
+          isLoading={previewLoading}
+          onClose={closePreview}
+          onDownload={() =>
+            download(
+              previewing.fileId,
+              previewing.fileName,
+              previewing.mimeType
+            )
+          }
+        />
+      )}
     </div>
   );
 }
+
+// ── Missing imports for wrapper ───────────────────────────────
+import { useEffect } from "react";
+import { X, DownloadSimple } from "@phosphor-icons/react";
 
 // ── Main vault page ───────────────────────────────────────────
 export function VaultPage() {
@@ -219,16 +344,14 @@ export function VaultPage() {
     loadVaults().finally(() => setLoading(false));
   }, [loadVaults]);
 
-  // Auto-unlock if session password is saved
   const tryAutoUnlock = async (vault: Vault) => {
     const saved = loadVaultSession(vault.id);
     if (!saved) { setUnlockTarget(vault); return; }
 
     try {
-      const { deriveKey: dk, verifyPassword: vp, base64ToBuffer: btb } = await import("@/vault/lib/crypto");
-      const salt = btb(vault.salt);
-      const key = await dk(saved, salt);
-      const ok = await vp(key, vault.verification_token);
+      const salt = base64ToBuffer(vault.salt);
+      const key = await deriveKey(saved, salt);
+      const ok = await verifyPassword(key, vault.verification_token);
       if (ok) {
         setOpenVault(vault);
         setOpenKey(key);
@@ -262,7 +385,6 @@ export function VaultPage() {
 
   return (
     <div className="p-6">
-      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-foreground flex items-center gap-2">
@@ -275,7 +397,7 @@ export function VaultPage() {
         </div>
         <button
           onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-white hover:opacity-90 transition-all cursor-pointer"
+          className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-white hover:opacity-90 transition-all"
           style={{ backgroundColor: TEAL }}
         >
           <Plus size={15} weight="bold" />
@@ -283,10 +405,11 @@ export function VaultPage() {
         </button>
       </div>
 
-      {/* Vault grid */}
       {loading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-          {[...Array(3)].map((_, i) => <div key={i} className="h-28 rounded-2xl bg-muted animate-pulse" />)}
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="h-28 rounded-2xl bg-muted animate-pulse" />
+          ))}
         </div>
       ) : vaults.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 text-center">
@@ -299,7 +422,7 @@ export function VaultPage() {
           </p>
           <button
             onClick={() => setShowCreate(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white hover:opacity-90 transition-all cursor-pointer"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white hover:opacity-90 transition-all"
             style={{ backgroundColor: TEAL }}
           >
             <Plus size={15} weight="bold" />
@@ -335,12 +458,8 @@ export function VaultPage() {
         </div>
       )}
 
-      {/* Dialogs */}
       {showCreate && (
-        <CreateVaultDialog
-          onSuccess={loadVaults}
-          onClose={() => setShowCreate(false)}
-        />
+        <CreateVaultDialog onSuccess={loadVaults} onClose={() => setShowCreate(false)} />
       )}
       {unlockTarget && (
         <UnlockVaultDialog

@@ -30,10 +30,10 @@ import { useDownload } from "@/hooks/useDownload";
 import { cn } from "@/lib/utils";
 
 interface Props {
-  fileId:   string;
+  fileId: string;
   fileName: string;
   mimeType: string;
-  onClose:  () => void;
+  onClose: () => void;
 }
 
 const TEAL = "#2da07a";
@@ -58,21 +58,21 @@ function fmtTime(s: number) {
 // ═══════════════════════════════════════════════════════════════
 // VIDEO PLAYER
 // ═══════════════════════════════════════════════════════════════
-function VideoPlayer({ src, fileName }: { src: string; fileName: string }) {
-  const videoRef                    = useRef<HTMLVideoElement>(null);
-  const progressRef                 = useRef<HTMLDivElement>(null);
-  const containerRef                = useRef<HTMLDivElement>(null);
+export function VideoPlayer({ src, fileName }: { src: string; fileName: string }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const progressRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const hideControlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 
-  const [playing,     setPlaying]   = useState(false);
-  const [muted,       setMuted]     = useState(false);
-  const [volume,      setVolume]    = useState(1);
-  const [current,     setCurrent]   = useState(0);
-  const [duration,    setDuration]  = useState(0);
-  const [buffered,    setBuffered]  = useState(0);
-  const [fullscreen,  setFullscreen]= useState(false);
-  const [showCtrls,   setShowCtrls] = useState(true);
+  const [playing, setPlaying] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [volume, setVolume] = useState(1);
+  const [current, setCurrent] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [buffered, setBuffered] = useState(0);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [showCtrls, setShowCtrls] = useState(true);
   const [playbackRate, setPlaybackRate] = useState(1);
 
   const togglePlay = () => {
@@ -98,7 +98,7 @@ function VideoPlayer({ src, fileName }: { src: string; fileName: string }) {
 
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = progressRef.current!.getBoundingClientRect();
-    const pct  = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     if (videoRef.current) videoRef.current.currentTime = pct * duration;
   };
 
@@ -108,7 +108,7 @@ function VideoPlayer({ src, fileName }: { src: string; fileName: string }) {
 
   const cycleSpeed = () => {
     const speeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
-    const next   = speeds[(speeds.indexOf(playbackRate) + 1) % speeds.length];
+    const next = speeds[(speeds.indexOf(playbackRate) + 1) % speeds.length];
     setPlaybackRate(next);
     if (videoRef.current) videoRef.current.playbackRate = next;
   };
@@ -127,9 +127,9 @@ function VideoPlayer({ src, fileName }: { src: string; fileName: string }) {
   const resetHideTimer = useCallback(() => {
     setShowCtrls(true);
     if (hideControlsTimer.current) clearTimeout(hideControlsTimer.current);
-hideControlsTimer.current = setTimeout(() => {
-  if (playing) setShowCtrls(false);
-}, 3000);
+    hideControlsTimer.current = setTimeout(() => {
+      if (playing) setShowCtrls(false);
+    }, 3000);
     hideControlsTimer.current = setTimeout(() => {
       if (playing) setShowCtrls(false);
     }, 3000);
@@ -142,8 +142,8 @@ hideControlsTimer.current = setTimeout(() => {
     };
   }, [playing]);
 
-  const pct       = duration ? (current / duration) * 100 : 0;
-  const buffPct   = duration ? (buffered / duration) * 100 : 0;
+  const pct = duration ? (current / duration) * 100 : 0;
+  const buffPct = duration ? (buffered / duration) * 100 : 0;
 
   return (
     <div
@@ -225,8 +225,8 @@ hideControlsTimer.current = setTimeout(() => {
           {/* Play/Pause */}
           <button onClick={togglePlay} className="text-white hover:scale-110 transition-transform">
             {playing
-              ? <Pause  size={22} weight="fill" />
-              : <Play   size={22} weight="fill" />
+              ? <Pause size={22} weight="fill" />
+              : <Play size={22} weight="fill" />
             }
           </button>
 
@@ -255,7 +255,7 @@ hideControlsTimer.current = setTimeout(() => {
             <button onClick={toggleMute} className="text-white/70 hover:text-white transition-colors">
               {muted || volume === 0
                 ? <SpeakerSlash size={18} />
-                : <SpeakerHigh  size={18} />
+                : <SpeakerHigh size={18} />
               }
             </button>
             <input
@@ -282,15 +282,15 @@ hideControlsTimer.current = setTimeout(() => {
 // ═══════════════════════════════════════════════════════════════
 // AUDIO PLAYER
 // ═══════════════════════════════════════════════════════════════
-function AudioPlayer({ src, fileName }: { src: string; fileName: string }) {
-  const audioRef                  = useRef<HTMLAudioElement>(null);
-  const progressRef               = useRef<HTMLDivElement>(null);
+export function AudioPlayer({ src, fileName }: { src: string; fileName: string }) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const progressRef = useRef<HTMLDivElement>(null);
 
-  const [playing,  setPlaying]    = useState(false);
-  const [muted,    setMuted]      = useState(false);
-  const [volume,   setVolume]     = useState(1);
-  const [current,  setCurrent]    = useState(0);
-  const [duration, setDuration]   = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [volume, setVolume] = useState(1);
+  const [current, setCurrent] = useState(0);
+  const [duration, setDuration] = useState(0);
 
   const togglePlay = () => {
     const a = audioRef.current;
@@ -301,7 +301,7 @@ function AudioPlayer({ src, fileName }: { src: string; fileName: string }) {
 
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = progressRef.current!.getBoundingClientRect();
-    const pct  = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     if (audioRef.current) audioRef.current.currentTime = pct * duration;
   };
 
@@ -389,7 +389,7 @@ function AudioPlayer({ src, fileName }: { src: string; fileName: string }) {
         >
           {playing
             ? <Pause size={24} weight="fill" />
-            : <Play  size={24} weight="fill" className="ml-1" />
+            : <Play size={24} weight="fill" className="ml-1" />
           }
         </button>
 
@@ -426,22 +426,22 @@ function AudioPlayer({ src, fileName }: { src: string; fileName: string }) {
 // ═══════════════════════════════════════════════════════════════
 // IMAGE VIEWER
 // ═══════════════════════════════════════════════════════════════
-function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
-  const [zoom,    setZoom]    = useState(1);
-  const [pan,     setPan]     = useState({ x: 0, y: 0 });
+export function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
-  const dragStart             = useRef({ x: 0, y: 0 });
-  const panStart              = useRef({ x: 0, y: 0 });
+  const dragStart = useRef({ x: 0, y: 0 });
+  const panStart = useRef({ x: 0, y: 0 });
 
-  const zoomIn  = () => setZoom((z) => Math.min(z + 0.25, 5));
+  const zoomIn = () => setZoom((z) => Math.min(z + 0.25, 5));
   const zoomOut = () => setZoom((z) => Math.max(z - 0.25, 0.25));
-  const reset   = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
+  const reset = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
 
   const onMouseDown = (e: React.MouseEvent) => {
     if (zoom <= 1) return;
     setDragging(true);
     dragStart.current = { x: e.clientX, y: e.clientY };
-    panStart.current  = { ...pan };
+    panStart.current = { ...pan };
   };
 
   const onMouseMove = (e: React.MouseEvent) => {
@@ -503,10 +503,10 @@ function ImageViewer({ src, fileName }: { src: string; fileName: string }) {
 // ═══════════════════════════════════════════════════════════════
 export function FilePreviewDialog({ fileId, fileName, mimeType, onClose }: Props) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [loading,    setLoading]    = useState(true);
+  const [loading, setLoading] = useState(true);
   const { download, downloading, getPreviewUrl } = useDownload();
   const isDownloading = downloading.has(fileId);
-  const previewing    = canPreview(mimeType);
+  const previewing = canPreview(mimeType);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
