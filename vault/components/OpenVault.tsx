@@ -284,7 +284,7 @@ export function OpenVault({
     type: "file" | "folder";
   } | null>(null);
 
-  const { layout, handleLayoutChange } = useLayout("vault-layout");
+  const { layout, handleLayoutChange } = useLayout("nimbus-layout");
 
   const { uploadMany, uploads } = useVaultUpload(vault.id, cryptoKey);
   const { uploadFolder } = useVaultFolderUpload({
