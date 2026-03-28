@@ -23,7 +23,7 @@ const fontMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title:       "Nimbus",
+  title: "Nimbus",
   description: "Your personal cloud storage",
 };
 
@@ -46,9 +46,18 @@ export default function RootLayout({
         )}
       >
         <body>
-          <ThemeProvider>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="dark"
+            forcedTheme="dark"
+            enableSystem={false}
+          >
             {children}
-            <Toaster richColors position="bottom-right" />
+            <Toaster
+              richColors
+              position="bottom-right"
+              theme="dark"
+            />
           </ThemeProvider>
         </body>
       </html>
