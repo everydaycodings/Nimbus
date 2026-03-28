@@ -7,6 +7,7 @@ import { FileGrid } from "@/components/FileGrid";
 import { getTrashedItems } from "@/actions/files";
 import { emptyTrash } from "@/actions/trash";
 import { cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
 
 export default function TrashPage() {
   const [files,          setFiles]          = useState<any[]>([]);
@@ -14,6 +15,7 @@ export default function TrashPage() {
   const [loading,        setLoading]        = useState(true);
   const [showConfirm,    setShowConfirm]    = useState(false);
   const [isPending,      startTransition]   = useTransition();
+  const router = useRouter();
 
   const refresh = useCallback(async () => {
     const data = await getTrashedItems();
@@ -83,6 +85,11 @@ export default function TrashPage() {
           folders={folders}
           showRestore={true}
           onRefresh={refresh}
+          onFolderOpen={(id, name) => {
+            router.push(
+              `/files?path=${id}&names=${encodeURIComponent(name)}`
+            );
+          }}
         />
       )}
 

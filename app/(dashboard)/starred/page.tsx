@@ -5,11 +5,13 @@ import { useState, useEffect, useCallback } from "react";
 import { Star } from "@phosphor-icons/react";
 import { FileGrid } from "@/components/FileGrid";
 import { getStarredItems } from "@/actions/files";
+import { useRouter } from "next/navigation";
 
 export default function StarredPage() {
   const [files,   setFiles]   = useState<any[]>([]);
   const [folders, setFolders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
   const refresh = useCallback(async () => {
     const data = await getStarredItems();
@@ -50,6 +52,11 @@ export default function StarredPage() {
           files={files}
           folders={folders}
           onRefresh={refresh}
+          onFolderOpen={(id, name) => {
+            router.push(
+              `/files?path=${id}&names=${encodeURIComponent(name)}`
+            );
+          }}
         />
       )}
     </div>
