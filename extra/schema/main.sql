@@ -38,7 +38,7 @@ create table public.files (
   s3_key           text not null unique,     -- e.g. "uploads/user_id/uuid.pdf"
   s3_bucket        text not null,
   owner_id         uuid not null references public.users(id) on delete cascade,
-  parent_folder_id uuid references public.folders(id) on delete set null, -- null = root
+  parent_folder_id uuid references public.folders(id) on delete cascade,
   is_starred       boolean not null default false,
   is_trashed       boolean not null default false,
   trashed_at       timestamptz,
