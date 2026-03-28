@@ -7,8 +7,8 @@ export type Layout = "list" | "grid";
 export function useLayout(storageKey: string = "nimbus-layout") {
   const [layout, setLayout] = useState<Layout>(
     () => typeof window !== "undefined"
-      ? (localStorage.getItem(storageKey) as Layout) ?? "list"
-      : "list"
+      ? (localStorage.getItem(storageKey) as Layout) ?? "grid"
+      : "grid"
   );
 
   const handleLayoutChange = (l: Layout) => {
