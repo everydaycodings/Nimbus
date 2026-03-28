@@ -5,6 +5,7 @@ import { useState, useEffect, useTransition } from "react";
 import { FolderSimple, X, House, CaretRight } from "@phosphor-icons/react";
 import { getFolderTree, moveFile, moveFolder } from "@/actions/folders";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface FolderNode {
   id:               string;
@@ -114,7 +115,6 @@ export function MoveDialog({ itemId, itemName, itemType, onSuccess, onClose }: P
   const [tree, setTree]               = useState<FolderNode[]>([]);
   const [selectedId, setSelectedId]   = useState<string | null>(null); // null = root
   const [loading, setLoading]         = useState(true);
-  const [error, setError]             = useState<string | null>(null);
   const [isPending, startTransition]  = useTransition();
 
   useEffect(() => {
@@ -134,7 +134,7 @@ export function MoveDialog({ itemId, itemName, itemType, onSuccess, onClose }: P
         onSuccess();
         onClose();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to move item");
+        toast.error(err instanceof Error ? err.message : "Failed to move item");
       }
     });
   };
@@ -201,10 +201,6 @@ export function MoveDialog({ itemId, itemName, itemType, onSuccess, onClose }: P
             </>
           )}
         </div>
-
-        {error && (
-          <p className="px-4 pb-2 text-xs text-red-400">{error}</p>
-        )}
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-2 p-4 border-t border-border">

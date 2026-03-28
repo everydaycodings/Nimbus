@@ -6,6 +6,7 @@ import { X, LockKey, Eye, EyeSlash, LockKeyOpen } from "@phosphor-icons/react";
 import { deriveKey, verifyPassword, base64ToBuffer } from "@/vault/lib/crypto";
 import { saveVaultSession, loadVaultSession }        from "@/vault/lib/session";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 const TEAL = "#2da07a";
 
@@ -26,12 +27,10 @@ export function UnlockVaultDialog({ vault, onUnlock, onClose }: Props) {
   const [password,  setPassword]  = useState("");
   const [showPw,    setShowPw]    = useState(false);
   const [remember,  setRemember]  = useState(false);
-  const [error,     setError]     = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const handleUnlock = () => {
-    if (!password) return setError("Enter the vault password");
-    setError(null);
+    if (!password) { toast.error("Enter the vault password"); return; }
 
     startTransition(async () => {
       try {
@@ -40,14 +39,14 @@ export function UnlockVaultDialog({ vault, onUnlock, onClose }: Props) {
         const ok   = await verifyPassword(key, vault.verification_token);
 
         if (!ok) {
-          setError("Incorrect password. Try again.");
+          toast.error("Incorrect password. Try again.");
           return;
         }
 
         if (remember) saveVaultSession(vault.id, password);
         onUnlock(key);
       } catch {
-        setError("Something went wrong. Try again.");
+        toast.error("Something went wrong. Try again.");
       }
     });
   };
@@ -79,14 +78,12 @@ export function UnlockVaultDialog({ vault, onUnlock, onClose }: Props) {
               autoFocus
               type={showPw ? "text" : "password"}
               value={password}
-              onChange={(e) => { setPassword(e.target.value); setError(null); }}
+              onChange={(e) => { setPassword(e.target.value); }}
               onKeyDown={(e) => e.key === "Enter" && handleUnlock()}
               placeholder="Vault password"
               className={cn(
                 "w-full px-3 py-2 pr-10 rounded-xl text-sm bg-secondary border text-foreground focus:outline-none focus:ring-1 placeholder:text-muted-foreground transition-all",
-                error
-                  ? "border-red-500/50 focus:ring-red-500/30"
-                  : "border-border focus:ring-[#2da07a]/30 focus:border-[#2da07a]/50"
+                "border-border focus:ring-[#2da07a]/30 focus:border-[#2da07a]/50"
               )}
             />
             <button
@@ -97,8 +94,6 @@ export function UnlockVaultDialog({ vault, onUnlock, onClose }: Props) {
               {showPw ? <EyeSlash size={15} /> : <Eye size={15} />}
             </button>
           </div>
-
-          {error && <p className="text-xs text-red-400">{error}</p>}
 
           {/* Remember for 7 days */}
           <label className="flex items-center gap-2 cursor-pointer group">

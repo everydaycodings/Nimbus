@@ -6,6 +6,7 @@ import { X, LockKey, Eye, EyeSlash, ShieldCheck } from "@phosphor-icons/react";
 import { createVault }                      from "@/vault/actions/vault.actions";
 import { deriveKey, generateSalt, encryptVerificationToken, bufferToBase64 } from "@/vault/lib/crypto";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 const TEAL = "#2da07a";
 
@@ -19,7 +20,6 @@ export function CreateVaultDialog({ onSuccess, onClose }: Props) {
   const [password,    setPassword]    = useState("");
   const [confirm,     setConfirm]     = useState("");
   const [showPw,      setShowPw]      = useState(false);
-  const [error,       setError]       = useState<string | null>(null);
   const [isPending,   startTransition] = useTransition();
 
   const strength = (() => {
@@ -35,11 +35,10 @@ export function CreateVaultDialog({ onSuccess, onClose }: Props) {
   const strengthColor = ["", "#ef4444", "#f97316", "#eab308", TEAL, TEAL][strength];
 
   const handleCreate = () => {
-    if (!name.trim())           return setError("Vault name is required");
-    if (password.length < 8)    return setError("Password must be at least 8 characters");
-    if (password !== confirm)   return setError("Passwords do not match");
+    if (!name.trim())           { toast.error("Vault name is required"); return; }
+    if (password.length < 8)    { toast.error("Password must be at least 8 characters"); return; }
+    if (password !== confirm)   { toast.error("Passwords do not match"); return; }
 
-    setError(null);
     startTransition(async () => {
       try {
         const salt              = generateSalt();
@@ -48,10 +47,11 @@ export function CreateVaultDialog({ onSuccess, onClose }: Props) {
         const saltBase64        = bufferToBase64(salt);
 
         await createVault({ name: name.trim(), saltBase64, verificationToken });
+        toast.success("Vault created successfully!");
         onSuccess();
         onClose();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to create vault");
+        toast.error(err instanceof Error ? err.message : "Failed to create vault");
       }
     });
   };
@@ -140,8 +140,6 @@ export function CreateVaultDialog({ onSuccess, onClose }: Props) {
               )}
             />
           </div>
-
-          {error && <p className="text-xs text-red-400">{error}</p>}
 
           {/* Warning */}
           <div className="flex gap-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">

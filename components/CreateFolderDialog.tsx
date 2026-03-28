@@ -5,6 +5,7 @@ import { useState, useTransition, useRef, useEffect } from "react";
 import { FolderPlus, X } from "@phosphor-icons/react";
 import { createFolder } from "@/actions/folders";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface Props {
   parentFolderId: string | null;
@@ -14,7 +15,6 @@ interface Props {
 
 export function CreateFolderDialog({ parentFolderId, onSuccess, onClose }: Props) {
   const [name, setName]           = useState("");
-  const [error, setError]         = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -26,17 +26,18 @@ export function CreateFolderDialog({ parentFolderId, onSuccess, onClose }: Props
   const handleSubmit = () => {
     const trimmed = name.trim();
     if (!trimmed) {
-      setError("Folder name cannot be empty");
+      toast.error("Folder name cannot be empty");
       return;
     }
 
     startTransition(async () => {
       try {
         await createFolder(trimmed, parentFolderId);
+        toast.success("Folder created!");
         onSuccess();
         onClose();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to create folder");
+        toast.error(err instanceof Error ? err.message : "Failed to create folder");
       }
     });
   };
@@ -74,23 +75,16 @@ export function CreateFolderDialog({ parentFolderId, onSuccess, onClose }: Props
           value={name}
           onChange={(e) => {
             setName(e.target.value);
-            setError(null);
           }}
           onKeyDown={handleKeyDown}
           className={cn(
             "w-full px-3 py-2 rounded-xl text-sm bg-secondary border text-foreground",
             "focus:outline-none focus:ring-1 transition-all",
-            error
-              ? "border-red-500/50 focus:ring-red-500/30"
-              : "border-border focus:ring-[#2da07a]/30 focus:border-[#2da07a]/50"
+            "border-border focus:ring-[#2da07a]/30 focus:border-[#2da07a]/50"
           )}
           placeholder="Folder name"
           disabled={isPending}
         />
-
-        {error && (
-          <p className="mt-1.5 text-xs text-red-400">{error}</p>
-        )}
 
         {/* Buttons */}
         <div className="flex items-center justify-end gap-2 mt-4">

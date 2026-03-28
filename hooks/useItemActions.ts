@@ -1,6 +1,7 @@
 import { useState, useTransition } from "react";
 import { toggleStar, trashItem, restoreItem, renameItem } from "@/actions/files";
 import { useDownload } from "@/hooks/useDownload";
+import { toast } from "sonner";
 
 interface UseItemActionsProps {
   id: string;
@@ -21,9 +22,18 @@ export function useItemActions({ id, name, type, isStarred, onRefresh }: UseItem
   const { download, downloading } = useDownload();
   const isDownloading = downloading.has(id);
 
-  const handleStar = () => startTransition(async () => { await toggleStar(id, type, isStarred); onRefresh?.(); });
-  const handleTrash = () => startTransition(async () => { await trashItem(id, type); onRefresh?.(); });
-  const handleRestore = () => startTransition(async () => { await restoreItem(id, type); onRefresh?.(); });
+  const handleStar = () => startTransition(async () => { 
+    try { await toggleStar(id, type, isStarred); toast.success(isStarred ? "Unstarred" : "Starred"); } catch { toast.error("Failed to update star"); } 
+    onRefresh?.(); 
+  });
+  const handleTrash = () => startTransition(async () => { 
+    try { await trashItem(id, type); toast.success("Moved to trash"); } catch { toast.error("Failed to trash item"); } 
+    onRefresh?.(); 
+  });
+  const handleRestore = () => startTransition(async () => { 
+    try { await restoreItem(id, type); toast.success("Restored item"); } catch { toast.error("Failed to restore item"); } 
+    onRefresh?.(); 
+  });
   
   const handleRename = () => {
     const trimmed = newName.trim();
@@ -33,7 +43,12 @@ export function useItemActions({ id, name, type, isStarred, onRefresh }: UseItem
       return; 
     }
     startTransition(async () => { 
-      await renameItem(id, type, trimmed); 
+      try {
+        await renameItem(id, type, trimmed); 
+        toast.success("Renamed successfully");
+      } catch {
+        toast.error("Failed to rename item");
+      }
       setRenaming(false); 
       onRefresh?.(); 
     });

@@ -24,6 +24,7 @@ import {
   deleteShareLink,
 } from "@/actions/sharing";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface Props {
   resourceId:   string;
@@ -110,7 +111,6 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
   const [expiryMins,   setExpiryMins]   = useState<number | null>(60 * 24 * 7); // default 1 week
   const [sharedUsers,  setSharedUsers]  = useState<SharedUser[]>([]);
   const [shareLinks,   setShareLinks]   = useState<ShareLink[]>([]);
-  const [error,        setError]        = useState<string | null>(null);
   const [copied,       setCopied]       = useState<string | null>(null);
   const [isPending,    startTransition] = useTransition();
 
@@ -129,23 +129,28 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
 
   const handleShareWithUser = () => {
     if (!email.trim()) return;
-    setError(null);
     startTransition(async () => {
       try {
         await shareWithUser(resourceId, resourceType, email.trim(), role);
+        toast.success(`Shared with ${email.trim()}`);
         setEmail("");
         const updated = await getSharedUsers(resourceId, resourceType);
         setSharedUsers(normalizeSharedUsers(updated));
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to share");
+        toast.error(err instanceof Error ? err.message : "Failed to share");
       }
     });
   };
 
   const handleRemoveUser = (targetUserId: string) => {
     startTransition(async () => {
-      await removePermission(resourceId, resourceType, targetUserId);
-      setSharedUsers((prev) => prev.filter((u) => u.user_id !== targetUserId));
+      try {
+        await removePermission(resourceId, resourceType, targetUserId);
+        toast.success("User removed from share list");
+        setSharedUsers((prev) => prev.filter((u) => u.user_id !== targetUserId));
+      } catch(err) {
+        toast.error("Failed to remove user");
+      }
     });
   };
 
@@ -159,7 +164,6 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
   };
 
   const handleCreateLink = () => {
-    setError(null);
     startTransition(async () => {
       try {
         // Convert minutes to days for the action (null = never)
@@ -175,7 +179,7 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
         );
         setShareLinks((prev) => [link, ...prev]);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to create link");
+        toast.error(err instanceof Error ? err.message : "Failed to create link");
       }
     });
   };
@@ -190,6 +194,7 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
   const copyLink = async (token: string) => {
     const url = `${window.location.origin}/share/${token}`;
     await navigator.clipboard.writeText(url);
+    toast.success("Link copied to clipboard!");
     setCopied(token);
     setTimeout(() => setCopied(null), 2000);
   };
@@ -250,15 +255,13 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => { setEmail(e.target.value); setError(null); }}
+                  onChange={(e) => { setEmail(e.target.value); }}
                   onKeyDown={(e) => e.key === "Enter" && handleShareWithUser()}
                   placeholder="Email address"
                   className={cn(
                     "flex-1 px-3 py-2 rounded-xl text-sm bg-secondary border text-foreground",
                     "focus:outline-none focus:ring-1 transition-all placeholder:text-muted-foreground",
-                    error
-                      ? "border-red-500/50 focus:ring-red-500/30"
-                      : "border-border focus:ring-[#2da07a]/30 focus:border-[#2da07a]/50"
+                    "border-border focus:ring-[#2da07a]/30 focus:border-[#2da07a]/50"
                   )}
                   disabled={isPending}
                 />
@@ -282,8 +285,6 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
                   <UserPlus size={16} />
                 </button>
               </div>
-
-              {error && <p className="text-xs text-red-400 -mt-2">{error}</p>}
 
               {sharedUsers.length > 0 ? (
                 <div className="flex flex-col gap-1">
@@ -405,7 +406,6 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
               </div>
 
               {/* Create button */}
-              {error && <p className="text-xs text-red-400 -mt-2">{error}</p>}
               <button
                 onClick={handleCreateLink}
                 disabled={isPending}
