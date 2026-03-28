@@ -5,18 +5,12 @@ import { useState, useTransition } from "react";
 import {
   FolderSimple,
   File,
-  Image,
-  FilePdf,
-  VideoIcon,
-  MusicNote,
   Star,
   Trash,
   DotsThree,
   ArrowCounterClockwise,
   DownloadSimple,
   ShareNetwork,
-  Rows,
-  SquaresFour,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { toggleStar, trashItem, restoreItem, renameItem } from "@/actions/files";
@@ -24,7 +18,11 @@ import { MoveDialog } from "@/components/MoveDialog";
 import { FilePreviewDialog } from "@/components/FilePreviewDialog";
 import { ShareDialog } from "@/components/ShareDialog";
 import { useDownload } from "@/hooks/useDownload";
-
+import { useItemActions } from "@/hooks/useItemActions";
+import { formatBytes, formatDate } from "@/lib/format";
+import { useLayout } from "@/hooks/useLayout";
+import { LayoutToggle } from "@/components/ui/LayoutToggle";
+import { FileIcon } from "@/components/ui/FileIcon";
 type Layout = "list" | "grid";
 
 interface FileItem {
@@ -53,48 +51,6 @@ interface FileGridProps {
 }
 
 const TEAL = "#2da07a";
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
-  return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
-}
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", {
-    month: "short", day: "numeric", year: "numeric",
-  });
-}
-
-function FileIcon({ mimeType, size = 20 }: { mimeType: string; size?: number }) {
-  if (mimeType.startsWith("image/")) return <Image size={size} weight="duotone" className="text-purple-400" />;
-  if (mimeType.startsWith("video/")) return <VideoIcon size={size} weight="duotone" className="text-blue-400" />;
-  if (mimeType.startsWith("audio/")) return <MusicNote size={size} weight="duotone" className="text-pink-400" />;
-  if (mimeType === "application/pdf") return <FilePdf size={size} weight="duotone" className="text-red-400" />;
-  return <File size={size} weight="duotone" className="text-muted-foreground" />;
-}
-
-function LayoutToggle({ layout, onChange }: { layout: Layout; onChange: (l: Layout) => void }) {
-  return (
-    <div className="flex items-center gap-0.5 bg-secondary border border-border rounded-lg p-0.5">
-      <button
-        onClick={() => onChange("list")}
-        className={cn("p-1.5 rounded-md transition-all", layout === "list" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground")}
-        title="List view"
-      >
-        <Rows size={15} />
-      </button>
-      <button
-        onClick={() => onChange("grid")}
-        className={cn("p-1.5 rounded-md transition-all", layout === "grid" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground")}
-        title="Grid view"
-      >
-        <SquaresFour size={15} />
-      </button>
-    </div>
-  );
-}
 
 // ── Shared context menu rendered in a portal-like fixed div ───
 // Fixes the overflow:hidden clipping issue on grid cards
@@ -217,29 +173,15 @@ function ListRow({
   isStarred: boolean; showRestore?: boolean;
   onFolderOpen?: (id: string, name: string) => void; onRefresh?: () => void;
 }) {
-  const [showMoveDialog, setShowMoveDialog] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
-  const [showShare, setShowShare] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [newName, setNewName] = useState(name);
-  const [isPending, startTransition] = useTransition();
-  const { download, downloading } = useDownload();
-  const isDownloading = downloading.has(id);
-
-  const handleStar = () => startTransition(async () => { await toggleStar(id, type, isStarred); onRefresh?.(); });
-  const handleTrash = () => startTransition(async () => { await trashItem(id, type); onRefresh?.(); });
-  const handleRestore = () => startTransition(async () => { await restoreItem(id, type); onRefresh?.(); });
-  const handleRename = () => {
-    const trimmed = newName.trim();
-    if (!trimmed || trimmed === name) { setRenaming(false); setNewName(name); return; }
-    startTransition(async () => { await renameItem(id, type, trimmed); setRenaming(false); onRefresh?.(); });
-  };
-
-  const handleMainClick = () => {
-    if (renaming) return;
-    if (type === "file") setShowPreview(true);
-    if (type === "folder") onFolderOpen?.(id, name);
-  };
+  const {
+    showMoveDialog, setShowMoveDialog,
+    showPreview, setShowPreview,
+    showShare, setShowShare,
+    renaming, setRenaming,
+    newName, setNewName,
+    isPending, isDownloading,
+    handleStar, handleTrash, handleRestore, handleRename, handleMainClick, handleDownload
+  } = useItemActions({ id, name, type, isStarred, onRefresh });
 
   return (
     <>
@@ -247,7 +189,7 @@ function ListRow({
         "group flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 hover:bg-accent",
         isPending && "opacity-50 pointer-events-none"
       )}>
-        <div className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer" onClick={handleMainClick}>
+        <div className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer" onClick={() => handleMainClick(onFolderOpen)}>
           <div className="flex-shrink-0 w-8 h-8 flex items-center justify-center">
             {type === "folder"
               ? <FolderSimple size={22} weight="fill" style={{ color: TEAL }} />
@@ -289,7 +231,7 @@ function ListRow({
                 <ShareNetwork size={15} />
               </button>
               {type === "file" && (
-                <button onClick={() => download(id, name)} disabled={isDownloading} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
+                <button onClick={handleDownload} disabled={isDownloading} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
                   <DownloadSimple size={15} />
                 </button>
               )}
@@ -306,7 +248,7 @@ function ListRow({
           <DotsMenu
             type={type} isStarred={isStarred} showRestore={showRestore}
             onRename={() => setRenaming(true)} onMove={() => setShowMoveDialog(true)}
-            onShare={() => setShowShare(true)} onDownload={() => download(id, name)}
+            onShare={() => setShowShare(true)} onDownload={handleDownload}
             onStar={handleStar} onTrash={handleTrash} onRestore={handleRestore}
           />
         </div>
@@ -330,29 +272,15 @@ function GridCard({
   isStarred: boolean; showRestore?: boolean;
   onFolderOpen?: (id: string, name: string) => void; onRefresh?: () => void;
 }) {
-  const [showMoveDialog, setShowMoveDialog] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
-  const [showShare, setShowShare] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [newName, setNewName] = useState(name);
-  const [isPending, startTransition] = useTransition();
-  const { download, downloading } = useDownload();
-  const isDownloading = downloading.has(id);
-
-  const handleStar = () => startTransition(async () => { await toggleStar(id, type, isStarred); onRefresh?.(); });
-  const handleTrash = () => startTransition(async () => { await trashItem(id, type); onRefresh?.(); });
-  const handleRestore = () => startTransition(async () => { await restoreItem(id, type); onRefresh?.(); });
-  const handleRename = () => {
-    const trimmed = newName.trim();
-    if (!trimmed || trimmed === name) { setRenaming(false); setNewName(name); return; }
-    startTransition(async () => { await renameItem(id, type, trimmed); setRenaming(false); onRefresh?.(); });
-  };
-
-  const handleMainClick = () => {
-    if (renaming) return;
-    if (type === "file") setShowPreview(true);
-    if (type === "folder") onFolderOpen?.(id, name);
-  };
+  const {
+    showMoveDialog, setShowMoveDialog,
+    showPreview, setShowPreview,
+    showShare, setShowShare,
+    renaming, setRenaming,
+    newName, setNewName,
+    isPending, isDownloading,
+    handleStar, handleTrash, handleRestore, handleRename, handleMainClick, handleDownload
+  } = useItemActions({ id, name, type, isStarred, onRefresh });
 
   return (
     <>
@@ -365,7 +293,7 @@ function GridCard({
         <div
           className="flex items-center justify-center cursor-pointer select-none rounded-t-2xl overflow-hidden"
           style={{ height: 120, background: type === "folder" ? `${TEAL}0d` : "var(--secondary)" }}
-          onClick={handleMainClick}
+          onClick={() => handleMainClick(onFolderOpen)}
         >
           {type === "folder"
             ? <FolderSimple size={52} weight="fill" style={{ color: TEAL }} />
@@ -375,7 +303,7 @@ function GridCard({
 
         {/* Footer */}
         <div className="flex items-center gap-2 px-3 py-2.5">
-          <div className="flex-1 min-w-0 cursor-pointer" onClick={handleMainClick}>
+          <div className="flex-1 min-w-0 cursor-pointer" onClick={() => handleMainClick(onFolderOpen)}>
             {renaming ? (
               <input
                 autoFocus value={newName}
@@ -415,7 +343,7 @@ function GridCard({
             <DotsMenu
               type={type} isStarred={isStarred} showRestore={showRestore} size={13}
               onRename={() => setRenaming(true)} onMove={() => setShowMoveDialog(true)}
-              onShare={() => setShowShare(true)} onDownload={() => download(id, name)}
+              onShare={() => setShowShare(true)} onDownload={handleDownload}
               onStar={handleStar} onTrash={handleTrash} onRestore={handleRestore}
             />
           </div>
@@ -442,16 +370,7 @@ function GridCard({
 export function FileGrid({
   files, folders, showRestore = false, onFolderOpen, onRefresh,
 }: FileGridProps) {
-  const [layout, setLayout] = useState<Layout>(
-    () => typeof window !== "undefined"
-      ? (localStorage.getItem("nimbus-layout") as Layout) ?? "list"
-      : "list"
-  );
-
-  const handleLayoutChange = (l: Layout) => {
-    setLayout(l);
-    localStorage.setItem("nimbus-layout", l);
-  };
+  const { layout, handleLayoutChange } = useLayout("nimbus-layout");
 
   const isEmpty = files.length === 0 && folders.length === 0;
 
