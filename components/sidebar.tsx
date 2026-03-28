@@ -14,6 +14,8 @@ import {
   Clock,
   HardDrive,
   VaultIcon,
+  ShareNetworkIcon,
+  CloudIcon,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { UploadZone } from "@/components/UploadZone"; // ✅ NEW
@@ -26,6 +28,7 @@ const navItems = [
   { name: "Private Vault", icon: VaultIcon, href: "/vault" },
   { name: "Recent", icon: Clock, href: "/recent" },
   { name: "Starred", icon: Star, href: "/starred" },
+  { name: "Sharing", icon: ShareNetworkIcon, href: "/sharing" },
   { name: "Trash", icon: Trash, href: "/trash" },
 ];
 
@@ -69,26 +72,27 @@ export function Sidebar({ storageUsed, storageLimit }: SidebarProps) {
       )}
     >
       {/* ── Logo ── */}
-      <div
-        className={cn(
-          "flex items-center gap-2.5 px-4 pt-5 pb-4",
-          !open && "justify-center px-0"
-        )}
-      >
+      <Link href="/" className="block">
         <div
-          className="flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center"
-          style={{ backgroundColor: TEAL }}
+          className={cn(
+            "flex items-center gap-2.5 px-4 pt-5 pb-4 cursor-pointer",
+            !open && "justify-center px-0"
+          )}
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
-            <path d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z" />
-          </svg>
+          <div
+            className="flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center"
+            style={{ backgroundColor: TEAL }}
+          >
+            <CloudIcon size={16} weight="bold" className="text-white" />
+          </div>
+
+          {open && (
+            <span className="text-[15px] font-bold tracking-tight text-foreground">
+              Nimbus
+            </span>
+          )}
         </div>
-        {open && (
-          <span className="text-[15px] font-bold tracking-tight text-foreground">
-            Nimbus
-          </span>
-        )}
-      </div>
+      </Link>
 
       {/* <div className={cn("px-3 mb-5", !open && "px-2")}>
         <UploadZone
