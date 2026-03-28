@@ -8,18 +8,18 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 interface FolderNode {
-  id:               string;
-  name:             string;
+  id: string;
+  name: string;
   parent_folder_id: string | null;
-  children?:        FolderNode[];
+  children?: FolderNode[];
 }
 
 interface Props {
-  itemId:   string;
+  itemId: string;
   itemName: string;
   itemType: "file" | "folder";
   onSuccess: () => void;
-  onClose:   () => void;
+  onClose: () => void;
 }
 
 // Build tree from flat list
@@ -46,10 +46,10 @@ function FolderTreeNode({
   selectedId,
   onSelect,
 }: {
-  node:       FolderNode;
-  depth:      number;
+  node: FolderNode;
+  depth: number;
   selectedId: string | null;
-  onSelect:   (id: string) => void;
+  onSelect: (id: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const hasChildren = (node.children?.length ?? 0) > 0;
@@ -112,10 +112,10 @@ function FolderTreeNode({
 }
 
 export function MoveDialog({ itemId, itemName, itemType, onSuccess, onClose }: Props) {
-  const [tree, setTree]               = useState<FolderNode[]>([]);
-  const [selectedId, setSelectedId]   = useState<string | null>(null); // null = root
-  const [loading, setLoading]         = useState(true);
-  const [isPending, startTransition]  = useTransition();
+  const [tree, setTree] = useState<FolderNode[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null); // null = root
+  const [loading, setLoading] = useState(true);
+  const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     getFolderTree(itemType === "folder" ? itemId : undefined)
@@ -147,7 +147,7 @@ export function MoveDialog({ itemId, itemName, itemType, onSuccess, onClose }: P
       <div className="w-full max-w-sm bg-card border border-border rounded-2xl shadow-xl flex flex-col max-h-[480px]">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border">
-          <h2 className="text-sm font-semibold text-foreground">
+          <h2 className="text-sm font-semibold truncate max-w-[80%]">
             Move <span className="text-muted-foreground font-normal">"{itemName}"</span>
           </h2>
           <button
