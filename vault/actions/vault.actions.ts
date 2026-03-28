@@ -118,6 +118,7 @@ export async function saveVaultFile(input: {
   size:             number;       // original file size
   s3Key:            string;
   s3Bucket:         string;
+  parentFolderId?: string | null;
 }) {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
@@ -135,6 +136,17 @@ export async function saveVaultFile(input: {
 
   if (!vault) throw new Error("Vault not found");
 
+  if (input.parentFolderId) {
+    const { data: folder } = await supabase
+      .from("vault_folders")
+      .select("id")
+      .eq("id", input.parentFolderId)
+      .eq("vault_id", input.vaultId)
+      .single();
+
+    if (!folder) throw new Error("Folder not found");
+  }
+
   const { data, error } = await supabase
     .from("vault_files")
     .insert({
@@ -144,6 +156,7 @@ export async function saveVaultFile(input: {
       size:               input.size,
       s3_key:             input.s3Key,
       s3_bucket:          input.s3Bucket,
+      parent_folder_id:   input.parentFolderId ?? null,
     })
     .select()
     .single();

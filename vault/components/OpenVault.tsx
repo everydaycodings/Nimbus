@@ -1,0 +1,535 @@
+// vault/components/OpenVault.tsx
+"use client";
+
+import { useState, useEffect, useCallback, useRef, useTransition } from "react";
+import {
+  LockKeyOpen, LockSimple, Trash, File,
+  Image, FilePdf, FileVideo, MusicNote,
+  CloudArrowUp, DownloadSimple, ShieldCheck,
+  Eye, FolderSimple, FolderPlus, CaretRight,
+  X, House,
+} from "@phosphor-icons/react";
+import {
+  getVaultFolders,
+  getVaultFilesInFolder,
+  createVaultFolder,
+  deleteVaultFolder,
+  renameVaultFolder,
+} from "@/vault/actions/vault.folders.actions";
+import { deleteVaultFile }           from "@/vault/actions/vault.actions";
+import { useVaultUpload }            from "@/vault/hooks/useVaultUpload";
+import { useVaultFolderUpload }      from "@/vault/hooks/useVaultFolderUpload";
+import { useVaultDownload, canPreviewVaultFile } from "@/vault/hooks/useVaultDownload";
+import { clearVaultSession }         from "@/vault/lib/session";
+import { deleteVault }               from "@/vault/actions/vault.actions";
+import { VaultPreviewWrapper }       from "@/vault/components/VaultPreviewWrapper";
+import { cn } from "@/lib/utils";
+import VaultUploadDropdown from "./VaultUploadDropdown";
+
+const TEAL = "#2da07a";
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+}
+
+function FileIcon({ mimeType, size = 18 }: { mimeType: string; size?: number }) {
+  if (mimeType.startsWith("image/"))  return <Image    size={size} weight="duotone" className="text-purple-400" />;
+  if (mimeType.startsWith("video/"))  return <FileVideo size={size} weight="duotone" className="text-blue-400" />;
+  if (mimeType.startsWith("audio/"))  return <MusicNote size={size} weight="duotone" className="text-pink-400" />;
+  if (mimeType === "application/pdf") return <FilePdf   size={size} weight="duotone" className="text-red-400" />;
+  return <File size={size} weight="duotone" className="text-muted-foreground" />;
+}
+
+interface VaultFile {
+  id:                 string;
+  name:               string;
+  original_mime_type: string;
+  size:               number;
+  created_at:         string;
+}
+
+interface VaultFolder {
+  id:         string;
+  name:       string;
+  created_at: string;
+}
+
+interface Vault {
+  id:                 string;
+  name:               string;
+  salt:               string;
+  verification_token: string;
+}
+
+interface Breadcrumb {
+  id:   string;
+  name: string;
+}
+
+interface VaultPreviewState {
+  objectUrl: string;
+  fileName:  string;
+  mimeType:  string;
+  fileId:    string;
+}
+
+// ── Create folder dialog ──────────────────────────────────────
+function CreateFolderDialog({
+  vaultId,
+  parentFolderId,
+  onSuccess,
+  onClose,
+}: {
+  vaultId:        string;
+  parentFolderId: string | null;
+  onSuccess:      () => void;
+  onClose:        () => void;
+}) {
+  const [name,      setName]      = useState("");
+  const [error,     setError]     = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { inputRef.current?.select(); }, []);
+
+  const handleCreate = () => {
+    const trimmed = name.trim();
+    if (!trimmed) { setError("Name cannot be empty"); return; }
+    setError(null);
+    startTransition(async () => {
+      try {
+        await createVaultFolder(vaultId, trimmed, parentFolderId);
+        onSuccess();
+        onClose();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to create folder");
+      }
+    });
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="w-full max-w-sm bg-card border border-border rounded-2xl shadow-xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <FolderPlus size={16} weight="duotone" style={{ color: TEAL }} />
+            <h2 className="text-sm font-semibold text-foreground">New folder</h2>
+          </div>
+          <button onClick={onClose} className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
+            <X size={15} />
+          </button>
+        </div>
+
+        <input
+          ref={inputRef}
+          type="text"
+          placeholder="Folder name"
+          onChange={(e) => { setName(e.target.value); setError(null); }}
+          onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); if (e.key === "Escape") onClose(); }}
+          className={cn(
+            "w-full px-3 py-2 rounded-xl text-sm bg-secondary border text-foreground focus:outline-none focus:ring-1 transition-all",
+            error ? "border-red-500/50 focus:ring-red-500/30" : "border-border focus:ring-[#2da07a]/30 focus:border-[#2da07a]/50"
+          )}
+          disabled={isPending}
+        />
+        {error && <p className="mt-1.5 text-xs text-red-400">{error}</p>}
+
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={onClose} className="px-3 py-1.5 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all">
+            Cancel
+          </button>
+          <button
+            onClick={handleCreate}
+            disabled={isPending || !name.trim()}
+            className={cn(
+              "px-4 py-1.5 rounded-xl text-sm font-medium text-white transition-all",
+              isPending || !name.trim() ? "opacity-50 cursor-not-allowed" : "hover:opacity-90"
+            )}
+            style={{ backgroundColor: TEAL }}
+          >
+            {isPending ? "Creating..." : "Create"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main OpenVault component ──────────────────────────────────
+export function OpenVault({
+  vault,
+  cryptoKey,
+  onLock,
+  onRefreshVaults,
+}: {
+  vault:           Vault;
+  cryptoKey:       CryptoKey;
+  onLock:          () => void;
+  onRefreshVaults: () => void;
+}) {
+  const [folders,          setFolders]          = useState<VaultFolder[]>([]);
+  const [files,            setFiles]            = useState<VaultFile[]>([]);
+  const [loading,          setLoading]          = useState(true);
+  const [breadcrumbs,      setBreadcrumbs]      = useState<Breadcrumb[]>([]);
+  const [currentFolderId,  setCurrentFolderId]  = useState<string | null>(null);
+  const [showCreateFolder, setShowCreateFolder] = useState(false);
+  const [previewing,       setPreviewing]       = useState<VaultPreviewState | null>(null);
+  const [loadingPreview,   setLoadingPreview]   = useState<string | null>(null);
+  const [renamingFolder,   setRenamingFolder]   = useState<string | null>(null);
+  const [renameValue,      setRenameValue]      = useState("");
+
+  const { uploadMany, uploads }      = useVaultUpload(vault.id, cryptoKey);
+  const { uploadFolder }             = useVaultFolderUpload({
+    vaultId:        vault.id,
+    cryptoKey,
+    parentFolderId: currentFolderId,
+    onSuccess:      () => refresh(),
+  });
+  const { download, preview, decrypting } = useVaultDownload(cryptoKey);
+
+  const refresh = useCallback(async () => {
+    const [f, files] = await Promise.all([
+      getVaultFolders(vault.id, currentFolderId),
+      getVaultFilesInFolder(vault.id, currentFolderId),
+    ]);
+    setFolders(f as VaultFolder[]);
+    setFiles(files as VaultFile[]);
+  }, [vault.id, currentFolderId]);
+
+  useEffect(() => {
+    setLoading(true);
+    refresh().finally(() => setLoading(false));
+  }, [refresh]);
+
+  useEffect(() => {
+    if (uploads.every((u) => u.status === "complete" || u.status === "error")) {
+      refresh();
+    }
+  }, [uploads]);
+
+  // ── Navigation ───────────────────────────────────────────────
+  const openFolder = async (folder: VaultFolder) => {
+    setBreadcrumbs((prev) => [...prev, { id: folder.id, name: folder.name }]);
+    setCurrentFolderId(folder.id);
+  };
+
+  const navigateToRoot = () => {
+    setBreadcrumbs([]);
+    setCurrentFolderId(null);
+  };
+
+  const navigateToBreadcrumb = (index: number) => {
+    const crumb = breadcrumbs[index];
+    setBreadcrumbs((prev) => prev.slice(0, index + 1));
+    setCurrentFolderId(crumb.id);
+  };
+
+  // ── Actions ──────────────────────────────────────────────────
+  const handleDeleteFile = async (fileId: string) => {
+    if (!confirm("Permanently delete this file?")) return;
+    await deleteVaultFile(fileId);
+    refresh();
+  };
+
+  const handleDeleteFolder = async (folderId: string) => {
+    if (!confirm("Delete this folder and all its contents?")) return;
+    await deleteVaultFolder(folderId);
+    refresh();
+  };
+
+  const handleRenameFolder = async (folderId: string) => {
+    const trimmed = renameValue.trim();
+    if (!trimmed) { setRenamingFolder(null); return; }
+    await renameVaultFolder(folderId, trimmed);
+    setRenamingFolder(null);
+    refresh();
+  };
+
+  const handlePreview = async (file: VaultFile) => {
+    setLoadingPreview(file.id);
+    try {
+      const objectUrl = await preview(file.id, file.original_mime_type);
+      if (objectUrl) {
+        setPreviewing({ objectUrl, fileName: file.name, mimeType: file.original_mime_type, fileId: file.id });
+      }
+    } catch {
+      alert("Failed to decrypt file for preview.");
+    } finally {
+      setLoadingPreview(null);
+    }
+  };
+
+  const closePreview = () => {
+    if (previewing) { URL.revokeObjectURL(previewing.objectUrl); setPreviewing(null); }
+  };
+
+  const handleDeleteVault = async () => {
+    if (!confirm(`Delete vault "${vault.name}"? All encrypted files will be permanently removed.`)) return;
+    clearVaultSession(vault.id);
+    await deleteVault(vault.id);
+    onRefreshVaults();
+    onLock();
+  };
+
+  const folderInputRef = useRef<HTMLInputElement>(null);
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between mb-4 flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <LockKeyOpen size={18} weight="duotone" style={{ color: TEAL }} />
+          <h2 className="text-base font-semibold text-foreground">{vault.name}</h2>
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-medium text-white" style={{ backgroundColor: TEAL }}>
+            Unlocked
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+        <VaultUploadDropdown
+  uploadMany={uploadMany}
+  uploadFolder={uploadFolder}
+  setShowCreateFolder={setShowCreateFolder}
+/>
+
+          {/* Lock */}
+          <button
+            onClick={() => { clearVaultSession(vault.id); onLock(); }}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium bg-secondary border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+          >
+            <LockSimple size={15} />
+            Lock
+          </button>
+
+          {/* Delete vault */}
+          <button onClick={handleDeleteVault} className="p-2 rounded-xl text-muted-foreground hover:text-red-400 hover:bg-accent transition-colors">
+            <Trash size={15} />
+          </button>
+        </div>
+      </div>
+
+      {/* ── Breadcrumbs ── */}
+      {(breadcrumbs.length > 0 || true) && (
+        <div className="flex items-center gap-1 text-sm mb-4 flex-shrink-0">
+          <button
+            onClick={navigateToRoot}
+            className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+          >
+            <House size={13} />
+            <span>Vault</span>
+          </button>
+          {breadcrumbs.map((crumb, i) => (
+            <span key={crumb.id} className="flex items-center gap-1">
+              <CaretRight size={11} className="text-muted-foreground" />
+              <button
+                onClick={() => navigateToBreadcrumb(i)}
+                className={cn(
+                  "transition-colors",
+                  i === breadcrumbs.length - 1
+                    ? "text-foreground font-medium"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {crumb.name}
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* ── Upload progress ── */}
+      {uploads.length > 0 && (
+        <div className="mb-4 flex flex-col gap-1.5 flex-shrink-0">
+          {uploads.map((u) => (
+            <div
+              key={u.id}
+              className={cn(
+                "flex items-center gap-3 px-3 py-2 rounded-xl border text-sm",
+                u.status === "error" ? "border-red-500/20 bg-red-500/5" : "border-border bg-secondary"
+              )}
+            >
+              <File size={13} className="text-muted-foreground flex-shrink-0" />
+              <span className="flex-1 truncate text-muted-foreground text-xs">{u.name}</span>
+              {u.status === "encrypting" && <span className="text-xs text-muted-foreground">Encrypting...</span>}
+              {u.status === "uploading"  && (
+                <>
+                  <div className="w-20 h-1 rounded-full bg-muted overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${u.progress}%`, backgroundColor: TEAL }} />
+                  </div>
+                  <span className="text-xs text-muted-foreground">{u.progress}%</span>
+                </>
+              )}
+              {u.status === "complete" && <span className="text-xs font-medium" style={{ color: TEAL }}>Done</span>}
+              {u.status === "error"    && <span className="text-xs text-red-400">{u.error ?? "Failed"}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Content ── */}
+      {loading ? (
+        <div className="flex flex-col gap-2">
+          {[...Array(4)].map((_, i) => <div key={i} className="h-10 rounded-xl bg-muted animate-pulse" />)}
+        </div>
+      ) : folders.length === 0 && files.length === 0 ? (
+        <div className="flex flex-col items-center justify-center flex-1 py-16 text-center">
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4" style={{ backgroundColor: `${TEAL}18` }}>
+            <ShieldCheck size={28} weight="duotone" style={{ color: TEAL }} />
+          </div>
+          <p className="text-sm font-medium text-foreground mb-1">
+            {currentFolderId ? "Folder is empty" : "Vault is empty"}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {currentFolderId ? "Upload files or create a subfolder" : "Add files or create a folder to get started"}
+          </p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-0.5 overflow-y-auto">
+          {/* Headers */}
+          <div className="flex items-center gap-3 px-3 py-1.5">
+            <div className="w-[18px]" />
+            <p className="flex-1 text-xs font-medium text-muted-foreground uppercase tracking-wide">Name</p>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide w-20 text-right pr-20">Size</p>
+          </div>
+          <div className="border-t border-border mb-1" />
+
+          {/* Folders */}
+          {folders.length > 0 && (
+            <div className="mb-1">
+              <p className="px-3 py-1 text-xs text-muted-foreground/60 font-medium">Folders</p>
+              {folders.map((folder) => (
+                <div
+                  key={folder.id}
+                  className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-accent transition-colors cursor-pointer"
+                  onDoubleClick={() => openFolder(folder)}
+                >
+                  <FolderSimple size={18} weight="fill" style={{ color: TEAL }} />
+
+                  <div className="flex-1 min-w-0" onClick={() => openFolder(folder)}>
+                    {renamingFolder === folder.id ? (
+                      <input
+                        autoFocus
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onBlur={() => handleRenameFolder(folder.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter")  handleRenameFolder(folder.id);
+                          if (e.key === "Escape") setRenamingFolder(null);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full text-sm font-medium bg-secondary border border-[#2da07a]/40 rounded-lg px-2 py-0.5 text-foreground focus:outline-none focus:ring-1 focus:ring-[#2da07a]/30"
+                      />
+                    ) : (
+                      <p className="text-sm font-medium text-foreground truncate">{folder.name}</p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                    <button
+                      onClick={() => { setRenamingFolder(folder.id); setRenameValue(folder.name); }}
+                      className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors text-xs px-2"
+                    >
+                      Rename
+                    </button>
+                    <button
+                      onClick={() => handleDeleteFolder(folder.id)}
+                      className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-red-400 transition-colors"
+                    >
+                      <Trash size={13} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Files */}
+          {files.length > 0 && (
+            <div>
+              <p className="px-3 py-1 text-xs text-muted-foreground/60 font-medium">Files</p>
+              {files.map((file) => {
+                const isPreviewable = canPreviewVaultFile(file.original_mime_type, file.size);
+                const isDecrypting  = decrypting.has(file.id);
+                const isLoadingPrev = loadingPreview === file.id;
+
+                return (
+                  <div key={file.id} className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-accent transition-colors">
+                    <FileIcon mimeType={file.original_mime_type} />
+
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{file.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs text-muted-foreground">{formatBytes(file.size)}</p>
+                        {!isPreviewable && (
+                          <span className="text-[10px] text-muted-foreground border border-border rounded-full px-1.5 py-0.5">
+                            Download only
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                      {isPreviewable && (
+                        <button
+                          onClick={() => handlePreview(file)}
+                          disabled={isLoadingPrev}
+                          className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                          title="Preview"
+                        >
+                          {isLoadingPrev
+                            ? <span className="text-[10px]">...</span>
+                            : <Eye size={13} />
+                          }
+                        </button>
+                      )}
+                      <button
+                        onClick={() => download(file.id, file.name, file.original_mime_type)}
+                        disabled={isDecrypting}
+                        className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                        title={isDecrypting ? "Decrypting..." : "Download"}
+                      >
+                        <DownloadSimple size={13} />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteFile(file.id)}
+                        className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-red-400 transition-colors"
+                      >
+                        <Trash size={13} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Dialogs ── */}
+      {showCreateFolder && (
+        <CreateFolderDialog
+          vaultId={vault.id}
+          parentFolderId={currentFolderId}
+          onSuccess={refresh}
+          onClose={() => setShowCreateFolder(false)}
+        />
+      )}
+
+      {previewing && (
+        <VaultPreviewWrapper
+          objectUrl={previewing.objectUrl}
+          fileName={previewing.fileName}
+          mimeType={previewing.mimeType}
+          isLoading={Boolean(loadingPreview && loadingPreview === previewing.fileId)}
+          onClose={closePreview}
+          onDownload={() => download(previewing.fileId, previewing.fileName, previewing.mimeType)}
+        />
+      )}
+    </div>
+  );
+}
