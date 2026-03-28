@@ -13,7 +13,7 @@ create table public.vault_folders (
 
 -- Add folder support to vault_files
 alter table public.vault_files
-  add column parent_folder_id uuid references public.vault_folders(id) on delete set null;
+  add column parent_folder_id uuid references public.vault_folders(id) ON DELETE CASCADE;
 
 -- ── INDEXES ───────────────────────────────────────────────────
 create index idx_vault_folders_vault    on public.vault_folders(vault_id);
