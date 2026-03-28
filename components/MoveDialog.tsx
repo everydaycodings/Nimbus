@@ -1,4 +1,3 @@
-// components/MoveDialog.tsx
 "use client";
 
 import { useState, useEffect, useTransition } from "react";
@@ -18,8 +17,9 @@ interface Props {
   itemId: string;
   itemName: string;
   itemType: "file" | "folder";
-  onSuccess: () => void;
+  onSuccess: (targetFolderId: string | null) => void; // ✅ updated
   onClose: () => void;
+  copyMode?: boolean; // ✅ added
 }
 
 // Build tree from flat list
@@ -65,7 +65,8 @@ function FolderTreeNode({
         )}
         style={{
           paddingLeft: `${12 + depth * 16}px`,
-          backgroundColor: selectedId === node.id ? "rgba(45,160,122,0.12)" : undefined,
+          backgroundColor:
+            selectedId === node.id ? "rgba(45,160,122,0.12)" : undefined,
         }}
         onClick={() => onSelect(node.id)}
       >
@@ -111,9 +112,16 @@ function FolderTreeNode({
   );
 }
 
-export function MoveDialog({ itemId, itemName, itemType, onSuccess, onClose }: Props) {
+export function MoveDialog({
+  itemId,
+  itemName,
+  itemType,
+  onSuccess,
+  onClose,
+  copyMode, // ✅ added
+}: Props) {
   const [tree, setTree] = useState<FolderNode[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null); // null = root
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isPending, startTransition] = useTransition();
 
@@ -126,15 +134,21 @@ export function MoveDialog({ itemId, itemName, itemType, onSuccess, onClose }: P
   const handleMove = () => {
     startTransition(async () => {
       try {
-        if (itemType === "file") {
-          await moveFile(itemId, selectedId);
-        } else {
-          await moveFolder(itemId, selectedId);
+        if (!copyMode) {
+          // ✅ only move if NOT copying
+          if (itemType === "file") {
+            await moveFile(itemId, selectedId);
+          } else {
+            await moveFolder(itemId, selectedId);
+          }
         }
-        onSuccess();
+
+        onSuccess(selectedId); // ✅ pass selected folder back
         onClose();
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to move item");
+        toast.error(
+          err instanceof Error ? err.message : "Failed to move item"
+        );
       }
     });
   };
@@ -148,7 +162,10 @@ export function MoveDialog({ itemId, itemName, itemType, onSuccess, onClose }: P
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border">
           <h2 className="text-sm font-semibold truncate max-w-[80%]">
-            Move <span className="text-muted-foreground font-normal">"{itemName}"</span>
+            {copyMode ? "Copy " : "Move "}
+            <span className="text-muted-foreground font-normal">
+              "{itemName}"
+            </span>
           </h2>
           <button
             onClick={onClose}
@@ -161,10 +178,12 @@ export function MoveDialog({ itemId, itemName, itemType, onSuccess, onClose }: P
         {/* Tree */}
         <div className="flex-1 overflow-y-auto p-2">
           {loading ? (
-            <p className="text-sm text-muted-foreground px-3 py-2">Loading folders...</p>
+            <p className="text-sm text-muted-foreground px-3 py-2">
+              Loading folders...
+            </p>
           ) : (
             <>
-              {/* Root option */}
+              {/* Root */}
               <div
                 className={cn(
                   "flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-all text-sm",
@@ -173,14 +192,19 @@ export function MoveDialog({ itemId, itemName, itemType, onSuccess, onClose }: P
                     : "text-muted-foreground hover:text-foreground hover:bg-accent"
                 )}
                 style={{
-                  backgroundColor: selectedId === null ? "rgba(45,160,122,0.12)" : undefined,
+                  backgroundColor:
+                    selectedId === null
+                      ? "rgba(45,160,122,0.12)"
+                      : undefined,
                 }}
                 onClick={() => setSelectedId(null)}
               >
                 <House
                   size={16}
                   weight="duotone"
-                  style={{ color: selectedId === null ? "#2da07a" : undefined }}
+                  style={{
+                    color: selectedId === null ? "#2da07a" : undefined,
+                  }}
                 />
                 <span>My Files (root)</span>
               </div>
@@ -196,7 +220,9 @@ export function MoveDialog({ itemId, itemName, itemType, onSuccess, onClose }: P
               ))}
 
               {tree.length === 0 && (
-                <p className="text-xs text-muted-foreground px-3 py-2">No other folders available</p>
+                <p className="text-xs text-muted-foreground px-3 py-2">
+                  No other folders available
+                </p>
               )}
             </>
           )}
@@ -219,7 +245,7 @@ export function MoveDialog({ itemId, itemName, itemType, onSuccess, onClose }: P
             )}
             style={{ backgroundColor: "#2da07a" }}
           >
-            {isPending ? "Moving..." : "Move here"}
+            {isPending ? "..." : copyMode ? "Copy here" : "Move here"}
           </button>
         </div>
       </div>

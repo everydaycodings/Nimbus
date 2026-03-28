@@ -1,249 +1,513 @@
 // app/(dashboard)/sharing/page.tsx
 "use client";
 
-import { useState, useEffect, useCallback, useTransition } from "react";
+import { useState, useEffect, useCallback, useTransition, useRef } from "react";
 import {
   ShareNetwork, FolderSimple, File, Trash,
   Globe, Users, Clock, Link as LinkIcon,
   Image, FilePdf, FileVideo, MusicNote,
-  Eye, PencilSimple, Check, Copy,
+  Eye, PencilSimple, Check, Copy, CaretDown,
+  DownloadSimple, CopySimple, ArrowSquareIn,
 } from "@phosphor-icons/react";
 import {
   getMySharedItems,
+  getSharedWithMe,
   revokeShareLink,
   revokeUserPermission,
+  getSharedFileDownloadUrl,
+  copySharedFileToDrive,
+  copySharedFolderToDrive,
 } from "@/actions/sharing.dashboard";
+import { FilePreviewDialog } from "@/components/FilePreviewDialog";
+import { MoveDialog } from "@/components/MoveDialog";
 import { cn } from "@/lib/utils";
 
 const TEAL = "#2da07a";
 
 function formatExpiry(expiresAt: string | null): { label: string; urgent: boolean } {
   if (!expiresAt) return { label: "Never expires", urgent: false };
-  const exp  = new Date(expiresAt);
+  const exp = new Date(expiresAt);
   const diff = exp.getTime() - Date.now();
   if (diff <= 0) return { label: "Expired", urgent: true };
   const hours = Math.floor(diff / 3600000);
-  const days  = Math.floor(diff / 86400000);
-  if (hours < 1)  return { label: "< 1 hour",      urgent: true  };
-  if (hours < 24) return { label: `${hours}h left`, urgent: true  };
-  if (days  < 7)  return { label: `${days}d left`,  urgent: false };
-  return {
-    label: exp.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
-    urgent: false,
-  };
+  const days = Math.floor(diff / 86400000);
+  if (hours < 1) return { label: "< 1 hour", urgent: true };
+  if (hours < 24) return { label: `${hours}h left`, urgent: true };
+  if (days < 7) return { label: `${days}d left`, urgent: false };
+  return { label: exp.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }), urgent: false };
+}
+
+function formatBytes(b: number) {
+  if (!b) return "—";
+  if (b < 1024 ** 2) return `${(b / 1024).toFixed(1)} KB`;
+  if (b < 1024 ** 3) return `${(b / 1024 ** 2).toFixed(1)} MB`;
+  return `${(b / 1024 ** 3).toFixed(1)} GB`;
 }
 
 function ResourceIcon({ type, mimeType, size = 20 }: { type: "file" | "folder"; mimeType?: string; size?: number }) {
-  if (type === "folder")              return <FolderSimple size={size} weight="fill"   style={{ color: TEAL }} />;
-  if (!mimeType)                      return <File         size={size} weight="duotone" className="text-muted-foreground" />;
-  if (mimeType.startsWith("image/"))  return <Image        size={size} weight="duotone" className="text-purple-400" />;
-  if (mimeType.startsWith("video/"))  return <FileVideo    size={size} weight="duotone" className="text-blue-400" />;
-  if (mimeType.startsWith("audio/"))  return <MusicNote    size={size} weight="duotone" className="text-pink-400" />;
-  if (mimeType === "application/pdf") return <FilePdf      size={size} weight="duotone" className="text-red-400" />;
+  if (type === "folder") return <FolderSimple size={size} weight="fill" style={{ color: TEAL }} />;
+  if (!mimeType) return <File size={size} weight="duotone" className="text-muted-foreground" />;
+  if (mimeType.startsWith("image/")) return <Image size={size} weight="duotone" className="text-purple-400" />;
+  if (mimeType.startsWith("video/")) return <FileVideo size={size} weight="duotone" className="text-blue-400" />;
+  if (mimeType.startsWith("audio/")) return <MusicNote size={size} weight="duotone" className="text-pink-400" />;
+  if (mimeType === "application/pdf") return <FilePdf size={size} weight="duotone" className="text-red-400" />;
   return <File size={size} weight="duotone" className="text-muted-foreground" />;
 }
 
-type Tab = "links" | "people";
+type Tab = "links" | "people" | "shared-with-me";
 
 interface SharedLink {
-  id:            string;
-  token:         string;
-  role:          "viewer" | "editor";
-  expires_at:    string | null;
-  created_at:    string;
-  resource_id:   string;
-  resource_type: "file" | "folder";
-  resource_name: string;
-  mime_type?:    string;
+  id: string; token: string; role: "viewer" | "editor";
+  expires_at: string | null; created_at: string;
+  resource_id: string; resource_type: "file" | "folder";
+  resource_name: string; mime_type?: string;
 }
 
-interface SharedWithUser {
-  permission_id: string;
-  resource_id:   string;
-  resource_type: "file" | "folder";
-  resource_name: string;
-  mime_type?:    string;
-  role:          "viewer" | "editor";
-  user_email:    string;
-  user_name:     string | null;
-  shared_at:     string;
+interface SharedPerson {
+  permission_id: string; resource_id: string;
+  resource_type: "file" | "folder"; resource_name: string;
+  mime_type?: string; role: "viewer" | "editor";
+  user_email: string; user_name: string | null; shared_at: string;
 }
 
-// ── Link card ─────────────────────────────────────────────────
-function LinkCard({
-  link,
-  copied,
-  isPending,
-  onCopy,
-  onRevoke,
+interface SharedWithMeItem {
+  permission_id: string; resource_id: string;
+  resource_type: "file" | "folder"; role: "viewer" | "editor";
+  shared_at: string; name: string; mime_type?: string;
+  size?: number; s3_key?: string;
+  owner_email: string; owner_name: string | null;
+}
+
+// ── Grouped resource type ─────────────────────────────────────
+interface GroupedResource {
+  resource_id: string;
+  resource_type: "file" | "folder";
+  resource_name: string;
+  mime_type?: string;
+  links: SharedLink[];
+  people: SharedPerson[];
+}
+
+function groupByResource(links: SharedLink[], people: SharedPerson[]): GroupedResource[] {
+  const map = new Map<string, GroupedResource>();
+
+  for (const l of links) {
+    if (!map.has(l.resource_id)) {
+      map.set(l.resource_id, { resource_id: l.resource_id, resource_type: l.resource_type, resource_name: l.resource_name, mime_type: l.mime_type, links: [], people: [] });
+    }
+    map.get(l.resource_id)!.links.push(l);
+  }
+  for (const p of people) {
+    if (!map.has(p.resource_id)) {
+      map.set(p.resource_id, { resource_id: p.resource_id, resource_type: p.resource_type, resource_name: p.resource_name, mime_type: p.mime_type, links: [], people: [] });
+    }
+    map.get(p.resource_id)!.people.push(p);
+  }
+
+  return [...map.values()];
+}
+
+// ── Links dropdown in a card ──────────────────────────────────
+function LinksDropdown({
+  links, copied, isPending, onCopy, onRevoke,
 }: {
-  link:      SharedLink;
-  copied:    string | null;
-  isPending: boolean;
-  onCopy:    (token: string) => void;
-  onRevoke:  (id: string)    => void;
+  links: SharedLink[]; copied: string | null; isPending: boolean;
+  onCopy: (t: string) => void; onRevoke: (id: string) => void;
 }) {
-  const expiry   = formatExpiry(link.expires_at);
-  const expired  = link.expires_at && new Date(link.expires_at) < new Date();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
+  if (links.length === 0) return null;
 
   return (
-    <div className={cn(
-      "group relative flex flex-col rounded-2xl border bg-card overflow-hidden transition-all",
-      expired
-        ? "border-border opacity-60"
-        : "border-border hover:border-[#2da07a]/30 hover:shadow-md"
-    )}>
-      {/* Thumbnail area */}
-      <div
-        className="flex items-center justify-center"
-        style={{
-          height: 96,
-          background: expired ? "var(--muted)" : `${TEAL}0d`,
-        }}
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
       >
-        <ResourceIcon type={link.resource_type} mimeType={link.mime_type} size={40} />
+        <Globe size={11} />
+        {links.length} link{links.length !== 1 ? "s" : ""}
+        <CaretDown size={9} className={cn("transition-transform", open && "rotate-180")} />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 bottom-6 z-20 w-56 bg-popover border border-border rounded-xl shadow-xl py-1 text-xs">
+            {links.map((link) => {
+              const expiry = formatExpiry(link.expires_at);
+              const expired = link.expires_at && new Date(link.expires_at) < new Date();
+              return (
+                <div key={link.id} className={cn("flex items-center gap-2 px-3 py-2", expired && "opacity-50")}>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1">
+                      <span className={cn("capitalize", link.role === "editor" ? "text-amber-400" : "text-muted-foreground")}>{link.role}</span>
+                      <span className="text-muted-foreground">·</span>
+                      <span className={cn(expiry.urgent ? "text-amber-400" : "text-muted-foreground")}>{expiry.label}</span>
+                    </div>
+                  </div>
+                  {!expired && (
+                    <button onClick={() => { onCopy(link.token); setOpen(false); }} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors" title="Copy">
+                      {copied === link.token ? <Check size={12} style={{ color: TEAL }} /> : <Copy size={12} />}
+                    </button>
+                  )}
+                  <button onClick={() => { onRevoke(link.id); setOpen(false); }} disabled={isPending} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-red-400 transition-colors" title="Revoke">
+                    <Trash size={12} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── People dropdown in a card ─────────────────────────────────
+function PeopleDropdown({
+  people, isPending, onRevoke,
+}: {
+  people: SharedPerson[]; isPending: boolean; onRevoke: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
+  if (people.length === 0) return null;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <Users size={11} />
+        {people.length} {people.length === 1 ? "person" : "people"}
+        <CaretDown size={9} className={cn("transition-transform", open && "rotate-180")} />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 bottom-6 z-20 w-56 bg-popover border border-border rounded-xl shadow-xl py-1 text-xs">
+            {people.map((p) => (
+              <div key={p.permission_id} className="flex items-center gap-2 px-3 py-2">
+                <div
+                  className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white flex-shrink-0"
+                  style={{ backgroundColor: TEAL }}
+                >
+                  {p.user_name ? p.user_name[0].toUpperCase() : p.user_email[0].toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex-1 min-w-0">
+                    {/* Name */}
+                    <p className="truncate text-foreground text-[11px] font-medium">
+                      {p.user_name ?? p.user_email} <span
+                        className={cn(
+                          "capitalize text-[10px]",
+                          p.role === "editor" ? "text-amber-400" : "text-muted-foreground"
+                        )}
+                      >
+                        ({p.role})
+                      </span>
+                    </p>
+
+                    {/* Email (always visible) */}
+                    {p.user_name && (
+                      <p className="truncate text-[10px] text-muted-foreground">
+                        {p.user_email}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <button onClick={() => { onRevoke(p.permission_id); setOpen(false); }} disabled={isPending} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-red-400 transition-colors">
+                  <Trash size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Grouped resource card ─────────────────────────────────────
+function ResourceCard({
+  resource, copied, isPending, onCopy, onRevokeLink, onRevokePerson,
+}: {
+  resource: GroupedResource;
+  copied: string | null;
+  isPending: boolean;
+  onCopy: (t: string) => void;
+  onRevokeLink: (id: string) => void;
+  onRevokePerson: (id: string) => void;
+}) {
+  const hasLinks = resource.links.length > 0;
+  const hasPeople = resource.people.length > 0;
+
+  // Check if any link is active
+  const activeLinks = resource.links.filter((l) => !l.expires_at || new Date(l.expires_at) >= new Date());
+
+  return (
+    <div className="group flex flex-col rounded-2xl border border-border bg-card overflow-visible hover:border-[#2da07a]/30 hover:shadow-md transition-all">
+      {/* Thumbnail */}
+      <div className="flex items-center justify-center" style={{ height: 96, background: `${TEAL}0d` }}>
+        <ResourceIcon type={resource.resource_type} mimeType={resource.mime_type} size={40} />
       </div>
 
       {/* Body */}
       <div className="flex flex-col gap-2 p-3 flex-1">
-        <p className="text-sm font-medium text-foreground truncate">{link.resource_name}</p>
+        <p className="text-sm font-medium text-foreground truncate">{resource.resource_name}</p>
+        <span className="text-[10px] text-muted-foreground capitalize border border-border rounded-full px-2 py-0.5 self-start">
+          {resource.resource_type}
+        </span>
 
-        {/* Role badge */}
-        <div className="flex items-center gap-1.5 flex-wrap">
+        {/* Summary badges */}
+        <div className="flex items-center gap-2 flex-wrap mt-auto">
+          {hasLinks && (
+            <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">
+              <Globe size={9} />
+              {resource.links.length} link{resource.links.length !== 1 ? "s" : ""}
+              {activeLinks.length < resource.links.length && ` (${resource.links.length - activeLinks.length} expired)`}
+            </span>
+          )}
+          {hasPeople && (
+            <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">
+              <Users size={9} />
+              {resource.people.length}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Footer with dropdowns */}
+      <div className="flex items-center justify-between px-3 py-2 border-t border-border gap-2">
+        <div className="flex items-center gap-3 flex-wrap">
+          <LinksDropdown
+            links={resource.links}
+            copied={copied}
+            isPending={isPending}
+            onCopy={onCopy}
+            onRevoke={onRevokeLink}
+          />
+          <PeopleDropdown
+            people={resource.people}
+            isPending={isPending}
+            onRevoke={onRevokePerson}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Copy-to-drive dialog (reuses MoveDialog as folder picker) ─
+function CopyToDialog({
+  item,
+  onClose,
+  onDone,
+}: {
+  item: SharedWithMeItem;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [copying, setCopying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleCopy = async (targetFolderId: string | null) => {
+    setCopying(true);
+    setError(null);
+    try {
+      if (item.resource_type === "file") {
+        await copySharedFileToDrive(item.resource_id, targetFolderId);
+      } else {
+        await copySharedFolderToDrive(item.resource_id, targetFolderId);
+      }
+      onDone();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Copy failed");
+      setCopying(false);
+    }
+  };
+
+  // Reuse MoveDialog UI but for copy
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="w-full max-w-sm bg-card border border-border rounded-2xl shadow-xl p-5">
+        <h2 className="text-sm font-semibold text-foreground mb-1">Copy to My Drive</h2>
+        <p className="text-xs text-muted-foreground mb-4">
+          Choose where to save a copy of <span className="font-medium text-foreground">"{item.name}"</span>
+        </p>
+        {error && <p className="text-xs text-red-400 mb-3">{error}</p>}
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={() => handleCopy(null)}
+            disabled={copying}
+            className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm bg-secondary border border-border hover:bg-accent transition-all disabled:opacity-50"
+          >
+            <FolderSimple size={16} weight="duotone" style={{ color: TEAL }} />
+            My Files (root)
+          </button>
+          <p className="text-[10px] text-muted-foreground text-center">or</p>
+          <MoveDialog
+            itemId={item.resource_id}
+            itemName={item.name}
+            itemType={item.resource_type}
+            onSuccess={(targetId: string | null) => handleCopy(targetId)}
+            onClose={onClose}
+            copyMode
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Shared with me card ───────────────────────────────────────
+function SharedWithMeCard({
+  item,
+  onRefresh,
+}: {
+  item: SharedWithMeItem;
+  onRefresh: () => void;
+}) {
+  const [showPreview, setShowPreview] = useState(false);
+  const [showCopyTo, setShowCopyTo] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const ownerInitial = item.owner_name ? item.owner_name[0].toUpperCase() : item.owner_email[0].toUpperCase();
+
+  const handleDownload = async () => {
+    if (item.resource_type !== "file") return;
+    setDownloading(true);
+    try {
+      const { url, name } = await getSharedFileDownloadUrl(item.resource_id);
+      const a = Object.assign(document.createElement("a"), { href: url, download: name });
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="group flex flex-col rounded-2xl border border-border bg-card overflow-hidden hover:border-[#2da07a]/30 hover:shadow-md transition-all">
+        {/* Thumbnail */}
+        <div className="flex items-center justify-center" style={{ height: 96, background: `${TEAL}0d` }}>
+          <ResourceIcon type={item.resource_type} mimeType={item.mime_type} size={40} />
+        </div>
+
+        {/* Body */}
+        <div className="flex flex-col gap-1.5 p-3 flex-1">
+          <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
+          {item.size && <p className="text-[10px] text-muted-foreground">{formatBytes(item.size)}</p>}
+
+          {/* Role */}
           <span className={cn(
-            "flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border",
-            link.role === "editor"
+            "self-start flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border",
+            item.role === "editor"
               ? "text-amber-400 border-amber-400/30 bg-amber-400/10"
               : "text-muted-foreground border-border bg-muted"
           )}>
-            {link.role === "editor" ? <PencilSimple size={9} /> : <Eye size={9} />}
-            {link.role}
+            {item.role === "editor" ? <PencilSimple size={9} /> : <Eye size={9} />}
+            {item.role}
           </span>
-          <span className="text-[10px] text-muted-foreground capitalize border border-border rounded-full px-2 py-0.5">
-            {link.resource_type}
-          </span>
+
+          {/* Owner */}
+          <div className="flex items-center gap-1.5 mt-1">
+            <div className="w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold text-white flex-shrink-0" style={{ backgroundColor: TEAL }}>
+              {ownerInitial}
+            </div>
+            <p className="text-[10px] text-muted-foreground truncate">
+              {item.owner_name ?? item.owner_email}
+            </p>
+          </div>
         </div>
 
-        {/* Expiry */}
-        <p className={cn("text-[10px]", expiry.urgent ? "text-amber-400" : "text-muted-foreground")}>
-          {expiry.label}
-        </p>
-      </div>
-
-      {/* Actions */}
-      <div className="flex items-center gap-1 p-3 pt-3 border-t border-border mt-auto">
-        {!expired && (
+        {/* Actions */}
+        <div className="flex items-center gap-1 px-3 py-2 border-t border-border">
+          {item.resource_type === "file" && (
+            <button
+              onClick={() => setShowPreview(true)}
+              className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              title="Preview"
+            >
+              <Eye size={12} />
+              Preview
+            </button>
+          )}
+          {item.resource_type === "file" && (
+            <button
+              onClick={handleDownload}
+              disabled={downloading}
+              className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+              title="Download"
+            >
+              <DownloadSimple size={12} />
+              {downloading ? "..." : "Download"}
+            </button>
+          )}
           <button
-            onClick={() => onCopy(link.token)}
-            className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-            title="Copy link"
+            onClick={() => setShowCopyTo(true)}
+            className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            title="Copy to my drive"
           >
-            {copied === link.token
-              ? <><Check size={13} style={{ color: TEAL }} /> Copied</>
-              : <><Copy size={13} /> Copy link</>
-            }
+            <CopySimple size={12} />
+            Copy
           </button>
-        )}
-        <button
-          onClick={() => onRevoke(link.id)}
-          disabled={isPending}
-          className="flex items-center justify-center p-1.5 rounded-lg text-muted-foreground hover:text-red-400 hover:bg-muted transition-colors disabled:opacity-50"
-          title={expired ? "Delete" : "Revoke"}
-        >
-          <Trash size={14} />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ── Person card ───────────────────────────────────────────────
-function PersonCard({
-  p,
-  isPending,
-  onRevoke,
-}: {
-  p:         SharedWithUser;
-  isPending: boolean;
-  onRevoke:  (id: string) => void;
-}) {
-  const initials = p.user_name
-    ? p.user_name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
-    : p.user_email[0].toUpperCase();
-
-  return (
-    <div className="group flex flex-col rounded-2xl border border-border bg-card overflow-hidden hover:border-[#2da07a]/30 hover:shadow-md transition-all">
-      {/* Avatar area */}
-      <div
-        className="flex items-center justify-center"
-        style={{ height: 80, background: `${TEAL}0d` }}
-      >
-        <div
-          className="w-12 h-12 rounded-full flex items-center justify-center text-base font-bold text-white"
-          style={{ backgroundColor: TEAL }}
-        >
-          {initials}
         </div>
       </div>
 
-      {/* Body */}
-      <div className="flex flex-col gap-1.5 p-3 flex-1">
-        <p className="text-sm font-medium text-foreground truncate">
-          {p.user_name ?? p.user_email}
-        </p>
-        {p.user_name && (
-          <p className="text-xs text-muted-foreground truncate">{p.user_email}</p>
-        )}
+      {showPreview && item.resource_type === "file" && (
+        <FilePreviewDialog
+          fileId={item.resource_id}
+          fileName={item.name}
+          mimeType={item.mime_type ?? ""}
+          onClose={() => setShowPreview(false)}
+        />
+      )}
 
-        {/* Role */}
-        <span className={cn(
-          "self-start flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border",
-          p.role === "editor"
-            ? "text-amber-400 border-amber-400/30 bg-amber-400/10"
-            : "text-muted-foreground border-border bg-muted"
-        )}>
-          {p.role === "editor" ? <PencilSimple size={9} /> : <Eye size={9} />}
-          {p.role}
-        </span>
-
-        {/* Resource */}
-        <div className="flex items-center gap-1.5 mt-1">
-          <ResourceIcon type={p.resource_type} mimeType={p.mime_type} size={13} />
-          <p className="text-[10px] text-muted-foreground truncate">{p.resource_name}</p>
-        </div>
-      </div>
-
-      {/* Footer */}
-      <div className="flex items-center justify-between px-3 py-2 border-t border-border">
-        <p className="text-[10px] text-muted-foreground">
-          {new Date(p.shared_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-        </p>
-        <button
-          onClick={() => onRevoke(p.permission_id)}
-          disabled={isPending}
-          className="p-1.5 rounded-lg text-muted-foreground hover:text-red-400 hover:bg-muted transition-colors disabled:opacity-50"
-          title="Revoke access"
-        >
-          <Trash size={13} />
-        </button>
-      </div>
-    </div>
+      {showCopyTo && (
+        <CopyToDialog
+          item={item}
+          onClose={() => setShowCopyTo(false)}
+          onDone={onRefresh}
+        />
+      )}
+    </>
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// MAIN PAGE
+// ═══════════════════════════════════════════════════════════════
 export default function SharingPage() {
-  const [tab,       setTab]       = useState<Tab>("links");
-  const [links,     setLinks]     = useState<SharedLink[]>([]);
-  const [people,    setPeople]    = useState<SharedWithUser[]>([]);
-  const [loading,   setLoading]   = useState(true);
-  const [copied,    setCopied]    = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("links");
+  const [links, setLinks] = useState<SharedLink[]>([]);
+  const [people, setPeople] = useState<SharedPerson[]>([]);
+  const [sharedWithMe, setSharedWithMe] = useState<SharedWithMeItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [copied, setCopied] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const load = useCallback(async () => {
-    const data = await getMySharedItems();
-    setLinks(data.links as SharedLink[]);
-    setPeople(data.people as SharedWithUser[]);
+    const [mine, withMe] = await Promise.all([getMySharedItems(), getSharedWithMe()]);
+    setLinks(mine.links as SharedLink[]);
+    setPeople(mine.people as SharedPerson[]);
+    setSharedWithMe(withMe as SharedWithMeItem[]);
   }, []);
 
   useEffect(() => { load().finally(() => setLoading(false)); }, [load]);
@@ -254,13 +518,13 @@ export default function SharingPage() {
     setTimeout(() => setCopied(null), 2000);
   };
 
-  const handleRevokeLink   = (id: string) => startTransition(async () => { await revokeShareLink(id);        await load(); });
-  const handleRevokePerson = (id: string) => startTransition(async () => { await revokeUserPermission(id);   await load(); });
+  const handleRevokeLink = (id: string) => startTransition(async () => { await revokeShareLink(id); await load(); });
+  const handleRevokePerson = (id: string) => startTransition(async () => { await revokeUserPermission(id); await load(); });
 
-  const expiredLinks = links.filter((l) =>  l.expires_at && new Date(l.expires_at) < new Date());
-  const activeLinks  = links.filter((l) => !l.expires_at || new Date(l.expires_at) >= new Date());
-
+  const grouped = groupByResource(links, people);
   const GRID = "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3";
+  const totalActive = links.filter((l) => !l.expires_at || new Date(l.expires_at) >= new Date()).length;
+  const totalExpired = links.length - totalActive;
 
   return (
     <div className="p-6">
@@ -271,7 +535,7 @@ export default function SharingPage() {
           Sharing
         </h1>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Manage everything you've shared — links and individual access.
+          Manage everything you've shared and what's been shared with you.
         </p>
       </div>
 
@@ -279,10 +543,10 @@ export default function SharingPage() {
       {!loading && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           {[
-            { label: "Active links",        value: activeLinks.length,  icon: Globe        },
-            { label: "Expired links",       value: expiredLinks.length, icon: Clock        },
-            { label: "People with access",  value: people.length,       icon: Users        },
-            { label: "Unique items shared", value: new Set([...links.map((l) => l.resource_id), ...people.map((p) => p.resource_id)]).size, icon: ShareNetwork },
+            { label: "Active links", value: totalActive, icon: Globe },
+            { label: "Expired links", value: totalExpired, icon: Clock },
+            { label: "People with access", value: people.length, icon: Users },
+            { label: "Shared with me", value: sharedWithMe.length, icon: ArrowSquareIn },
           ].map(({ label, value, icon: Icon }) => (
             <div key={label} className="flex flex-col p-3 rounded-xl bg-secondary border border-border">
               <Icon size={15} weight="duotone" className="text-muted-foreground mb-2" />
@@ -296,8 +560,8 @@ export default function SharingPage() {
       {/* Tabs */}
       <div className="flex gap-4 mb-5 border-b border-border">
         {([
-          { key: "links",  label: "Share links", count: links.length  },
-          { key: "people", label: "People",       count: people.length },
+          { key: "links", label: "My shared items", count: grouped.length },
+          { key: "shared-with-me", label: "Shared with me", count: sharedWithMe.length },
         ] as { key: Tab; label: string; count: number }[]).map((t) => (
           <button
             key={t.key}
@@ -323,86 +587,56 @@ export default function SharingPage() {
         ))}
       </div>
 
-      {/* Content */}
       {loading ? (
         <div className={GRID}>
-          {[...Array(6)].map((_, i) => (
-            <div key={i} className="h-44 rounded-2xl bg-muted animate-pulse" />
-          ))}
+          {[...Array(6)].map((_, i) => <div key={i} className="h-44 rounded-2xl bg-muted animate-pulse" />)}
         </div>
       ) : (
         <>
-          {/* ── Links tab ── */}
+          {/* ── My shared items ── */}
           {tab === "links" && (
-            <div className="flex flex-col gap-6">
-              {links.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-20 text-center">
-                  <LinkIcon size={40} weight="duotone" className="text-muted-foreground/40 mb-3" />
-                  <p className="text-sm text-muted-foreground">No share links created yet</p>
-                  <p className="text-xs text-muted-foreground/60 mt-1">Open any file or folder and use the Share option</p>
-                </div>
-              )}
-
-              {activeLinks.length > 0 && (
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">Active</p>
-                  <div className={GRID}>
-                    {activeLinks.map((link) => (
-                      <LinkCard
-                        key={link.id}
-                        link={link}
-                        copied={copied}
-                        isPending={isPending}
-                        onCopy={copyLink}
-                        onRevoke={handleRevokeLink}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {expiredLinks.length > 0 && (
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">Expired</p>
-                  <div className={GRID}>
-                    {expiredLinks.map((link) => (
-                      <LinkCard
-                        key={link.id}
-                        link={link}
-                        copied={copied}
-                        isPending={isPending}
-                        onCopy={copyLink}
-                        onRevoke={handleRevokeLink}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+            grouped.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <ShareNetwork size={40} weight="duotone" className="text-muted-foreground/40 mb-3" />
+                <p className="text-sm text-muted-foreground">Nothing shared yet</p>
+                <p className="text-xs text-muted-foreground/60 mt-1">Share a file or folder to see it here</p>
+              </div>
+            ) : (
+              <div className={GRID}>
+                {grouped.map((resource) => (
+                  <ResourceCard
+                    key={resource.resource_id}
+                    resource={resource}
+                    copied={copied}
+                    isPending={isPending}
+                    onCopy={copyLink}
+                    onRevokeLink={handleRevokeLink}
+                    onRevokePerson={handleRevokePerson}
+                  />
+                ))}
+              </div>
+            )
           )}
 
-          {/* ── People tab ── */}
-          {tab === "people" && (
-            <>
-              {people.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-20 text-center">
-                  <Users size={40} weight="duotone" className="text-muted-foreground/40 mb-3" />
-                  <p className="text-sm text-muted-foreground">Not sharing with anyone yet</p>
-                  <p className="text-xs text-muted-foreground/60 mt-1">Share a file or folder with specific people via email</p>
-                </div>
-              ) : (
-                <div className={GRID}>
-                  {people.map((p) => (
-                    <PersonCard
-                      key={p.permission_id}
-                      p={p}
-                      isPending={isPending}
-                      onRevoke={handleRevokePerson}
-                    />
-                  ))}
-                </div>
-              )}
-            </>
+          {/* ── Shared with me ── */}
+          {tab === "shared-with-me" && (
+            sharedWithMe.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <ArrowSquareIn size={40} weight="duotone" className="text-muted-foreground/40 mb-3" />
+                <p className="text-sm text-muted-foreground">Nothing shared with you yet</p>
+                <p className="text-xs text-muted-foreground/60 mt-1">When someone shares a file or folder with you it appears here</p>
+              </div>
+            ) : (
+              <div className={GRID}>
+                {sharedWithMe.map((item) => (
+                  <SharedWithMeCard
+                    key={item.permission_id}
+                    item={item}
+                    onRefresh={load}
+                  />
+                ))}
+              </div>
+            )
           )}
         </>
       )}

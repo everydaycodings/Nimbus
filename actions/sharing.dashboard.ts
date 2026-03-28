@@ -1,152 +1,372 @@
 // actions/sharing.dashboard.ts
-"use server";
+"use server"
 
-import { auth } from "@clerk/nextjs/server";
-import { createClient } from "@supabase/supabase-js";
+import { auth } from "@clerk/nextjs/server"
+import { createClient } from "@supabase/supabase-js"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_KEY!
-);
+)
 
 async function getUser(clerkId: string) {
   const { data } = await supabase
     .from("users")
     .select("id")
     .eq("clerk_id", clerkId)
-    .single();
-  return data;
+    .single()
+  return data
 }
 
-// ── Get all share links + permissions owned by the current user ──
+// ── My shared items (links + people, grouped by resource) ─────
 export async function getMySharedItems() {
-  const { userId } = await auth();
-  if (!userId) throw new Error("Unauthorized");
+  const { userId } = await auth()
+  if (!userId) throw new Error("Unauthorized")
+  const user = await getUser(userId)
+  if (!user) throw new Error("User not found")
 
-  const user = await getUser(userId);
-  if (!user) throw new Error("User not found");
-
-  // Share links with resource names joined
+  // All share links I created
   const { data: rawLinks } = await supabase
     .from("share_links")
-    .select("id, token, role, expires_at, created_at, resource_id, resource_type")
+    .select(
+      "id, token, role, expires_at, created_at, resource_id, resource_type"
+    )
     .eq("owner_id", user.id)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
 
-  // Enrich links with resource names
+  // Enrich with resource names
   const links = await Promise.all(
     (rawLinks ?? []).map(async (link) => {
-      const table = link.resource_type === "file" ? "files" : "folders";
-      const select = link.resource_type === "file"
-        ? "name, mime_type"
-        : "name";
-
+      const table = link.resource_type === "file" ? "files" : "folders"
+      const select = link.resource_type === "file" ? "name, mime_type" : "name"
       const { data: resource } = await supabase
         .from(table)
         .select(select)
         .eq("id", link.resource_id)
-        .single();
-
+        .single()
       return {
         ...link,
         resource_name: (resource as any)?.name ?? "Deleted item",
-        mime_type:     (resource as any)?.mime_type ?? null,
-      };
+        mime_type: (resource as any)?.mime_type ?? null,
+      }
     })
-  );
+  )
 
-  // Permissions (shared with specific people)
+  // All permissions on resources I own
   const { data: rawPerms } = await supabase
     .from("permissions")
     .select("id, resource_id, resource_type, user_id, role, created_at")
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
 
-  // Filter to only permissions on resources owned by current user
-  const myPerms: any[] = [];
-
+  const people: any[] = []
   for (const perm of rawPerms ?? []) {
-    const table = perm.resource_type === "file" ? "files" : "folders";
-    const select = perm.resource_type === "file" ? "id, name, mime_type, owner_id" : "id, name, owner_id";
-
+    const table = perm.resource_type === "file" ? "files" : "folders"
+    const select =
+      perm.resource_type === "file"
+        ? "id, name, mime_type, owner_id"
+        : "id, name, owner_id"
     const { data: resource } = await supabase
       .from(table)
       .select(select)
       .eq("id", perm.resource_id)
-      .single();
-
-    if (!resource || (resource as any).owner_id !== user.id) continue;
-
+      .single()
+    if (!resource || (resource as any).owner_id !== user.id) continue
     const { data: sharedUser } = await supabase
       .from("users")
       .select("email, full_name")
       .eq("id", perm.user_id)
-      .single();
-
-    myPerms.push({
+      .single()
+    people.push({
       permission_id: perm.id,
-      resource_id:   perm.resource_id,
+      resource_id: perm.resource_id,
       resource_type: perm.resource_type,
       resource_name: (resource as any).name ?? "Deleted item",
-      mime_type:     (resource as any).mime_type ?? null,
-      role:          perm.role,
-      user_email:    sharedUser?.email    ?? "Unknown",
-      user_name:     sharedUser?.full_name ?? null,
-      shared_at:     perm.created_at,
-    });
+      mime_type: (resource as any).mime_type ?? null,
+      role: perm.role,
+      user_email: sharedUser?.email ?? "Unknown",
+      user_name: sharedUser?.full_name ?? null,
+      shared_at: perm.created_at,
+    })
   }
 
-  return { links, people: myPerms };
+  return { links, people }
 }
 
-// ── Revoke a share link ───────────────────────────────────────
+// ── Items shared WITH me by other users ───────────────────────
+export async function getSharedWithMe() {
+  const { userId } = await auth()
+  if (!userId) throw new Error("Unauthorized")
+  const user = await getUser(userId)
+  if (!user) throw new Error("User not found")
+
+  const { data: perms } = await supabase
+    .from("permissions")
+    .select("id, resource_id, resource_type, role, created_at")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+
+  const items: any[] = []
+  for (const perm of perms ?? []) {
+    const table = perm.resource_type === "file" ? "files" : "folders"
+    const select =
+      perm.resource_type === "file"
+        ? "id, name, mime_type, size, s3_key, owner_id"
+        : "id, name, owner_id"
+    const { data: resource } = await supabase
+      .from(table)
+      .select(select)
+      .eq("id", perm.resource_id)
+      .single()
+    if (!resource) continue
+    // Don't include own resources
+    if ((resource as any).owner_id === user.id) continue
+    const { data: owner } = await supabase
+      .from("users")
+      .select("email, full_name")
+      .eq("id", (resource as any).owner_id)
+      .single()
+    items.push({
+      permission_id: perm.id,
+      resource_id: perm.resource_id,
+      resource_type: perm.resource_type,
+      role: perm.role,
+      shared_at: perm.created_at,
+      name: (resource as any).name,
+      mime_type: (resource as any).mime_type ?? null,
+      size: (resource as any).size ?? null,
+      s3_key: (resource as any).s3_key ?? null,
+      owner_email: owner?.email ?? "Unknown",
+      owner_name: owner?.full_name ?? null,
+    })
+  }
+  return items
+}
+
+// ── Get presigned download URL for a shared file ──────────────
+export async function getSharedFileDownloadUrl(resourceId: string) {
+  const { userId } = await auth()
+  if (!userId) throw new Error("Unauthorized")
+  const user = await getUser(userId)
+  if (!user) throw new Error("User not found")
+
+  // Verify permission
+  const { data: perm } = await supabase
+    .from("permissions")
+    .select("id")
+    .eq("resource_id", resourceId)
+    .eq("user_id", user.id)
+    .single()
+  if (!perm) throw new Error("Access denied")
+
+  const { data: file } = await supabase
+    .from("files")
+    .select("name, s3_key, mime_type, s3_bucket")
+    .eq("id", resourceId)
+    .single()
+  if (!file) throw new Error("File not found")
+
+  const { GetObjectCommand } = await import("@aws-sdk/client-s3")
+  const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner")
+  const { s3, BUCKET } = await import("@/lib/s3")
+
+  const url = await getSignedUrl(
+    s3,
+    new GetObjectCommand({
+      Bucket: file.s3_bucket ?? BUCKET,
+      Key: file.s3_key,
+      ResponseContentDisposition: `inline; filename="${file.name}"`,
+    }),
+    { expiresIn: 3600 }
+  )
+  return { url, name: file.name, mimeType: file.mime_type }
+}
+
+// ── Copy a shared file into my drive ─────────────────────────
+export async function copySharedFileToDrive(
+  resourceId: string,
+  targetFolderId: string | null
+) {
+  const { userId } = await auth()
+  if (!userId) throw new Error("Unauthorized")
+  const user = await getUser(userId)
+  if (!user) throw new Error("User not found")
+
+  const { data: perm } = await supabase
+    .from("permissions")
+    .select("id")
+    .eq("resource_id", resourceId)
+    .eq("user_id", user.id)
+    .single()
+  if (!perm) throw new Error("Access denied")
+
+  const { data: file } = await supabase
+    .from("files")
+    .select("name, mime_type, size, s3_key, s3_bucket")
+    .eq("id", resourceId)
+    .single()
+  if (!file) throw new Error("File not found")
+
+  // Copy S3 object to new key under my namespace
+  const { CopyObjectCommand } = await import("@aws-sdk/client-s3")
+  const { s3, BUCKET } = await import("@/lib/s3")
+  const { randomUUID } = await import("crypto")
+
+  const ext = file.name.split(".").pop()
+  const newKey = `uploads/${user.id}/${randomUUID()}.${ext}`
+
+  await s3.send(
+    new CopyObjectCommand({
+      Bucket: file.s3_bucket ?? BUCKET,
+      CopySource: `${file.s3_bucket ?? BUCKET}/${file.s3_key}`,
+      Key: newKey,
+    })
+  )
+
+  // Insert new file record owned by me
+  const { data: newFile, error } = await supabase
+    .from("files")
+    .insert({
+      name: `Copy of ${file.name}`,
+      mime_type: file.mime_type,
+      size: file.size,
+      s3_key: newKey,
+      s3_bucket: file.s3_bucket ?? BUCKET,
+      owner_id: user.id,
+      parent_folder_id: targetFolderId,
+      upload_status: "complete",
+    })
+    .select()
+    .single()
+
+  if (error) throw new Error(error.message)
+  return newFile
+}
+
+// ── Copy a shared folder into my drive ───────────────────────
+export async function copySharedFolderToDrive(
+  resourceId: string,
+  targetFolderId: string | null
+) {
+  const { userId } = await auth()
+  if (!userId) throw new Error("Unauthorized")
+  const user = await getUser(userId)
+  if (!user) throw new Error("User not found")
+
+  const { data: perm } = await supabase
+    .from("permissions")
+    .select("id")
+    .eq("resource_id", resourceId)
+    .eq("user_id", user.id)
+    .single()
+  if (!perm) throw new Error("Access denied")
+
+  const { data: folder } = await supabase
+    .from("folders")
+    .select("name")
+    .eq("id", resourceId)
+    .single()
+  if (!folder) throw new Error("Folder not found")
+
+  await deepCopyFolder(resourceId, folder.name, targetFolderId, user.id)
+}
+
+async function deepCopyFolder(
+  sourceFolderId: string,
+  name: string,
+  targetParentId: string | null,
+  ownerId: string
+) {
+  const { CopyObjectCommand } = await import("@aws-sdk/client-s3")
+  const { s3, BUCKET } = await import("@/lib/s3")
+  const { randomUUID } = await import("crypto")
+
+  // Create destination folder
+  const { data: newFolder } = await supabase
+    .from("folders")
+    .insert({
+      name,
+      owner_id: ownerId,
+      parent_folder_id: targetParentId,
+    })
+    .select("id")
+    .single()
+
+  if (!newFolder) return
+
+  // Copy files
+  const { data: files } = await supabase
+    .from("files")
+    .select("id, name, mime_type, size, s3_key, s3_bucket")
+    .eq("parent_folder_id", sourceFolderId)
+    .eq("is_trashed", false)
+    .eq("upload_status", "complete")
+  await Promise.allSettled(
+    (files ?? []).map(async (file) => {
+      const ext = file.name.split(".").pop()
+      const newKey = `uploads/${ownerId}/${randomUUID()}.${ext}`
+      await s3.send(
+        new CopyObjectCommand({
+          Bucket: file.s3_bucket ?? BUCKET,
+          CopySource: `${file.s3_bucket ?? BUCKET}/${file.s3_key}`,
+          Key: newKey,
+        })
+      )
+      await supabase
+        .from("files")
+        .insert({
+          name: file.name,
+          mime_type: file.mime_type,
+          size: file.size,
+          s3_key: newKey,
+          s3_bucket: file.s3_bucket ?? BUCKET,
+          owner_id: ownerId,
+          parent_folder_id: newFolder.id,
+          upload_status: "complete",
+        })
+    })
+  )
+
+  // Recurse into subfolders
+  const { data: subFolders } = await supabase
+    .from("folders")
+    .select("id, name")
+    .eq("parent_folder_id", sourceFolderId)
+    .eq("is_trashed", false)
+  for (const sub of subFolders ?? []) {
+    await deepCopyFolder(sub.id, sub.name, newFolder.id, ownerId)
+  }
+}
+
 export async function revokeShareLink(linkId: string) {
-  const { userId } = await auth();
-  if (!userId) throw new Error("Unauthorized");
-
-  const user = await getUser(userId);
-  if (!user) throw new Error("User not found");
-
-  const { error } = await supabase
+  const { userId } = await auth()
+  if (!userId) throw new Error("Unauthorized")
+  const user = await getUser(userId)
+  if (!user) throw new Error("User not found")
+  await supabase
     .from("share_links")
     .delete()
     .eq("id", linkId)
-    .eq("owner_id", user.id);
-
-  if (error) throw new Error(error.message);
+    .eq("owner_id", user.id)
 }
 
-// ── Revoke a user permission ──────────────────────────────────
 export async function revokeUserPermission(permissionId: string) {
-  const { userId } = await auth();
-  if (!userId) throw new Error("Unauthorized");
-
-  const user = await getUser(userId);
-  if (!user) throw new Error("User not found");
-
-  // Verify the permission is on a resource owned by this user
+  const { userId } = await auth()
+  if (!userId) throw new Error("Unauthorized")
+  const user = await getUser(userId)
+  if (!user) throw new Error("User not found")
   const { data: perm } = await supabase
     .from("permissions")
     .select("id, resource_id, resource_type")
     .eq("id", permissionId)
-    .single();
-
-  if (!perm) throw new Error("Permission not found");
-
-  const table = perm.resource_type === "file" ? "files" : "folders";
+    .single()
+  if (!perm) throw new Error("Permission not found")
+  const table = perm.resource_type === "file" ? "files" : "folders"
   const { data: resource } = await supabase
     .from(table)
     .select("owner_id")
     .eq("id", perm.resource_id)
-    .single();
-
-  if (!resource || (resource as any).owner_id !== user.id) {
-    throw new Error("Access denied");
-  }
-
-  const { error } = await supabase
-    .from("permissions")
-    .delete()
-    .eq("id", permissionId);
-
-  if (error) throw new Error(error.message);
+    .single()
+  if (!resource || (resource as any).owner_id !== user.id)
+    throw new Error("Access denied")
+  await supabase.from("permissions").delete().eq("id", permissionId)
 }
