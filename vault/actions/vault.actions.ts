@@ -268,3 +268,33 @@ export async function getVaultDownloadUrl(fileId: string) {
   const url = await getSignedUrl(s3, command, { expiresIn: 300 }); // short — decryption is immediate
   return url;
 }
+
+// ── Rename vault file ─────────────────────────────────────────
+export async function renameVaultFile(fileId: string, newName: string) {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  const user = await getUser(userId);
+  if (!user) throw new Error("User not found");
+
+  // Verify ownership via vault
+  const { data: file } = await supabase
+    .from("vault_files")
+    .select("id, vaults(owner_id)")
+    .eq("id", fileId)
+    .single();
+
+  if (!file) throw new Error("File not found");
+  const vaultOwner = (file.vaults as any)?.owner_id;
+  if (vaultOwner !== user.id) throw new Error("Access denied");
+
+  const { data, error } = await supabase
+    .from("vault_files")
+    .update({ name: newName })
+    .eq("id", fileId)
+    .select()
+    .single();
+
+  if (error) throw new Error(error.message);
+  return data;
+}

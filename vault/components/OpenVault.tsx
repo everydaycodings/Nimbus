@@ -7,7 +7,7 @@ import {
   Image, FilePdf, FileVideo, MusicNote,
   CloudArrowUp, DownloadSimple, ShieldCheck,
   Eye, FolderSimple, FolderPlus, CaretRight,
-  X, House,
+  X, House, DotsThreeVertical, PencilSimple,
 } from "@phosphor-icons/react";
 import {
   getVaultFolders,
@@ -16,13 +16,20 @@ import {
   deleteVaultFolder,
   renameVaultFolder,
 } from "@/vault/actions/vault.folders.actions";
-import { deleteVaultFile } from "@/vault/actions/vault.actions";
+import { deleteVaultFile, renameVaultFile } from "@/vault/actions/vault.actions";
 import { useVaultUpload } from "@/vault/hooks/useVaultUpload";
 import { useVaultFolderUpload } from "@/vault/hooks/useVaultFolderUpload";
 import { useVaultDownload, canPreviewVaultFile } from "@/vault/hooks/useVaultDownload";
 import { clearVaultSession } from "@/vault/lib/session";
 import { deleteVault } from "@/vault/actions/vault.actions";
 import { VaultPreviewWrapper } from "@/vault/components/VaultPreviewWrapper";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import VaultUploadDropdown from "./VaultUploadDropdown";
 import DeleteConfirmDialog from "./DeleteConfirmDialog";
@@ -151,6 +158,99 @@ function CreateFolderDialog({
   );
 }
 
+// ── Rename dialog ─────────────────────────────────────────────
+function RenameDialog({
+  type,
+  targetId,
+  initialName,
+  onSuccess,
+  onClose,
+}: {
+  type: "file" | "folder";
+  targetId: string;
+  initialName: string;
+  onSuccess: () => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(initialName);
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { inputRef.current?.select(); }, []);
+
+  const handleRename = () => {
+    const trimmed = name.trim();
+    if (!trimmed) { setError("Name cannot be empty"); return; }
+    if (trimmed === initialName) { onClose(); return; }
+    setError(null);
+    startTransition(async () => {
+      try {
+        if (type === "folder") {
+          await renameVaultFolder(targetId, trimmed);
+        } else {
+          await renameVaultFile(targetId, trimmed);
+        }
+        onSuccess();
+        onClose();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to rename");
+      }
+    });
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="w-full max-w-sm bg-card border border-border rounded-2xl shadow-xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <PencilSimple size={16} weight="duotone" style={{ color: TEAL }} />
+            <h2 className="text-sm font-semibold text-foreground">Rename {type}</h2>
+          </div>
+          <button onClick={onClose} className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
+            <X size={15} />
+          </button>
+        </div>
+
+        <input
+          ref={inputRef}
+          type="text"
+          value={name}
+          placeholder="New name"
+          onChange={(e) => { setName(e.target.value); setError(null); }}
+          onKeyDown={(e) => { if (e.key === "Enter") handleRename(); if (e.key === "Escape") onClose(); }}
+          className={cn(
+            "w-full px-3 py-2 rounded-xl text-sm bg-secondary border text-foreground focus:outline-none focus:ring-1 transition-all",
+            error ? "border-red-500/50 focus:ring-red-500/30" : "border-border focus:ring-[#2da07a]/30 focus:border-[#2da07a]/50"
+          )}
+          disabled={isPending}
+        />
+        {error && <p className="mt-1.5 text-xs text-red-400">{error}</p>}
+
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={onClose} className="px-3 py-1.5 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-all">
+            Cancel
+          </button>
+          <button
+            onClick={handleRename}
+            disabled={isPending || !name.trim()}
+            className={cn(
+              "px-4 py-1.5 rounded-xl text-sm font-medium text-white transition-all",
+              isPending || !name.trim() ? "opacity-50 cursor-not-allowed" : "hover:opacity-90"
+            )}
+            style={{ backgroundColor: TEAL }}
+          >
+            {isPending ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main OpenVault component ──────────────────────────────────
 export function OpenVault({
   vault,
@@ -171,8 +271,11 @@ export function OpenVault({
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [previewing, setPreviewing] = useState<VaultPreviewState | null>(null);
   const [loadingPreview, setLoadingPreview] = useState<string | null>(null);
-  const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState("");
+  const [renameDialog, setRenameDialog] = useState<{
+    type: "file" | "folder";
+    id: string;
+    initialName: string;
+  } | null>(null);
 
   const { layout, handleLayoutChange } = useLayout("vault-layout");
 
@@ -240,14 +343,6 @@ export function OpenVault({
 
   const handleDeleteVaultClick = () => {
     setDeleteDialog({ type: "vault" });
-  };
-
-  const handleRenameFolder = async (folderId: string) => {
-    const trimmed = renameValue.trim();
-    if (!trimmed) { setRenamingFolder(null); return; }
-    await renameVaultFolder(folderId, trimmed);
-    setRenamingFolder(null);
-    refresh();
   };
 
   const handlePreview = async (file: VaultFile) => {
@@ -445,13 +540,23 @@ export function OpenVault({
                         </p>
                       </div>
 
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={() => handleDeleteFolder(folder.id)}
-                          className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-red-400"
-                        >
-                          <Trash size={13} />
-                        </button>
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground">
+                              <DotsThreeVertical size={16} weight="bold" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-40">
+                            <DropdownMenuItem onClick={() => setRenameDialog({ type: "folder", id: folder.id, initialName: folder.name })}>
+                              <PencilSimple className="mr-2" /> Rename
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => handleDeleteFolder(folder.id)} className="text-red-500 focus:text-red-500 focus:bg-red-500/10 dark:focus:bg-red-500/20">
+                              <Trash className="mr-2" /> Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </div>
                   ))}
@@ -473,9 +578,17 @@ export function OpenVault({
                     return (
                       <div
                         key={file.id}
-                        className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-accent transition-colors"
+                        className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-accent transition-colors cursor-pointer"
+                        onClick={() => { if (isPreviewable) handlePreview(file); }}
                       >
-                        <FileIcon mimeType={file.original_mime_type} />
+                        <div className="relative flex-shrink-0">
+                          <FileIcon mimeType={file.original_mime_type} />
+                          {isPreviewable && (
+                            <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-[#2da07a] rounded-full flex items-center justify-center border border-background shadow-sm">
+                              <Eye size={8} weight="bold" className="text-white" />
+                            </div>
+                          )}
+                        </div>
 
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium truncate">
@@ -486,31 +599,32 @@ export function OpenVault({
                           </p>
                         </div>
 
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          {isPreviewable && (
-                            <button
-                              onClick={() => handlePreview(file)}
-                              className="p-1.5 rounded-lg hover:bg-muted"
-                            >
-                              <Eye size={13} />
-                            </button>
-                          )}
-
-                          <button
-                            onClick={() =>
-                              download(file.id, file.name, file.original_mime_type)
-                            }
-                            className="p-1.5 rounded-lg hover:bg-muted"
-                          >
-                            <DownloadSimple size={13} />
-                          </button>
-
-                          <button
-                            onClick={() => handleDeleteFile(file.id)}
-                            className="p-1.5 rounded-lg hover:bg-muted text-red-400"
-                          >
-                            <Trash size={13} />
-                          </button>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground">
+                                <DotsThreeVertical size={16} weight="bold" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-40">
+                              {isPreviewable && (
+                                <DropdownMenuItem onClick={() => handlePreview(file)}>
+                                  <Eye className="mr-2" /> Preview
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuItem onClick={() => download(file.id, file.name, file.original_mime_type)}>
+                                <DownloadSimple className="mr-2" /> Download
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => setRenameDialog({ type: "file", id: file.id, initialName: file.name })}>
+                                <PencilSimple className="mr-2" /> Rename
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => handleDeleteFile(file.id)} className="text-red-500 focus:text-red-500 focus:bg-red-500/10 dark:focus:bg-red-500/20">
+                                <Trash className="mr-2" /> Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                       </div>
                     );
@@ -543,20 +657,28 @@ export function OpenVault({
                           <FolderSimple size={42} weight="fill" style={{ color: TEAL }} />
                         </div>
 
-                        <div className="px-3 py-2 flex justify-between">
-                          <p className="text-xs font-medium truncate">
+                        <div className="px-3 py-2 flex items-center justify-between">
+                          <p className="text-xs font-medium truncate flex-1">
                             {folder.name}
                           </p>
-
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteFolder(folder.id);
-                            }}
-                            className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-muted"
-                          >
-                            <Trash size={12} />
-                          </button>
+                          <div className="opacity-0 group-hover:opacity-100" onClick={(e) => e.stopPropagation()}>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button className="p-1 rounded hover:bg-muted text-muted-foreground">
+                                  <DotsThreeVertical size={14} weight="bold" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-40">
+                                <DropdownMenuItem onClick={() => setRenameDialog({ type: "folder", id: folder.id, initialName: folder.name })}>
+                                  <PencilSimple className="mr-2" /> Rename
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => handleDeleteFolder(folder.id)} className="text-red-500 focus:text-red-500 focus:bg-red-500/10 dark:focus:bg-red-500/20">
+                                  <Trash className="mr-2" /> Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -580,48 +702,57 @@ export function OpenVault({
                       return (
                         <div
                           key={file.id}
-                          className="group rounded-2xl border border-border bg-card hover:shadow-md hover:border-[#2da07a]/30 transition-all"
+                          className="group rounded-2xl border border-border bg-card hover:shadow-md hover:border-[#2da07a]/30 transition-all cursor-pointer relative"
+                          onClick={() => { if (isPreviewable) handlePreview(file); }}
                         >
                           <div
-                            className="flex items-center justify-center rounded-t-2xl"
+                            className="flex items-center justify-center rounded-t-2xl relative"
                             style={{ height: 100, background: "var(--secondary)" }}
                           >
                             <FileIcon mimeType={file.original_mime_type} size={40} />
+                            {isPreviewable && (
+                              <div className="absolute top-3 right-3 w-6 h-6 bg-black/40 backdrop-blur-md rounded-full flex items-center justify-center border border-white/10 shadow-sm">
+                                <Eye size={12} weight="bold" className="text-white" />
+                              </div>
+                            )}
                           </div>
 
-                          <div className="px-3 py-2 flex flex-col gap-1">
-                            <p className="text-xs font-medium truncate">
-                              {file.name}
-                            </p>
-                            <p className="text-[10px] text-muted-foreground">
-                              {formatBytes(file.size)}
-                            </p>
+                          <div className="px-3 py-2 flex items-start gap-2">
+                            <div className="flex-1 min-w-0 flex flex-col gap-1">
+                              <p className="text-xs font-medium truncate">
+                                {file.name}
+                              </p>
+                              <p className="text-[10px] text-muted-foreground">
+                                {formatBytes(file.size)}
+                              </p>
+                            </div>
 
-                            <div className="flex gap-1 mt-1 opacity-0 group-hover:opacity-100">
-                              {isPreviewable && (
-                                <button
-                                  onClick={() => handlePreview(file)}
-                                  className="p-1 rounded hover:bg-muted"
-                                >
-                                  <Eye size={12} />
-                                </button>
-                              )}
-
-                              <button
-                                onClick={() =>
-                                  download(file.id, file.name, file.original_mime_type)
-                                }
-                                className="p-1 rounded hover:bg-muted"
-                              >
-                                <DownloadSimple size={12} />
-                              </button>
-
-                              <button
-                                onClick={() => handleDeleteFile(file.id)}
-                                className="p-1 rounded hover:bg-muted text-red-400"
-                              >
-                                <Trash size={12} />
-                              </button>
+                            <div className="opacity-0 group-hover:opacity-100 -mr-1" onClick={(e) => e.stopPropagation()}>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <button className="p-1 rounded hover:bg-muted text-muted-foreground">
+                                    <DotsThreeVertical size={14} weight="bold" />
+                                  </button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-40">
+                                  {isPreviewable && (
+                                    <DropdownMenuItem onClick={() => handlePreview(file)}>
+                                      <Eye className="mr-2" /> Preview
+                                    </DropdownMenuItem>
+                                  )}
+                                  <DropdownMenuItem onClick={() => download(file.id, file.name, file.original_mime_type)}>
+                                    <DownloadSimple className="mr-2" /> Download
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem onClick={() => setRenameDialog({ type: "file", id: file.id, initialName: file.name })}>
+                                    <PencilSimple className="mr-2" /> Rename
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem onClick={() => handleDeleteFile(file.id)} className="text-red-500 focus:text-red-500 focus:bg-red-500/10 dark:focus:bg-red-500/20">
+                                    <Trash className="mr-2" /> Delete
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             </div>
                           </div>
                         </div>
@@ -642,6 +773,16 @@ export function OpenVault({
           parentFolderId={currentFolderId}
           onSuccess={refresh}
           onClose={() => setShowCreateFolder(false)}
+        />
+      )}
+
+      {renameDialog && (
+        <RenameDialog
+          type={renameDialog.type}
+          targetId={renameDialog.id}
+          initialName={renameDialog.initialName}
+          onSuccess={refresh}
+          onClose={() => setRenameDialog(null)}
         />
       )}
 
