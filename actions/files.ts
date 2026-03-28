@@ -20,49 +20,69 @@ async function getUserId(clerkId: string) {
 }
 
 // ── Fetch files + folders in a given folder (null = root) ────
-export async function getFiles(parentFolderId: string | null = null) {
+export async function getFiles(
+  parentFolderId: string | null = null,
+  options?: {
+    page?: number;
+    query?: string;
+  }
+) {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
   const user = await getUserId(userId);
   if (!user) throw new Error("User not found");
 
-  // Build folder query — use .is() for null, .eq() for an actual id
-  const folderQuery = supabase
+  const page = options?.page ?? 1;
+  const query = options?.query;
+
+  const PAGE_SIZE = 20;
+  const from = (page - 1) * PAGE_SIZE;
+  const to = from + PAGE_SIZE - 1;
+
+  // ── FOLDERS ─────────────────────────────────────
+  let folderQuery = supabase
     .from("folders")
     .select("id, name, created_at, is_starred, parent_folder_id")
     .eq("owner_id", user.id)
     .eq("is_trashed", false)
     .order("name", { ascending: true });
 
-  const { data: folders, error: folderError } = await (
-    parentFolderId
-      ? folderQuery.eq("parent_folder_id", parentFolderId)
-      : folderQuery.is("parent_folder_id", null)
-  );
+  folderQuery = parentFolderId
+    ? folderQuery.eq("parent_folder_id", parentFolderId)
+    : folderQuery.is("parent_folder_id", null);
 
+  if (query) {
+    folderQuery = folderQuery.ilike("name", `%${query}%`);
+  }
+
+  const { data: folders, error: folderError } = await folderQuery;
   if (folderError) throw new Error(folderError.message);
 
-  // Build file query — same pattern
-  const fileQuery = supabase
+  // ── FILES ───────────────────────────────────────
+  let fileQuery = supabase
     .from("files")
     .select("id, name, mime_type, size, created_at, is_starred, parent_folder_id, s3_key")
     .eq("owner_id", user.id)
     .eq("is_trashed", false)
     .eq("upload_status", "complete")
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .range(from, to);
 
-  const { data: files, error: fileError } = await (
-    parentFolderId
-      ? fileQuery.eq("parent_folder_id", parentFolderId)
-      : fileQuery.is("parent_folder_id", null)
-  );
+  fileQuery = parentFolderId
+    ? fileQuery.eq("parent_folder_id", parentFolderId)
+    : fileQuery.is("parent_folder_id", null);
 
+  if (query) {
+    fileQuery = fileQuery.ilike("name", `%${query}%`);
+  }
+
+  const { data: files, error: fileError } = await fileQuery;
   if (fileError) throw new Error(fileError.message);
 
   return {
     folders: folders ?? [],
-    files:   files   ?? [],
+    files: files ?? [],
     user,
   };
 }

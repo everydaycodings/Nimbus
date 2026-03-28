@@ -107,7 +107,7 @@ export function Sidebar({ storageUsed, storageLimit }: SidebarProps) {
               <button
                 key={item.name}
                 onClick={() => {
-                  router.push("/files?reset=1"); // 🔥 HERE
+                  router.push("/files"); // 🔥 HERE
                 }}
                 className={cn(
                   "group flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-all duration-150 w-full text-left cursor-pointer",

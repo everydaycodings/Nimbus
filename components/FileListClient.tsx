@@ -34,20 +34,74 @@ export function FileListClient({ initialFiles, initialFolders, user }: Props) {
   const [isDragging, setIsDragging] = useState(false);
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const searchParams = useSearchParams();
-  const reset = searchParams.get("reset");
-  useEffect(() => {
-    if (reset) {
-      navigateToRoot();
-      router.replace("/files"); // clean URL
-    }
-  }, [reset]);
   useEffect(() => {
     const folderId = searchParams.get("folder");
-  
-    if (folderId) {
-      openFolder(folderId, ""); // name optional or fetch later
-    }
-  }, [searchParams]);
+    const folderName = searchParams.get("name");
+    const path = searchParams.get("path");     // ✅ ADD
+    const names = searchParams.get("names");   // ✅ ADD
+    const query = searchParams.get("query");
+    const page = Number(searchParams.get("page") || 1);
+
+    const load = async () => {
+
+      // 🔥 1. HANDLE PATH (PUT THIS FIRST)
+      if (path && names) {
+        const ids = path.split(",");
+        const decodedNames = names.split(",").map(decodeURIComponent);
+
+        const crumbs = ids.map((id, i) => ({
+          id,
+          name: decodedNames[i],
+        }));
+
+        setBreadcrumbs(crumbs);
+        setCurrentFolder(ids[ids.length - 1]);
+
+        const data = await getFiles(ids[ids.length - 1], { page });
+        setFiles(data.files);
+        setFolders(data.folders);
+        return;
+      }
+
+      // 🔽 KEEP YOUR EXISTING LOGIC BELOW
+
+      // ROOT
+      if (!folderId && !query) {
+        setCurrentFolder(null);
+        setBreadcrumbs([]);
+
+        const data = await getFiles(null, { page });
+        setFiles(data.files);
+        setFolders(data.folders);
+        return;
+      }
+
+      // SEARCH
+      if (query) {
+        const data = await getFiles(null, { query, page });
+        setFiles(data.files);
+        setFolders([]);
+        return;
+      }
+
+      // SINGLE FOLDER (fallback)
+      if (folderId && folderId !== currentFolder) {
+        setCurrentFolder(folderId);
+
+        if (folderName) {
+          setBreadcrumbs([
+            { id: folderId, name: decodeURIComponent(folderName) },
+          ]);
+        }
+
+        const data = await getFiles(folderId, { page });
+        setFiles(data.files);
+        setFolders(data.folders);
+      }
+    };
+
+    load();
+  }, [searchParams, currentFolder]);
 
   const refresh = useCallback(async () => {
     const data = await getFiles(currentFolder);
@@ -77,37 +131,26 @@ export function FileListClient({ initialFiles, initialFolders, user }: Props) {
   };
 
   // ── Folder navigation ─────────────────────────────────────
-  const openFolder = async (id: string, name: string) => {
-    setBreadcrumbs((prev) => {
-      // ❌ prevent duplicate if already last
-      if (prev[prev.length - 1]?.id === id) return prev;
-  
-      return [...prev, { id, name }];
-    });
-  
-    setCurrentFolder(id);
-  
-    const data = await getFiles(id);
-    setFiles(data.files);
-    setFolders(data.folders);
+  const openFolder = (id: string, name: string) => {
+    const newPath = [...breadcrumbs, { id, name }];
+
+    const pathIds = newPath.map((c) => c.id).join(",");
+    const pathNames = newPath.map((c) => encodeURIComponent(c.name)).join(",");
+
+    router.push(`/files?path=${pathIds}&names=${pathNames}`);
   };
 
-  const navigateToBreadcrumb = async (index: number) => {
-    const crumb = breadcrumbs[index];
+  const navigateToBreadcrumb = (index: number) => {
     const newCrumbs = breadcrumbs.slice(0, index + 1);
-    setBreadcrumbs(newCrumbs);
-    setCurrentFolder(crumb.id);
-    const data = await getFiles(crumb.id);
-    setFiles(data.files);
-    setFolders(data.folders);
+
+    const pathIds = newCrumbs.map((c) => c.id).join(",");
+    const pathNames = newCrumbs.map((c) => encodeURIComponent(c.name)).join(",");
+
+    router.push(`/files?path=${pathIds}&names=${pathNames}`);
   };
 
-  const navigateToRoot = async () => {
-    setBreadcrumbs([]);
-    setCurrentFolder(null);
-    const data = await getFiles(null);
-    setFiles(data.files);
-    setFolders(data.folders);
+  const navigateToRoot = () => {
+    router.push("/files");
   };
 
   return (
