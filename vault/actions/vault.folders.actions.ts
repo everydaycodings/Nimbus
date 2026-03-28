@@ -178,3 +178,32 @@ export async function renameVaultFolder(folderId: string, name: string) {
 
   if (error) throw new Error(error.message);
 }
+
+export async function moveVaultFile(
+  fileId: string,
+  targetFolderId: string | null
+) {
+  const { error } = await supabase
+    .from("vault_files")
+    .update({ parent_folder_id: targetFolderId })
+    .eq("id", fileId);
+
+  if (error) throw new Error(error.message);
+}
+
+export async function moveVaultFolder(
+  folderId: string,
+  targetFolderId: string | null
+) {
+  // 🚫 prevent moving into itself
+  if (folderId === targetFolderId) {
+    throw new Error("Cannot move folder into itself");
+  }
+
+  const { error } = await supabase
+    .from("vault_folders")
+    .update({ parent_folder_id: targetFolderId })
+    .eq("id", folderId);
+
+  if (error) throw new Error(error.message);
+}

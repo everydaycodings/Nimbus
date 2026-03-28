@@ -23,6 +23,8 @@ import { useVaultDownload, canPreviewVaultFile } from "@/vault/hooks/useVaultDow
 import { clearVaultSession } from "@/vault/lib/session";
 import { deleteVault } from "@/vault/actions/vault.actions";
 import { VaultPreviewWrapper } from "@/vault/components/VaultPreviewWrapper";
+import VaultMoveDialog from "@/vault/components/VaultMoveDialog";
+import VaultItemMenu from "@/vault/components/VaultItemMenu";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -275,6 +277,11 @@ export function OpenVault({
     type: "file" | "folder";
     id: string;
     initialName: string;
+  } | null>(null);
+  const [moveDialog, setMoveDialog] = useState<{
+    id: string;
+    name: string;
+    type: "file" | "folder";
   } | null>(null);
 
   const { layout, handleLayoutChange } = useLayout("vault-layout");
@@ -541,22 +548,26 @@ export function OpenVault({
                       </div>
 
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <button className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground">
-                              <DotsThreeVertical size={16} weight="bold" />
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-40">
-                            <DropdownMenuItem onClick={() => setRenameDialog({ type: "folder", id: folder.id, initialName: folder.name })}>
-                              <PencilSimple className="mr-2" /> Rename
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={() => handleDeleteFolder(folder.id)} className="text-red-500 focus:text-red-500 focus:bg-red-500/10 dark:focus:bg-red-500/20">
-                              <Trash className="mr-2" /> Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        <VaultItemMenu
+                          type="folder"
+                          id={folder.id}
+                          name={folder.name}
+                          onRename={() =>
+                            setRenameDialog({
+                              type: "folder",
+                              id: folder.id,
+                              initialName: folder.name,
+                            })
+                          }
+                          onMove={() =>
+                            setMoveDialog({
+                              id: folder.id,
+                              name: folder.name,
+                              type: "folder",
+                            })
+                          }
+                          onDelete={() => handleDeleteFolder(folder.id)}
+                        />
                       </div>
                     </div>
                   ))}
@@ -600,31 +611,26 @@ export function OpenVault({
                         </div>
 
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <button className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground">
-                                <DotsThreeVertical size={16} weight="bold" />
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-40">
-                              {isPreviewable && (
-                                <DropdownMenuItem onClick={() => handlePreview(file)}>
-                                  <Eye className="mr-2" /> Preview
-                                </DropdownMenuItem>
-                              )}
-                              <DropdownMenuItem onClick={() => download(file.id, file.name, file.original_mime_type)}>
-                                <DownloadSimple className="mr-2" /> Download
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem onClick={() => setRenameDialog({ type: "file", id: file.id, initialName: file.name })}>
-                                <PencilSimple className="mr-2" /> Rename
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem onClick={() => handleDeleteFile(file.id)} className="text-red-500 focus:text-red-500 focus:bg-red-500/10 dark:focus:bg-red-500/20">
-                                <Trash className="mr-2" /> Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          <VaultItemMenu
+                            type="file"
+                            id={file.id}
+                            name={file.name}
+                            onRename={() =>
+                              setRenameDialog({
+                                type: "file",
+                                id: file.id,
+                                initialName: file.name,
+                              })
+                            }
+                            onMove={() =>
+                              setMoveDialog({
+                                id: file.id,
+                                name: file.name,
+                                type: "file",
+                              })
+                            }
+                            onDelete={() => handleDeleteFile(file.id)}
+                          />
                         </div>
                       </div>
                     );
@@ -662,22 +668,26 @@ export function OpenVault({
                             {folder.name}
                           </p>
                           <div className="opacity-0 group-hover:opacity-100" onClick={(e) => e.stopPropagation()}>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <button className="p-1 rounded hover:bg-muted text-muted-foreground">
-                                  <DotsThreeVertical size={14} weight="bold" />
-                                </button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-40">
-                                <DropdownMenuItem onClick={() => setRenameDialog({ type: "folder", id: folder.id, initialName: folder.name })}>
-                                  <PencilSimple className="mr-2" /> Rename
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={() => handleDeleteFolder(folder.id)} className="text-red-500 focus:text-red-500 focus:bg-red-500/10 dark:focus:bg-red-500/20">
-                                  <Trash className="mr-2" /> Delete
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                            <VaultItemMenu
+                              type="folder"
+                              id={folder.id}
+                              name={folder.name}
+                              onRename={() =>
+                                setRenameDialog({
+                                  type: "folder",
+                                  id: folder.id,
+                                  initialName: folder.name,
+                                })
+                              }
+                              onMove={() =>
+                                setMoveDialog({
+                                  id: folder.id,
+                                  name: folder.name,
+                                  type: "folder",
+                                })
+                              }
+                              onDelete={() => handleDeleteFolder(folder.id)}
+                            />
                           </div>
                         </div>
                       </div>
@@ -728,31 +738,26 @@ export function OpenVault({
                             </div>
 
                             <div className="opacity-0 group-hover:opacity-100 -mr-1" onClick={(e) => e.stopPropagation()}>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <button className="p-1 rounded hover:bg-muted text-muted-foreground">
-                                    <DotsThreeVertical size={14} weight="bold" />
-                                  </button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="w-40">
-                                  {isPreviewable && (
-                                    <DropdownMenuItem onClick={() => handlePreview(file)}>
-                                      <Eye className="mr-2" /> Preview
-                                    </DropdownMenuItem>
-                                  )}
-                                  <DropdownMenuItem onClick={() => download(file.id, file.name, file.original_mime_type)}>
-                                    <DownloadSimple className="mr-2" /> Download
-                                  </DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem onClick={() => setRenameDialog({ type: "file", id: file.id, initialName: file.name })}>
-                                    <PencilSimple className="mr-2" /> Rename
-                                  </DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem onClick={() => handleDeleteFile(file.id)} className="text-red-500 focus:text-red-500 focus:bg-red-500/10 dark:focus:bg-red-500/20">
-                                    <Trash className="mr-2" /> Delete
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
+                              <VaultItemMenu
+                                type="file"
+                                id={file.id}
+                                name={file.name}
+                                onRename={() =>
+                                  setRenameDialog({
+                                    type: "file",
+                                    id: file.id,
+                                    initialName: file.name,
+                                  })
+                                }
+                                onMove={() =>
+                                  setMoveDialog({
+                                    id: file.id,
+                                    name: file.name,
+                                    type: "file",
+                                  })
+                                }
+                                onDelete={() => handleDeleteFile(file.id)}
+                              />
                             </div>
                           </div>
                         </div>
@@ -806,6 +811,16 @@ export function OpenVault({
         onCancel={() => setDeleteDialog({ type: null })}
         onConfirm={confirmDelete}
       />
+
+      {moveDialog && (
+        <VaultMoveDialog
+          vaultId={vault.id}
+          vaultName={vault.name}
+          items={[moveDialog]}
+          onClose={() => setMoveDialog(null)}
+          onSuccess={refresh}
+        />
+      )}
 
       {previewing && (
         <VaultPreviewWrapper
