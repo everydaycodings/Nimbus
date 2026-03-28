@@ -25,6 +25,7 @@ import { deleteVault }               from "@/vault/actions/vault.actions";
 import { VaultPreviewWrapper }       from "@/vault/components/VaultPreviewWrapper";
 import { cn } from "@/lib/utils";
 import VaultUploadDropdown from "./VaultUploadDropdown";
+import DeleteConfirmDialog from "./DeleteConfirmDialog";
 
 const TEAL = "#2da07a";
 
@@ -212,6 +213,13 @@ export function OpenVault({
     }
   }, [uploads]);
 
+  const [deleteDialog, setDeleteDialog] = useState<{
+    type: "file" | "folder" | "vault" | null;
+    id?: string;
+  }>({ type: null });
+  
+  const [deleting, setDeleting] = useState(false);
+
   // ── Navigation ───────────────────────────────────────────────
   const openFolder = async (folder: VaultFolder) => {
     setBreadcrumbs((prev) => [...prev, { id: folder.id, name: folder.name }]);
@@ -230,16 +238,16 @@ export function OpenVault({
   };
 
   // ── Actions ──────────────────────────────────────────────────
-  const handleDeleteFile = async (fileId: string) => {
-    if (!confirm("Permanently delete this file?")) return;
-    await deleteVaultFile(fileId);
-    refresh();
+  const handleDeleteFile = (fileId: string) => {
+    setDeleteDialog({ type: "file", id: fileId });
   };
-
-  const handleDeleteFolder = async (folderId: string) => {
-    if (!confirm("Delete this folder and all its contents?")) return;
-    await deleteVaultFolder(folderId);
-    refresh();
+  
+  const handleDeleteFolder = (folderId: string) => {
+    setDeleteDialog({ type: "folder", id: folderId });
+  };
+  
+  const handleDeleteVaultClick = () => {
+    setDeleteDialog({ type: "vault" });
   };
 
   const handleRenameFolder = async (folderId: string) => {
@@ -268,12 +276,32 @@ export function OpenVault({
     if (previewing) { URL.revokeObjectURL(previewing.objectUrl); setPreviewing(null); }
   };
 
-  const handleDeleteVault = async () => {
-    if (!confirm(`Delete vault "${vault.name}"? All encrypted files will be permanently removed.`)) return;
-    clearVaultSession(vault.id);
-    await deleteVault(vault.id);
-    onRefreshVaults();
-    onLock();
+  const confirmDelete = async () => {
+    if (!deleteDialog.type) return;
+  
+    setDeleting(true);
+  
+    try {
+      if (deleteDialog.type === "file" && deleteDialog.id) {
+        await deleteVaultFile(deleteDialog.id);
+        await refresh();
+      }
+  
+      if (deleteDialog.type === "folder" && deleteDialog.id) {
+        await deleteVaultFolder(deleteDialog.id);
+        await refresh();
+      }
+  
+      if (deleteDialog.type === "vault") {
+        clearVaultSession(vault.id);
+        await deleteVault(vault.id);
+        onRefreshVaults();
+        onLock();
+      }
+    } finally {
+      setDeleting(false);
+      setDeleteDialog({ type: null });
+    }
   };
 
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -307,7 +335,7 @@ export function OpenVault({
           </button>
 
           {/* Delete vault */}
-          <button onClick={handleDeleteVault} className="p-2 rounded-xl text-muted-foreground hover:text-red-400 hover:bg-accent transition-colors">
+          <button onClick={handleDeleteVaultClick} className="p-2 rounded-xl text-muted-foreground hover:text-red-400 hover:bg-accent transition-colors">
             <Trash size={15} />
           </button>
         </div>
@@ -338,35 +366,6 @@ export function OpenVault({
                 {crumb.name}
               </button>
             </span>
-          ))}
-        </div>
-      )}
-
-      {/* ── Upload progress ── */}
-      {uploads.length > 0 && (
-        <div className="mb-4 flex flex-col gap-1.5 flex-shrink-0">
-          {uploads.map((u) => (
-            <div
-              key={u.id}
-              className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded-xl border text-sm",
-                u.status === "error" ? "border-red-500/20 bg-red-500/5" : "border-border bg-secondary"
-              )}
-            >
-              <File size={13} className="text-muted-foreground flex-shrink-0" />
-              <span className="flex-1 truncate text-muted-foreground text-xs">{u.name}</span>
-              {u.status === "encrypting" && <span className="text-xs text-muted-foreground">Encrypting...</span>}
-              {u.status === "uploading"  && (
-                <>
-                  <div className="w-20 h-1 rounded-full bg-muted overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width: `${u.progress}%`, backgroundColor: TEAL }} />
-                  </div>
-                  <span className="text-xs text-muted-foreground">{u.progress}%</span>
-                </>
-              )}
-              {u.status === "complete" && <span className="text-xs font-medium" style={{ color: TEAL }}>Done</span>}
-              {u.status === "error"    && <span className="text-xs text-red-400">{u.error ?? "Failed"}</span>}
-            </div>
           ))}
         </div>
       )}
@@ -519,6 +518,27 @@ export function OpenVault({
           onClose={() => setShowCreateFolder(false)}
         />
       )}
+
+<DeleteConfirmDialog
+  open={deleteDialog.type !== null}
+  loading={deleting}
+  title={
+    deleteDialog.type === "vault"
+      ? "Delete Vault"
+      : deleteDialog.type === "folder"
+      ? "Delete Folder"
+      : "Delete File"
+  }
+  description={
+    deleteDialog.type === "vault"
+      ? `Delete vault "${vault.name}"? All encrypted files will be permanently removed.`
+      : deleteDialog.type === "folder"
+      ? "This folder and all its contents will be permanently deleted."
+      : "This file will be permanently deleted."
+  }
+  onCancel={() => setDeleteDialog({ type: null })}
+  onConfirm={confirmDelete}
+/>
 
       {previewing && (
         <VaultPreviewWrapper
