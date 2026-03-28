@@ -12,6 +12,7 @@ import {
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { CloudIcon } from "@phosphor-icons/react";
+import { ShareDownloadButton } from "@/components/ShareDownloadButton";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -58,10 +59,10 @@ const Logo = () => (
 );
 
 function FileMimeIcon({ mimeType, size = 32 }: { mimeType: string; size?: number }) {
-  if (mimeType.startsWith("image/"))  return <Image    size={size} className="text-purple-400" />;
-  if (mimeType.startsWith("video/"))  return <FileVideo size={size} className="text-blue-400"   />;
-  if (mimeType.startsWith("audio/"))  return <MusicNote size={size} className="text-pink-400"   />;
-  if (mimeType === "application/pdf") return <FilePdf   size={size} className="text-red-400"    />;
+  if (mimeType.startsWith("image/")) return <Image size={size} className="text-purple-400" />;
+  if (mimeType.startsWith("video/")) return <FileVideo size={size} className="text-blue-400" />;
+  if (mimeType.startsWith("audio/")) return <MusicNote size={size} className="text-pink-400" />;
+  if (mimeType === "application/pdf") return <FilePdf size={size} className="text-red-400" />;
   return <File size={size} className="text-muted-foreground" />;
 }
 
@@ -81,6 +82,7 @@ export default async function SharePage({
   if (!link) return notFound();
 
   const expired = link.expires_at && new Date(link.expires_at) < new Date();
+
   if (expired) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
@@ -118,17 +120,16 @@ export default async function SharePage({
 
     return (
       <div className="flex flex-col h-screen bg-background">
-        <header className="flex items-center justify-between px-6 py-3 border-b border-border">
+        <header className="sticky top-0 z-10 flex items-center justify-between px-6 py-3 border-b border-border bg-background/80 backdrop-blur-sm">
           <Logo />
-          <a
-            href={signedUrl}
-            download={file.name}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-medium text-white hover:opacity-90"
-            style={{ backgroundColor: TEAL }}
-          >
-            <DownloadSimple size={15} weight="bold" />
-            Download
-          </a>
+
+          <div className="flex items-center gap-2">
+            <ShareDownloadButton token={token} />
+
+            <span className="text-xs text-muted-foreground border border-border rounded-full px-2 py-0.5">
+              {link.role === "viewer" ? "View only" : "Can edit"}
+            </span>
+          </div>
         </header>
 
         <div className="flex-1 flex items-center justify-center p-8 overflow-hidden">
@@ -216,7 +217,7 @@ export default async function SharePage({
           s3,
           new GetObjectCommand({
             Bucket: BUCKET,
-            Key:    f.s3_key,
+            Key: f.s3_key,
             ResponseContentDisposition: `attachment; filename="${f.name}"`,
           }),
           { expiresIn: 3600 }
@@ -226,17 +227,24 @@ export default async function SharePage({
     );
 
     const folderCount = (subFolders ?? []).length;
-    const fileCount   = filesWithUrls.length;
-    const isEmpty     = folderCount === 0 && fileCount === 0;
+    const fileCount = filesWithUrls.length;
+    const isEmpty = folderCount === 0 && fileCount === 0;
 
     return (
       <div className="flex flex-col min-h-screen bg-background">
         {/* Header */}
         <header className="sticky top-0 z-10 flex items-center justify-between px-6 py-3 border-b border-border bg-background/80 backdrop-blur-sm">
           <Logo />
-          <span className="text-xs text-muted-foreground border border-border rounded-full px-2 py-0.5">
-            {link.role === "viewer" ? "View only" : "Can edit"}
-          </span>
+
+          <div className="flex items-center gap-2">
+            {!isEmpty && (
+              <ShareDownloadButton token={token} />
+            )}
+
+            <span className="text-xs text-muted-foreground border border-border rounded-full px-2 py-0.5">
+              {link.role === "viewer" ? "View only" : "Can edit"}
+            </span>
+          </div>
         </header>
 
         <main className="flex-1 max-w-5xl mx-auto w-full px-6 py-8">
@@ -254,9 +262,9 @@ export default async function SharePage({
                 {isEmpty
                   ? "Empty folder"
                   : [
-                      folderCount > 0 && `${folderCount} folder${folderCount !== 1 ? "s" : ""}`,
-                      fileCount   > 0 && `${fileCount} file${fileCount !== 1 ? "s" : ""}`,
-                    ]
+                    folderCount > 0 && `${folderCount} folder${folderCount !== 1 ? "s" : ""}`,
+                    fileCount > 0 && `${fileCount} file${fileCount !== 1 ? "s" : ""}`,
+                  ]
                     .filter(Boolean)
                     .join(" · ")}
               </p>
@@ -343,7 +351,7 @@ export default async function SharePage({
                                 download={file.name}
                                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-white"
                                 style={{ backgroundColor: TEAL }}
-                                
+
                               >
                                 <DownloadSimple size={13} weight="bold" />
                                 Download
