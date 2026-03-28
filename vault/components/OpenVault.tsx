@@ -60,7 +60,7 @@ interface Breadcrumb {
 }
 
 interface VaultPreviewState {
-  objectUrl: string;
+  objectUrl: string | null;
   fileName: string;
   mimeType: string;
   fileId: string;
@@ -252,20 +252,28 @@ export function OpenVault({
 
   const handlePreview = async (file: VaultFile) => {
     setLoadingPreview(file.id);
+    setPreviewing({ objectUrl: null, fileName: file.name, mimeType: file.original_mime_type, fileId: file.id });
     try {
       const objectUrl = await preview(file.id, file.original_mime_type);
       if (objectUrl) {
-        setPreviewing({ objectUrl, fileName: file.name, mimeType: file.original_mime_type, fileId: file.id });
+        setPreviewing((prev) => prev ? { ...prev, objectUrl } : null);
+      } else {
+        setPreviewing(null);
       }
     } catch {
       alert("Failed to decrypt file for preview.");
+      setPreviewing(null);
     } finally {
       setLoadingPreview(null);
     }
   };
 
   const closePreview = () => {
-    if (previewing) { URL.revokeObjectURL(previewing.objectUrl); setPreviewing(null); }
+    if (previewing?.objectUrl) {
+      URL.revokeObjectURL(previewing.objectUrl);
+    }
+    setPreviewing(null);
+    setLoadingPreview(null);
   };
 
   const confirmDelete = async () => {

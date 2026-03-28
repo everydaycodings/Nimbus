@@ -130,9 +130,6 @@ export function VideoPlayer({ src, fileName }: { src: string; fileName: string }
     hideControlsTimer.current = setTimeout(() => {
       if (playing) setShowCtrls(false);
     }, 3000);
-    hideControlsTimer.current = setTimeout(() => {
-      if (playing) setShowCtrls(false);
-    }, 3000);
   }, [playing]);
 
   useEffect(() => {
