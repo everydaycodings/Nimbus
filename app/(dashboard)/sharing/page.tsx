@@ -17,6 +17,7 @@ import {
   getSharedFileDownloadUrl,
   copySharedFileToDrive,
   copySharedFolderToDrive,
+  getSharedFolderZip,
 } from "@/actions/sharing.dashboard";
 import { FilePreviewDialog } from "@/components/FilePreviewDialog";
 import { MoveDialog } from "@/components/MoveDialog";
@@ -378,6 +379,8 @@ function CopyToDialog({
 }
 
 // ── Shared with me card ───────────────────────────────────────
+// Replace the SharedWithMeCard component in sharing/page.tsx with this
+
 function SharedWithMeCard({
   item,
   onRefresh,
@@ -388,17 +391,51 @@ function SharedWithMeCard({
   const [showPreview, setShowPreview] = useState(false);
   const [showCopyTo, setShowCopyTo] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const ownerInitial = item.owner_name ? item.owner_name[0].toUpperCase() : item.owner_email[0].toUpperCase();
+  const [dlProgress, setDlProgress] = useState<string | null>(null);
+
+  const ownerInitial = item.owner_name
+    ? item.owner_name[0].toUpperCase()
+    : item.owner_email[0].toUpperCase();
 
   const handleDownload = async () => {
-    if (item.resource_type !== "file") return;
     setDownloading(true);
+
     try {
-      const { url, name } = await getSharedFileDownloadUrl(item.resource_id);
-      const a = Object.assign(document.createElement("a"), { href: url, download: name });
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      if (item.resource_type === "file") {
+        // ── Single file ──────────────────────────────────────
+        const { url, name } = await getSharedFileDownloadUrl(item.resource_id);
+        const a = Object.assign(document.createElement("a"), { href: url, download: name });
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+      } else {
+        // ── Folder → zip ─────────────────────────────────────
+        // Server builds the zip and returns base64
+        setDlProgress("Building zip...");
+        const { base64, fileName } = await getSharedFolderZip(item.resource_id);
+
+        setDlProgress("Preparing download...");
+
+        // Convert base64 → Uint8Array → Blob
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const blob = new Blob([bytes], { type: "application/zip" });
+
+        const url = URL.createObjectURL(blob);
+        const a = Object.assign(document.createElement("a"), { href: url, download: fileName });
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      }
+    } catch (err) {
+      console.error("[download]", err);
+      alert("Download failed. Please try again.");
     } finally {
       setDownloading(false);
+      setDlProgress(null);
     }
   };
 
@@ -413,9 +450,11 @@ function SharedWithMeCard({
         {/* Body */}
         <div className="flex flex-col gap-1.5 p-3 flex-1">
           <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
-          {item.size && <p className="text-[10px] text-muted-foreground">{formatBytes(item.size)}</p>}
+          {item.size && (
+            <p className="text-[10px] text-muted-foreground">{formatBytes(item.size)}</p>
+          )}
 
-          {/* Role */}
+          {/* Role badge */}
           <span className={cn(
             "self-start flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border",
             item.role === "editor"
@@ -428,17 +467,27 @@ function SharedWithMeCard({
 
           {/* Owner */}
           <div className="flex items-center gap-1.5 mt-1">
-            <div className="w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold text-white flex-shrink-0" style={{ backgroundColor: TEAL }}>
+            <div
+              className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"
+              style={{ backgroundColor: TEAL }}
+            >
               {ownerInitial}
             </div>
-            <p className="text-[10px] text-muted-foreground truncate">
-              {item.owner_name ?? item.owner_email}
-            </p>
+
+            <div className="flex flex-col leading-tight max-w-[120px]">
+              <p className="text-[12px] wrap-break-word">
+                {item.owner_name ?? "--"}
+              </p>
+              <p className="text-[10px] text-muted-foreground wrap-break-word">
+                {item.owner_email}
+              </p>
+            </div>
           </div>
         </div>
 
         {/* Actions */}
         <div className="flex items-center gap-1 px-3 py-2 border-t border-border">
+          {/* Preview — files only */}
           {item.resource_type === "file" && (
             <button
               onClick={() => setShowPreview(true)}
@@ -449,17 +498,24 @@ function SharedWithMeCard({
               Preview
             </button>
           )}
-          {item.resource_type === "file" && (
-            <button
-              onClick={handleDownload}
-              disabled={downloading}
-              className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
-              title="Download"
-            >
-              <DownloadSimple size={12} />
-              {downloading ? "..." : "Download"}
-            </button>
-          )}
+
+          {/* Download — file or folder zip */}
+          <button
+            onClick={handleDownload}
+            disabled={downloading}
+            className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+            title="Download"
+          >
+            <DownloadSimple size={12} />
+            {downloading
+              ? (dlProgress ?? "...")
+              : item.resource_type === "folder"
+                ? "Download"
+                : "Download"
+            }
+          </button>
+
+          {/* Copy to my drive */}
           <button
             onClick={() => setShowCopyTo(true)}
             className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
