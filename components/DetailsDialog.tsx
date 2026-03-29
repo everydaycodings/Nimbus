@@ -3,7 +3,8 @@
 
 import { X } from "@phosphor-icons/react";
 import { formatBytes, formatDate, formatTime } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { TagBadge } from "@/components/tags/TagBadge";
+import { Tag } from "@/types/tags";
 
 interface DetailsDialogProps {
   item: {
@@ -15,6 +16,7 @@ interface DetailsDialogProps {
     created_at: string;
     updated_at?: string;
     is_starred: boolean;
+    tags?: { tag: Tag }[];
   };
   onClose: () => void;
 }
@@ -49,6 +51,20 @@ export function DetailsDialog({ item, onClose }: DetailsDialogProps) {
       ? [{ label: "Size", value: formatBytes(item.size) }]
       : []),
     { label: "Status", value: item.is_starred ? "Starred" : "Normal" },
+    ...(item.tags && item.tags.length > 0
+      ? [
+          {
+            label: "Tags",
+            value: (
+              <div className="flex flex-wrap justify-end gap-1.5 pt-0.5">
+                {item.tags.map((t) => (
+                  <TagBadge key={t.tag.id} tag={t.tag} />
+                ))}
+              </div>
+            ),
+          },
+        ]
+      : []),
   ];
 
   return (

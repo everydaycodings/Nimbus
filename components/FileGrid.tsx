@@ -33,6 +33,9 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import { TagBadge } from "@/components/tags/TagBadge";
+import { TagPicker } from "@/components/tags/TagPicker";
+import { Tag } from "@/types/tags";
 type Layout = "list" | "grid";
 
 interface FileItem {
@@ -44,6 +47,7 @@ interface FileItem {
   is_starred: boolean;
   s3_key: string;
   updated_at?: string;
+  tags?: { tag: Tag }[];
 }
 
 interface FolderItem {
@@ -52,6 +56,7 @@ interface FolderItem {
   created_at: string;
   updated_at?: string;
   is_starred: boolean;
+  tags?: { tag: Tag }[];
 }
 
 interface FileGridProps {
@@ -79,6 +84,7 @@ function DotsMenu({
   onTrash,
   onRestore,
   onDetails,
+  onTags,
   size = 15,
 }: {
   type: "file" | "folder";
@@ -92,6 +98,7 @@ function DotsMenu({
   onTrash: () => void;
   onRestore: () => void;
   onDetails: () => void;
+  onTags: () => void;
   size?: number;
 }) {
   return (
@@ -123,6 +130,10 @@ function DotsMenu({
               Details
             </DropdownMenuItem>
 
+            <DropdownMenuItem onClick={onTags}>
+              Tags
+            </DropdownMenuItem>
+
             <DropdownMenuSeparator />
 
             <DropdownMenuItem
@@ -149,7 +160,7 @@ function ListRow({
   id, name, type, meta, isStarred, showRestore, onFolderOpen, onRefresh,
 }: {
   id: string; name: string; type: "file" | "folder";
-  meta?: { mimeType?: string; size?: number; date: string; updated_at?: string; s3_key?: string };
+  meta?: { mimeType?: string; size?: number; date: string; updated_at?: string; s3_key?: string; tags?: { tag: Tag }[] };
   isStarred: boolean; showRestore?: boolean;
   onFolderOpen?: (id: string, name: string) => void; onRefresh?: () => void;
 }) {
@@ -163,6 +174,9 @@ function ListRow({
     isPending, isDownloading,
     handleStar, handleTrash, handleRestore, handleMainClick, handleDownload
   } = useItemActions({ id, name, type, isStarred, onRefresh });
+
+  const [showTagPicker, setShowTagPicker] = useState(false);
+  const tags = meta?.tags?.map(t => t.tag) ?? [];
 
   return (
     <>
@@ -180,10 +194,17 @@ function ListRow({
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-foreground truncate">{name}</p>
             {meta && (
-              <p className="text-xs text-muted-foreground">
-                {meta.size !== undefined ? `${formatBytes(meta.size)} · ` : ""}
-                {formatDate(meta.date)}
-              </p>
+              <div className="flex items-center gap-2 mt-0.5">
+                <p className="text-xs text-muted-foreground">
+                  {meta.size !== undefined ? `${formatBytes(meta.size)} · ` : ""}
+                  {formatDate(meta.date)}
+                </p>
+                {tags.length > 0 && (
+                  <div className="flex items-center gap-1 ml-1">
+                    {tags.map(tag => <TagBadge key={tag.id} tag={tag} />)}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -217,7 +238,7 @@ function ListRow({
             onRename={() => setShowRenameDialog(true)} onMove={() => setShowMoveDialog(true)}
             onShare={() => setShowShare(true)} onDownload={handleDownload}
             onStar={handleStar} onTrash={() => setShowTrashDialog(true)} onRestore={handleRestore}
-            onDetails={() => setShowDetails(true)}
+            onDetails={() => setShowDetails(true)} onTags={() => setShowTagPicker(true)}
           />
         </div>
       </div>
@@ -238,8 +259,18 @@ function ListRow({
             created_at: meta?.date ?? "",
             updated_at: meta?.updated_at,
             is_starred: isStarred,
+            tags: meta?.tags,
           }}
           onClose={() => setShowDetails(false)}
+        />
+      )}
+      {showTagPicker && (
+        <TagPicker
+          itemId={id}
+          itemType={type}
+          currentTagIds={tags.map(t => t.id)}
+          onClose={() => setShowTagPicker(false)}
+          onSuccess={() => onRefresh?.()}
         />
       )}
     </>
@@ -253,7 +284,7 @@ function GridCard({
   id, name, type, meta, isStarred, showRestore, onFolderOpen, onRefresh,
 }: {
   id: string; name: string; type: "file" | "folder";
-  meta?: { mimeType?: string; size?: number; date: string; updated_at?: string; s3_key?: string };
+  meta?: { mimeType?: string; size?: number; date: string; updated_at?: string; s3_key?: string; tags?: { tag: Tag }[] };
   isStarred: boolean; showRestore?: boolean;
   onFolderOpen?: (id: string, name: string) => void; onRefresh?: () => void;
 }) {
@@ -267,6 +298,9 @@ function GridCard({
     isPending, isDownloading,
     handleStar, handleTrash, handleRestore, handleMainClick, handleDownload
   } = useItemActions({ id, name, type, isStarred, onRefresh });
+
+  const [showTagPicker, setShowTagPicker] = useState(false);
+  const tags = meta?.tags?.map(t => t.tag) ?? [];
 
   return (
     <>
@@ -318,10 +352,20 @@ function GridCard({
               onTrash={() => setShowTrashDialog(true)}
               onShare={() => setShowShare(true)} onDownload={handleDownload}
               onStar={handleStar} onRestore={handleRestore}
-              onDetails={() => setShowDetails(true)}
+              onDetails={() => setShowDetails(true)} onTags={() => setShowTagPicker(true)}
             />
           </div>
         </div>
+
+        {/* Tags row in grid */}
+        {tags.length > 0 && (
+          <div className="absolute top-2 right-2 flex flex-wrap justify-end gap-1 pointer-events-none pr-7">
+            {tags.slice(0, 2).map(tag => (
+              <div key={tag.id} className="w-2 h-2 rounded-full shadow-sm" style={{ backgroundColor: tag.color }} />
+            ))}
+            {tags.length > 2 && <div className="text-[8px] text-muted-foreground">+{tags.length - 2}</div>}
+          </div>
+        )}
 
         {/* Star badge */}
         {isStarred && (
@@ -347,8 +391,18 @@ function GridCard({
             created_at: meta?.date ?? "",
             updated_at: meta?.updated_at,
             is_starred: isStarred,
+            tags: meta?.tags,
           }}
           onClose={() => setShowDetails(false)}
+        />
+      )}
+      {showTagPicker && (
+        <TagPicker
+          itemId={id}
+          itemType={type}
+          currentTagIds={tags.map(t => t.id)}
+          onClose={() => setShowTagPicker(false)}
+          onSuccess={() => onRefresh?.()}
         />
       )}
     </>
@@ -399,13 +453,13 @@ export function FileGrid({
           {folders.length > 0 && (
             <div className="mb-2">
               <p className="px-3 py-1 text-xs text-muted-foreground/60 font-medium">Folders</p>
-              {folders.map((f) => <ListRow key={f.id} id={f.id} name={f.name} type="folder" isStarred={f.is_starred} meta={{ date: f.created_at, updated_at: f.updated_at }} {...shared} />)}
+              {folders.map((f) => <ListRow key={f.id} id={f.id} name={f.name} type="folder" isStarred={f.is_starred} meta={{ date: f.created_at, updated_at: f.updated_at, tags: f.tags }} {...shared} />)}
             </div>
           )}
           {files.length > 0 && (
             <div>
               <p className="px-3 py-1 text-xs text-muted-foreground/60 font-medium">Files</p>
-              {files.map((f) => <ListRow key={f.id} id={f.id} name={f.name} type="file" isStarred={f.is_starred} meta={{ mimeType: f.mime_type, size: f.size, date: f.created_at, updated_at: f.updated_at, s3_key: f.s3_key }} {...shared} />)}
+              {files.map((f) => <ListRow key={f.id} id={f.id} name={f.name} type="file" isStarred={f.is_starred} meta={{ mimeType: f.mime_type, size: f.size, date: f.created_at, updated_at: f.updated_at, s3_key: f.s3_key, tags: f.tags }} {...shared} />)}
             </div>
           )}
         </div>
@@ -418,7 +472,7 @@ export function FileGrid({
             <div>
               <p className="text-xs text-muted-foreground/60 font-medium mb-2">Folders</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                {folders.map((f) => <GridCard key={f.id} id={f.id} name={f.name} type="folder" isStarred={f.is_starred} meta={{ date: f.created_at, updated_at: f.updated_at }} {...shared} />)}
+                {folders.map((f) => <GridCard key={f.id} id={f.id} name={f.name} type="folder" isStarred={f.is_starred} meta={{ date: f.created_at, updated_at: f.updated_at, tags: f.tags }} {...shared} />)}
               </div>
             </div>
           )}
@@ -426,7 +480,7 @@ export function FileGrid({
             <div>
               <p className="text-xs text-muted-foreground/60 font-medium mb-2">Files</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                {files.map((f) => <GridCard key={f.id} id={f.id} name={f.name} type="file" isStarred={f.is_starred} meta={{ mimeType: f.mime_type, size: f.size, date: f.created_at, updated_at: f.updated_at, s3_key: f.s3_key }} {...shared} />)}
+                {files.map((f) => <GridCard key={f.id} id={f.id} name={f.name} type="file" isStarred={f.is_starred} meta={{ mimeType: f.mime_type, size: f.size, date: f.created_at, updated_at: f.updated_at, s3_key: f.s3_key, tags: f.tags }} {...shared} />)}
               </div>
             </div>
           )}
