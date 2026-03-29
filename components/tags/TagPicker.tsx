@@ -13,6 +13,8 @@ import {
 } from "@/components/ui/dialog";
 import { TagManager } from "./TagManager";
 import { cn } from "@/lib/utils";
+import { getQueryClient } from "@/lib/query-client";
+import { queryKeys } from "@/lib/query-keys";
 
 interface TagPickerProps {
   itemId: string;
@@ -60,6 +62,7 @@ export function TagPicker({
         } else {
           await assignTag(itemId, itemType, tag.id);
         }
+        getQueryClient().invalidateQueries({ queryKey: queryKeys.all });
         onSuccess?.();
       } catch (err) {
         console.error(err);

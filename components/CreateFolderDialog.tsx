@@ -1,21 +1,22 @@
 // components/CreateFolderDialog.tsx
 "use client";
 
-import { useState, useTransition, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { FolderPlus, X } from "@phosphor-icons/react";
-import { createFolder } from "@/actions/folders";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { useCreateFolderMutation } from "@/hooks/mutations/useFileMutations";
 
 interface Props {
   parentFolderId: string | null;
-  onSuccess:      () => void;
-  onClose:        () => void;
+  onSuccess: () => void;
+  onClose: () => void;
 }
 
 export function CreateFolderDialog({ parentFolderId, onSuccess, onClose }: Props) {
-  const [name, setName]           = useState("");
-  const [isPending, startTransition] = useTransition();
+  const [name, setName] = useState("");
+  const createFolderMutation = useCreateFolderMutation();
+  const isPending = createFolderMutation.isPending;
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Select text on open
@@ -30,20 +31,23 @@ export function CreateFolderDialog({ parentFolderId, onSuccess, onClose }: Props
       return;
     }
 
-    startTransition(async () => {
-      try {
-        await createFolder(trimmed, parentFolderId);
-        toast.success("Folder created!");
-        onSuccess();
-        onClose();
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to create folder");
+    createFolderMutation.mutate(
+      { name: trimmed, parentFolderId },
+      {
+        onSuccess: () => {
+          toast.success("Folder created!");
+          onSuccess();
+          onClose();
+        },
+        onError: (err) => {
+          toast.error(err instanceof Error ? err.message : "Failed to create folder");
+        },
       }
-    });
+    );
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter")  handleSubmit();
+    if (e.key === "Enter") handleSubmit();
     if (e.key === "Escape") onClose();
   };
 

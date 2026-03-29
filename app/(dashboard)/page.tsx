@@ -1,36 +1,27 @@
 // app/(dashboard)/page.tsx
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import {
   CloudArrowUp,
   FolderPlus,
   HardDrive,
-  File,
-  X,
 } from "@phosphor-icons/react";
 import { FileGrid } from "@/components/FileGrid";
 import { CreateFolderDialog } from "@/components/CreateFolderDialog";
-import { getFiles } from "@/actions/files";
 import { useUpload } from "@/hooks/useUpload";
-import { useUploadStore } from "@/store/uploadStore";
 import { cn } from "@/lib/utils";
-import { UploadFolderButton } from "@/components/UploadFolderButton";
 import { ActionsDropdown } from "@/components/UploadDropdown";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FileFilters } from "@/components/FileFilters";
+import { useFilesQuery } from "@/hooks/queries/useFilesQuery";
 
 const TEAL = "#2da07a";
 
 export default function HomePage() {
-  const [files, setFiles] = useState<any[]>([]);
-  const [folders, setFolders] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
 
-  // Read uploads from global store
-  const uploads = useUploadStore((s) => s.uploads);
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -41,23 +32,19 @@ export default function HomePage() {
   const maxSize = searchParams.get("maxSize") ? Number(searchParams.get("maxSize")) : undefined;
   const tagId = searchParams.get("tagId") || undefined;
 
-  const refresh = useCallback(async () => {
-    const data = await getFiles(null, {
-      type: type || undefined,
-      sortBy: sortBy || undefined,
-      sortOrder: sortOrder || undefined,
-      minSize,
-      maxSize,
-      tagId,
-    });
-    setFiles(data.files);
-    setFolders(data.folders);
-  }, [type, sortBy, sortOrder, minSize, maxSize, tagId]);
+  const queryOptions = {
+    type: type || undefined,
+    sortBy: sortBy || undefined,
+    sortOrder: sortOrder || undefined,
+    minSize,
+    maxSize,
+    tagId,
+  };
 
-  useEffect(() => {
-    setLoading(true);
-    refresh().finally(() => setLoading(false));
-  }, [refresh]);
+  const { data, isLoading: loading, refetch: refresh } = useFilesQuery(null, queryOptions);
+
+  const files = (data?.files ?? []) as any[];
+  const folders = (data?.folders ?? []) as any[];
 
   const { uploadMany, cancelUpload } = useUpload({
     parentFolderId: undefined,
@@ -67,7 +54,6 @@ export default function HomePage() {
   // ── Drag and drop ─────────────────────────────────────────
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
   const handleDragLeave = (e: React.DragEvent) => {
-    // Only hide overlay when leaving the container entirely
     if (!e.currentTarget.contains(e.relatedTarget as Node)) {
       setIsDragging(false);
     }

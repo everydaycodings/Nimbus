@@ -1,37 +1,27 @@
 // app/(dashboard)/trash/page.tsx
 "use client";
 
-import { useState, useEffect, useCallback, useTransition } from "react";
-import { Trash, ArrowCounterClockwise, Warning } from "@phosphor-icons/react";
+import { Trash, Warning } from "@phosphor-icons/react";
 import { FileGrid } from "@/components/FileGrid";
-import { getTrashedItems } from "@/actions/files";
-import { emptyTrash } from "@/actions/trash";
 import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
+import { useTrashedQuery } from "@/hooks/queries/useTrashedQuery";
+import { useEmptyTrashMutation } from "@/hooks/mutations/useFileMutations";
+import { useState } from "react";
 
 export default function TrashPage() {
-  const [files,          setFiles]          = useState<any[]>([]);
-  const [folders,        setFolders]        = useState<any[]>([]);
-  const [loading,        setLoading]        = useState(true);
-  const [showConfirm,    setShowConfirm]    = useState(false);
-  const [isPending,      startTransition]   = useTransition();
+  const [showConfirm, setShowConfirm] = useState(false);
   const router = useRouter();
 
-  const refresh = useCallback(async () => {
-    const data = await getTrashedItems();
-    setFiles(data.files);
-    setFolders(data.folders);
-  }, []);
+  const { data, isLoading: loading, refetch: refresh } = useTrashedQuery();
+  const emptyTrashMutation = useEmptyTrashMutation();
 
-  useEffect(() => {
-    refresh().finally(() => setLoading(false));
-  }, [refresh]);
+  const files = (data?.files ?? []) as any[];
+  const folders = (data?.folders ?? []) as any[];
 
   const handleEmptyTrash = () => {
-    startTransition(async () => {
-      await emptyTrash();
-      setShowConfirm(false);
-      await refresh();
+    emptyTrashMutation.mutate(undefined, {
+      onSuccess: () => setShowConfirm(false),
     });
   };
 
@@ -116,13 +106,13 @@ export default function TrashPage() {
               </button>
               <button
                 onClick={handleEmptyTrash}
-                disabled={isPending}
+                disabled={emptyTrashMutation.isPending}
                 className={cn(
                   "px-4 py-1.5 rounded-xl text-sm font-medium text-white bg-red-500 transition-all",
-                  isPending ? "opacity-50 cursor-not-allowed" : "hover:bg-red-600"
+                  emptyTrashMutation.isPending ? "opacity-50 cursor-not-allowed" : "hover:bg-red-600"
                 )}
               >
-                {isPending ? "Deleting..." : "Empty trash"}
+                {emptyTrashMutation.isPending ? "Deleting..." : "Empty trash"}
               </button>
             </div>
           </div>

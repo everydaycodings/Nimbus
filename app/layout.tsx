@@ -4,6 +4,7 @@ import { Geist_Mono, Inter, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { ClerkProvider } from "@clerk/nextjs";
 import { ThemeProvider } from "@/components/theme-provider";
+import { QueryProvider } from "@/components/QueryProvider";
 import { cn } from "@/lib/utils";
 import { Toaster } from "sonner";
 
@@ -52,7 +53,9 @@ export default function RootLayout({
             forcedTheme="dark"
             enableSystem={false}
           >
-            {children}
+            <QueryProvider>
+              {children}
+            </QueryProvider>
             <Toaster
               richColors
               position="bottom-right"

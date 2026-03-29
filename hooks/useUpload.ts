@@ -1,4 +1,6 @@
 import { useUploadStore } from "@/store/uploadStore"
+import { getQueryClient } from "@/lib/query-client"
+import { queryKeys } from "@/lib/query-keys"
 
 interface UploadOptions {
   parentFolderId?: string
@@ -68,6 +70,9 @@ export function useUpload(options: UploadOptions = {}) {
         progress: 100,
         status: "complete",
       })
+
+      // Invalidate all file queries so lists refresh automatically
+      getQueryClient().invalidateQueries({ queryKey: queryKeys.all })
 
       options.onSuccess?.(fileId)
 

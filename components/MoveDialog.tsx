@@ -5,6 +5,8 @@ import { FolderSimple, X, House, CaretRight } from "@phosphor-icons/react";
 import { getFolderTree, moveFile, moveFolder } from "@/actions/folders";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { getQueryClient } from "@/lib/query-client";
+import { queryKeys } from "@/lib/query-keys";
 
 interface FolderNode {
   id: string;
@@ -144,6 +146,7 @@ export function MoveDialog({
         }
 
         onSuccess(selectedId); // ✅ pass selected folder back
+        getQueryClient().invalidateQueries({ queryKey: queryKeys.all });
         onClose();
       } catch (err) {
         toast.error(

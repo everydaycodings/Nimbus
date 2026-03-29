@@ -1,17 +1,13 @@
 // app/(dashboard)/starred/page.tsx
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
 import { Star, Funnel } from "@phosphor-icons/react";
 import { FileGrid } from "@/components/FileGrid";
-import { getStarredItems } from "@/actions/files";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FileFilters } from "@/components/FileFilters";
+import { useStarredQuery } from "@/hooks/queries/useStarredQuery";
 
 export default function StarredPage() {
-  const [files,   setFiles]   = useState<any[]>([]);
-  const [folders, setFolders] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -22,19 +18,13 @@ export default function StarredPage() {
   const maxSize = searchParams.get("maxSize") ? Number(searchParams.get("maxSize")) : undefined;
   const tagId = searchParams.get("tagId") || undefined;
 
-  const refresh = useCallback(async () => {
-    const data = await getStarredItems({ tagId });
-    setFiles(data.files);
-    setFolders(data.folders);
-  }, [tagId]);
+  const { data, isLoading: loading, refetch: refresh } = useStarredQuery({ tagId });
 
-  useEffect(() => {
-    setLoading(true);
-    refresh().finally(() => setLoading(false));
-  }, [refresh]);
+  const files = (data?.files ?? []) as any[];
+  const folders = (data?.folders ?? []) as any[];
 
   // Client-side filtering/sorting for FILES
-  const filteredFiles = files.filter((file) => {
+  const filteredFiles = files.filter((file: any) => {
     if (type !== "all") {
       if (type === "image" && !file.mime_type.startsWith("image/")) return false;
       if (type === "video" && !file.mime_type.startsWith("video/")) return false;
@@ -47,11 +37,10 @@ export default function StarredPage() {
     if (minSize !== undefined && file.size < minSize) return false;
     if (maxSize !== undefined && file.size > maxSize) return false;
 
-    // Tag filter (for completeness, though should be handled by server)
     if (tagId && !file.tags?.some((t: any) => t.tag.id === tagId)) return false;
 
     return true;
-  }).sort((a, b) => {
+  }).sort((a: any, b: any) => {
     let comparison = 0;
     if (sortBy === "name") comparison = a.name.localeCompare(b.name);
     else if (sortBy === "size") comparison = a.size - b.size;
@@ -59,22 +48,17 @@ export default function StarredPage() {
     return sortOrder === "asc" ? comparison : -comparison;
   });
 
-  // Client-side filtering/sorting for FOLDERS (type/size doesn't apply)
-  const filteredFolders = folders.filter((folder) => {
-    if (type !== "all") return false; // Folders are not files
-    
-    // Tag filter
+  // Client-side filtering/sorting for FOLDERS
+  const filteredFolders = folders.filter((folder: any) => {
+    if (type !== "all") return false;
     if (tagId && !folder.tags?.some((t: any) => t.tag.id === tagId)) return false;
-
     return true;
-  }).sort((a, b) => {
+  }).sort((a: any, b: any) => {
     let comparison = 0;
     if (sortBy === "name") comparison = a.name.localeCompare(b.name);
     else comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
     return sortOrder === "asc" ? comparison : -comparison;
   });
-
-  const isEmpty = !loading && files.length === 0 && folders.length === 0;
 
   return (
     <div className="flex flex-col h-full p-6">

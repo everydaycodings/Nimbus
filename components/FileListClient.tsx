@@ -5,7 +5,6 @@ import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { FolderPlus, CloudArrowUp } from "@phosphor-icons/react";
 import { FileGrid } from "@/components/FileGrid";
-import { getFiles } from "@/actions/files";
 import { useUpload } from "@/hooks/useUpload";
 import { cn } from "@/lib/utils";
 import { CreateFolderDialog } from "./CreateFolderDialog";
@@ -13,136 +12,77 @@ import { ActionsDropdown } from "./UploadDropdown";
 import { FileFilters } from "./FileFilters";
 import { useSearchParams } from "next/navigation";
 import { useEffect } from "react";
-
-interface Props {
-  initialFiles: any[];
-  initialFolders: any[];
-  user: {
-    id: string;
-    storage_used: number;
-    storage_limit: number;
-  };
-}
+import { useFilesQuery } from "@/hooks/queries/useFilesQuery";
 
 const TEAL = "#2da07a";
 
-export function FileListClient({ initialFiles, initialFolders, user }: Props) {
+export function FileListClient() {
   const router = useRouter();
-  const [files, setFiles] = useState(initialFiles);
-  const [folders, setFolders] = useState(initialFolders);
   const [currentFolder, setCurrentFolder] = useState<string | null>(null);
   const [breadcrumbs, setBreadcrumbs] = useState<{ id: string; name: string }[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const searchParams = useSearchParams();
+
+  // Derive query options from URL params
+  const query = searchParams.get("query");
+  const type = searchParams.get("type");
+  const sortBy = searchParams.get("sortBy");
+  const sortOrder = searchParams.get("sortOrder");
+  const minSize = searchParams.get("minSize") ? Number(searchParams.get("minSize")) : undefined;
+  const maxSize = searchParams.get("maxSize") ? Number(searchParams.get("maxSize")) : undefined;
+  const page = Number(searchParams.get("page") || 1);
+
+  // Parse path/names from URL for breadcrumbs
+  const pathParam = searchParams.get("path");
+  const namesParam = searchParams.get("names");
+  const folderParam = searchParams.get("folder");
+  const folderNameParam = searchParams.get("name");
+
+  // Determine the active folder from URL
+  const activeFolderId = (() => {
+    if (pathParam && namesParam) {
+      const ids = pathParam.split(",");
+      return ids[ids.length - 1];
+    }
+    if (folderParam) return folderParam;
+    if (query) return null; // search mode
+    return null;
+  })();
+
+  // Update breadcrumbs when URL changes
   useEffect(() => {
-    const folderId = searchParams.get("folder");
-    const folderName = searchParams.get("name");
-    const path = searchParams.get("path");     // ✅ ADD
-    const names = searchParams.get("names");   // ✅ ADD
-    const query = searchParams.get("query");
-    const type = searchParams.get("type");
-    const sortBy = searchParams.get("sortBy");
-    const sortOrder = searchParams.get("sortOrder");
-    const minSize = searchParams.get("minSize") ? Number(searchParams.get("minSize")) : undefined;
-    const maxSize = searchParams.get("maxSize") ? Number(searchParams.get("maxSize")) : undefined;
-    const page = Number(searchParams.get("page") || 1);
-
-    const load = async () => {
-
-      // 🔥 1. HANDLE PATH (PUT THIS FIRST)
-      if (path && names) {
-        const ids = path.split(",");
-        const decodedNames = names.split(",").map(decodeURIComponent);
-
-        const crumbs = ids.map((id, i) => ({
-          id,
-          name: decodedNames[i],
-        }));
-
-        setBreadcrumbs(crumbs);
-        setCurrentFolder(ids[ids.length - 1]);
-
-        const data = await getFiles(ids[ids.length - 1], {
-          page,
-          type: type || undefined,
-          sortBy: sortBy || undefined,
-          sortOrder: sortOrder || undefined,
-          minSize,
-          maxSize,
-        });
-        setFiles(data.files);
-        setFolders(data.folders);
-        return;
+    if (pathParam && namesParam) {
+      const ids = pathParam.split(",");
+      const decodedNames = namesParam.split(",").map(decodeURIComponent);
+      const crumbs = ids.map((id, i) => ({ id, name: decodedNames[i] }));
+      setBreadcrumbs(crumbs);
+      setCurrentFolder(ids[ids.length - 1]);
+    } else if (folderParam) {
+      setCurrentFolder(folderParam);
+      if (folderNameParam) {
+        setBreadcrumbs([{ id: folderParam, name: decodeURIComponent(folderNameParam) }]);
       }
+    } else {
+      setCurrentFolder(null);
+      setBreadcrumbs([]);
+    }
+  }, [pathParam, namesParam, folderParam, folderNameParam]);
 
-      // 🔽 KEEP YOUR EXISTING LOGIC BELOW
+  const queryOptions = {
+    page,
+    query: query || undefined,
+    type: type || undefined,
+    sortBy: sortBy || undefined,
+    sortOrder: sortOrder || undefined,
+    minSize,
+    maxSize,
+  };
 
-      // ROOT
-      if (!folderId && !query) {
-        setCurrentFolder(null);
-        setBreadcrumbs([]);
+  const { data, refetch: refresh } = useFilesQuery(activeFolderId, queryOptions);
 
-        const data = await getFiles(null, {
-          page,
-          type: type || undefined,
-          sortBy: sortBy || undefined,
-          sortOrder: sortOrder || undefined,
-          minSize,
-          maxSize,
-        });
-        setFiles(data.files);
-        setFolders(data.folders);
-        return;
-      }
-
-      // SEARCH
-      if (query) {
-        const data = await getFiles(null, {
-          query,
-          page,
-          type: type || undefined,
-          sortBy: sortBy || undefined,
-          sortOrder: sortOrder || undefined,
-          minSize,
-          maxSize,
-        });
-        setFiles(data.files);
-        setFolders([]);
-        return;
-      }
-
-      // SINGLE FOLDER (fallback)
-      if (folderId && folderId !== currentFolder) {
-        setCurrentFolder(folderId);
-
-        if (folderName) {
-          setBreadcrumbs([
-            { id: folderId, name: decodeURIComponent(folderName) },
-          ]);
-        }
-
-        const data = await getFiles(folderId, {
-          page,
-          type: type || undefined,
-          sortBy: sortBy || undefined,
-          sortOrder: sortOrder || undefined,
-          minSize,
-          maxSize,
-        });
-        setFiles(data.files);
-        setFolders(data.folders);
-      }
-    };
-
-    load();
-  }, [searchParams, currentFolder]);
-
-  const refresh = useCallback(async () => {
-    const data = await getFiles(currentFolder);
-    setFiles(data.files);
-    setFolders(data.folders);
-  }, [currentFolder]);
+  const files = (data?.files ?? []) as any[];
+  const folders = query ? [] : ((data?.folders ?? []) as any[]);
 
   const { uploadMany } = useUpload({
     parentFolderId: currentFolder ?? undefined,

@@ -1,7 +1,12 @@
-import { useState, useTransition } from "react";
-import { toggleStar, trashItem, restoreItem, renameItem } from "@/actions/files";
+// hooks/useItemActions.ts
+import { useState } from "react";
 import { useDownload } from "@/hooks/useDownload";
 import { toast } from "sonner";
+import {
+  useStarMutation,
+  useTrashMutation,
+  useRestoreMutation,
+} from "@/hooks/mutations/useFileMutations";
 
 interface UseItemActionsProps {
   id: string;
@@ -18,23 +23,54 @@ export function useItemActions({ id, name, type, isStarred, onRefresh }: UseItem
   const [showPreview, setShowPreview] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
-  const [isPending, startTransition] = useTransition();
+
+  const starMutation = useStarMutation();
+  const trashMutation = useTrashMutation();
+  const restoreMutation = useRestoreMutation();
+
+  const isPending = starMutation.isPending || trashMutation.isPending || restoreMutation.isPending;
   
   const { download, downloading } = useDownload();
   const isDownloading = downloading.has(id);
 
-  const handleStar = () => startTransition(async () => { 
-    try { await toggleStar(id, type, isStarred); toast.success(isStarred ? "Unstarred" : "Starred"); } catch { toast.error("Failed to update star"); } 
-    onRefresh?.(); 
-  });
-  const handleTrash = () => startTransition(async () => { 
-    try { await trashItem(id, type); toast.success("Moved to trash"); } catch { toast.error("Failed to trash item"); } 
-    onRefresh?.(); 
-  });
-  const handleRestore = () => startTransition(async () => { 
-    try { await restoreItem(id, type); toast.success("Restored item"); } catch { toast.error("Failed to restore item"); } 
-    onRefresh?.(); 
-  });
+  const handleStar = () => {
+    starMutation.mutate(
+      { id, type, starred: isStarred },
+      {
+        onSuccess: () => {
+          toast.success(isStarred ? "Unstarred" : "Starred");
+          onRefresh?.();
+        },
+        onError: () => toast.error("Failed to update star"),
+      }
+    );
+  };
+
+  const handleTrash = () => {
+    trashMutation.mutate(
+      { id, type },
+      {
+        onSuccess: () => {
+          toast.success("Moved to trash");
+          onRefresh?.();
+        },
+        onError: () => toast.error("Failed to trash item"),
+      }
+    );
+  };
+
+  const handleRestore = () => {
+    restoreMutation.mutate(
+      { id, type },
+      {
+        onSuccess: () => {
+          toast.success("Restored item");
+          onRefresh?.();
+        },
+        onError: () => toast.error("Failed to restore item"),
+      }
+    );
+  };
   
   const handleMainClick = (onFolderOpen?: (id: string, name: string) => void) => {
     if (type === "file") setShowPreview(true);

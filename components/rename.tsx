@@ -6,6 +6,8 @@ import { PencilSimple, X } from "@phosphor-icons/react";
 import { renameItem } from "@/actions/files";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { getQueryClient } from "@/lib/query-client";
+import { queryKeys } from "@/lib/query-keys";
 
 interface Props {
   id: string;
@@ -49,6 +51,7 @@ export function RenameDialog({ id, name, type, onSuccess, onClose }: Props) {
       try {
         await renameItem(id, type, trimmed);
         toast.success("Renamed successfully!");
+        getQueryClient().invalidateQueries({ queryKey: queryKeys.all });
         onSuccess();
         onClose();
       } catch (err) {
