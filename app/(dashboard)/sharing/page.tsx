@@ -8,7 +8,10 @@ import {
   Image, FilePdf, FileVideo, MusicNote,
   Eye, PencilSimple, Check, Copy, CaretDown,
   DownloadSimple, CopySimple, ArrowSquareIn,
+  Funnel,
 } from "@phosphor-icons/react";
+import { useSearchParams } from "next/navigation";
+import { FileFilters } from "@/components/FileFilters";
 import {
   getMySharedItems,
   getSharedWithMe,
@@ -558,6 +561,13 @@ export default function SharingPage() {
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const searchParams = useSearchParams();
+
+  const type = searchParams.get("type") || "all";
+  const sortBy = searchParams.get("sortBy") || "created_at";
+  const sortOrder = searchParams.get("sortOrder") || "desc";
+  const minSize = searchParams.get("minSize") ? Number(searchParams.get("minSize")) : undefined;
+  const maxSize = searchParams.get("maxSize") ? Number(searchParams.get("maxSize")) : undefined;
 
   const load = useCallback(async () => {
     const [mine, withMe] = await Promise.all([getMySharedItems(), getSharedWithMe()]);
@@ -581,6 +591,54 @@ export default function SharingPage() {
   const GRID = "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3";
   const totalActive = links.filter((l) => !l.expires_at || new Date(l.expires_at) >= new Date()).length;
   const totalExpired = links.length - totalActive;
+
+  // Client-side filtering/sorting for Grouped Resources
+  const filteredGrouped = grouped.filter((res) => {
+    if (type !== "all") {
+      if (!res.mime_type) {
+        if (res.resource_type === "folder") return false; // Folders are not files
+        return false;
+      }
+      if (type === "image" && !res.mime_type.startsWith("image/")) return false;
+      if (type === "video" && !res.mime_type.startsWith("video/")) return false;
+      if (type === "audio" && !res.mime_type.startsWith("audio/")) return false;
+      if (type === "document") {
+        const docs = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"];
+        if (!docs.includes(res.mime_type)) return false;
+      }
+    }
+    // Size filter (harder for grouped items as size might not be present for links)
+    return true;
+  }).sort((a, b) => {
+    let comparison = 0;
+    if (sortBy === "name") comparison = a.resource_name.localeCompare(b.resource_name);
+    else comparison = new Date(a.links[0]?.created_at || 0).getTime() - new Date(b.links[0]?.created_at || 0).getTime();
+    return sortOrder === "asc" ? comparison : -comparison;
+  });
+
+  // Client-side filtering/sorting for Shared With Me
+  const filteredSharedWithMe = sharedWithMe.filter((item) => {
+    if (type !== "all") {
+      if (item.resource_type === "folder") return false;
+      if (!item.mime_type) return false;
+      if (type === "image" && !item.mime_type.startsWith("image/")) return false;
+      if (type === "video" && !item.mime_type.startsWith("video/")) return false;
+      if (type === "audio" && !item.mime_type.startsWith("audio/")) return false;
+      if (type === "document") {
+        const docs = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"];
+        if (!docs.includes(item.mime_type)) return false;
+      }
+    }
+    if (minSize !== undefined && (item.size || 0) < minSize) return false;
+    if (maxSize !== undefined && (item.size || 0) > maxSize) return false;
+    return true;
+  }).sort((a, b) => {
+    let comparison = 0;
+    if (sortBy === "name") comparison = a.name.localeCompare(b.name);
+    else if (sortBy === "size") comparison = (a.size || 0) - (b.size || 0);
+    else comparison = new Date(a.shared_at).getTime() - new Date(b.shared_at).getTime();
+    return sortOrder === "asc" ? comparison : -comparison;
+  });
 
   return (
     <div className="p-6">
@@ -613,11 +671,14 @@ export default function SharingPage() {
         </div>
       )}
 
+      {/* Filters */}
+      <FileFilters />
+
       {/* Tabs */}
       <div className="flex gap-4 mb-5 border-b border-border">
         {([
-          { key: "links", label: "My shared items", count: grouped.length },
-          { key: "shared-with-me", label: "Shared with me", count: sharedWithMe.length },
+          { key: "links", label: "My shared items", count: filteredGrouped.length },
+          { key: "shared-with-me", label: "Shared with me", count: filteredSharedWithMe.length },
         ] as { key: Tab; label: string; count: number }[]).map((t) => (
           <button
             key={t.key}
@@ -659,7 +720,7 @@ export default function SharingPage() {
               </div>
             ) : (
               <div className={GRID}>
-                {grouped.map((resource) => (
+                {filteredGrouped.map((resource) => (
                   <ResourceCard
                     key={resource.resource_id}
                     resource={resource}
@@ -684,7 +745,7 @@ export default function SharingPage() {
               </div>
             ) : (
               <div className={GRID}>
-                {sharedWithMe.map((item) => (
+                {filteredSharedWithMe.map((item) => (
                   <SharedWithMeCard
                     key={item.permission_id}
                     item={item}

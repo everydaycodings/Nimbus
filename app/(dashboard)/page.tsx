@@ -17,7 +17,8 @@ import { useUploadStore } from "@/store/uploadStore";
 import { cn } from "@/lib/utils";
 import { UploadFolderButton } from "@/components/UploadFolderButton";
 import { ActionsDropdown } from "@/components/UploadDropdown";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { FileFilters } from "@/components/FileFilters";
 
 const TEAL = "#2da07a";
 
@@ -31,14 +32,28 @@ export default function HomePage() {
   // Read uploads from global store
   const uploads = useUploadStore((s) => s.uploads);
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const type = searchParams.get("type");
+  const sortBy = searchParams.get("sortBy");
+  const sortOrder = searchParams.get("sortOrder");
+  const minSize = searchParams.get("minSize") ? Number(searchParams.get("minSize")) : undefined;
+  const maxSize = searchParams.get("maxSize") ? Number(searchParams.get("maxSize")) : undefined;
 
   const refresh = useCallback(async () => {
-    const data = await getFiles(null);
+    const data = await getFiles(null, {
+      type: type || undefined,
+      sortBy: sortBy || undefined,
+      sortOrder: sortOrder || undefined,
+      minSize,
+      maxSize,
+    });
     setFiles(data.files);
     setFolders(data.folders);
-  }, []);
+  }, [type, sortBy, sortOrder, minSize, maxSize]);
 
   useEffect(() => {
+    setLoading(true);
     refresh().finally(() => setLoading(false));
   }, [refresh]);
 
@@ -95,6 +110,9 @@ export default function HomePage() {
           />
         </div>
       </div>
+
+      {/* ── Filters ── */}
+      <FileFilters />
 
 
       {/* ── Drag overlay ── */}

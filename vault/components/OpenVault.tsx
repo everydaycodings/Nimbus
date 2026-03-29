@@ -8,7 +8,10 @@ import {
   CloudArrowUp, DownloadSimple, ShieldCheck,
   Eye, FolderSimple, FolderPlus, CaretRight,
   X, House, DotsThreeVertical, PencilSimple,
+  Funnel,
 } from "@phosphor-icons/react";
+import { useSearchParams } from "next/navigation";
+import { FileFilters } from "@/components/FileFilters";
 import {
   getVaultFolders,
   getVaultFilesInFolder,
@@ -283,6 +286,13 @@ export function OpenVault({
     name: string;
     type: "file" | "folder";
   } | null>(null);
+  const searchParams = useSearchParams();
+
+  const type = searchParams.get("type") || "all";
+  const sortBy = searchParams.get("sortBy") || "created_at";
+  const sortOrder = searchParams.get("sortOrder") || "desc";
+  const minSize = searchParams.get("minSize") ? Number(searchParams.get("minSize")) : undefined;
+  const maxSize = searchParams.get("maxSize") ? Number(searchParams.get("maxSize")) : undefined;
 
   const { layout, handleLayoutChange } = useLayout("nimbus-layout");
 
@@ -321,6 +331,39 @@ export function OpenVault({
   }>({ type: null });
 
   const [deleting, setDeleting] = useState(false);
+
+  // Client-side filtering/sorting for FILES
+  const filteredFiles = files.filter((file) => {
+    if (type !== "all") {
+      if (type === "image" && !file.original_mime_type.startsWith("image/")) return false;
+      if (type === "video" && !file.original_mime_type.startsWith("video/")) return false;
+      if (type === "audio" && !file.original_mime_type.startsWith("audio/")) return false;
+      if (type === "document") {
+        const docs = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"];
+        if (!docs.includes(file.original_mime_type)) return false;
+      }
+    }
+    if (minSize !== undefined && file.size < minSize) return false;
+    if (maxSize !== undefined && file.size > maxSize) return false;
+    return true;
+  }).sort((a, b) => {
+    let comparison = 0;
+    if (sortBy === "name") comparison = a.name.localeCompare(b.name);
+    else if (sortBy === "size") comparison = a.size - b.size;
+    else comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    return sortOrder === "asc" ? comparison : -comparison;
+  });
+
+  // Client-side filtering/sorting for FOLDERS
+  const filteredFolders = folders.filter((folder) => {
+    if (type !== "all") return false;
+    return true;
+  }).sort((a, b) => {
+    let comparison = 0;
+    if (sortBy === "name") comparison = a.name.localeCompare(b.name);
+    else comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    return sortOrder === "asc" ? comparison : -comparison;
+  });
 
   // ── Navigation ───────────────────────────────────────────────
   const openFolder = async (folder: VaultFolder) => {
@@ -473,14 +516,21 @@ export function OpenVault({
       )}
 
       <div className="flex items-center justify-between mb-3 flex-shrink-0">
-        {/* Left: count */}
-        <p className="text-xs text-muted-foreground">
-          {folders.length + files.length} item
-          {folders.length + files.length !== 1 ? "s" : ""}
-        </p>
+        {/* Left: filters */}
+        <FileFilters />
 
         {/* Right: layout toggle */}
         <LayoutToggle layout={layout} onChange={handleLayoutChange} />
+      </div>
+
+      <div className="flex items-center justify-between mb-3 flex-shrink-0">
+        {/* Left: count */}
+        <p className="text-xs text-muted-foreground">
+          {filteredFolders.length + filteredFiles.length} item
+          {filteredFolders.length + filteredFiles.length !== 1 ? "s" : ""}
+        </p>
+
+        {/* Right: progress or nothing */}
       </div>
 
       {/* ── Content ── */}
@@ -490,21 +540,16 @@ export function OpenVault({
             <div key={i} className="h-10 rounded-xl bg-muted animate-pulse" />
           ))}
         </div>
-      ) : folders.length === 0 && files.length === 0 ? (
+      ) : filteredFolders.length === 0 && filteredFiles.length === 0 ? (
         <div className="flex flex-col items-center justify-center flex-1 py-16 text-center">
           <div
             className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
             style={{ backgroundColor: `${TEAL}18` }}
           >
-            <ShieldCheck size={28} weight="duotone" style={{ color: TEAL }} />
+            <Funnel size={28} weight="duotone" style={{ color: TEAL }} />
           </div>
           <p className="text-sm font-medium text-foreground mb-1">
-            {currentFolderId ? "Folder is empty" : "Vault is empty"}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {currentFolderId
-              ? "Upload files or create a subfolder"
-              : "Add files or create a folder to get started"}
+            No items match your filters
           </p>
         </div>
       ) : (
@@ -525,12 +570,12 @@ export function OpenVault({
               <div className="border-t border-border mb-1" />
 
               {/* Folders */}
-              {folders.length > 0 && (
+              {filteredFolders.length > 0 && (
                 <div className="mb-1">
                   <p className="px-3 py-1 text-xs text-muted-foreground/60 font-medium">
                     Folders
                   </p>
-                  {folders.map((folder) => (
+                  {filteredFolders.map((folder) => (
                     <div
                       key={folder.id}
                       className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-accent transition-colors cursor-pointer"
@@ -575,12 +620,12 @@ export function OpenVault({
               )}
 
               {/* Files */}
-              {files.length > 0 && (
+              {filteredFiles.length > 0 && (
                 <div>
                   <p className="px-3 py-1 text-xs text-muted-foreground/60 font-medium">
                     Files
                   </p>
-                  {files.map((file) => {
+                  {filteredFiles.map((file) => {
                     const isPreviewable = canPreviewVaultFile(
                       file.original_mime_type,
                       file.size
@@ -644,13 +689,13 @@ export function OpenVault({
           {layout === "grid" && (
             <div className="flex flex-col gap-4 overflow-y-auto">
               {/* Folders */}
-              {folders.length > 0 && (
+              {filteredFolders.length > 0 && (
                 <div>
                   <p className="text-xs text-muted-foreground/60 font-medium mb-2">
                     Folders
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                    {folders.map((folder) => (
+                    {filteredFolders.map((folder) => (
                       <div
                         key={folder.id}
                         onDoubleClick={() => openFolder(folder)}
@@ -697,13 +742,13 @@ export function OpenVault({
               )}
 
               {/* Files */}
-              {files.length > 0 && (
+              {filteredFiles.length > 0 && (
                 <div>
                   <p className="text-xs text-muted-foreground/60 font-medium mb-2">
                     Files
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                    {files.map((file) => {
+                    {filteredFiles.map((file) => {
                       const isPreviewable = canPreviewVaultFile(
                         file.original_mime_type,
                         file.size

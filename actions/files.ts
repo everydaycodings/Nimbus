@@ -25,6 +25,11 @@ export async function getFiles(
   options?: {
     page?: number;
     query?: string;
+    type?: string;
+    sortBy?: string;
+    sortOrder?: string;
+    minSize?: number;
+    maxSize?: number;
   }
 ) {
   const { userId } = await auth();
@@ -56,6 +61,11 @@ export async function getFiles(
     folderQuery = folderQuery.ilike("name", `%${query}%`);
   }
 
+  // Sorting folders (only by name for now as they have no size/type)
+  const sortBy = options?.sortBy === "name" ? "name" : "created_at";
+  const sortOrder = options?.sortOrder === "desc" ? { ascending: false } : { ascending: true };
+  folderQuery = folderQuery.order(sortBy, sortOrder);
+
   const { data: folders, error: folderError } = await folderQuery;
   if (folderError) throw new Error(folderError.message);
 
@@ -66,9 +76,6 @@ export async function getFiles(
     .eq("owner_id", user.id)
     .eq("is_trashed", false)
     .eq("upload_status", "complete")
-    .order("created_at", { ascending: false })
-    .range(from, to);
-
   fileQuery = parentFolderId
     ? fileQuery.eq("parent_folder_id", parentFolderId)
     : fileQuery.is("parent_folder_id", null);
@@ -76,6 +83,29 @@ export async function getFiles(
   if (query) {
     fileQuery = fileQuery.ilike("name", `%${query}%`);
   }
+
+  if (options?.type && options.type !== "all") {
+    // We can't easily use FILE_TYPE_MAP here because it's in a different file
+    // and this is a server action. I'll pass the mime types directly or handle it here.
+    if (options.type === "image") fileQuery = fileQuery.ilike("mime_type", "image/%");
+    else if (options.type === "video") fileQuery = fileQuery.ilike("mime_type", "video/%");
+    else if (options.type === "audio") fileQuery = fileQuery.ilike("mime_type", "audio/%");
+    else if (options.type === "document") {
+      fileQuery = fileQuery.in("mime_type", [
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "text/plain",
+      ]);
+    }
+  }
+
+  if (options?.minSize !== undefined) fileQuery = fileQuery.gte("size", options.minSize);
+  if (options?.maxSize !== undefined) fileQuery = fileQuery.lte("size", options.maxSize);
+
+  const fileSortBy = options?.sortBy || "created_at";
+  const fileSortOrder = options?.sortOrder === "asc" ? { ascending: true } : { ascending: false };
+  fileQuery = fileQuery.order(fileSortBy, fileSortOrder).range(from, to);
 
   const { data: files, error: fileError } = await fileQuery;
   if (fileError) throw new Error(fileError.message);

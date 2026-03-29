@@ -10,6 +10,7 @@ import { useUpload } from "@/hooks/useUpload";
 import { cn } from "@/lib/utils";
 import { CreateFolderDialog } from "./CreateFolderDialog";
 import { ActionsDropdown } from "./UploadDropdown";
+import { FileFilters } from "./FileFilters";
 import { useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 
@@ -40,6 +41,11 @@ export function FileListClient({ initialFiles, initialFolders, user }: Props) {
     const path = searchParams.get("path");     // ✅ ADD
     const names = searchParams.get("names");   // ✅ ADD
     const query = searchParams.get("query");
+    const type = searchParams.get("type");
+    const sortBy = searchParams.get("sortBy");
+    const sortOrder = searchParams.get("sortOrder");
+    const minSize = searchParams.get("minSize") ? Number(searchParams.get("minSize")) : undefined;
+    const maxSize = searchParams.get("maxSize") ? Number(searchParams.get("maxSize")) : undefined;
     const page = Number(searchParams.get("page") || 1);
 
     const load = async () => {
@@ -57,7 +63,14 @@ export function FileListClient({ initialFiles, initialFolders, user }: Props) {
         setBreadcrumbs(crumbs);
         setCurrentFolder(ids[ids.length - 1]);
 
-        const data = await getFiles(ids[ids.length - 1], { page });
+        const data = await getFiles(ids[ids.length - 1], {
+          page,
+          type: type || undefined,
+          sortBy: sortBy || undefined,
+          sortOrder: sortOrder || undefined,
+          minSize,
+          maxSize,
+        });
         setFiles(data.files);
         setFolders(data.folders);
         return;
@@ -70,7 +83,14 @@ export function FileListClient({ initialFiles, initialFolders, user }: Props) {
         setCurrentFolder(null);
         setBreadcrumbs([]);
 
-        const data = await getFiles(null, { page });
+        const data = await getFiles(null, {
+          page,
+          type: type || undefined,
+          sortBy: sortBy || undefined,
+          sortOrder: sortOrder || undefined,
+          minSize,
+          maxSize,
+        });
         setFiles(data.files);
         setFolders(data.folders);
         return;
@@ -78,7 +98,15 @@ export function FileListClient({ initialFiles, initialFolders, user }: Props) {
 
       // SEARCH
       if (query) {
-        const data = await getFiles(null, { query, page });
+        const data = await getFiles(null, {
+          query,
+          page,
+          type: type || undefined,
+          sortBy: sortBy || undefined,
+          sortOrder: sortOrder || undefined,
+          minSize,
+          maxSize,
+        });
         setFiles(data.files);
         setFolders([]);
         return;
@@ -94,7 +122,14 @@ export function FileListClient({ initialFiles, initialFolders, user }: Props) {
           ]);
         }
 
-        const data = await getFiles(folderId, { page });
+        const data = await getFiles(folderId, {
+          page,
+          type: type || undefined,
+          sortBy: sortBy || undefined,
+          sortOrder: sortOrder || undefined,
+          minSize,
+          maxSize,
+        });
         setFiles(data.files);
         setFolders(data.folders);
       }
@@ -204,17 +239,18 @@ export function FileListClient({ initialFiles, initialFolders, user }: Props) {
             refresh={refresh}
           />
         </div>
-
-        {/* Dialog */}
-        {showCreateFolder && (
-          <CreateFolderDialog
-            parentFolderId={currentFolder}
-            onSuccess={refresh}
-            onClose={() => setShowCreateFolder(false)}
-          />
-        )}
-
       </div>
+
+      <FileFilters />
+
+      {/* Dialog */}
+      {showCreateFolder && (
+        <CreateFolderDialog
+          parentFolderId={currentFolder}
+          onSuccess={refresh}
+          onClose={() => setShowCreateFolder(false)}
+        />
+      )}
 
       {/* ── Drag overlay hint ── */}
       {isDragging && (
