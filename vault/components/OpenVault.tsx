@@ -38,10 +38,11 @@ import {
 import { cn } from "@/lib/utils";
 import VaultUploadDropdown from "./VaultUploadDropdown";
 import DeleteConfirmDialog from "./DeleteConfirmDialog";
-import { formatBytes } from "@/lib/format";
+import { formatBytes, formatDate } from "@/lib/format";
 import { useLayout } from "@/hooks/useLayout";
 import { LayoutToggle } from "@/components/ui/LayoutToggle";
 import { FileIcon } from "@/components/ui/FileIcon";
+import { DetailsDialog } from "@/components/DetailsDialog";
 
 const TEAL = "#2da07a";
 
@@ -51,12 +52,14 @@ interface VaultFile {
   original_mime_type: string;
   size: number;
   created_at: string;
+  updated_at?: string;
 }
 
 interface VaultFolder {
   id: string;
   name: string;
   created_at: string;
+  updated_at?: string;
 }
 
 interface Vault {
@@ -280,6 +283,16 @@ export function OpenVault({
     type: "file" | "folder";
     id: string;
     initialName: string;
+  } | null>(null);
+  const [detailsDialog, setDetailsDialog] = useState<{
+    id: string;
+    name: string;
+    type: "file" | "folder";
+    mime_type?: string;
+    size?: number;
+    created_at: string;
+    updated_at?: string;
+    is_starred: boolean;
   } | null>(null);
   const [moveDialog, setMoveDialog] = useState<{
     id: string;
@@ -612,6 +625,16 @@ export function OpenVault({
                             })
                           }
                           onDelete={() => handleDeleteFolder(folder.id)}
+                          onDetails={() =>
+                            setDetailsDialog({
+                              id: folder.id,
+                              name: folder.name,
+                              type: "folder",
+                              created_at: folder.created_at,
+                              updated_at: folder.updated_at,
+                              is_starred: false,
+                            })
+                          }
                         />
                       </div>
                     </div>
@@ -675,6 +698,18 @@ export function OpenVault({
                               })
                             }
                             onDelete={() => handleDeleteFile(file.id)}
+                            onDetails={() =>
+                              setDetailsDialog({
+                                id: file.id,
+                                name: file.name,
+                                type: "file",
+                                mime_type: file.original_mime_type,
+                                size: file.size,
+                                created_at: file.created_at,
+                                updated_at: file.updated_at,
+                                is_starred: false,
+                              })
+                            }
                           />
                         </div>
                       </div>
@@ -708,11 +743,16 @@ export function OpenVault({
                           <FolderSimple size={42} weight="fill" style={{ color: TEAL }} />
                         </div>
 
-                        <div className="px-3 py-2 flex items-center justify-between">
-                          <p className="text-xs font-medium truncate flex-1">
-                            {folder.name}
-                          </p>
-                          <div className="opacity-0 group-hover:opacity-100" onClick={(e) => e.stopPropagation()}>
+                        <div className="px-3 py-2.5 flex items-start gap-2">
+                          <div className="flex-1 min-w-0 cursor-pointer" onClick={() => openFolder(folder)}>
+                            <p className="text-xs font-medium text-foreground truncate mb-0.5">
+                              {folder.name}
+                            </p>
+                            <p className="text-[10px] text-muted-foreground mb-1">
+                              {formatDate(folder.updated_at || folder.created_at)}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 mt-0.5" onClick={(e) => e.stopPropagation()}>
                             <VaultItemMenu
                               type="folder"
                               id={folder.id}
@@ -732,6 +772,16 @@ export function OpenVault({
                                 })
                               }
                               onDelete={() => handleDeleteFolder(folder.id)}
+                              onDetails={() =>
+                                setDetailsDialog({
+                                  id: folder.id,
+                                  name: folder.name,
+                                  type: "folder",
+                                  created_at: folder.created_at,
+                                  updated_at: folder.updated_at,
+                                  is_starred: false,
+                                })
+                              }
                             />
                           </div>
                         </div>
@@ -772,17 +822,17 @@ export function OpenVault({
                             )}
                           </div>
 
-                          <div className="px-3 py-2 flex items-start gap-2">
-                            <div className="flex-1 min-w-0 flex flex-col gap-1">
-                              <p className="text-xs font-medium truncate">
+                          <div className="px-3 py-2.5 flex items-start gap-2">
+                            <div className="flex-1 min-w-0 flex flex-col gap-1 cursor-pointer">
+                              <p className="text-xs font-medium text-foreground truncate mb-0.5">
                                 {file.name}
                               </p>
-                              <p className="text-[10px] text-muted-foreground">
-                                {formatBytes(file.size)}
+                              <p className="text-[10px] text-muted-foreground mb-1">
+                                {formatBytes(file.size)} • {formatDate(file.updated_at || file.created_at)}
                               </p>
                             </div>
 
-                            <div className="opacity-0 group-hover:opacity-100 -mr-1" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 mt-0.5" onClick={(e) => e.stopPropagation()}>
                               <VaultItemMenu
                                 type="file"
                                 id={file.id}
@@ -802,6 +852,18 @@ export function OpenVault({
                                   })
                                 }
                                 onDelete={() => handleDeleteFile(file.id)}
+                                onDetails={() =>
+                                  setDetailsDialog({
+                                    id: file.id,
+                                    name: file.name,
+                                    type: "file",
+                                    mime_type: file.original_mime_type,
+                                    size: file.size,
+                                    created_at: file.created_at,
+                                    updated_at: file.updated_at,
+                                    is_starred: false,
+                                  })
+                                }
                               />
                             </div>
                           </div>
@@ -875,6 +937,13 @@ export function OpenVault({
           isLoading={Boolean(loadingPreview && loadingPreview === previewing.fileId)}
           onClose={closePreview}
           onDownload={() => download(previewing.fileId, previewing.fileName, previewing.mimeType)}
+        />
+      )}
+
+      {detailsDialog && (
+        <DetailsDialog
+          item={detailsDialog}
+          onClose={() => setDetailsDialog(null)}
         />
       )}
     </div>

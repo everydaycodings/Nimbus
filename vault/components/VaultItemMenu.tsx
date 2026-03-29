@@ -12,6 +12,7 @@ import {
   PencilSimple,
   Trash,
   FolderSimple,
+  Info,
 } from "@phosphor-icons/react";
 
 interface Props {
@@ -22,12 +23,14 @@ interface Props {
   onRename: () => void;
   onDelete: () => void;
   onMove: () => void;
+  onDetails?: () => void;
 }
 
 export default function VaultItemMenu({
   onRename,
   onDelete,
   onMove,
+  onDetails,
 }: Props) {
   return (
     <DropdownMenu>
@@ -45,6 +48,12 @@ export default function VaultItemMenu({
         <DropdownMenuItem onClick={onMove}>
           <FolderSimple className="mr-2" /> Move to...
         </DropdownMenuItem>
+
+        {onDetails && (
+          <DropdownMenuItem onClick={onDetails}>
+            <Info className="mr-2" /> Details
+          </DropdownMenuItem>
+        )}
 
         <DropdownMenuSeparator />
 
