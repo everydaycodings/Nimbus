@@ -214,54 +214,56 @@ export function FileFilters() {
       </DropdownMenu>
 
       {/* Tags Filter */}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button className={cn(
-            "flex items-center gap-2 px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-accent transition-all text-sm font-medium",
-            currentTagId && "border-[#2da07a]/30 bg-[#2da07a]/5"
-          )}>
-            <TagIcon size={16} weight={currentTagId ? "fill" : "duotone"} style={{ color: TEAL }} />
-            <span>{selectedTag ? selectedTag.name : "Tags"}</span>
-            <CaretDown size={12} className="text-muted-foreground" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-48 rounded-2xl p-1.5 border-border shadow-xl">
-          <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">
-            Filter by Tag
-          </DropdownMenuLabel>
-          <DropdownMenuItem
-            onClick={() => updateParams({ tagId: null })}
-            className="flex items-center justify-between rounded-xl px-2.5 py-2 cursor-pointer focus:bg-[#2da07a]/10"
-          >
-            <span className={cn("text-sm", !currentTagId && "font-semibold")}>All Tags</span>
-            {!currentTagId && <Check size={14} weight="bold" style={{ color: TEAL }} />}
-          </DropdownMenuItem>
-          {tags.length > 0 && <DropdownMenuSeparator className="my-1 bg-border" />}
-          {tags.map((tag) => (
+      {!pathname.startsWith("/vault") && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className={cn(
+              "flex items-center gap-2 px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-accent transition-all text-sm font-medium",
+              currentTagId && "border-[#2da07a]/30 bg-[#2da07a]/5"
+            )}>
+              <TagIcon size={16} weight={currentTagId ? "fill" : "duotone"} style={{ color: TEAL }} />
+              <span>{selectedTag ? selectedTag.name : "Tags"}</span>
+              <CaretDown size={12} className="text-muted-foreground" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-48 rounded-2xl p-1.5 border-border shadow-xl">
+            <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">
+              Filter by Tag
+            </DropdownMenuLabel>
             <DropdownMenuItem
-              key={tag.id}
-              onClick={() => updateParams({ tagId: tag.id })}
+              onClick={() => updateParams({ tagId: null })}
               className="flex items-center justify-between rounded-xl px-2.5 py-2 cursor-pointer focus:bg-[#2da07a]/10"
             >
-              <div className="flex items-center gap-2">
-                <div
-                  className="w-2 h-2 rounded-full"
-                  style={{ backgroundColor: tag.color }}
-                />
-                <span className={cn("text-sm", currentTagId === tag.id && "font-semibold")}>
-                  {tag.name}
-                </span>
-              </div>
-              {currentTagId === tag.id && <Check size={14} weight="bold" style={{ color: TEAL }} />}
+              <span className={cn("text-sm", !currentTagId && "font-semibold")}>All Tags</span>
+              {!currentTagId && <Check size={14} weight="bold" style={{ color: TEAL }} />}
             </DropdownMenuItem>
-          ))}
-          {tags.length === 0 && (
-            <div className="px-2.5 py-4 text-center">
-              <p className="text-[10px] text-muted-foreground">No tags created yet</p>
-            </div>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
+            {tags.length > 0 && <DropdownMenuSeparator className="my-1 bg-border" />}
+            {tags.map((tag) => (
+              <DropdownMenuItem
+                key={tag.id}
+                onClick={() => updateParams({ tagId: tag.id })}
+                className="flex items-center justify-between rounded-xl px-2.5 py-2 cursor-pointer focus:bg-[#2da07a]/10"
+              >
+                <div className="flex items-center gap-2">
+                  <div
+                    className="w-2 h-2 rounded-full"
+                    style={{ backgroundColor: tag.color }}
+                  />
+                  <span className={cn("text-sm", currentTagId === tag.id && "font-semibold")}>
+                    {tag.name}
+                  </span>
+                </div>
+                {currentTagId === tag.id && <Check size={14} weight="bold" style={{ color: TEAL }} />}
+              </DropdownMenuItem>
+            ))}
+            {tags.length === 0 && (
+              <div className="px-2.5 py-4 text-center">
+                <p className="text-[10px] text-muted-foreground">No tags created yet</p>
+              </div>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </div>
   );
 }
