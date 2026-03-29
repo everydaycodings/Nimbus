@@ -16,7 +16,8 @@ create table public.vaults (
   -- If decryption succeeds → password is correct
   verification_token text not null,
 
-  created_at         timestamptz not null default now()
+  created_at         timestamptz not null default now(),
+  updated_at         timestamptz not null default now()
 );
 
 -- ── VAULT FILES ───────────────────────────────────────────────
@@ -37,7 +38,8 @@ create table public.vault_files (
   s3_key              text not null unique,
   s3_bucket           text not null,
 
-  created_at          timestamptz not null default now()
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now()
 );
 
 -- ── INDEXES ───────────────────────────────────────────────────
@@ -61,3 +63,13 @@ create policy "vault_files_owner_all" on public.vault_files
         and owner_id = public.current_user_id()
     )
   );
+
+-- ── TRIGGERS ──────────────────────────────────────────────────
+-- Assumes public.set_updated_at() is defined in main schema
+create trigger trg_vaults_updated_at
+  before update on public.vaults
+  for each row execute function public.set_updated_at();
+
+create trigger trg_vault_files_updated_at
+  before update on public.vault_files
+  for each row execute function public.set_updated_at();

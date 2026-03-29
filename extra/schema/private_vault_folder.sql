@@ -8,7 +8,8 @@ create table public.vault_folders (
   vault_id         uuid not null references public.vaults(id) on delete cascade,
   name             text not null,
   parent_folder_id uuid references public.vault_folders(id) on delete cascade,
-  created_at       timestamptz not null default now()
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now()
 );
 
 -- Add folder support to vault_files
@@ -31,3 +32,9 @@ create policy "vault_folders_owner_all" on public.vault_folders
         and owner_id = public.current_user_id()
     )
   );
+
+-- ── TRIGGERS ──────────────────────────────────────────────────
+-- Assumes public.set_updated_at() is defined in main schema
+create trigger trg_vault_folders_updated_at
+  before update on public.vault_folders
+  for each row execute function public.set_updated_at();

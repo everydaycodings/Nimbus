@@ -57,7 +57,7 @@ export async function getVaults() {
 
   const { data, error } = await supabase
     .from("vaults")
-    .select("id, name, salt, verification_token, created_at")
+    .select("id, name, salt, verification_token, created_at, updated_at")
     .eq("owner_id", user.id)
     .order("created_at", { ascending: false });
 
@@ -102,7 +102,7 @@ export async function getVaultFiles(vaultId: string) {
 
   const { data, error } = await supabase
     .from("vault_files")
-    .select("id, name, original_mime_type, size, s3_key, created_at")
+    .select("id, name, original_mime_type, size, s3_key, created_at, updated_at")
     .eq("vault_id", vaultId)
     .order("created_at", { ascending: false });
 
