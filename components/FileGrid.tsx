@@ -322,20 +322,28 @@ function GridCard({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center gap-2 px-3 py-2.5">
+        <div className="flex items-start gap-2 px-3 py-2.5">
           <div className="flex-1 min-w-0 cursor-pointer" onClick={() => handleMainClick(onFolderOpen)}>
-            <p className="text-xs font-medium text-foreground truncate">{name}</p>
+            <p className="text-xs font-medium text-foreground truncate mb-0.5">{name}</p>
             {meta && (
-              <p className="text-[10px] text-muted-foreground">
+              <p className="text-[10px] text-muted-foreground mb-1">
                 {meta.size != null
                   ? `${formatBytes(meta.size)} • ${formatDate(meta.date)}`
                   : formatDate(meta.date)}
               </p>
             )}
+            {tags.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-1.5">
+                {tags.slice(0, 2).map(tag => <TagBadge key={tag.id} tag={tag} />)}
+                {tags.length > 2 && (
+                  <span className="text-[10px] text-muted-foreground self-center ml-0.5">+{tags.length - 2}</span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 mt-0.5">
             {!showRestore && (
               <button onClick={handleStar} className="p-1 rounded-lg hover:bg-muted transition-colors">
                 <Star size={13} weight={isStarred ? "fill" : "regular"} style={isStarred ? { color: TEAL } : {}} className={!isStarred ? "text-muted-foreground" : ""} />
@@ -356,16 +364,6 @@ function GridCard({
             />
           </div>
         </div>
-
-        {/* Tags row in grid */}
-        {tags.length > 0 && (
-          <div className="absolute top-2 right-2 flex flex-wrap justify-end gap-1 pointer-events-none pr-7">
-            {tags.slice(0, 2).map(tag => (
-              <div key={tag.id} className="w-2 h-2 rounded-full shadow-sm" style={{ backgroundColor: tag.color }} />
-            ))}
-            {tags.length > 2 && <div className="text-[8px] text-muted-foreground">+{tags.length - 2}</div>}
-          </div>
-        )}
 
         {/* Star badge */}
         {isStarred && (
