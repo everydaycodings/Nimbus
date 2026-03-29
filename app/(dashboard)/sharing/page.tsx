@@ -13,15 +13,15 @@ import {
 import { useSearchParams } from "next/navigation";
 import { FileFilters } from "@/components/FileFilters";
 import {
-  getMySharedItems,
-  getSharedWithMe,
-  revokeShareLink,
-  revokeUserPermission,
   getSharedFileDownloadUrl,
-  copySharedFileToDrive,
-  copySharedFolderToDrive,
   getSharedFolderZip,
 } from "@/actions/sharing.dashboard";
+import { useSharingQuery } from "@/hooks/queries/useSharingQuery";
+import {
+  useRevokeShareLinkMutation,
+  useRevokeUserPermissionMutation,
+  useCopySharedResourceMutation,
+} from "@/hooks/mutations/useSharingMutations";
 import { FilePreviewDialog } from "@/components/FilePreviewDialog";
 import { MoveDialog } from "@/components/MoveDialog";
 import { cn } from "@/lib/utils";
@@ -330,24 +330,24 @@ function CopyToDialog({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const [copying, setCopying] = useState(false);
+  const copyMutation = useCopySharedResourceMutation();
+  const copying = copyMutation.isPending;
   const [error, setError] = useState<string | null>(null);
 
-  const handleCopy = async (targetFolderId: string | null) => {
-    setCopying(true);
+  const handleCopy = (targetFolderId: string | null) => {
     setError(null);
-    try {
-      if (item.resource_type === "file") {
-        await copySharedFileToDrive(item.resource_id, targetFolderId);
-      } else {
-        await copySharedFolderToDrive(item.resource_id, targetFolderId);
+    copyMutation.mutate(
+      { resourceId: item.resource_id, resourceType: item.resource_type, targetFolderId },
+      {
+        onSuccess: () => {
+          onDone();
+          onClose();
+        },
+        onError: (err) => {
+          setError(err instanceof Error ? err.message : "Copy failed");
+        }
       }
-      onDone();
-      onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Copy failed");
-      setCopying(false);
-    }
+    );
   };
 
   // Reuse MoveDialog UI but for copy
@@ -557,12 +557,7 @@ function SharedWithMeCard({
 // ═══════════════════════════════════════════════════════════════
 export default function SharingPage() {
   const [tab, setTab] = useState<Tab>("links");
-  const [links, setLinks] = useState<SharedLink[]>([]);
-  const [people, setPeople] = useState<SharedPerson[]>([]);
-  const [sharedWithMe, setSharedWithMe] = useState<SharedWithMeItem[]>([]);
-  const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
   const searchParams = useSearchParams();
 
   const type = searchParams.get("type") || "all";
@@ -572,14 +567,15 @@ export default function SharingPage() {
   const maxSize = searchParams.get("maxSize") ? Number(searchParams.get("maxSize")) : undefined;
   const tagId = searchParams.get("tagId") || undefined;
 
-  const load = useCallback(async () => {
-    const [mine, withMe] = await Promise.all([getMySharedItems(), getSharedWithMe()]);
-    setLinks(mine.links as SharedLink[]);
-    setPeople(mine.people as SharedPerson[]);
-    setSharedWithMe(withMe as SharedWithMeItem[]);
-  }, []);
+  const { data, isLoading: loading, refetch: load } = useSharingQuery();
+  
+  const links = (data?.mine?.links ?? []) as SharedLink[];
+  const people = (data?.mine?.people ?? []) as SharedPerson[];
+  const sharedWithMe = (data?.withMe ?? []) as SharedWithMeItem[];
 
-  useEffect(() => { load().finally(() => setLoading(false)); }, [load]);
+  const revokeLinkMutation = useRevokeShareLinkMutation();
+  const revokePersonMutation = useRevokeUserPermissionMutation();
+  const isPending = revokeLinkMutation.isPending || revokePersonMutation.isPending;
 
   const copyLink = async (token: string) => {
     await navigator.clipboard.writeText(`${window.location.origin}/share/${token}`);
@@ -587,8 +583,8 @@ export default function SharingPage() {
     setTimeout(() => setCopied(null), 2000);
   };
 
-  const handleRevokeLink = (id: string) => startTransition(async () => { await revokeShareLink(id); await load(); });
-  const handleRevokePerson = (id: string) => startTransition(async () => { await revokeUserPermission(id); await load(); });
+  const handleRevokeLink = (id: string) => revokeLinkMutation.mutate(id);
+  const handleRevokePerson = (id: string) => revokePersonMutation.mutate(id);
 
   const grouped = groupByResource(links, people);
   const GRID = "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3";
