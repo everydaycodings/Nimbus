@@ -3,6 +3,11 @@
 
 import { useState } from "react";
 
+// Cache to store preview URLs to save bandwidth and improve smoothness.
+// Stores fileId -> { url, timestamp }
+const previewCache = new Map<string, { url: string; timestamp: number }>();
+const CACHE_TTL = 3600 * 1000; // 1 hour in milliseconds
+
 export function useDownload() {
   const [downloading, setDownloading] = useState<Set<string>>(new Set());
 
@@ -37,10 +42,20 @@ export function useDownload() {
   };
 
   const getPreviewUrl = async (fileId: string): Promise<string | null> => {
+    // Check cache
+    const cached = previewCache.get(fileId);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      return cached.url;
+    }
+
     try {
       const res = await fetch(`/api/download?fileId=${fileId}&inline=true`);
       if (!res.ok) return null;
       const { url } = await res.json();
+      
+      // Store in cache
+      previewCache.set(fileId, { url, timestamp: Date.now() });
+      
       return url;
     } catch {
       return null;
