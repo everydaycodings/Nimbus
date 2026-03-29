@@ -3,7 +3,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { LockKey, Plus } from "@phosphor-icons/react";
-import { getVaults } from "@/vault/actions/vault.actions";
+import { useVaultsQuery } from "@/vault/hooks/queries/useVaultQueries";
 import { CreateVaultDialog } from "@/vault/components/CreateVaultDialog";
 import { UnlockVaultDialog } from "@/vault/components/UnlockVaultDialog";
 import { OpenVault } from "@/vault/components/OpenVault";
@@ -21,21 +21,11 @@ interface Vault {
 }
 
 export function VaultPage() {
-  const [vaults, setVaults] = useState<Vault[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: vaults = [], isLoading: loading, refetch: loadVaults } = useVaultsQuery();
   const [showCreate, setShowCreate] = useState(false);
   const [unlockTarget, setUnlockTarget] = useState<Vault | null>(null);
   const [openVault, setOpenVault] = useState<Vault | null>(null);
   const [openKey, setOpenKey] = useState<CryptoKey | null>(null);
-
-  const loadVaults = useCallback(async () => {
-    const data = await getVaults();
-    setVaults(data as Vault[]);
-  }, []);
-
-  useEffect(() => {
-    loadVaults().finally(() => setLoading(false));
-  }, [loadVaults]);
 
   const tryAutoUnlock = async (vault: Vault) => {
     const saved = loadVaultSession(vault.id);

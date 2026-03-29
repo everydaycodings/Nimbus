@@ -23,6 +23,7 @@ import { deleteVaultFile, renameVaultFile } from "@/vault/actions/vault.actions"
 import { useVaultUpload } from "@/vault/hooks/useVaultUpload";
 import { useVaultFolderUpload } from "@/vault/hooks/useVaultFolderUpload";
 import { useVaultDownload, canPreviewVaultFile } from "@/vault/hooks/useVaultDownload";
+import { useVaultItemsQuery } from "@/vault/hooks/queries/useVaultQueries";
 import { clearVaultSession } from "@/vault/lib/session";
 import { deleteVault } from "@/vault/actions/vault.actions";
 import { VaultPreviewWrapper } from "@/vault/components/VaultPreviewWrapper";
@@ -271,9 +272,6 @@ export function OpenVault({
   onLock: () => void;
   onRefreshVaults: () => void;
 }) {
-  const [folders, setFolders] = useState<VaultFolder[]>([]);
-  const [files, setFiles] = useState<VaultFile[]>([]);
-  const [loading, setLoading] = useState(true);
   const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([]);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [showCreateFolder, setShowCreateFolder] = useState(false);
@@ -309,6 +307,10 @@ export function OpenVault({
 
   const { layout, handleLayoutChange } = useLayout("nimbus-layout");
 
+  const { data, isLoading: loading, refetch: refresh } = useVaultItemsQuery(vault.id, currentFolderId);
+  const folders = data?.folders ?? [];
+  const files = data?.files ?? [];
+
   const { uploadMany, uploads } = useVaultUpload(vault.id, cryptoKey);
   const { uploadFolder } = useVaultFolderUpload({
     vaultId: vault.id,
@@ -317,20 +319,6 @@ export function OpenVault({
     onSuccess: () => refresh(),
   });
   const { download, preview, decrypting } = useVaultDownload(cryptoKey);
-
-  const refresh = useCallback(async () => {
-    const [f, files] = await Promise.all([
-      getVaultFolders(vault.id, currentFolderId),
-      getVaultFilesInFolder(vault.id, currentFolderId),
-    ]);
-    setFolders(f as VaultFolder[]);
-    setFiles(files as VaultFile[]);
-  }, [vault.id, currentFolderId]);
-
-  useEffect(() => {
-    setLoading(true);
-    refresh().finally(() => setLoading(false));
-  }, [refresh]);
 
   useEffect(() => {
     if (uploads.every((u) => u.status === "complete" || u.status === "error")) {
@@ -592,7 +580,7 @@ export function OpenVault({
                     <div
                       key={folder.id}
                       className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-accent transition-colors cursor-pointer"
-                      onDoubleClick={() => openFolder(folder)}
+                      onClick={() => openFolder(folder)}
                     >
                       <FolderSimple size={18} weight="fill" style={{ color: TEAL }} />
 
@@ -733,7 +721,7 @@ export function OpenVault({
                     {filteredFolders.map((folder) => (
                       <div
                         key={folder.id}
-                        onDoubleClick={() => openFolder(folder)}
+                        onClick={() => openFolder(folder)}
                         className="group cursor-pointer rounded-2xl border border-border bg-card hover:shadow-md hover:border-[#2da07a]/30 transition-all"
                       >
                         <div
