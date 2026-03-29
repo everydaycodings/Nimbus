@@ -2,7 +2,7 @@
 "use client";
 
 import { X } from "@phosphor-icons/react";
-import { formatBytes, formatDate } from "@/lib/format";
+import { formatBytes, formatDate, formatTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 interface DetailsDialogProps {
@@ -23,8 +23,28 @@ export function DetailsDialog({ item, onClose }: DetailsDialogProps) {
   const details = [
     { label: "Name", value: item.name },
     { label: "Type", value: item.type === "folder" ? "Folder" : item.mime_type || "File" },
-    { label: "Created", value: formatDate(item.created_at) },
-    { label: "Modified", value: formatDate(item.updated_at || item.created_at) },
+    { 
+      label: "Created", 
+      value: (
+        <div className="flex flex-col items-end gap-0.5">
+          <span className="text-foreground">{formatDate(item.created_at)}</span>
+          <span className="text-[10px] text-muted-foreground/80 font-normal uppercase tracking-tight">
+            {formatTime(item.created_at)}
+          </span>
+        </div>
+      ) 
+    },
+    { 
+      label: "Modified", 
+      value: (
+        <div className="flex flex-col items-end gap-0.5">
+          <span className="text-foreground">{formatDate(item.updated_at || item.created_at)}</span>
+          <span className="text-[10px] text-muted-foreground/80 font-normal uppercase tracking-tight">
+            {formatTime(item.updated_at || item.created_at)}
+          </span>
+        </div>
+      ) 
+    },
     ...(item.type === "file" && item.size !== undefined
       ? [{ label: "Size", value: formatBytes(item.size) }]
       : []),

@@ -15,6 +15,14 @@ export function formatDate(iso: string): string {
   });
 }
 
+export function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
 export function fmtTime(s: number): string {
   if (!isFinite(s)) return "0:00";
   const m = Math.floor(s / 60);
