@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { toggleStar, trashItem, restoreItem, renameItem } from "@/actions/files";
 import { MoveDialog } from "@/components/MoveDialog";
 import { RenameDialog } from "@/components/rename";
+import { MoveToTrash } from "@/components/MoveToTrash";
 import { FilePreviewDialog } from "@/components/FilePreviewDialog";
 import { ShareDialog } from "@/components/ShareDialog";
 import { useDownload } from "@/hooks/useDownload";
@@ -146,6 +147,7 @@ function ListRow({
   const {
     showMoveDialog, setShowMoveDialog,
     showRenameDialog, setShowRenameDialog,
+    showTrashDialog, setShowTrashDialog,
     showPreview, setShowPreview,
     showShare, setShowShare,
     isPending, isDownloading,
@@ -190,7 +192,7 @@ function ListRow({
                   <DownloadSimple size={15} />
                 </button>
               )}
-              <button onClick={handleTrash} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-red-400 transition-colors">
+              <button onClick={() => setShowTrashDialog(true)} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-red-400 transition-colors">
                 <Trash size={15} />
               </button>
             </>
@@ -204,13 +206,14 @@ function ListRow({
             type={type} isStarred={isStarred} showRestore={showRestore}
             onRename={() => setShowRenameDialog(true)} onMove={() => setShowMoveDialog(true)}
             onShare={() => setShowShare(true)} onDownload={handleDownload}
-            onStar={handleStar} onTrash={handleTrash} onRestore={handleRestore}
+            onStar={handleStar} onTrash={() => setShowTrashDialog(true)} onRestore={handleRestore}
           />
         </div>
       </div>
 
       {showMoveDialog && <MoveDialog itemId={id} itemName={name} itemType={type} onSuccess={() => onRefresh?.()} onClose={() => setShowMoveDialog(false)} />}
       {showRenameDialog && <RenameDialog id={id} name={name} type={type} onSuccess={() => onRefresh?.()} onClose={() => setShowRenameDialog(false)} />}
+      {showTrashDialog && <MoveToTrash id={id} name={name} type={type} onSuccess={() => onRefresh?.()} onClose={() => setShowTrashDialog(false)} />}
       {showShare && <ShareDialog resourceId={id} resourceName={name} resourceType={type} onClose={() => setShowShare(false)} />}
       {showPreview && <FilePreviewDialog fileId={id} fileName={name} mimeType={meta?.mimeType ?? ""} onClose={() => setShowPreview(false)} />}
     </>
@@ -231,6 +234,7 @@ function GridCard({
   const {
     showMoveDialog, setShowMoveDialog,
     showRenameDialog, setShowRenameDialog,
+    showTrashDialog, setShowTrashDialog,
     showPreview, setShowPreview,
     showShare, setShowShare,
     isPending, isDownloading,
@@ -284,8 +288,9 @@ function GridCard({
             <DotsMenu
               type={type} isStarred={isStarred} showRestore={showRestore} size={13}
               onRename={() => setShowRenameDialog(true)} onMove={() => setShowMoveDialog(true)}
+              onTrash={() => setShowTrashDialog(true)}
               onShare={() => setShowShare(true)} onDownload={handleDownload}
-              onStar={handleStar} onTrash={handleTrash} onRestore={handleRestore}
+              onStar={handleStar} onRestore={handleRestore}
             />
           </div>
         </div>
@@ -300,6 +305,7 @@ function GridCard({
 
       {showMoveDialog && <MoveDialog itemId={id} itemName={name} itemType={type} onSuccess={() => onRefresh?.()} onClose={() => setShowMoveDialog(false)} />}
       {showRenameDialog && <RenameDialog id={id} name={name} type={type} onSuccess={() => onRefresh?.()} onClose={() => setShowRenameDialog(false)} />}
+      {showTrashDialog && <MoveToTrash id={id} name={name} type={type} onSuccess={() => onRefresh?.()} onClose={() => setShowTrashDialog(false)} />}
       {showShare && <ShareDialog resourceId={id} resourceName={name} resourceType={type} onClose={() => setShowShare(false)} />}
       {showPreview && <FilePreviewDialog fileId={id} fileName={name} mimeType={meta?.mimeType ?? ""} onClose={() => setShowPreview(false)} />}
     </>

@@ -14,6 +14,7 @@ interface UseItemActionsProps {
 export function useItemActions({ id, name, type, isStarred, onRefresh }: UseItemActionsProps) {
   const [showMoveDialog, setShowMoveDialog] = useState(false);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
+  const [showTrashDialog, setShowTrashDialog] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -44,6 +45,7 @@ export function useItemActions({ id, name, type, isStarred, onRefresh }: UseItem
   return {
     showMoveDialog, setShowMoveDialog,
     showRenameDialog, setShowRenameDialog,
+    showTrashDialog, setShowTrashDialog,
     showPreview, setShowPreview,
     showShare, setShowShare,
     isPending,
