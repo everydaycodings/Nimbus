@@ -30,9 +30,11 @@ export async function getMySharedItems() {
   const links = await Promise.all(
     (rawLinks ?? []).map(async (link) => {
       const table  = link.resource_type === "file" ? "files" : "folders";
-      const select = link.resource_type === "file" ? "name, mime_type" : "name";
+      const select = link.resource_type === "file" 
+        ? "name, mime_type, tags:file_tags(tag:tags(id, name, color))" 
+        : "name, tags:folder_tags(tag:tags(id, name, color))";
       const { data: resource } = await supabase.from(table).select(select).eq("id", link.resource_id).single();
-      return { ...link, resource_name: (resource as any)?.name ?? "Deleted item", mime_type: (resource as any)?.mime_type ?? null };
+      return { ...link, resource_name: (resource as any)?.name ?? "Deleted item", mime_type: (resource as any)?.mime_type ?? null, tags: (resource as any)?.tags ?? [] };
     })
   );
 
@@ -44,7 +46,9 @@ export async function getMySharedItems() {
   const people: any[] = [];
   for (const perm of rawPerms ?? []) {
     const table  = perm.resource_type === "file" ? "files" : "folders";
-    const select = perm.resource_type === "file" ? "id, name, mime_type, owner_id" : "id, name, owner_id";
+    const select = perm.resource_type === "file" 
+      ? "id, name, mime_type, owner_id, tags:file_tags(tag:tags(id, name, color))" 
+      : "id, name, owner_id, tags:folder_tags(tag:tags(id, name, color))";
     const { data: resource } = await supabase.from(table).select(select).eq("id", perm.resource_id).single();
     if (!resource || (resource as any).owner_id !== user.id) continue;
     const { data: sharedUser } = await supabase.from("users").select("email, full_name").eq("id", perm.user_id).single();
@@ -53,7 +57,7 @@ export async function getMySharedItems() {
       resource_type: perm.resource_type, resource_name: (resource as any).name ?? "Deleted item",
       mime_type: (resource as any).mime_type ?? null, role: perm.role,
       user_email: sharedUser?.email ?? "Unknown", user_name: sharedUser?.full_name ?? null,
-      shared_at: perm.created_at,
+      shared_at: perm.created_at, tags: (resource as any).tags ?? [],
     });
   }
 
@@ -77,8 +81,8 @@ export async function getSharedWithMe() {
   for (const perm of perms ?? []) {
     const table  = perm.resource_type === "file" ? "files" : "folders";
     const select = perm.resource_type === "file"
-      ? "id, name, mime_type, size, s3_key, owner_id"
-      : "id, name, owner_id";
+      ? "id, name, mime_type, size, s3_key, owner_id, tags:file_tags(tag:tags(id, name, color))"
+      : "id, name, owner_id, tags:folder_tags(tag:tags(id, name, color))";
     const { data: resource } = await supabase.from(table).select(select).eq("id", perm.resource_id).single();
     if (!resource || (resource as any).owner_id === user.id) continue;
     const { data: owner } = await supabase.from("users").select("email, full_name").eq("id", (resource as any).owner_id).single();
@@ -88,6 +92,7 @@ export async function getSharedWithMe() {
       name: (resource as any).name, mime_type: (resource as any).mime_type ?? null,
       size: (resource as any).size ?? null, s3_key: (resource as any).s3_key ?? null,
       owner_email: owner?.email ?? "Unknown", owner_name: owner?.full_name ?? null,
+      tags: (resource as any).tags ?? [],
     });
   }
   return items;

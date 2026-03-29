@@ -39,6 +39,7 @@ export default function HomePage() {
   const sortOrder = searchParams.get("sortOrder");
   const minSize = searchParams.get("minSize") ? Number(searchParams.get("minSize")) : undefined;
   const maxSize = searchParams.get("maxSize") ? Number(searchParams.get("maxSize")) : undefined;
+  const tagId = searchParams.get("tagId") || undefined;
 
   const refresh = useCallback(async () => {
     const data = await getFiles(null, {
@@ -47,10 +48,11 @@ export default function HomePage() {
       sortOrder: sortOrder || undefined,
       minSize,
       maxSize,
+      tagId,
     });
     setFiles(data.files);
     setFolders(data.folders);
-  }, [type, sortBy, sortOrder, minSize, maxSize]);
+  }, [type, sortBy, sortOrder, minSize, maxSize, tagId]);
 
   useEffect(() => {
     setLoading(true);

@@ -11,6 +11,7 @@ export interface FileFilters {
   sortOrder: SortOrder;
   minSize?: number;
   maxSize?: number;
+  tagId?: string;
 }
 
 export const FILE_TYPE_MAP: Record<FileType, string[]> = {

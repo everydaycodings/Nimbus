@@ -20,12 +20,13 @@ export default function StarredPage() {
   const sortOrder = searchParams.get("sortOrder") || "desc";
   const minSize = searchParams.get("minSize") ? Number(searchParams.get("minSize")) : undefined;
   const maxSize = searchParams.get("maxSize") ? Number(searchParams.get("maxSize")) : undefined;
+  const tagId = searchParams.get("tagId") || undefined;
 
   const refresh = useCallback(async () => {
-    const data = await getStarredItems();
+    const data = await getStarredItems({ tagId });
     setFiles(data.files);
     setFolders(data.folders);
-  }, []);
+  }, [tagId]);
 
   useEffect(() => {
     setLoading(true);
@@ -45,6 +46,10 @@ export default function StarredPage() {
     }
     if (minSize !== undefined && file.size < minSize) return false;
     if (maxSize !== undefined && file.size > maxSize) return false;
+
+    // Tag filter (for completeness, though should be handled by server)
+    if (tagId && !file.tags?.some((t: any) => t.tag.id === tagId)) return false;
+
     return true;
   }).sort((a, b) => {
     let comparison = 0;
@@ -57,6 +62,10 @@ export default function StarredPage() {
   // Client-side filtering/sorting for FOLDERS (type/size doesn't apply)
   const filteredFolders = folders.filter((folder) => {
     if (type !== "all") return false; // Folders are not files
+    
+    // Tag filter
+    if (tagId && !folder.tags?.some((t: any) => t.tag.id === tagId)) return false;
+
     return true;
   }).sort((a, b) => {
     let comparison = 0;

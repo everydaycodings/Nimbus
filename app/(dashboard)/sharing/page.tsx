@@ -80,6 +80,7 @@ interface SharedWithMeItem {
   shared_at: string; name: string; mime_type?: string;
   size?: number; s3_key?: string;
   owner_email: string; owner_name: string | null;
+  tags: any[];
 }
 
 // ── Grouped resource type ─────────────────────────────────────
@@ -90,6 +91,7 @@ interface GroupedResource {
   mime_type?: string;
   links: SharedLink[];
   people: SharedPerson[];
+  tags: any[];
 }
 
 function groupByResource(links: SharedLink[], people: SharedPerson[]): GroupedResource[] {
@@ -97,13 +99,13 @@ function groupByResource(links: SharedLink[], people: SharedPerson[]): GroupedRe
 
   for (const l of links) {
     if (!map.has(l.resource_id)) {
-      map.set(l.resource_id, { resource_id: l.resource_id, resource_type: l.resource_type, resource_name: l.resource_name, mime_type: l.mime_type, links: [], people: [] });
+      map.set(l.resource_id, { resource_id: l.resource_id, resource_type: l.resource_type, resource_name: l.resource_name, mime_type: l.mime_type, links: [], people: [], tags: (l as any).tags || [] });
     }
     map.get(l.resource_id)!.links.push(l);
   }
   for (const p of people) {
     if (!map.has(p.resource_id)) {
-      map.set(p.resource_id, { resource_id: p.resource_id, resource_type: p.resource_type, resource_name: p.resource_name, mime_type: p.mime_type, links: [], people: [] });
+      map.set(p.resource_id, { resource_id: p.resource_id, resource_type: p.resource_type, resource_name: p.resource_name, mime_type: p.mime_type, links: [], people: [], tags: (p as any).tags || [] });
     }
     map.get(p.resource_id)!.people.push(p);
   }
@@ -568,6 +570,7 @@ export default function SharingPage() {
   const sortOrder = searchParams.get("sortOrder") || "desc";
   const minSize = searchParams.get("minSize") ? Number(searchParams.get("minSize")) : undefined;
   const maxSize = searchParams.get("maxSize") ? Number(searchParams.get("maxSize")) : undefined;
+  const tagId = searchParams.get("tagId") || undefined;
 
   const load = useCallback(async () => {
     const [mine, withMe] = await Promise.all([getMySharedItems(), getSharedWithMe()]);
@@ -608,6 +611,10 @@ export default function SharingPage() {
       }
     }
     // Size filter (harder for grouped items as size might not be present for links)
+    
+    // Tag filter
+    if (tagId && !res.tags?.some((t: any) => t.tag.id === tagId)) return false;
+
     return true;
   }).sort((a, b) => {
     let comparison = 0;
@@ -631,6 +638,10 @@ export default function SharingPage() {
     }
     if (minSize !== undefined && (item.size || 0) < minSize) return false;
     if (maxSize !== undefined && (item.size || 0) > maxSize) return false;
+    
+    // Tag filter
+    if (tagId && !item.tags?.some((t: any) => t.tag.id === tagId)) return false;
+
     return true;
   }).sort((a, b) => {
     let comparison = 0;
