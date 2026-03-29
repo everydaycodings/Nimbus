@@ -15,6 +15,7 @@ import {
 import { cn } from "@/lib/utils";
 import { toggleStar, trashItem, restoreItem, renameItem } from "@/actions/files";
 import { MoveDialog } from "@/components/MoveDialog";
+import { RenameDialog } from "@/components/rename";
 import { FilePreviewDialog } from "@/components/FilePreviewDialog";
 import { ShareDialog } from "@/components/ShareDialog";
 import { useDownload } from "@/hooks/useDownload";
@@ -59,49 +60,6 @@ interface FileGridProps {
 
 const TEAL = "#2da07a";
 
-// ── Shared context menu rendered in a portal-like fixed div ───
-// Fixes the overflow:hidden clipping issue on grid cards
-function ContextMenu({
-  open, onClose, type, isStarred, showRestore,
-  onRename, onMove, onShare, onDownload, onStar, onTrash, onRestore,
-}: {
-  open: boolean; onClose: () => void;
-  type: "file" | "folder"; isStarred: boolean; showRestore?: boolean;
-  onRename: () => void; onMove: () => void; onShare: () => void;
-  onDownload: () => void; onStar: () => void; onTrash: () => void; onRestore: () => void;
-}) {
-  if (!open) return null;
-  return (
-    <>
-      {/* Full-screen backdrop to catch outside clicks */}
-      <div className="fixed inset-0 z-40" onClick={onClose} />
-      {/* Menu — fixed positioning so it escapes overflow:hidden on grid cards */}
-      <div
-        className="fixed z-50 w-44 bg-popover border border-border rounded-xl shadow-xl py-1 text-sm"
-        style={{ transform: "translateY(8px)" }}
-      // Position is set via CSS trick below — we use absolute on a non-clipped ancestor
-      >
-        {!showRestore ? (
-          <>
-            <button onClick={() => { onRename(); onClose(); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Rename</button>
-            <button onClick={() => { onMove(); onClose(); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Move to...</button>
-            <button onClick={() => { onShare(); onClose(); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Share</button>
-            {type === "file" && (
-              <button onClick={() => { onDownload(); onClose(); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Download</button>
-            )}
-            <button onClick={() => { onStar(); onClose(); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
-              {isStarred ? "Unstar" : "Star"}
-            </button>
-            <div className="my-1 border-t border-border" />
-            <button onClick={() => { onTrash(); onClose(); }} className="w-full text-left px-3 py-1.5 text-red-400 hover:bg-accent transition-colors">Move to trash</button>
-          </>
-        ) : (
-          <button onClick={() => { onRestore(); onClose(); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Restore</button>
-        )}
-      </div>
-    </>
-  );
-}
 
 // ── DotsMenu: button + menu together, handles its own positioning ──
 
@@ -187,12 +145,11 @@ function ListRow({
 }) {
   const {
     showMoveDialog, setShowMoveDialog,
+    showRenameDialog, setShowRenameDialog,
     showPreview, setShowPreview,
     showShare, setShowShare,
-    renaming, setRenaming,
-    newName, setNewName,
     isPending, isDownloading,
-    handleStar, handleTrash, handleRestore, handleRename, handleMainClick, handleDownload
+    handleStar, handleTrash, handleRestore, handleMainClick, handleDownload
   } = useItemActions({ id, name, type, isStarred, onRefresh });
 
   return (
@@ -209,22 +166,8 @@ function ListRow({
             }
           </div>
           <div className="flex-1 min-w-0">
-            {renaming ? (
-              <input
-                autoFocus value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onBlur={handleRename}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleRename();
-                  if (e.key === "Escape") { setRenaming(false); setNewName(name); }
-                }}
-                onClick={(e) => e.stopPropagation()}
-                className="w-full text-sm font-medium bg-secondary border border-[#2da07a]/40 rounded-lg px-2 py-0.5 text-foreground focus:outline-none focus:ring-1 focus:ring-[#2da07a]/30"
-              />
-            ) : (
-              <p className="text-sm font-medium text-foreground truncate">{name}</p>
-            )}
-            {meta && !renaming && (
+            <p className="text-sm font-medium text-foreground truncate">{name}</p>
+            {meta && (
               <p className="text-xs text-muted-foreground">
                 {meta.size !== undefined ? `${formatBytes(meta.size)} · ` : ""}
                 {formatDate(meta.date)}
@@ -259,7 +202,7 @@ function ListRow({
           )}
           <DotsMenu
             type={type} isStarred={isStarred} showRestore={showRestore}
-            onRename={() => setRenaming(true)} onMove={() => setShowMoveDialog(true)}
+            onRename={() => setShowRenameDialog(true)} onMove={() => setShowMoveDialog(true)}
             onShare={() => setShowShare(true)} onDownload={handleDownload}
             onStar={handleStar} onTrash={handleTrash} onRestore={handleRestore}
           />
@@ -267,6 +210,7 @@ function ListRow({
       </div>
 
       {showMoveDialog && <MoveDialog itemId={id} itemName={name} itemType={type} onSuccess={() => onRefresh?.()} onClose={() => setShowMoveDialog(false)} />}
+      {showRenameDialog && <RenameDialog id={id} name={name} type={type} onSuccess={() => onRefresh?.()} onClose={() => setShowRenameDialog(false)} />}
       {showShare && <ShareDialog resourceId={id} resourceName={name} resourceType={type} onClose={() => setShowShare(false)} />}
       {showPreview && <FilePreviewDialog fileId={id} fileName={name} mimeType={meta?.mimeType ?? ""} onClose={() => setShowPreview(false)} />}
     </>
@@ -286,12 +230,11 @@ function GridCard({
 }) {
   const {
     showMoveDialog, setShowMoveDialog,
+    showRenameDialog, setShowRenameDialog,
     showPreview, setShowPreview,
     showShare, setShowShare,
-    renaming, setRenaming,
-    newName, setNewName,
     isPending, isDownloading,
-    handleStar, handleTrash, handleRestore, handleRename, handleMainClick, handleDownload
+    handleStar, handleTrash, handleRestore, handleMainClick, handleDownload
   } = useItemActions({ id, name, type, isStarred, onRefresh });
 
   return (
@@ -316,22 +259,8 @@ function GridCard({
         {/* Footer */}
         <div className="flex items-center gap-2 px-3 py-2.5">
           <div className="flex-1 min-w-0 cursor-pointer" onClick={() => handleMainClick(onFolderOpen)}>
-            {renaming ? (
-              <input
-                autoFocus value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onBlur={handleRename}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleRename();
-                  if (e.key === "Escape") { setRenaming(false); setNewName(name); }
-                }}
-                onClick={(e) => e.stopPropagation()}
-                className="w-full text-xs font-medium bg-secondary border border-[#2da07a]/40 rounded-md px-1.5 py-0.5 text-foreground focus:outline-none"
-              />
-            ) : (
-              <p className="text-xs font-medium text-foreground truncate">{name}</p>
-            )}
-            {meta && !renaming && (
+            <p className="text-xs font-medium text-foreground truncate">{name}</p>
+            {meta && (
               <p className="text-[10px] text-muted-foreground">
                 {meta.size != null
                   ? `${formatBytes(meta.size)} • ${formatDate(meta.date)}`
@@ -354,7 +283,7 @@ function GridCard({
             )}
             <DotsMenu
               type={type} isStarred={isStarred} showRestore={showRestore} size={13}
-              onRename={() => setRenaming(true)} onMove={() => setShowMoveDialog(true)}
+              onRename={() => setShowRenameDialog(true)} onMove={() => setShowMoveDialog(true)}
               onShare={() => setShowShare(true)} onDownload={handleDownload}
               onStar={handleStar} onTrash={handleTrash} onRestore={handleRestore}
             />
@@ -370,6 +299,7 @@ function GridCard({
       </div>
 
       {showMoveDialog && <MoveDialog itemId={id} itemName={name} itemType={type} onSuccess={() => onRefresh?.()} onClose={() => setShowMoveDialog(false)} />}
+      {showRenameDialog && <RenameDialog id={id} name={name} type={type} onSuccess={() => onRefresh?.()} onClose={() => setShowRenameDialog(false)} />}
       {showShare && <ShareDialog resourceId={id} resourceName={name} resourceType={type} onClose={() => setShowShare(false)} />}
       {showPreview && <FilePreviewDialog fileId={id} fileName={name} mimeType={meta?.mimeType ?? ""} onClose={() => setShowPreview(false)} />}
     </>
