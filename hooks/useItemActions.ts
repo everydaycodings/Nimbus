@@ -17,6 +17,7 @@ export function useItemActions({ id, name, type, isStarred, onRefresh }: UseItem
   const [showTrashDialog, setShowTrashDialog] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [showShare, setShowShare] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
   const [isPending, startTransition] = useTransition();
   
   const { download, downloading } = useDownload();
@@ -48,6 +49,7 @@ export function useItemActions({ id, name, type, isStarred, onRefresh }: UseItem
     showTrashDialog, setShowTrashDialog,
     showPreview, setShowPreview,
     showShare, setShowShare,
+    showDetails, setShowDetails,
     isPending,
     isDownloading,
     handleStar,

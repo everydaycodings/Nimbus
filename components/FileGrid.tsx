@@ -21,10 +21,11 @@ import { FilePreviewDialog } from "@/components/FilePreviewDialog";
 import { ShareDialog } from "@/components/ShareDialog";
 import { useDownload } from "@/hooks/useDownload";
 import { useItemActions } from "@/hooks/useItemActions";
-import { formatBytes, formatDate } from "@/lib/format";
+import { formatDate, formatBytes } from "@/lib/format";
 import { useLayout } from "@/hooks/useLayout";
 import { LayoutToggle } from "@/components/ui/LayoutToggle";
 import { FileIcon } from "@/components/ui/FileIcon";
+import { DetailsDialog } from "@/components/DetailsDialog";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -42,12 +43,14 @@ interface FileItem {
   created_at: string;
   is_starred: boolean;
   s3_key: string;
+  updated_at?: string;
 }
 
 interface FolderItem {
   id: string;
   name: string;
   created_at: string;
+  updated_at?: string;
   is_starred: boolean;
 }
 
@@ -75,6 +78,7 @@ function DotsMenu({
   onStar,
   onTrash,
   onRestore,
+  onDetails,
   size = 15,
 }: {
   type: "file" | "folder";
@@ -87,6 +91,7 @@ function DotsMenu({
   onStar: () => void;
   onTrash: () => void;
   onRestore: () => void;
+  onDetails: () => void;
   size?: number;
 }) {
   return (
@@ -112,6 +117,10 @@ function DotsMenu({
 
             <DropdownMenuItem onClick={onStar}>
               {isStarred ? "Unstar" : "Star"}
+            </DropdownMenuItem>
+
+            <DropdownMenuItem onClick={onDetails}>
+              Details
             </DropdownMenuItem>
 
             <DropdownMenuSeparator />
@@ -140,7 +149,7 @@ function ListRow({
   id, name, type, meta, isStarred, showRestore, onFolderOpen, onRefresh,
 }: {
   id: string; name: string; type: "file" | "folder";
-  meta?: { mimeType?: string; size?: number; date: string };
+  meta?: { mimeType?: string; size?: number; date: string; updated_at?: string; s3_key?: string };
   isStarred: boolean; showRestore?: boolean;
   onFolderOpen?: (id: string, name: string) => void; onRefresh?: () => void;
 }) {
@@ -150,6 +159,7 @@ function ListRow({
     showTrashDialog, setShowTrashDialog,
     showPreview, setShowPreview,
     showShare, setShowShare,
+    showDetails, setShowDetails,
     isPending, isDownloading,
     handleStar, handleTrash, handleRestore, handleMainClick, handleDownload
   } = useItemActions({ id, name, type, isStarred, onRefresh });
@@ -207,6 +217,7 @@ function ListRow({
             onRename={() => setShowRenameDialog(true)} onMove={() => setShowMoveDialog(true)}
             onShare={() => setShowShare(true)} onDownload={handleDownload}
             onStar={handleStar} onTrash={() => setShowTrashDialog(true)} onRestore={handleRestore}
+            onDetails={() => setShowDetails(true)}
           />
         </div>
       </div>
@@ -216,6 +227,21 @@ function ListRow({
       {showTrashDialog && <MoveToTrash id={id} name={name} type={type} onSuccess={() => onRefresh?.()} onClose={() => setShowTrashDialog(false)} />}
       {showShare && <ShareDialog resourceId={id} resourceName={name} resourceType={type} onClose={() => setShowShare(false)} />}
       {showPreview && <FilePreviewDialog fileId={id} fileName={name} mimeType={meta?.mimeType ?? ""} onClose={() => setShowPreview(false)} />}
+      {showDetails && (
+        <DetailsDialog
+          item={{
+            id,
+            name,
+            type,
+            mime_type: meta?.mimeType,
+            size: meta?.size,
+            created_at: meta?.date ?? "",
+            updated_at: meta?.updated_at,
+            is_starred: isStarred,
+          }}
+          onClose={() => setShowDetails(false)}
+        />
+      )}
     </>
   );
 }
@@ -227,7 +253,7 @@ function GridCard({
   id, name, type, meta, isStarred, showRestore, onFolderOpen, onRefresh,
 }: {
   id: string; name: string; type: "file" | "folder";
-  meta?: { mimeType?: string; size?: number; date: string };
+  meta?: { mimeType?: string; size?: number; date: string; updated_at?: string; s3_key?: string };
   isStarred: boolean; showRestore?: boolean;
   onFolderOpen?: (id: string, name: string) => void; onRefresh?: () => void;
 }) {
@@ -237,6 +263,7 @@ function GridCard({
     showTrashDialog, setShowTrashDialog,
     showPreview, setShowPreview,
     showShare, setShowShare,
+    showDetails, setShowDetails,
     isPending, isDownloading,
     handleStar, handleTrash, handleRestore, handleMainClick, handleDownload
   } = useItemActions({ id, name, type, isStarred, onRefresh });
@@ -291,6 +318,7 @@ function GridCard({
               onTrash={() => setShowTrashDialog(true)}
               onShare={() => setShowShare(true)} onDownload={handleDownload}
               onStar={handleStar} onRestore={handleRestore}
+              onDetails={() => setShowDetails(true)}
             />
           </div>
         </div>
@@ -308,6 +336,21 @@ function GridCard({
       {showTrashDialog && <MoveToTrash id={id} name={name} type={type} onSuccess={() => onRefresh?.()} onClose={() => setShowTrashDialog(false)} />}
       {showShare && <ShareDialog resourceId={id} resourceName={name} resourceType={type} onClose={() => setShowShare(false)} />}
       {showPreview && <FilePreviewDialog fileId={id} fileName={name} mimeType={meta?.mimeType ?? ""} onClose={() => setShowPreview(false)} />}
+      {showDetails && (
+        <DetailsDialog
+          item={{
+            id,
+            name,
+            type,
+            mime_type: meta?.mimeType,
+            size: meta?.size,
+            created_at: meta?.date ?? "",
+            updated_at: meta?.updated_at,
+            is_starred: isStarred,
+          }}
+          onClose={() => setShowDetails(false)}
+        />
+      )}
     </>
   );
 }
@@ -356,13 +399,13 @@ export function FileGrid({
           {folders.length > 0 && (
             <div className="mb-2">
               <p className="px-3 py-1 text-xs text-muted-foreground/60 font-medium">Folders</p>
-              {folders.map((f) => <ListRow key={f.id} id={f.id} name={f.name} type="folder" isStarred={f.is_starred} meta={{ date: f.created_at }} {...shared} />)}
+              {folders.map((f) => <ListRow key={f.id} id={f.id} name={f.name} type="folder" isStarred={f.is_starred} meta={{ date: f.created_at, updated_at: f.updated_at }} {...shared} />)}
             </div>
           )}
           {files.length > 0 && (
             <div>
               <p className="px-3 py-1 text-xs text-muted-foreground/60 font-medium">Files</p>
-              {files.map((f) => <ListRow key={f.id} id={f.id} name={f.name} type="file" isStarred={f.is_starred} meta={{ mimeType: f.mime_type, size: f.size, date: f.created_at }} {...shared} />)}
+              {files.map((f) => <ListRow key={f.id} id={f.id} name={f.name} type="file" isStarred={f.is_starred} meta={{ mimeType: f.mime_type, size: f.size, date: f.created_at, updated_at: f.updated_at, s3_key: f.s3_key }} {...shared} />)}
             </div>
           )}
         </div>
@@ -375,7 +418,7 @@ export function FileGrid({
             <div>
               <p className="text-xs text-muted-foreground/60 font-medium mb-2">Folders</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                {folders.map((f) => <GridCard key={f.id} id={f.id} name={f.name} type="folder" isStarred={f.is_starred} meta={{ date: f.created_at }} {...shared} />)}
+                {folders.map((f) => <GridCard key={f.id} id={f.id} name={f.name} type="folder" isStarred={f.is_starred} meta={{ date: f.created_at, updated_at: f.updated_at }} {...shared} />)}
               </div>
             </div>
           )}
@@ -383,7 +426,7 @@ export function FileGrid({
             <div>
               <p className="text-xs text-muted-foreground/60 font-medium mb-2">Files</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                {files.map((f) => <GridCard key={f.id} id={f.id} name={f.name} type="file" isStarred={f.is_starred} meta={{ mimeType: f.mime_type, size: f.size, date: f.created_at }} {...shared} />)}
+                {files.map((f) => <GridCard key={f.id} id={f.id} name={f.name} type="file" isStarred={f.is_starred} meta={{ mimeType: f.mime_type, size: f.size, date: f.created_at, updated_at: f.updated_at, s3_key: f.s3_key }} {...shared} />)}
               </div>
             </div>
           )}

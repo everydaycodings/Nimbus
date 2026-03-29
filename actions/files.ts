@@ -48,7 +48,7 @@ export async function getFiles(
   // ── FOLDERS ─────────────────────────────────────
   let folderQuery = supabase
     .from("folders")
-    .select("id, name, created_at, is_starred, parent_folder_id")
+    .select("id, name, created_at, updated_at, is_starred, parent_folder_id")
     .eq("owner_id", user.id)
     .eq("is_trashed", false)
     .order("name", { ascending: true });
@@ -72,7 +72,7 @@ export async function getFiles(
   // ── FILES ───────────────────────────────────────
   let fileQuery = supabase
     .from("files")
-    .select("id, name, mime_type, size, created_at, is_starred, parent_folder_id, s3_key")
+    .select("id, name, mime_type, size, created_at, updated_at, is_starred, parent_folder_id, s3_key")
     .eq("owner_id", user.id)
     .eq("is_trashed", false)
     .eq("upload_status", "complete")
@@ -128,14 +128,14 @@ export async function getStarredItems() {
   const [{ data: folders }, { data: files }] = await Promise.all([
     supabase
       .from("folders")
-      .select("id, name, created_at, is_starred")
+      .select("id, name, created_at, updated_at, is_starred")
       .eq("owner_id", user.id)
       .eq("is_starred", true)
       .eq("is_trashed", false)
       .order("name"),
     supabase
       .from("files")
-      .select("id, name, mime_type, size, created_at, is_starred, s3_key")
+      .select("id, name, mime_type, size, created_at, updated_at, is_starred, s3_key")
       .eq("owner_id", user.id)
       .eq("is_starred", true)
       .eq("is_trashed", false)
@@ -266,7 +266,7 @@ export async function getRecentFiles() {
 
   const { data, error } = await supabase
     .from("files")
-    .select("id, name, mime_type, size, created_at, is_starred, s3_key, parent_folder_id")
+    .select("id, name, mime_type, size, created_at, updated_at, is_starred, s3_key, parent_folder_id")
     .eq("owner_id", user.id)
     .eq("is_trashed", false)
     .eq("upload_status", "complete")
