@@ -275,8 +275,7 @@ function ResourceCard({
         <span className="text-[10px] text-muted-foreground capitalize border border-border rounded-full px-2 py-0.5 self-start">
           {resource.resource_type}
         </span>
-
-        {/* Summary badges */}
+        {/*
         <div className="flex items-center gap-2 flex-wrap mt-auto">
           {hasLinks && (
             <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">
@@ -292,6 +291,7 @@ function ResourceCard({
             </span>
           )}
         </div>
+        */}
       </div>
 
       {/* Footer with dropdowns */}

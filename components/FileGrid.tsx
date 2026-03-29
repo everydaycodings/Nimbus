@@ -23,6 +23,13 @@ import { formatBytes, formatDate } from "@/lib/format";
 import { useLayout } from "@/hooks/useLayout";
 import { LayoutToggle } from "@/components/ui/LayoutToggle";
 import { FileIcon } from "@/components/ui/FileIcon";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 type Layout = "list" | "grid";
 
 interface FileItem {
@@ -97,68 +104,73 @@ function ContextMenu({
 }
 
 // ── DotsMenu: button + menu together, handles its own positioning ──
+
 function DotsMenu({
-  type, isStarred, showRestore,
-  onRename, onMove, onShare, onDownload, onStar, onTrash, onRestore,
+  type,
+  isStarred,
+  showRestore,
+  onRename,
+  onMove,
+  onShare,
+  onDownload,
+  onStar,
+  onTrash,
+  onRestore,
   size = 15,
 }: {
-  type: "file" | "folder"; isStarred: boolean; showRestore?: boolean;
-  onRename: () => void; onMove: () => void; onShare: () => void;
-  onDownload: () => void; onStar: () => void; onTrash: () => void; onRestore: () => void;
+  type: "file" | "folder";
+  isStarred: boolean;
+  showRestore?: boolean;
+  onRename: () => void;
+  onMove: () => void;
+  onShare: () => void;
+  onDownload: () => void;
+  onStar: () => void;
+  onTrash: () => void;
+  onRestore: () => void;
   size?: number;
 }) {
-  const [open, setOpen] = useState(false);
-  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
-  const btnRef = useState<HTMLButtonElement | null>(null);
-
-  const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.stopPropagation();
-    const rect = e.currentTarget.getBoundingClientRect();
-    // Position the menu below and right-aligned to the button
-    setMenuPos({
-      top: rect.bottom + window.scrollY + 4,
-      left: rect.right + window.scrollX - 176, // 176 = w-44
-    });
-    setOpen(!open);
-  };
-
   return (
-    <>
-      <button
-        onClick={handleClick}
-        className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <DotsThree size={size} weight="bold" />
-      </button>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
+          <DotsThree size={size} weight="bold" />
+        </button>
+      </DropdownMenuTrigger>
 
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div
-            className="fixed z-50 w-44 bg-popover border border-border rounded-xl shadow-xl py-1 text-sm"
-            style={{ top: menuPos.top, left: Math.max(8, menuPos.left) }}
-          >
-            {!showRestore ? (
-              <>
-                <button onClick={() => { onRename(); setOpen(false); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Rename</button>
-                <button onClick={() => { onMove(); setOpen(false); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Move to...</button>
-                <button onClick={() => { onShare(); setOpen(false); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Share</button>
-                {type === "file" && (
-                  <button onClick={() => { onDownload(); setOpen(false); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Download</button>
-                )}
-                <button onClick={() => { onStar(); setOpen(false); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
-                  {isStarred ? "Unstar" : "Star"}
-                </button>
-                <div className="my-1 border-t border-border" />
-                <button onClick={() => { onTrash(); setOpen(false); }} className="w-full text-left px-3 py-1.5 text-red-400 hover:bg-accent transition-colors">Move to trash</button>
-              </>
-            ) : (
-              <button onClick={() => { onRestore(); setOpen(false); }} className="w-full text-left px-3 py-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">Restore</button>
+      <DropdownMenuContent align="end" className="w-44">
+        {!showRestore ? (
+          <>
+            <DropdownMenuItem onClick={onRename}>Rename</DropdownMenuItem>
+            <DropdownMenuItem onClick={onMove}>Move to...</DropdownMenuItem>
+            <DropdownMenuItem onClick={onShare}>Share</DropdownMenuItem>
+
+            {type === "file" && (
+              <DropdownMenuItem onClick={onDownload}>
+                Download
+              </DropdownMenuItem>
             )}
-          </div>
-        </>
-      )}
-    </>
+
+            <DropdownMenuItem onClick={onStar}>
+              {isStarred ? "Unstar" : "Star"}
+            </DropdownMenuItem>
+
+            <DropdownMenuSeparator />
+
+            <DropdownMenuItem
+              onClick={onTrash}
+              className="text-red-400 focus:text-red-400"
+            >
+              Move to trash
+            </DropdownMenuItem>
+          </>
+        ) : (
+          <DropdownMenuItem onClick={onRestore}>
+            Restore
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -426,7 +438,7 @@ export function FileGrid({
           {folders.length > 0 && (
             <div>
               <p className="text-xs text-muted-foreground/60 font-medium mb-2">Folders</p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                 {folders.map((f) => <GridCard key={f.id} id={f.id} name={f.name} type="folder" isStarred={f.is_starred} meta={{ date: f.created_at }} {...shared} />)}
               </div>
             </div>
@@ -434,7 +446,7 @@ export function FileGrid({
           {files.length > 0 && (
             <div>
               <p className="text-xs text-muted-foreground/60 font-medium mb-2">Files</p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                 {files.map((f) => <GridCard key={f.id} id={f.id} name={f.name} type="file" isStarred={f.is_starred} meta={{ mimeType: f.mime_type, size: f.size, date: f.created_at }} {...shared} />)}
               </div>
             </div>
