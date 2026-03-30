@@ -49,6 +49,7 @@ function formatExpiry(expiresAt: string | null): { label: string; urgent: boolea
   const days = Math.floor(diff / 86400000);
 
   // 🔥 New condition (must come before hours check)
+  if (minutes < 1) return { label: "< 1 min", urgent: true };
   if (minutes < 5) return { label: "< 5 min", urgent: true };
 
   if (hours < 1) return { label: "< 1 hour", urgent: true };

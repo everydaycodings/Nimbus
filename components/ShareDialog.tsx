@@ -25,6 +25,8 @@ import {
 } from "@/actions/sharing";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/query-keys";
 
 interface Props {
   resourceId:   string;
@@ -114,6 +116,8 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
   const [copied,       setCopied]       = useState<string | null>(null);
   const [isPending,    startTransition] = useTransition();
 
+  const queryClient = useQueryClient();
+
   useEffect(() => {
     getSharedUsers(resourceId, resourceType).then((data) =>
       setSharedUsers(normalizeSharedUsers(data))
@@ -136,6 +140,7 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
         setEmail("");
         const updated = await getSharedUsers(resourceId, resourceType);
         setSharedUsers(normalizeSharedUsers(updated));
+        queryClient.invalidateQueries({ queryKey: queryKeys.sharing() });
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to share");
       }
@@ -148,6 +153,7 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
         await removePermission(resourceId, resourceType, targetUserId);
         toast.success("User removed from share list");
         setSharedUsers((prev) => prev.filter((u) => u.user_id !== targetUserId));
+        queryClient.invalidateQueries({ queryKey: queryKeys.sharing() });
       } catch(err) {
         toast.error("Failed to remove user");
       }
@@ -160,6 +166,7 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
       setSharedUsers((prev) =>
         prev.map((u) => u.user_id === targetUserId ? { ...u, role: newRole } : u)
       );
+      queryClient.invalidateQueries({ queryKey: queryKeys.sharing() });
     });
   };
 
@@ -178,6 +185,7 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
           expiresInDays
         );
         setShareLinks((prev) => [link, ...prev]);
+        queryClient.invalidateQueries({ queryKey: queryKeys.sharing() });
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to create link");
       }
@@ -188,6 +196,7 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
     startTransition(async () => {
       await deleteShareLink(linkId);
       setShareLinks((prev) => prev.filter((l) => l.id !== linkId));
+      queryClient.invalidateQueries({ queryKey: queryKeys.sharing() });
     });
   };
 
