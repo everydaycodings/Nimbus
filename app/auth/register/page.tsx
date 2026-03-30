@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { EnvelopeSimple, LockKey, CircleNotch, User, GithubLogo, Eye, EyeSlash } from "@phosphor-icons/react";
+import { EnvelopeSimple, LockKey, CircleNotch, User, GithubLogo, GoogleLogo, Eye, EyeSlash } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -96,16 +96,28 @@ export default function RegisterPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <Button 
-            variant="outline" 
-            className="w-full h-11 bg-background hover:bg-accent hover:text-accent-foreground transition-all"
-            onClick={() => handleOAuthLogin('github')}
-            disabled={isLoading}
-            type="button"
-          >
-            <GithubLogo weight="bold" className="mr-2 h-5 w-5" />
-            Continue with GitHub
-          </Button>
+          <div className="grid grid-cols-2 gap-4">
+            <Button 
+              variant="outline" 
+              className="w-full h-11 bg-background hover:bg-accent hover:text-accent-foreground transition-all"
+              onClick={() => handleOAuthLogin('github')}
+              disabled={isLoading}
+              type="button"
+            >
+              <GithubLogo weight="bold" className="mr-2 h-5 w-5" />
+              GitHub
+            </Button>
+            <Button 
+              variant="outline" 
+              className="w-full h-11 bg-background hover:bg-accent hover:text-accent-foreground transition-all"
+              onClick={() => handleOAuthLogin('google')}
+              disabled={isLoading}
+              type="button"
+            >
+              <GoogleLogo weight="bold" className="mr-2 h-5 w-5" />
+              Google
+            </Button>
+          </div>
 
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
