@@ -1,7 +1,7 @@
 // actions/uploadFolder.ts
 "use server";
 
-import { auth } from "@clerk/nextjs/server";
+import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
@@ -9,11 +9,11 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY!
 );
 
-async function getUserId(clerkId: string) {
+async function getUserId(userId: string) {
   const { data } = await supabase
     .from("users")
     .select("id")
-    .eq("clerk_id", clerkId)
+    .eq("id", userId)
     .single();
   return data;
 }
@@ -24,7 +24,10 @@ export async function createFolderForUpload(
   name: string,
   parentFolderId: string | null
 ): Promise<string> {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const user = await getUserId(userId);

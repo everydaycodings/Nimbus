@@ -2,11 +2,24 @@
 --  NIMBUS — Supabase Schema
 -- ============================================================
 
+-- Restore default Supabase schema privileges in case schema was dropped
+GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO postgres, anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO postgres, anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO postgres, anon, authenticated, service_role;
+
+-- Drop existing tables to ensure a clean slate
+drop table if exists public.activity_log cascade;
+drop table if exists public.share_links cascade;
+drop table if exists public.permissions cascade;
+drop table if exists public.files cascade;
+drop table if exists public.folders cascade;
+drop table if exists public.users cascade;
+
 -- ── 1. USERS ─────────────────────────────────────────────────
--- Mirrors Clerk users. Synced via Clerk webhook on user.created
+-- Mirrors Supabase Auth users. Synced via database trigger
 create table public.users (
-  id            uuid primary key default gen_random_uuid(),
-  clerk_id      text not null unique,       -- Clerk's user ID (user_xxx)
+  id            uuid primary key references auth.users(id) on delete cascade,
   email         text not null unique,
   full_name     text,
   avatar_url    text,
@@ -43,7 +56,7 @@ create table public.files (
   is_trashed       boolean not null default false,
   trashed_at       timestamptz,
   upload_status    text not null default 'pending' check (
-                     upload_status in ('pending', 'uploading', 'complete', 'cancelled', 'failed'))
+                     upload_status in ('pending', 'uploading', 'complete', 'cancelled', 'failed')
                    ),
   created_at       timestamptz not null default now(),
   updated_at       timestamptz not null default now()
@@ -198,6 +211,26 @@ create trigger trg_folders_trashed_at
   before update of is_trashed on public.folders
   for each row execute function public.set_trashed_at();
 
+-- Auto-insert users into public.users on sign up
+create or replace function public.handle_new_user()
+returns trigger as $$
+begin
+  insert into public.users (id, email, full_name, avatar_url)
+  values (
+    new.id,
+    new.email,
+    new.raw_user_meta_data->>'full_name',
+    new.raw_user_meta_data->>'avatar_url'
+  );
+  return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
 
 -- ============================================================
 --  ROW LEVEL SECURITY (RLS)
@@ -210,13 +243,11 @@ alter table public.permissions enable row level security;
 alter table public.share_links enable row level security;
 alter table public.activity_log enable row level security;
 
--- Helper: get the internal user id from Clerk JWT
+-- Helper: get the internal user id
 -- Call this in RLS policies instead of auth.uid() directly
 create or replace function public.current_user_id()
 returns uuid as $$
-  select id from public.users
-  where clerk_id = auth.jwt()->>'sub'
-  limit 1;
+  select auth.uid();
 $$ language sql stable security definer;
 
 -- USERS: can only read/update your own row
@@ -275,3 +306,8 @@ create policy "share_links_owner_all" on public.share_links
 -- ACTIVITY LOG: users can see their own activity
 create policy "activity_log_select_own" on public.activity_log
   for select using (user_id = public.current_user_id());
+
+-- Grant privileges to explicitly newly created objects
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO postgres, anon, authenticated, service_role;

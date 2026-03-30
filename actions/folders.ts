@@ -1,7 +1,7 @@
 // actions/folders.ts
 "use server"
 
-import { auth } from "@clerk/nextjs/server"
+import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js"
 
 const supabase = createClient(
@@ -9,11 +9,11 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY!
 )
 
-async function getUserId(clerkId: string) {
+async function getUserId(userId: string) {
   const { data } = await supabase
     .from("users")
     .select("id")
-    .eq("clerk_id", clerkId)
+    .eq("id", userId)
     .single()
   return data
 }
@@ -23,7 +23,7 @@ export async function createFolder(
   name: string,
   parentFolderId: string | null = null
 ) {
-  const { userId } = await auth()
+  const userId = (await (await createSupabaseClient()).auth.getUser()).data.user?.id
   if (!userId) throw new Error("Unauthorized")
 
   const user = await getUserId(userId)
@@ -60,7 +60,7 @@ export async function moveFile(
   fileId: string,
   targetFolderId: string | null // null = move to root
 ) {
-  const { userId } = await auth()
+  const userId = (await (await createSupabaseClient()).auth.getUser()).data.user?.id
   if (!userId) throw new Error("Unauthorized")
 
   const user = await getUserId(userId)
@@ -80,7 +80,7 @@ export async function moveFolder(
   folderId: string,
   targetFolderId: string | null
 ) {
-  const { userId } = await auth()
+  const userId = (await (await createSupabaseClient()).auth.getUser()).data.user?.id
   if (!userId) throw new Error("Unauthorized")
 
   const user = await getUserId(userId)
@@ -133,7 +133,7 @@ async function checkIsDescendant(
 
 // ── Get full folder tree (for move picker) ────────────────────
 export async function getFolderTree(excludeFolderId?: string) {
-  const { userId } = await auth()
+  const userId = (await (await createSupabaseClient()).auth.getUser()).data.user?.id
   if (!userId) throw new Error("Unauthorized")
 
   const user = await getUserId(userId)

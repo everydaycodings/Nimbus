@@ -1,5 +1,5 @@
 // app/api/upload/presign/route.ts
-import { auth } from "@clerk/nextjs/server";
+import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -12,7 +12,10 @@ const supabase = createClient(
 );
 
 export async function POST(req: Request) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -20,7 +23,7 @@ export async function POST(req: Request) {
   const { data: user, error: userError } = await supabase
     .from("users")
     .select("id, storage_used, storage_limit")
-    .eq("clerk_id", userId)
+    .eq("id", userId)
     .single();
 
   if (userError || !user) {

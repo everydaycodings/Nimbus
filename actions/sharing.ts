@@ -1,7 +1,7 @@
 // actions/sharing.ts
 "use server";
 
-import { auth } from "@clerk/nextjs/server";
+import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
@@ -9,11 +9,11 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY!
 );
 
-async function getUser(clerkId: string) {
+async function getUser(userId: string) {
   const { data } = await supabase
     .from("users")
     .select("id")
-    .eq("clerk_id", clerkId)
+    .eq("id", userId)
     .single();
   return data;
 }
@@ -25,7 +25,10 @@ export async function shareWithUser(
   email:        string,
   role:         "viewer" | "editor"
 ) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const owner = await getUser(userId);
@@ -76,7 +79,10 @@ export async function removePermission(
   resourceType: "file" | "folder",
   targetUserId: string
 ) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const owner = await getUser(userId);
@@ -109,7 +115,10 @@ export async function updatePermissionRole(
   targetUserId: string,
   role:         "viewer" | "editor"
 ) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const owner = await getUser(userId);
@@ -130,7 +139,10 @@ export async function getSharedUsers(
   resourceId:   string,
   resourceType: "file" | "folder"
 ) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const owner = await getUser(userId);
@@ -153,7 +165,10 @@ export async function createShareLink(
   role:         "viewer" | "editor",
   expiresInDays?: number  // undefined = never expires
 ) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const owner = await getUser(userId);
@@ -194,7 +209,10 @@ export async function getShareLinks(
   resourceId:   string,
   resourceType: "file" | "folder"
 ) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const owner = await getUser(userId);
@@ -214,7 +232,10 @@ export async function getShareLinks(
 
 // ── Delete a share link ───────────────────────────────────────
 export async function deleteShareLink(linkId: string) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const owner = await getUser(userId);

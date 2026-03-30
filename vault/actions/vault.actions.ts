@@ -1,7 +1,7 @@
 // vault/actions/vault.actions.ts
 "use server";
 
-import { auth } from "@clerk/nextjs/server";
+import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
@@ -9,11 +9,11 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY!
 );
 
-async function getUser(clerkId: string) {
+async function getUser(userId: string) {
   const { data } = await supabase
     .from("users")
     .select("id")
-    .eq("clerk_id", clerkId)
+    .eq("id", userId)
     .single();
   return data;
 }
@@ -26,7 +26,10 @@ export async function createVault(input: {
   saltBase64:        string;    // random salt for PBKDF2
   verificationToken: string;    // AES-GCM encrypted token to verify password
 }) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const user = await getUser(userId);
@@ -49,7 +52,10 @@ export async function createVault(input: {
 
 // ── List vaults ───────────────────────────────────────────────
 export async function getVaults() {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const user = await getUser(userId);
@@ -67,7 +73,10 @@ export async function getVaults() {
 
 // ── Delete vault (and all its files) ─────────────────────────
 export async function deleteVault(vaultId: string) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const user = await getUser(userId);
@@ -84,7 +93,10 @@ export async function deleteVault(vaultId: string) {
 
 // ── List vault files ──────────────────────────────────────────
 export async function getVaultFiles(vaultId: string) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const user = await getUser(userId);
@@ -120,7 +132,10 @@ export async function saveVaultFile(input: {
   s3Bucket:         string;
   parentFolderId?: string | null;
 }) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const user = await getUser(userId);
@@ -167,7 +182,10 @@ export async function saveVaultFile(input: {
 
 // ── Delete vault file ─────────────────────────────────────────
 export async function deleteVaultFile(fileId: string) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const user = await getUser(userId);
@@ -203,7 +221,10 @@ export async function getVaultPresignedUrl(input: {
   mimeType: string;
   size:     number;  // encrypted size (larger than original)
 }) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const user = await getUser(userId);
@@ -240,7 +261,10 @@ export async function getVaultPresignedUrl(input: {
 
 // ── Get presigned download URL for vault file ─────────────────
 export async function getVaultDownloadUrl(fileId: string) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const user = await getUser(userId);
@@ -271,7 +295,10 @@ export async function getVaultDownloadUrl(fileId: string) {
 
 // ── Rename vault file ─────────────────────────────────────────
 export async function renameVaultFile(fileId: string, newName: string) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const user = await getUser(userId);

@@ -1,0 +1,105 @@
+
+> Nimbus@0.0.1 typecheck
+> tsc --noEmit
+
+.next/dev/types/validator.ts(215,39): error TS2307: Cannot find module '../../../app/api/webhooks/clerk/route.js' or its corresponding type declarations.
+.next/types/validator.ts(215,39): error TS2307: Cannot find module '../../app/api/webhooks/clerk/route.js' or its corresponding type declarations.
+actions/files.ts(17,15): error TS2304: Cannot find name 'clerkId'.
+actions/files.ts(37,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/files.ts(41,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/files.ts(143,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/files.ts(147,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/files.ts(192,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/files.ts(196,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/files.ts(224,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/files.ts(228,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/files.ts(245,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/files.ts(249,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/files.ts(266,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/files.ts(270,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/files.ts(291,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/files.ts(295,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/files.ts(312,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/files.ts(316,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/folders.ts(16,15): error TS2304: Cannot find name 'clerkId'.
+actions/folders.ts(26,28): error TS2304: Cannot find name 'auth'.
+actions/folders.ts(63,28): error TS2304: Cannot find name 'auth'.
+actions/folders.ts(83,28): error TS2304: Cannot find name 'auth'.
+actions/folders.ts(136,28): error TS2304: Cannot find name 'auth'.
+actions/sharing.dashboard.ts(13,71): error TS2304: Cannot find name 'clerkId'.
+actions/sharing.dashboard.ts(20,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/sharing.dashboard.ts(23,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/sharing.dashboard.ts(72,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/sharing.dashboard.ts(75,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/sharing.dashboard.ts(108,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/sharing.dashboard.ts(111,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/sharing.dashboard.ts(180,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/sharing.dashboard.ts(183,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/sharing.dashboard.ts(227,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/sharing.dashboard.ts(230,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/sharing.dashboard.ts(265,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/sharing.dashboard.ts(268,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/sharing.dashboard.ts(309,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/sharing.dashboard.ts(312,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/sharing.dashboard.ts(319,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/sharing.dashboard.ts(322,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/sharing.ts(16,15): error TS2304: Cannot find name 'clerkId'.
+actions/tags.ts(19,15): error TS2304: Cannot find name 'clerkId'.
+actions/tags.ts(26,37): error TS2304: Cannot find name 'auth'.
+actions/tags.ts(44,37): error TS2304: Cannot find name 'auth'.
+actions/tags.ts(63,37): error TS2304: Cannot find name 'auth'.
+actions/tags.ts(81,37): error TS2304: Cannot find name 'auth'.
+actions/tags.ts(99,37): error TS2304: Cannot find name 'auth'.
+actions/tags.ts(115,37): error TS2304: Cannot find name 'auth'.
+actions/trash.ts(16,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/trash.ts(20,17): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/uploadFolder.ts(16,15): error TS2304: Cannot find name 'clerkId'.
+actions/uploadFolder.ts(28,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+actions/uploadFolder.ts(32,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+app/(dashboard)/layout.tsx(15,15): error TS2304: Cannot find name 'clerkId'.
+app/(dashboard)/layout.tsx(26,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+app/(dashboard)/layout.tsx(31,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+app/(dashboard)/layout.tsx(35,24): error TS2739: Type 'User' is missing the following properties from type '{ storage_used: number; storage_limit: number; }': storage_used, storage_limit
+app/api/download/route.ts(15,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+app/api/download/route.ts(30,17): error TS2451: Cannot redeclare block-scoped variable 'user'.
+app/api/me/route.ts(11,28): error TS2304: Cannot find name 'auth'.
+app/api/search/route.ts(12,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+app/api/search/route.ts(24,17): error TS2451: Cannot redeclare block-scoped variable 'user'.
+app/api/upload/cancel/route.ts(12,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+app/api/upload/cancel/route.ts(26,17): error TS2451: Cannot redeclare block-scoped variable 'user'.
+app/api/upload/complete/route.ts(12,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+app/api/upload/complete/route.ts(23,17): error TS2451: Cannot redeclare block-scoped variable 'user'.
+app/api/upload/presign/route.ts(16,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+app/api/upload/presign/route.ts(22,17): error TS2451: Cannot redeclare block-scoped variable 'user'.
+app/api/upload/presign/route.ts(38,12): error TS2339: Property 'storage_used' does not exist on type 'User'.
+app/api/upload/presign/route.ts(38,39): error TS2339: Property 'storage_limit' does not exist on type 'User'.
+vault/actions/vault.actions.ts(16,15): error TS2304: Cannot find name 'clerkId'.
+vault/actions/vault.actions.ts(30,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+vault/actions/vault.actions.ts(34,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+vault/actions/vault.actions.ts(55,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+vault/actions/vault.actions.ts(59,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+vault/actions/vault.actions.ts(75,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+vault/actions/vault.actions.ts(79,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+vault/actions/vault.actions.ts(94,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+vault/actions/vault.actions.ts(98,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+vault/actions/vault.actions.ts(132,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+vault/actions/vault.actions.ts(136,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+vault/actions/vault.actions.ts(181,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+vault/actions/vault.actions.ts(185,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+vault/actions/vault.actions.ts(219,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+vault/actions/vault.actions.ts(223,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+vault/actions/vault.actions.ts(258,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+vault/actions/vault.actions.ts(262,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+vault/actions/vault.actions.ts(291,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+vault/actions/vault.actions.ts(295,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+vault/actions/vault.folders.actions.ts(16,15): error TS2304: Cannot find name 'clerkId'.
+vault/actions/vault.folders.actions.ts(39,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+vault/actions/vault.folders.actions.ts(43,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+vault/actions/vault.folders.actions.ts(79,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+vault/actions/vault.folders.actions.ts(83,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+vault/actions/vault.folders.actions.ts(110,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+vault/actions/vault.folders.actions.ts(114,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+vault/actions/vault.folders.actions.ts(138,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+vault/actions/vault.folders.actions.ts(142,9): error TS2451: Cannot redeclare block-scoped variable 'user'.
+vault/actions/vault.folders.actions.ts(167,19): error TS2451: Cannot redeclare block-scoped variable 'user'.
+vault/actions/vault.folders.actions.ts(171,9): error TS2451: Cannot redeclare block-scoped variable 'user'.

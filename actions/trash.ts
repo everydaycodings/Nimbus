@@ -1,7 +1,7 @@
 // actions/trash.ts
 "use server";
 
-import { auth } from "@clerk/nextjs/server";
+import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 import { DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { s3, BUCKET } from "@/lib/s3";
@@ -12,13 +12,16 @@ const supabase = createClient(
 );
 
 export async function emptyTrash() {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const { data: user } = await supabase
     .from("users")
     .select("id")
-    .eq("clerk_id", userId)
+    .eq("id", userId)
     .single();
 
   if (!user) throw new Error("User not found");

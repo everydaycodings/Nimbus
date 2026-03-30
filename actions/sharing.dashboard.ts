@@ -1,7 +1,7 @@
 // actions/sharing.dashboard.ts
 "use server";
 
-import { auth } from "@clerk/nextjs/server";
+import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
@@ -9,14 +9,17 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY!
 );
 
-async function getUser(clerkId: string) {
-  const { data } = await supabase.from("users").select("id").eq("clerk_id", clerkId).single();
+async function getUser(userId: string) {
+  const { data } = await supabase.from("users").select("id").eq("id", userId).single();
   return data;
 }
 
 // ── My shared items ───────────────────────────────────────────
 export async function getMySharedItems() {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
   const user = await getUser(userId);
   if (!user) throw new Error("User not found");
@@ -66,7 +69,10 @@ export async function getMySharedItems() {
 
 // ── Items shared WITH me ──────────────────────────────────────
 export async function getSharedWithMe() {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
   const user = await getUser(userId);
   if (!user) throw new Error("User not found");
@@ -100,7 +106,10 @@ export async function getSharedWithMe() {
 
 // ── Download URL for a single shared file ─────────────────────
 export async function getSharedFileDownloadUrl(resourceId: string) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
   const user = await getUser(userId);
   if (!user) throw new Error("User not found");
@@ -170,7 +179,10 @@ async function collectFolderFiles(
 // We return base64 so it can cross the server action boundary.
 // The client converts it back to a Blob and triggers download.
 export async function getSharedFolderZip(resourceId: string): Promise<{ base64: string; fileName: string }> {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
   const user = await getUser(userId);
   if (!user) throw new Error("User not found");
@@ -215,7 +227,10 @@ export async function getSharedFolderZip(resourceId: string): Promise<{ base64: 
 
 // ── Copy shared file to my drive ─────────────────────────────
 export async function copySharedFileToDrive(resourceId: string, targetFolderId: string | null) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
   const user = await getUser(userId);
   if (!user) throw new Error("User not found");
@@ -251,7 +266,10 @@ export async function copySharedFileToDrive(resourceId: string, targetFolderId: 
 
 // ── Copy shared folder to my drive ───────────────────────────
 export async function copySharedFolderToDrive(resourceId: string, targetFolderId: string | null) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
   const user = await getUser(userId);
   if (!user) throw new Error("User not found");
@@ -293,7 +311,10 @@ async function deepCopyFolder(sourceFolderId: string, name: string, targetParent
 }
 
 export async function revokeShareLink(linkId: string) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
   const user = await getUser(userId);
   if (!user) throw new Error("User not found");
@@ -301,7 +322,10 @@ export async function revokeShareLink(linkId: string) {
 }
 
 export async function revokeUserPermission(permissionId: string) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
   const user = await getUser(userId);
   if (!user) throw new Error("User not found");

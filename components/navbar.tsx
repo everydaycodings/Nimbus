@@ -2,7 +2,7 @@
 "use client";
 
 import { Bell, List } from "@phosphor-icons/react";
-import { UserButton } from "@clerk/nextjs";
+import { UserButton } from "@/components/user-button";
 import { SearchBar } from "@/components/SearchBar";
 import { useMobileSidebar } from "@/hooks/useSidebarMobile";
 
@@ -35,13 +35,7 @@ export function Navbar() {
         <div className="h-5 w-px bg-border hidden md:block" />
 
         {/* User */}
-        <UserButton
-          appearance={{
-            elements: {
-              avatarBox: "w-7 h-7",
-            },
-          }}
-        />
+        <UserButton />
       </div>
     </header>
   );

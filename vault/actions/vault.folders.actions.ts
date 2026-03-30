@@ -1,7 +1,7 @@
 // vault/actions/vault.folders.actions.ts
 "use server";
 
-import { auth } from "@clerk/nextjs/server";
+import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
@@ -9,11 +9,11 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY!
 );
 
-async function getUser(clerkId: string) {
+async function getUser(userId: string) {
   const { data } = await supabase
     .from("users")
     .select("id")
-    .eq("clerk_id", clerkId)
+    .eq("id", userId)
     .single();
   return data;
 }
@@ -35,7 +35,10 @@ export async function createVaultFolder(
   name:           string,
   parentFolderId: string | null = null
 ): Promise<string> {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const user = await getUser(userId);
@@ -73,7 +76,10 @@ export async function getVaultFolders(
   vaultId:        string,
   parentFolderId: string | null = null
 ) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const user = await getUser(userId);
@@ -102,7 +108,10 @@ export async function getVaultFilesInFolder(
   vaultId:        string,
   parentFolderId: string | null = null
 ) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const user = await getUser(userId);
@@ -128,7 +137,10 @@ export async function getVaultFilesInFolder(
 
 // ── Delete a folder (cascades to children via DB) ─────────────
 export async function deleteVaultFolder(folderId: string) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const user = await getUser(userId);
@@ -155,7 +167,10 @@ export async function deleteVaultFolder(folderId: string) {
 
 // ── Rename a folder ───────────────────────────────────────────
 export async function renameVaultFolder(folderId: string, name: string) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const user = await getUser(userId);

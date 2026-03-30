@@ -1,7 +1,7 @@
 // actions/tags.ts
 "use server";
 
-import { auth } from "@clerk/nextjs/server";
+import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 import { Tag } from "@/types/tags";
 import { revalidatePath } from "next/cache";
@@ -12,21 +12,21 @@ const supabase = createClient(
 );
 
 // ── Get internal user from clerk id ──────────────────────────
-async function getUserId(clerkId: string) {
+async function getUserId(userId: string) {
   const { data } = await supabase
     .from("users")
     .select("id")
-    .eq("clerk_id", clerkId)
+    .eq("id", userId)
     .single();
   return data;
 }
 
 // ── Fetch all user tags ─────────────────────────────────────
 export async function getTags(): Promise<Tag[]> {
-  const { userId: clerkId } = await auth();
-  if (!clerkId) throw new Error("Unauthorized");
+  const userId = (await (await createSupabaseClient()).auth.getUser()).data.user?.id;
+  if (!userId) throw new Error("Unauthorized");
 
-  const user = await getUserId(clerkId);
+  const user = await getUserId(userId);
   if (!user) throw new Error("User not found");
 
   const { data, error } = await supabase
@@ -41,10 +41,10 @@ export async function getTags(): Promise<Tag[]> {
 
 // ── Create a tag ────────────────────────────────────────────
 export async function createTag(name: string, color: string) {
-  const { userId: clerkId } = await auth();
-  if (!clerkId) throw new Error("Unauthorized");
+  const userId = (await (await createSupabaseClient()).auth.getUser()).data.user?.id;
+  if (!userId) throw new Error("Unauthorized");
 
-  const user = await getUserId(clerkId);
+  const user = await getUserId(userId);
   if (!user) throw new Error("User not found");
 
   const { data, error } = await supabase
@@ -60,10 +60,10 @@ export async function createTag(name: string, color: string) {
 
 // ── Update a tag ────────────────────────────────────────────
 export async function updateTag(id: string, name: string, color: string) {
-  const { userId: clerkId } = await auth();
-  if (!clerkId) throw new Error("Unauthorized");
+  const userId = (await (await createSupabaseClient()).auth.getUser()).data.user?.id;
+  if (!userId) throw new Error("Unauthorized");
 
-  const user = await getUserId(clerkId);
+  const user = await getUserId(userId);
   if (!user) throw new Error("User not found");
 
   const { error } = await supabase
@@ -78,10 +78,10 @@ export async function updateTag(id: string, name: string, color: string) {
 
 // ── Delete a tag ────────────────────────────────────────────
 export async function deleteTag(id: string) {
-  const { userId: clerkId } = await auth();
-  if (!clerkId) throw new Error("Unauthorized");
+  const userId = (await (await createSupabaseClient()).auth.getUser()).data.user?.id;
+  if (!userId) throw new Error("Unauthorized");
 
-  const user = await getUserId(clerkId);
+  const user = await getUserId(userId);
   if (!user) throw new Error("User not found");
 
   const { error } = await supabase
@@ -96,8 +96,8 @@ export async function deleteTag(id: string) {
 
 // ── Assign tag to item ──────────────────────────────────────
 export async function assignTag(itemId: string, type: "file" | "folder", tagId: string) {
-  const { userId: clerkId } = await auth();
-  if (!clerkId) throw new Error("Unauthorized");
+  const userId = (await (await createSupabaseClient()).auth.getUser()).data.user?.id;
+  if (!userId) throw new Error("Unauthorized");
 
   const table = type === "file" ? "file_tags" : "folder_tags";
   const column = type === "file" ? "file_id" : "folder_id";
@@ -112,8 +112,8 @@ export async function assignTag(itemId: string, type: "file" | "folder", tagId: 
 
 // ── Unassign tag from item ──────────────────────────────────
 export async function unassignTag(itemId: string, type: "file" | "folder", tagId: string) {
-  const { userId: clerkId } = await auth();
-  if (!clerkId) throw new Error("Unauthorized");
+  const userId = (await (await createSupabaseClient()).auth.getUser()).data.user?.id;
+  if (!userId) throw new Error("Unauthorized");
 
   const table = type === "file" ? "file_tags" : "folder_tags";
   const column = type === "file" ? "file_id" : "folder_id";

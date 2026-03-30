@@ -1,7 +1,7 @@
 // actions/files.ts
 "use server";
 
-import { auth } from "@clerk/nextjs/server";
+import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
@@ -10,11 +10,11 @@ const supabase = createClient(
 );
 
 // ── Get internal user from clerk id ──────────────────────────
-async function getUserId(clerkId: string) {
+async function getUserId(userId: string) {
   const { data } = await supabase
     .from("users")
     .select("id, storage_used, storage_limit")
-    .eq("clerk_id", clerkId)
+    .eq("id", userId)
     .single();
   return data;
 }
@@ -33,7 +33,10 @@ export async function getFiles(
     tagId?: string;
   }
 ) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const user = await getUserId(userId);
@@ -137,7 +140,10 @@ export async function getFiles(
 
 // ── Fetch starred files + folders ────────────────────────────
 export async function getStarredItems(options?: { tagId?: string }) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const user = await getUserId(userId);
@@ -184,7 +190,10 @@ export async function getStarredItems(options?: { tagId?: string }) {
 
 // ── Fetch trashed items ───────────────────────────────────────
 export async function getTrashedItems() {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const user = await getUserId(userId);
@@ -214,7 +223,10 @@ export async function toggleStar(
   type:    "file" | "folder",
   starred: boolean
 ) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const user = await getUserId(userId);
@@ -233,7 +245,10 @@ export async function toggleStar(
 
 // ── Move to trash ─────────────────────────────────────────────
 export async function trashItem(id: string, type: "file" | "folder") {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const user = await getUserId(userId);
@@ -252,7 +267,10 @@ export async function trashItem(id: string, type: "file" | "folder") {
 
 // ── Restore from trash ────────────────────────────────────────
 export async function restoreItem(id: string, type: "file" | "folder") {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const user = await getUserId(userId);
@@ -275,7 +293,10 @@ export async function renameItem(
   type: "file" | "folder",
   name: string
 ) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const user = await getUserId(userId);
@@ -294,7 +315,10 @@ export async function renameItem(
 
 // ── Fetch 20 most recently uploaded files ─────────────────────
 export async function getRecentFiles(options?: { tagId?: string }) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
   const user = await getUserId(userId);

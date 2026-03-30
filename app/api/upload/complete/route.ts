@@ -1,5 +1,5 @@
 // app/api/upload/complete/route.ts
-import { auth } from "@clerk/nextjs/server";
+import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
@@ -8,7 +8,10 @@ const supabase = createClient(
 );
 
 export async function POST(req: Request) {
-  const { userId } = await auth();
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
   if (!userId) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -21,7 +24,7 @@ export async function POST(req: Request) {
   const { data: user } = await supabase
     .from("users")
     .select("id")
-    .eq("clerk_id", userId)
+    .eq("id", userId)
     .single();
 
   if (!user) {
