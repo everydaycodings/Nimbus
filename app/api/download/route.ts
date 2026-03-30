@@ -72,6 +72,7 @@ export async function GET(req: Request) {
       ? `inline; filename="${file.name}"`
       : `attachment; filename="${file.name}"`,
     ResponseContentType: file.mime_type,
+    ResponseCacheControl: "public, max-age=31536000, immutable",
   });
 
   const signedUrl = await getSignedUrl(s3, command, { expiresIn: 3600 }); // 1 hour

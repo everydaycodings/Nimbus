@@ -236,6 +236,8 @@ export function VideoPlayer({ src, fileName }: { src: string; fileName: string }
       <video
         ref={videoRef}
         src={src}
+        preload="metadata"
+        playsInline
         className="w-full h-full object-contain cursor-pointer"
         onClick={togglePlay}
         onTimeUpdate={(e) => {
@@ -436,6 +438,7 @@ export function AudioPlayer({ src, fileName }: { src: string; fileName: string }
       <audio
         ref={audioRef}
         src={src}
+        preload="metadata"
         onTimeUpdate={(e) => { if (!isDragging) setCurrent(e.currentTarget.currentTime); }}
         onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
         onPlay={() => { setPlaying(true); setWaiting(false); }}
@@ -611,6 +614,8 @@ export function ImageViewer({ src, fileName }: { src: string; fileName: string }
           src={src}
           alt={fileName}
           draggable={false}
+          loading="lazy"
+          decoding="async"
           className="max-w-full max-h-full object-contain rounded-lg shadow-2xl select-none transition-transform duration-100"
           style={{ transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)` }}
         />
