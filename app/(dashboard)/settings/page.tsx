@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
-import { User, EnvelopeSimple, LockKey, CircleNotch } from "@phosphor-icons/react";
+import { User, EnvelopeSimple, LockKey, CircleNotch, Camera } from "@phosphor-icons/react";
 import { useRouter } from "next/navigation";
 
 export default function SettingsPage() {
@@ -19,6 +20,8 @@ export default function SettingsPage() {
   const [isProfileLoading, setProfileLoading] = useState(false);
   const [isEmailLoading, setEmailLoading] = useState(false);
   const [isPasswordLoading, setPasswordLoading] = useState(false);
+  const [isAvatarLoading, setAvatarLoading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Form states
   const [fullName, setFullName] = useState("");
@@ -87,6 +90,55 @@ export default function SettingsPage() {
     }
   };
 
+  const handleUploadAvatar = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("File excessively large. Please choose an image under 5MB.");
+      return;
+    }
+
+    setAvatarLoading(true);
+    try {
+      const presignRes = await fetch("/api/user/avatar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mimeType: file.type }),
+      });
+
+      if (!presignRes.ok) {
+        throw new Error("Failed to initialize upload");
+      }
+      
+      const { presignedUrl, avatarUrl } = await presignRes.json();
+
+      const uploadRes = await fetch(presignedUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+
+      if (!uploadRes.ok) throw new Error("Failed to upload image to S3");
+
+      const { data, error } = await supabase.auth.updateUser({
+        data: { avatar_url: avatarUrl }
+      });
+
+      if (error) throw error;
+
+      toast.success("Profile photo updated successfully!");
+      setUser(data.user);
+      router.refresh();
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.message || "An error occurred during upload.");
+    } finally {
+      setAvatarLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
   if (!user) {
     return (
       <div className="flex h-[calc(100vh-64px)] items-center justify-center">
@@ -128,21 +180,55 @@ export default function SettingsPage() {
             </CardHeader>
             <form onSubmit={handleUpdateProfile}>
               <CardContent>
-                <div className="space-y-4 max-w-md group/input">
-                  <Label htmlFor="fullName" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Full Name</Label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-muted-foreground transition-colors group-focus-within/input:text-primary">
-                      <User size={18} />
+                <div className="flex flex-col sm:flex-row gap-6 items-start">
+                  
+                  {/* Avatar Upload */}
+                  <div 
+                    className="relative group/avatar cursor-pointer w-24 h-24 sm:w-28 sm:h-28 rounded-full flex-shrink-0 mx-auto sm:mx-0" 
+                    title="Change profile picture"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Avatar className="w-full h-full border-2 border-border shadow-sm">
+                      <AvatarImage src={user.user_metadata?.avatar_url} className="object-cover" />
+                      <AvatarFallback className="text-xl sm:text-2xl bg-gradient-to-br from-primary/20 to-primary/5 text-primary font-semibold">
+                        {user.email?.substring(0,2).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    
+                    {/* Hover Overlay */}
+                    <div className="absolute inset-0 bg-black/40 rounded-full opacity-0 group-hover/avatar:opacity-100 transition-opacity duration-300 flex items-center justify-center backdrop-blur-sm shadow-inner">
+                      {isAvatarLoading ? (
+                        <CircleNotch size={28} className="text-white animate-spin" />
+                      ) : (
+                        <Camera size={28} className="text-white drop-shadow-md" weight="fill" />
+                      )}
                     </div>
-                    <Input
-                      id="fullName"
-                      type="text"
-                      placeholder="John Doe"
-                      className="pl-11 h-12 bg-background/50 border-border/60 focus-visible:ring-primary/40 transition-all rounded-xl shadow-sm"
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      required
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      className="hidden" 
+                      ref={fileInputRef} 
+                      onChange={handleUploadAvatar} 
+                      disabled={isAvatarLoading}
                     />
+                  </div>
+                  
+                  <div className="space-y-4 w-full max-w-md group/input pt-2">
+                    <Label htmlFor="fullName" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Full Name</Label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-muted-foreground transition-colors group-focus-within/input:text-primary">
+                        <User size={18} />
+                      </div>
+                      <Input
+                        id="fullName"
+                        type="text"
+                        placeholder="John Doe"
+                        className="pl-11 h-12 bg-background/50 border-border/60 focus-visible:ring-primary/40 transition-all rounded-xl shadow-sm"
+                        value={fullName}
+                        onChange={(e) => setFullName(e.target.value)}
+                        required
+                      />
+                    </div>
                   </div>
                 </div>
               </CardContent>

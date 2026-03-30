@@ -2,9 +2,9 @@
 "use client";
 
 import { Bell, List } from "@phosphor-icons/react";
-import { UserButton } from "@/components/user-button";
 import { SearchBar } from "@/components/SearchBar";
 import { useMobileSidebar } from "@/hooks/useSidebarMobile";
+import { UserButton } from "./user-button";
 
 export function Navbar() {
   const { toggle } = useMobileSidebar();
