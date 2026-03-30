@@ -10,11 +10,14 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
 import { User, EnvelopeSimple, LockKey, CircleNotch, Camera, Eye, EyeSlash } from "@phosphor-icons/react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
+import { useUserQuery } from "@/hooks/queries/useUserQuery";
 
 export default function SettingsPage() {
   const supabase = createClient();
+  const queryClient = useQueryClient();
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
+  const { data: user, isLoading: isUserLoading } = useUserQuery();
 
   // Loaders
   const [isProfileLoading, setProfileLoading] = useState(false);
@@ -30,16 +33,11 @@ export default function SettingsPage() {
   const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
-    async function loadUser() {
-      const { data: { user }, error } = await supabase.auth.getUser();
-      if (user) {
-        setUser(user);
-        setName(user.user_metadata?.name || user.user_metadata?.full_name || "");
-        setEmail(user.email || "");
-      }
+    if (user) {
+      setName(user.user_metadata?.name || user.user_metadata?.full_name || "");
+      setEmail(user.email || "");
     }
-    loadUser();
-  }, [supabase.auth]);
+  }, [user]);
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,7 +48,7 @@ export default function SettingsPage() {
       });
       if (error) throw error;
       toast.success("Profile updated successfully!");
-      router.refresh(); // so that user dropdown refetches or layout updates
+      queryClient.invalidateQueries({ queryKey: ["user"] });
     } catch (error: any) {
       toast.error(error.message || "Failed to update profile");
     } finally {
@@ -67,6 +65,7 @@ export default function SettingsPage() {
       });
       if (error) throw error;
       toast.success("Verification email sent! Please check both old and new inboxes to confirm the change.");
+      queryClient.invalidateQueries({ queryKey: ["user"] });
     } catch (error: any) {
       toast.error(error.message || "Failed to update email");
     } finally {
@@ -84,6 +83,7 @@ export default function SettingsPage() {
       if (error) throw error;
       toast.success("Password updated successfully!");
       setNewPassword(""); // clear new password field
+      queryClient.invalidateQueries({ queryKey: ["user"] });
     } catch (error: any) {
       toast.error(error.message || "Failed to update password");
     } finally {
@@ -129,8 +129,7 @@ export default function SettingsPage() {
       if (error) throw error;
 
       toast.success("Profile photo updated successfully!");
-      setUser(data.user);
-      router.refresh();
+      queryClient.invalidateQueries({ queryKey: ["user"] });
     } catch (error: any) {
       console.error(error);
       toast.error(error.message || "An error occurred during upload.");
@@ -140,7 +139,7 @@ export default function SettingsPage() {
     }
   };
 
-  if (!user) {
+  if (isUserLoading || !user) {
     return (
       <div className="flex h-[calc(100vh-64px)] items-center justify-center">
         <CircleNotch className="h-8 w-8 animate-spin text-primary" weight="bold" />

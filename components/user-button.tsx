@@ -1,26 +1,22 @@
 "use client"
-import { useEffect, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { SignOut, Gear } from "@phosphor-icons/react"
 import { useRouter } from "next/navigation"
+import { useUserQuery } from "@/hooks/queries/useUserQuery"
 
 export function UserButton() {
-  const [user, setUser] = useState<any>(null)
+  const { data: user, isLoading } = useUserQuery()
   const supabase = createClient()
   const router = useRouter()
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => setUser(user))
-  }, [supabase.auth])
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
     router.refresh()
   }
 
-  if (!user) return <div className="w-7 h-7 rounded-full bg-accent animate-pulse" />
+  if (isLoading || !user) return <div className="w-7 h-7 rounded-full bg-accent animate-pulse" />
 
   const initials = user.email?.substring(0, 2).toUpperCase() || "NN"
 
