@@ -76,11 +76,11 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background/50 relative overflow-hidden">
+    <div className="min-h-screen flex items-center justify-center bg-background/50 relative overflow-hidden p-4">
       {/* Dynamic Background */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/20 rounded-full blur-[120px] opacity-50 pointer-events-none" />
 
-      <Card className="w-full max-w-[400px] border-border/50 bg-background/80 backdrop-blur-xl shadow-2xl relative z-10">
+      <Card className="w-full max-w-[400px] border-border/50 bg-background/80 backdrop-blur-xl shadow-xl sm:shadow-2xl relative z-10">
         <CardHeader className="space-y-2 text-center pb-6">
           <CardTitle className="text-3xl font-heading font-bold tracking-tight">Create Account</CardTitle>
           <CardDescription className="text-muted-foreground">

@@ -21,7 +21,7 @@ export function useVaultFolderUpload({
   onSuccess,
 }: FolderUploadOptions) {
   // Re-use the existing single-file upload hook
-  const { uploadMany, uploads } = useVaultUpload(vaultId, cryptoKey);
+  const { uploadMany } = useVaultUpload(vaultId, cryptoKey);
 
   // Cache folder path → vault_folder id to avoid duplicate creates
   const folderIdCache = new Map<string, string>();
@@ -87,7 +87,7 @@ export function useVaultFolderUpload({
     onSuccess?.();
   }
 
-  return { uploadFolder, uploads };
+  return { uploadFolder };
 }
 
 // ── Upload files into a specific vault folder ─────────────────

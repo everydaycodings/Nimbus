@@ -21,16 +21,15 @@ export interface VaultUploadItem {
   error?: string
 }
 
-export function useVaultUpload(vaultId: string, key: CryptoKey) {
-  const [uploads, setUploads] = useState<VaultUploadItem[]>([])
+export interface VaultUploadOptions {
+  parentFolderId?: string | null
+  onSuccess?: () => void
+}
+
+export function useVaultUpload(vaultId: string, key: CryptoKey, options: VaultUploadOptions = {}) {
   const addUpload = useUploadStore((s) => s.addUpload)
   const updateUpload = useUploadStore((s) => s.updateUpload)
   const removeUpload = useUploadStore((s) => s.removeUpload)
-
-  const update = (id: string, patch: Partial<VaultUploadItem>) =>
-    setUploads((prev) =>
-      prev.map((u) => (u.id === id ? { ...u, ...patch } : u))
-    )
 
   const uploadFile = async (file: File) => {
     const tempId = crypto.randomUUID()
@@ -107,6 +106,7 @@ export function useVaultUpload(vaultId: string, key: CryptoKey) {
         size: file.size,
         s3Key,
         s3Bucket: bucket,
+        parentFolderId: options.parentFolderId,
       })
 
       updateUpload(tempId, {
@@ -128,9 +128,10 @@ export function useVaultUpload(vaultId: string, key: CryptoKey) {
     }
   }
 
-  const uploadMany = (files: FileList | File[]) => {
-    Array.from(files).forEach(uploadFile)
+  const uploadMany = async (files: FileList | File[]) => {
+    await Promise.allSettled(Array.from(files).map(uploadFile))
+    options.onSuccess?.()
   }
 
-  return { uploadMany, uploads }
+  return { uploadMany }
 }

@@ -29,6 +29,7 @@ import { deleteVault } from "@/vault/actions/vault.actions";
 import { VaultPreviewWrapper } from "@/vault/components/VaultPreviewWrapper";
 import VaultMoveDialog from "@/vault/components/VaultMoveDialog";
 import VaultItemMenu from "@/vault/components/VaultItemMenu";
+import { getQueryClient } from "@/lib/query-client";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -311,20 +312,24 @@ export function OpenVault({
   const folders = data?.folders ?? [];
   const files = data?.files ?? [];
 
-  const { uploadMany, uploads } = useVaultUpload(vault.id, cryptoKey);
+  const { uploadMany } = useVaultUpload(vault.id, cryptoKey, {
+    parentFolderId: currentFolderId,
+    onSuccess: () => invalidateVaultCache(),
+  });
   const { uploadFolder } = useVaultFolderUpload({
     vaultId: vault.id,
     cryptoKey,
     parentFolderId: currentFolderId,
-    onSuccess: () => refresh(),
+    onSuccess: () => invalidateVaultCache(),
   });
   const { download, preview, decrypting } = useVaultDownload(cryptoKey);
 
-  useEffect(() => {
-    if (uploads.every((u) => u.status === "complete" || u.status === "error")) {
-      refresh();
-    }
-  }, [uploads]);
+  const invalidateVaultCache = async () => {
+    await getQueryClient().invalidateQueries({ queryKey: ["vaults"] });
+    return refresh();
+  };
+
+
 
   const [deleteDialog, setDeleteDialog] = useState<{
     type: "file" | "folder" | "vault" | null;
@@ -430,12 +435,12 @@ export function OpenVault({
     try {
       if (deleteDialog.type === "file" && deleteDialog.id) {
         await deleteVaultFile(deleteDialog.id);
-        await refresh();
+        await invalidateVaultCache();
       }
 
       if (deleteDialog.type === "folder" && deleteDialog.id) {
         await deleteVaultFolder(deleteDialog.id);
-        await refresh();
+        await invalidateVaultCache();
       }
 
       if (deleteDialog.type === "vault") {
@@ -885,7 +890,7 @@ export function OpenVault({
         <CreateFolderDialog
           vaultId={vault.id}
           parentFolderId={currentFolderId}
-          onSuccess={refresh}
+          onSuccess={invalidateVaultCache}
           onClose={() => setShowCreateFolder(false)}
         />
       )}
@@ -895,7 +900,7 @@ export function OpenVault({
           type={renameDialog.type}
           targetId={renameDialog.id}
           initialName={renameDialog.initialName}
-          onSuccess={refresh}
+          onSuccess={invalidateVaultCache}
           onClose={() => setRenameDialog(null)}
         />
       )}
@@ -927,7 +932,7 @@ export function OpenVault({
           vaultName={vault.name}
           items={[moveDialog]}
           onClose={() => setMoveDialog(null)}
-          onSuccess={refresh}
+          onSuccess={invalidateVaultCache}
         />
       )}
 

@@ -125,13 +125,13 @@ function DotsMenu({
             <DropdownMenuItem onClick={onStar}>
               {isStarred ? "Unstar" : "Star"}
             </DropdownMenuItem>
-
-            <DropdownMenuItem onClick={onDetails}>
-              Details
-            </DropdownMenuItem>
-
+            
             <DropdownMenuItem onClick={onTags}>
               Tags
+            </DropdownMenuItem>
+            
+            <DropdownMenuItem onClick={onDetails}>
+              Details
             </DropdownMenuItem>
 
             <DropdownMenuSeparator />
