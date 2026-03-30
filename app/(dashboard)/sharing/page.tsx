@@ -25,6 +25,14 @@ import {
 import { FilePreviewDialog } from "@/components/FilePreviewDialog";
 import { MoveDialog } from "@/components/MoveDialog";
 import { cn } from "@/lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 const TEAL = "#2da07a";
 
@@ -120,59 +128,70 @@ function LinksDropdown({
   links: SharedLink[]; copied: string | null; isPending: boolean;
   onCopy: (t: string) => void; onRevoke: (id: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, []);
-
   if (links.length === 0) return null;
 
   return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <Globe size={11} />
-        {links.length} link{links.length !== 1 ? "s" : ""}
-        <CaretDown size={9} className={cn("transition-transform", open && "rotate-180")} />
-      </button>
-
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 bottom-6 z-20 w-56 bg-popover border border-border rounded-xl shadow-xl py-1 text-xs">
-            {links.map((link) => {
-              const expiry = formatExpiry(link.expires_at);
-              const expired = link.expires_at && new Date(link.expires_at) < new Date();
-              return (
-                <div key={link.id} className={cn("flex items-center gap-2 px-3 py-2", expired && "opacity-50")}>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1">
-                      <span className={cn("capitalize", link.role === "editor" ? "text-amber-400" : "text-muted-foreground")}>{link.role}</span>
-                      <span className="text-muted-foreground">·</span>
-                      <span className={cn(expiry.urgent ? "text-amber-400" : "text-muted-foreground")}>{expiry.label}</span>
-                    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors group outline-none">
+          <Globe size={11} className="group-hover:text-[#2da07a] transition-colors" />
+          {links.length} link{links.length !== 1 ? "s" : ""}
+          <CaretDown size={9} className="transition-transform group-aria-expanded:rotate-180" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" side="bottom" sideOffset={10} className="w-64 p-1.5 rounded-xl">
+        {links.map((link, idx) => {
+          const expiry = formatExpiry(link.expires_at);
+          const expired = link.expires_at && new Date(link.expires_at) < new Date();
+          return (
+            <div key={link.id}>
+              {idx > 0 && <DropdownMenuSeparator className="my-1.5 opacity-50" />}
+              <div className={cn("px-2 py-2 flex flex-col gap-1.5 rounded-lg transition-colors", expired && "opacity-50")}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className={cn(
+                      "text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded",
+                      link.role === "editor" ? "text-amber-400 bg-amber-400/10" : "text-teal-400 bg-teal-400/10"
+                    )}>
+                      {link.role}
+                    </span>
+                    <span className={cn(
+                      "text-[10px] font-medium",
+                      expiry.urgent ? "text-red-400" : "text-muted-foreground"
+                    )}>
+                      {expiry.label}
+                    </span>
                   </div>
-                  {!expired && (
-                    <button onClick={() => { onCopy(link.token); setOpen(false); }} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors" title="Copy">
-                      {copied === link.token ? <Check size={12} style={{ color: TEAL }} /> : <Copy size={12} />}
+                  <div className="flex items-center gap-1">
+                    {!expired && (
+                      <button 
+                        onClick={() => onCopy(link.token)} 
+                        className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-all"
+                        title="Copy Link"
+                      >
+                        {copied === link.token ? <Check size={14} style={{ color: TEAL }} /> : <Copy size={14} />}
+                      </button>
+                    )}
+                    <button 
+                      onClick={() => onRevoke(link.id)} 
+                      disabled={isPending} 
+                      className="p-1.5 rounded-md hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-all disabled:opacity-50"
+                      title="Revoke Link"
+                    >
+                      <Trash size={14} />
                     </button>
-                  )}
-                  <button onClick={() => { onRevoke(link.id); setOpen(false); }} disabled={isPending} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-red-400 transition-colors" title="Revoke">
-                    <Trash size={12} />
-                  </button>
+                  </div>
                 </div>
-              );
-            })}
-          </div>
-        </>
-      )}
-    </div>
+                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground truncate bg-muted/30 px-2 py-1 rounded border border-border/50">
+                  <LinkIcon size={10} className="flex-shrink-0" />
+                  <span className="truncate">.../share/{link.token.slice(0, 8)}...</span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -182,71 +201,57 @@ function PeopleDropdown({
 }: {
   people: SharedPerson[]; isPending: boolean; onRevoke: (id: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, []);
 
   if (people.length === 0) return null;
 
   return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <Users size={11} />
-        {people.length} {people.length === 1 ? "person" : "people"}
-        <CaretDown size={9} className={cn("transition-transform", open && "rotate-180")} />
-      </button>
-
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 bottom-6 z-20 w-56 bg-popover border border-border rounded-xl shadow-xl py-1 text-xs">
-            {people.map((p) => (
-              <div key={p.permission_id} className="flex items-center gap-2 px-3 py-2">
-                <div
-                  className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white flex-shrink-0"
-                  style={{ backgroundColor: TEAL }}
-                >
-                  {p.user_name ? p.user_name[0].toUpperCase() : p.user_email[0].toUpperCase()}
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors group outline-none">
+          <Users size={11} className="group-hover:text-[#2da07a] transition-colors" />
+          {people.length} {people.length === 1 ? "person" : "people"}
+          <CaretDown size={9} className="transition-transform group-aria-expanded:rotate-180" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" side="bottom" sideOffset={10} className="w-64 p-1.5 rounded-xl">
+        {people.map((p, idx) => (
+          <div key={p.permission_id}>
+            {idx > 0 && <DropdownMenuSeparator className="my-1.5 opacity-50" />}
+            <div className="flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-muted/50 transition-colors">
+              <Avatar className="w-8 h-8 rounded-lg">
+                <AvatarFallback className="bg-[#2da07a] text-white text-[11px] font-bold rounded-lg uppercase">
+                  {p.user_name ? p.user_name[0] : p.user_email[0]}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <p className="truncate text-[11px] font-semibold text-foreground leading-none">
+                    {p.user_name ?? p.user_email.split("@")[0]}
+                  </p>
+                  <span className={cn(
+                    "text-[9px] font-bold px-1 py-0.5 rounded uppercase leading-none",
+                    p.role === "editor" ? "text-amber-400 bg-amber-400/10" : "text-teal-400 bg-teal-400/10"
+                  )}>
+                    {p.role}
+                  </span>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex-1 min-w-0">
-                    {/* Name */}
-                    <p className="truncate text-foreground text-[11px] font-medium">
-                      {p.user_name ?? p.user_email} <span
-                        className={cn(
-                          "capitalize text-[10px]",
-                          p.role === "editor" ? "text-amber-400" : "text-muted-foreground"
-                        )}
-                      >
-                        ({p.role})
-                      </span>
-                    </p>
-
-                    {/* Email (always visible) */}
-                    {p.user_name && (
-                      <p className="truncate text-[10px] text-muted-foreground">
-                        {p.user_email}
-                      </p>
-                    )}
-                  </div>
-                </div>
-                <button onClick={() => { onRevoke(p.permission_id); setOpen(false); }} disabled={isPending} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-red-400 transition-colors">
-                  <Trash size={12} />
-                </button>
+                <p className="truncate text-[10px] text-muted-foreground mt-1 leading-none">
+                  {p.user_email}
+                </p>
               </div>
-            ))}
+              <button 
+                onClick={() => onRevoke(p.permission_id)} 
+                disabled={isPending} 
+                className="p-1.5 rounded-md hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-all disabled:opacity-50"
+                title="Revoke Permission"
+              >
+                <Trash size={14} />
+              </button>
+            </div>
           </div>
-        </>
-      )}
-    </div>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
