@@ -443,9 +443,25 @@ export function FileGrid({
     <div className="flex flex-col gap-4">
       {/* Toolbar */}
       <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">
-          {folders.length + files.length} item{folders.length + files.length !== 1 ? "s" : ""}
-        </p>
+        <div className="flex items-center text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+
+          <span className="text-foreground font-semibold">
+            {folders.length}
+          </span>
+          <span className="ml-1">
+            Folder{folders.length !== 1 ? "s" : ""}
+          </span>
+
+          <span className="mx-2 text-border">•</span>
+
+          <span className="text-foreground font-semibold">
+            {files.length}
+          </span>
+          <span className="ml-1">
+            File{files.length !== 1 ? "s" : ""}
+          </span>
+
+        </div>
         <LayoutToggle layout={layout} onChange={handleLayoutChange} />
       </div>
 

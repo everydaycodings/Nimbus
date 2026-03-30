@@ -516,22 +516,36 @@ export function OpenVault({
         </div>
       )}
 
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-3 flex-shrink-0 gap-2">
-        {/* Left: filters */}
-        <FileFilters />
+      <div className="flex flex-col gap-4 mb-4">
+        {/* Row 1: Filters */}
+        <div className="flex flex-wrap items-center gap-3">
+          <FileFilters className="mb-0" />
+        </div>
 
-        {/* Right: layout toggle */}
-        <LayoutToggle layout={layout} onChange={handleLayoutChange} />
-      </div>
+        {/* Row 2: Counts & Toggle */}
+        <div className="flex items-center justify-between px-1 py-1">
+          <div className="flex items-center text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
 
-      <div className="flex items-center justify-between mb-3 flex-shrink-0">
-        {/* Left: count */}
-        <p className="text-xs text-muted-foreground">
-          {filteredFolders.length + filteredFiles.length} item
-          {filteredFolders.length + filteredFiles.length !== 1 ? "s" : ""}
-        </p>
+            <span className="text-foreground font-semibold">
+              {filteredFolders.length}
+            </span>
+            <span className="ml-1">
+              Folder{filteredFolders.length !== 1 ? "s" : ""}
+            </span>
 
-        {/* Right: progress or nothing */}
+            <span className="mx-2 text-border">•</span>
+
+            <span className="text-foreground font-semibold">
+              {filteredFiles.length}
+            </span>
+            <span className="ml-1">
+              File{filteredFiles.length !== 1 ? "s" : ""}
+            </span>
+
+          </div>
+
+          <LayoutToggle layout={layout} onChange={handleLayoutChange} />
+        </div>
       </div>
 
       {/* ── Content ── */}

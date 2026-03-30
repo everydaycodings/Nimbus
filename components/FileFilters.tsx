@@ -45,7 +45,7 @@ const SORT_OPTIONS: { label: string; value: SortBy }[] = [
   { label: "Date Created", value: "created_at" },
 ];
 
-export function FileFilters() {
+export function FileFilters({ className = "mb-6" }: { className?: string }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -77,7 +77,7 @@ export function FileFilters() {
   const selectedTag = tags.find((t) => t.id === currentTagId);
 
   return (
-    <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-6">
+    <div className={cn("flex flex-wrap items-center gap-2 sm:gap-3", className)}>
       {/* Type Filter */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
