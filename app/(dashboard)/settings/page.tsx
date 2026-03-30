@@ -24,7 +24,7 @@ export default function SettingsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Form states
-  const [fullName, setFullName] = useState("");
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
 
@@ -33,7 +33,7 @@ export default function SettingsPage() {
       const { data: { user }, error } = await supabase.auth.getUser();
       if (user) {
         setUser(user);
-        setFullName(user.user_metadata?.full_name || "");
+        setName(user.user_metadata?.name || user.user_metadata?.full_name || "");
         setEmail(user.email || "");
       }
     }
@@ -45,7 +45,7 @@ export default function SettingsPage() {
     setProfileLoading(true);
     try {
       const { data, error } = await supabase.auth.updateUser({
-        data: { full_name: fullName }
+        data: { name: name }
       });
       if (error) throw error;
       toast.success("Profile updated successfully!");
@@ -214,18 +214,18 @@ export default function SettingsPage() {
                   </div>
                   
                   <div className="space-y-4 w-full max-w-md group/input pt-2">
-                    <Label htmlFor="fullName" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Full Name</Label>
+                    <Label htmlFor="name" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Name</Label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-muted-foreground transition-colors group-focus-within/input:text-primary">
                         <User size={18} />
                       </div>
                       <Input
-                        id="fullName"
+                        id="name"
                         type="text"
                         placeholder="John Doe"
                         className="pl-11 h-12 bg-background/50 border-border/60 focus-visible:ring-primary/40 transition-all rounded-xl shadow-sm"
-                        value={fullName}
-                        onChange={(e) => setFullName(e.target.value)}
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
                         required
                       />
                     </div>
@@ -235,7 +235,7 @@ export default function SettingsPage() {
               <CardFooter className="bg-muted/5 border-t border-border/30 pt-4 pb-4 flex justify-end">
                 <Button 
                   type="submit" 
-                  disabled={isProfileLoading || fullName === user?.user_metadata?.full_name}
+                  disabled={isProfileLoading || name === (user?.user_metadata?.name || user?.user_metadata?.full_name)}
                   className="w-full md:w-auto h-11 px-8 rounded-xl font-medium active:scale-95 transition-transform shadow-md hover:shadow-lg hover:bg-primary/90"
                 >
                   {isProfileLoading ? (
