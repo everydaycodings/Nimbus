@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { EnvelopeSimple, LockKey, CircleNotch, User } from "@phosphor-icons/react";
+import { EnvelopeSimple, LockKey, CircleNotch, User, GithubLogo } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -44,12 +44,33 @@ export default function RegisterPage() {
         return;
       }
 
-      toast.success("Successfully registered! You can now log in.");
-      router.push("/");
+      toast.success("Successfully registered! Please check your email for a verification link.");
+      router.push("/auth/login");
       router.refresh();
     } catch (error: any) {
       toast.error(error.message || "An error occurred during registration");
     } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleOAuthLogin = async (provider: 'google' | 'github') => {
+    setIsLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+
+      if (error) {
+        toast.error(error.message);
+        setIsLoading(false);
+      }
+      // No finally block to set isLoading(false) on success because the page will redirect to the provider
+    } catch (error: any) {
+      toast.error(error.message || `An error occurred during ${provider} signup`);
       setIsLoading(false);
     }
   };
@@ -66,7 +87,29 @@ export default function RegisterPage() {
             Sign up to get started with your cloud storage
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-6">
+          <Button 
+            variant="outline" 
+            className="w-full h-11 bg-background hover:bg-accent hover:text-accent-foreground transition-all"
+            onClick={() => handleOAuthLogin('github')}
+            disabled={isLoading}
+            type="button"
+          >
+            <GithubLogo weight="bold" className="mr-2 h-5 w-5" />
+            Continue with GitHub
+          </Button>
+
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-border/50" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-2 text-muted-foreground">
+                Or continue with email
+              </span>
+            </div>
+          </div>
+
           <form onSubmit={handleRegister} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="fullName">Full Name</Label>
