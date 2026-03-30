@@ -131,7 +131,7 @@ export function FileListClient() {
   return (
     <div
       className={cn(
-        "flex flex-col h-full p-6 transition-all duration-150",
+        "flex flex-col h-full p-4 md:p-6 transition-all duration-150",
         isDragging && "bg-[#2da07a]/5 ring-2 ring-inset ring-[#2da07a]/30 rounded-xl"
       )}
       onDragOver={handleDragOver}
@@ -143,7 +143,7 @@ export function FileListClient() {
 
         {/* Left: Breadcrumbs */}
         <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-1 text-sm">
+          <div className="flex items-center gap-1 text-sm overflow-x-auto scrollbar-hide whitespace-nowrap">
             <button
               onClick={navigateToRoot}
               className="text-muted-foreground hover:text-foreground transition-colors"

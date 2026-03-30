@@ -77,11 +77,11 @@ export function FileFilters() {
   const selectedTag = tags.find((t) => t.id === currentTagId);
 
   return (
-    <div className="flex items-center gap-3 mb-6">
+    <div className="flex items-center gap-2 sm:gap-3 mb-6 overflow-x-auto pb-1 scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
       {/* Type Filter */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-accent transition-all text-sm font-medium">
+          <button className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-accent transition-all text-sm font-medium flex-shrink-0 whitespace-nowrap">
             <selectedType.icon size={16} weight="duotone" style={{ color: TEAL }} />
             <span>{selectedType.label}</span>
             <CaretDown size={12} className="text-muted-foreground" />
@@ -116,7 +116,7 @@ export function FileFilters() {
       {/* Sort Options */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-accent transition-all text-sm font-medium">
+          <button className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-accent transition-all text-sm font-medium flex-shrink-0 whitespace-nowrap">
             {currentSortOrder === "asc" ? (
               <SortAscending size={16} weight="duotone" style={{ color: TEAL }} />
             ) : (
@@ -176,7 +176,7 @@ export function FileFilters() {
       {/* Size Filter (Optional / Simple Range) */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-accent transition-all text-sm font-medium">
+          <button className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-accent transition-all text-sm font-medium flex-shrink-0 whitespace-nowrap">
             <Funnel size={16} weight="duotone" style={{ color: TEAL }} />
             <span>Size</span>
             <CaretDown size={12} className="text-muted-foreground" />
@@ -218,7 +218,7 @@ export function FileFilters() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className={cn(
-              "flex items-center gap-2 px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-accent transition-all text-sm font-medium",
+              "flex items-center gap-2 px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-accent transition-all text-sm font-medium flex-shrink-0 whitespace-nowrap",
               currentTagId && "border-[#2da07a]/30 bg-[#2da07a]/5"
             )}>
               <TagIcon size={16} weight={currentTagId ? "fill" : "duotone"} style={{ color: TEAL }} />

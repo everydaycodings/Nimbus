@@ -648,7 +648,7 @@ export default function SharingPage() {
   });
 
   return (
-    <div className="p-6">
+    <div className="p-4 md:p-6">
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-xl font-bold text-foreground flex items-center gap-2">
@@ -682,7 +682,7 @@ export default function SharingPage() {
       <FileFilters />
 
       {/* Tabs */}
-      <div className="flex gap-4 mb-5 border-b border-border">
+      <div className="flex gap-4 mb-5 border-b border-border overflow-x-auto scrollbar-hide">
         {([
           { key: "links", label: "My shared items", count: filteredGrouped.length },
           { key: "shared-with-me", label: "Shared with me", count: filteredSharedWithMe.length },
@@ -691,7 +691,7 @@ export default function SharingPage() {
             key={t.key}
             onClick={() => setTab(t.key)}
             className={cn(
-              "pb-3 px-1 text-sm font-medium flex items-center gap-1.5 transition-colors border-b-2 -mb-px",
+              "pb-3 px-1 text-sm font-medium flex items-center gap-1.5 transition-colors border-b-2 -mb-px whitespace-nowrap flex-shrink-0",
               tab === t.key
                 ? "border-[#2da07a] text-foreground"
                 : "border-transparent text-muted-foreground hover:text-foreground"

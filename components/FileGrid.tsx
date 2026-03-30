@@ -209,37 +209,43 @@ function ListRow({
           </div>
         </div>
 
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-          {!showRestore && (
-            <>
-              <button onClick={handleStar} className="p-1.5 rounded-lg hover:bg-muted transition-colors">
-                <Star size={15} weight={isStarred ? "fill" : "regular"} style={isStarred ? { color: TEAL } : {}} className={!isStarred ? "text-muted-foreground" : ""} />
-              </button>
-              <button onClick={() => setShowShare(true)} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
-                <ShareNetwork size={15} />
-              </button>
-              {type === "file" && (
-                <button onClick={handleDownload} disabled={isDownloading} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
-                  <DownloadSimple size={15} />
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {/* Quick actions — hidden on mobile, shown on desktop hover */}
+          <div className="hidden md:flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            {!showRestore && (
+              <>
+                <button onClick={handleStar} className="p-1.5 rounded-lg hover:bg-muted transition-colors">
+                  <Star size={15} weight={isStarred ? "fill" : "regular"} style={isStarred ? { color: TEAL } : {}} className={!isStarred ? "text-muted-foreground" : ""} />
                 </button>
-              )}
-              <button onClick={() => setShowTrashDialog(true)} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-red-400 transition-colors">
-                <Trash size={15} />
+                <button onClick={() => setShowShare(true)} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
+                  <ShareNetwork size={15} />
+                </button>
+                {type === "file" && (
+                  <button onClick={handleDownload} disabled={isDownloading} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
+                    <DownloadSimple size={15} />
+                  </button>
+                )}
+                <button onClick={() => setShowTrashDialog(true)} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-red-400 transition-colors">
+                  <Trash size={15} />
+                </button>
+              </>
+            )}
+            {showRestore && (
+              <button onClick={handleRestore} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
+                <ArrowCounterClockwise size={15} />
               </button>
-            </>
-          )}
-          {showRestore && (
-            <button onClick={handleRestore} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
-              <ArrowCounterClockwise size={15} />
-            </button>
-          )}
-          <DotsMenu
-            type={type} isStarred={isStarred} showRestore={showRestore}
-            onRename={() => setShowRenameDialog(true)} onMove={() => setShowMoveDialog(true)}
-            onShare={() => setShowShare(true)} onDownload={handleDownload}
-            onStar={handleStar} onTrash={() => setShowTrashDialog(true)} onRestore={handleRestore}
-            onDetails={() => setShowDetails(true)} onTags={() => setShowTagPicker(true)}
-          />
+            )}
+          </div>
+          {/* DotsMenu — always visible for touch access */}
+          <div className="md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+            <DotsMenu
+              type={type} isStarred={isStarred} showRestore={showRestore}
+              onRename={() => setShowRenameDialog(true)} onMove={() => setShowMoveDialog(true)}
+              onShare={() => setShowShare(true)} onDownload={handleDownload}
+              onStar={handleStar} onTrash={() => setShowTrashDialog(true)} onRestore={handleRestore}
+              onDetails={() => setShowDetails(true)} onTags={() => setShowTagPicker(true)}
+            />
+          </div>
         </div>
       </div>
 
@@ -343,25 +349,29 @@ function GridCard({
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 mt-0.5">
-            {!showRestore && (
-              <button onClick={handleStar} className="p-1 rounded-lg hover:bg-muted transition-colors">
-                <Star size={13} weight={isStarred ? "fill" : "regular"} style={isStarred ? { color: TEAL } : {}} className={!isStarred ? "text-muted-foreground" : ""} />
-              </button>
-            )}
-            {showRestore && (
-              <button onClick={handleRestore} className="p-1 rounded-lg hover:bg-muted text-muted-foreground transition-colors">
-                <ArrowCounterClockwise size={13} />
-              </button>
-            )}
-            <DotsMenu
-              type={type} isStarred={isStarred} showRestore={showRestore} size={13}
-              onRename={() => setShowRenameDialog(true)} onMove={() => setShowMoveDialog(true)}
-              onTrash={() => setShowTrashDialog(true)}
-              onShare={() => setShowShare(true)} onDownload={handleDownload}
-              onStar={handleStar} onRestore={handleRestore}
-              onDetails={() => setShowDetails(true)} onTags={() => setShowTagPicker(true)}
-            />
+          <div className="flex items-center gap-0.5 flex-shrink-0 mt-0.5">
+            <div className="hidden md:flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+              {!showRestore && (
+                <button onClick={handleStar} className="p-1 rounded-lg hover:bg-muted transition-colors">
+                  <Star size={13} weight={isStarred ? "fill" : "regular"} style={isStarred ? { color: TEAL } : {}} className={!isStarred ? "text-muted-foreground" : ""} />
+                </button>
+              )}
+              {showRestore && (
+                <button onClick={handleRestore} className="p-1 rounded-lg hover:bg-muted text-muted-foreground transition-colors">
+                  <ArrowCounterClockwise size={13} />
+                </button>
+              )}
+            </div>
+            <div className="md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+              <DotsMenu
+                type={type} isStarred={isStarred} showRestore={showRestore} size={13}
+                onRename={() => setShowRenameDialog(true)} onMove={() => setShowMoveDialog(true)}
+                onTrash={() => setShowTrashDialog(true)}
+                onShare={() => setShowShare(true)} onDownload={handleDownload}
+                onStar={handleStar} onRestore={handleRestore}
+                onDetails={() => setShowDetails(true)} onTags={() => setShowTagPicker(true)}
+              />
+            </div>
           </div>
         </div>
 
@@ -445,7 +455,7 @@ export function FileGrid({
           <div className="flex items-center gap-3 px-3 py-1.5">
             <div className="w-8" />
             <p className="flex-1 text-xs font-medium text-muted-foreground uppercase tracking-wide">Name</p>
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide pr-8">Modified</p>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide pr-8 hidden md:block">Modified</p>
           </div>
           <div className="border-t border-border mb-1" />
           {folders.length > 0 && (

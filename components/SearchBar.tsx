@@ -199,7 +199,7 @@ export function SearchBar() {
 
   return (
     <>
-      <div ref={containerRef} className="relative w-full max-w-sm">
+      <div ref={containerRef} className="relative flex-1 min-w-0 md:max-w-sm">
         {/* ── Input ── */}
         <div className="relative">
           <MagnifyingGlass

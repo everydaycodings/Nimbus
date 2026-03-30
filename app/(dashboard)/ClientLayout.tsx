@@ -1,9 +1,10 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { Sidebar } from "@/components/sidebar";
+import { Sidebar, MobileSidebar } from "@/components/sidebar";
 import { Navbar } from "@/components/navbar";
 import { UploadToast } from "@/components/UploadToast";
+import { MobileSidebarProvider } from "@/hooks/useSidebarMobile";
 
 export function ClientLayout({
   children,
@@ -18,26 +19,37 @@ export function ClientLayout({
   const pathname = usePathname();
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
-      <Sidebar
-        storageUsed={user.storage_used}
-        storageLimit={user.storage_limit}
-      />
+    <MobileSidebarProvider>
+      <div className="flex h-screen overflow-hidden bg-background">
+        {/* Desktop sidebar — hidden on mobile */}
+        <div className="hidden md:block">
+          <Sidebar
+            storageUsed={user.storage_used}
+            storageLimit={user.storage_limit}
+          />
+        </div>
 
-      <div className="flex flex-col flex-1 overflow-hidden">
-        <Navbar />
+        {/* Mobile sidebar — Sheet overlay, only on small screens */}
+        <MobileSidebar
+          storageUsed={user.storage_used}
+          storageLimit={user.storage_limit}
+        />
 
-        <main className="flex-1 overflow-y-auto">
-          <div
-            key={pathname}
-            className="animate-in fade-in duration-200"
-          >
-            {children}
-          </div>
-        </main>
+        <div className="flex flex-col flex-1 overflow-hidden">
+          <Navbar />
+
+          <main className="flex-1 overflow-y-auto">
+            <div
+              key={pathname}
+              className="animate-in fade-in duration-200"
+            >
+              {children}
+            </div>
+          </main>
+        </div>
+
+        <UploadToast />
       </div>
-
-      <UploadToast />
-    </div>
+    </MobileSidebarProvider>
   );
 }

@@ -455,16 +455,16 @@ export function OpenVault({
   return (
     <div className="flex flex-col h-full">
       {/* ── Header ── */}
-      <div className="flex items-center justify-between mb-4 flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <LockKeyOpen size={18} weight="duotone" style={{ color: TEAL }} />
-          <h2 className="text-base font-semibold text-foreground">{vault.name}</h2>
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-medium text-white" style={{ backgroundColor: TEAL }}>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 flex-shrink-0 gap-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <LockKeyOpen size={18} weight="duotone" style={{ color: TEAL }} className="flex-shrink-0" />
+          <h2 className="text-base font-semibold text-foreground truncate">{vault.name}</h2>
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-medium text-white flex-shrink-0" style={{ backgroundColor: TEAL }}>
             Unlocked
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           <VaultUploadDropdown
             uploadMany={uploadMany}
             uploadFolder={uploadFolder}
@@ -489,7 +489,7 @@ export function OpenVault({
 
       {/* ── Breadcrumbs ── */}
       {(breadcrumbs.length > 0 || true) && (
-        <div className="flex items-center gap-1 text-sm mb-4 flex-shrink-0">
+        <div className="flex items-center gap-1 text-sm mb-4 flex-shrink-0 overflow-x-auto scrollbar-hide whitespace-nowrap">
           <button
             onClick={navigateToRoot}
             className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
@@ -516,7 +516,7 @@ export function OpenVault({
         </div>
       )}
 
-      <div className="flex items-center justify-between mb-3 flex-shrink-0">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-3 flex-shrink-0 gap-2">
         {/* Left: filters */}
         <FileFilters />
 
@@ -564,7 +564,7 @@ export function OpenVault({
                 <p className="flex-1 text-xs font-medium text-muted-foreground uppercase tracking-wide">
                   Name
                 </p>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide w-20 text-right pr-20">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide w-20 text-right pr-20 hidden md:block">
                   Size
                 </p>
               </div>
@@ -593,7 +593,7 @@ export function OpenVault({
                         </p>
                       </div>
 
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
                         <VaultItemMenu
                           type="folder"
                           id={folder.id}
@@ -666,7 +666,7 @@ export function OpenVault({
                           </p>
                         </div>
 
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
                           <VaultItemMenu
                             type="file"
                             id={file.id}
@@ -740,7 +740,7 @@ export function OpenVault({
                               {formatDate(folder.updated_at || folder.created_at)}
                             </p>
                           </div>
-                          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 mt-0.5" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center gap-0.5 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex-shrink-0 mt-0.5" onClick={(e) => e.stopPropagation()}>
                             <VaultItemMenu
                               type="folder"
                               id={folder.id}
@@ -820,7 +820,7 @@ export function OpenVault({
                               </p>
                             </div>
 
-                            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 mt-0.5" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center gap-0.5 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex-shrink-0 mt-0.5" onClick={(e) => e.stopPropagation()}>
                               <VaultItemMenu
                                 type="file"
                                 id={file.id}

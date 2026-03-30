@@ -58,7 +58,7 @@ export function VaultPage() {
 
   if (openVault && openKey) {
     return (
-      <div className="p-6 h-full">
+      <div className="p-4 md:p-6 h-full">
         <OpenVault
           vault={openVault}
           cryptoKey={openKey}
@@ -73,7 +73,7 @@ export function VaultPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-4 md:p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-foreground flex items-center gap-2">

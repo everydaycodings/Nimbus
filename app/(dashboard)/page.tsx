@@ -69,7 +69,7 @@ export default function HomePage() {
   return (
     <div
       className={cn(
-        "flex flex-col h-full p-6 transition-all duration-150 relative",
+        "flex flex-col h-full p-4 md:p-6 transition-all duration-150 relative",
         isDragging && "bg-[#2da07a]/5 ring-2 ring-inset ring-[#2da07a]/30 rounded-xl"
       )}
       onDragOver={handleDragOver}
@@ -136,7 +136,7 @@ export default function HomePage() {
           <p className="text-sm text-muted-foreground mb-6 max-w-xs">
             Upload files or create a folder to get started. You can also drag and drop files anywhere on this page.
           </p>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-col sm:flex-row items-center gap-3">
             <button
               onClick={() => setShowCreateFolder(true)}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-secondary border border-border text-secondary-foreground hover:bg-accent transition-all"
