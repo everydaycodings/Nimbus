@@ -77,7 +77,7 @@ export function FileFilters() {
   const selectedTag = tags.find((t) => t.id === currentTagId);
 
   return (
-    <div className="flex items-center gap-2 sm:gap-3 mb-6 overflow-x-auto pb-1 scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
+    <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-6">
       {/* Type Filter */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
