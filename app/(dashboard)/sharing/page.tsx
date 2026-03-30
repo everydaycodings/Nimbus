@@ -38,15 +38,31 @@ const TEAL = "#2da07a";
 
 function formatExpiry(expiresAt: string | null): { label: string; urgent: boolean } {
   if (!expiresAt) return { label: "Never expires", urgent: false };
+
   const exp = new Date(expiresAt);
   const diff = exp.getTime() - Date.now();
+
   if (diff <= 0) return { label: "Expired", urgent: true };
+
+  const minutes = Math.floor(diff / 60000);
   const hours = Math.floor(diff / 3600000);
   const days = Math.floor(diff / 86400000);
+
+  // 🔥 New condition (must come before hours check)
+  if (minutes < 5) return { label: "< 5 min", urgent: true };
+
   if (hours < 1) return { label: "< 1 hour", urgent: true };
   if (hours < 24) return { label: `${hours}h left`, urgent: true };
   if (days < 7) return { label: `${days}d left`, urgent: false };
-  return { label: exp.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }), urgent: false };
+
+  return {
+    label: exp.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }),
+    urgent: false,
+  };
 }
 
 function formatBytes(b: number) {
