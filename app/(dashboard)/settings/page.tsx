@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
-import { User, EnvelopeSimple, LockKey, CircleNotch, Camera } from "@phosphor-icons/react";
+import { User, EnvelopeSimple, LockKey, CircleNotch, Camera, Eye, EyeSlash } from "@phosphor-icons/react";
 import { useRouter } from "next/navigation";
 
 export default function SettingsPage() {
@@ -27,6 +27,7 @@ export default function SettingsPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     async function loadUser() {
@@ -320,14 +321,21 @@ export default function SettingsPage() {
                     </div>
                     <Input
                       id="newPassword"
-                      type="password"
+                      type={showPassword ? "text" : "password"}
                       placeholder="••••••••"
-                      className="pl-11 h-12 bg-background/50 border-border/60 focus-visible:ring-orange-500/40 transition-all rounded-xl shadow-sm"
+                      className="pl-11 pr-10 h-12 bg-background/50 border-border/60 focus-visible:ring-orange-500/40 transition-all rounded-xl shadow-sm"
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       required
                       minLength={6}
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {showPassword ? <EyeSlash size={18} /> : <Eye size={18} />}
+                    </button>
                   </div>
                 </div>
               </CardContent>
