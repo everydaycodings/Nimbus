@@ -3,6 +3,7 @@
 
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
+import { Vault } from "@/vault/types/vault";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -51,24 +52,26 @@ export async function createVault(input: {
 }
 
 // ── List vaults ───────────────────────────────────────────────
-export async function getVaults() {
+export async function getVaults(): Promise<Vault[]> {
   const supabaseServer = await createSupabaseClient();
   const authUserResponse = await supabaseServer.auth.getUser();
   const authUser = authUserResponse.data.user;
   const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
-  const user = await getUser(userId);
-  if (!user) throw new Error("User not found");
+  const [userResult, vaultsResult] = await Promise.all([
+    getUser(userId),
+    supabase
+      .from("vaults")
+      .select("id, name, salt, verification_token, created_at, updated_at")
+      .eq("owner_id", userId)
+      .order("created_at", { ascending: false }),
+  ]);
 
-  const { data, error } = await supabase
-    .from("vaults")
-    .select("id, name, salt, verification_token, created_at, updated_at")
-    .eq("owner_id", user.id)
-    .order("created_at", { ascending: false });
+  if (!userResult) throw new Error("User not found");
+  if (vaultsResult.error) throw new Error(vaultsResult.error.message);
 
-  if (error) throw new Error(error.message);
-  return data ?? [];
+  return vaultsResult.data ?? [];
 }
 
 // ── Delete vault (and all its files) ─────────────────────────

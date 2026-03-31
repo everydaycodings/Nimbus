@@ -1,15 +1,16 @@
-// vault/hooks/queries/useVaultQueries.ts
 import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { getVaults } from "@/vault/actions/vault.actions";
 import { getVaultFolders, getVaultFilesInFolder } from "@/vault/actions/vault.folders.actions";
+import { Vault } from "@/vault/types/vault";
 
-export function useVaultsQuery() {
+export function useVaultsQuery(initialData?: Vault[]) {
   return useQuery({
     queryKey: queryKeys.vaults(),
     queryFn: async () => {
       return getVaults();
     },
+    initialData,
   });
 }
 

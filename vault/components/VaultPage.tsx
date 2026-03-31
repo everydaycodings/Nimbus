@@ -12,16 +12,10 @@ import { loadVaultSession, clearVaultSession } from "@/vault/lib/session";
 
 const TEAL = "#2da07a";
 
-interface Vault {
-  id: string;
-  name: string;
-  salt: string;
-  verification_token: string;
-  created_at: string;
-}
+import { Vault } from "@/vault/types/vault";
 
-export function VaultPage() {
-  const { data: vaults = [], isLoading: loading, refetch: loadVaults } = useVaultsQuery();
+export function VaultPage({ initialData }: { initialData?: Vault[] }) {
+  const { data: vaults = [], isLoading: loading, refetch: loadVaults } = useVaultsQuery(initialData);
   const [showCreate, setShowCreate] = useState(false);
   const [unlockTarget, setUnlockTarget] = useState<Vault | null>(null);
   const [openVault, setOpenVault] = useState<Vault | null>(null);
@@ -123,7 +117,7 @@ export function VaultPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-          {vaults.map((vault) => (
+          {vaults.map((vault: Vault) => (
             <button
               key={vault.id}
               onClick={() => tryAutoUnlock(vault)}
