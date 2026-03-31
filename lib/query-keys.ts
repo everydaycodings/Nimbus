@@ -28,4 +28,5 @@ export const queryKeys = {
   // Vault data
   vaults: () => ["vaults", "list"] as const,
   vaultItems: (vaultId: string, folderId: string | null) => ["vaults", "items", vaultId, folderId] as const,
+  activity: () => ["activity", "logs"] as const,
 };

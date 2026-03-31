@@ -36,6 +36,7 @@ const navItems = [
   { name: "Recent", icon: Clock, href: "/recent" },
   { name: "Starred", icon: Star, href: "/starred" },
   { name: "Sharing", icon: ShareNetworkIcon, href: "/sharing" },
+  { name: "Activity", icon: Clock, href: "/activity" },
   { name: "Trash", icon: Trash, href: "/trash" },
 ];
 
