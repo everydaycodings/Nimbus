@@ -13,7 +13,8 @@ import {
   Clock,
   UserCircle,
   ShieldCheck,
-  ShieldWarning
+  ShieldWarning,
+  Tag as TagIcon
 } from "@phosphor-icons/react";
 import { formatTimeAgo, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -33,6 +34,8 @@ const ACTION_MAP: Record<string, { icon: any, color: string, label: string }> = 
   security_update: { icon: ShieldCheck, color: "text-rose-500 bg-rose-500/10", label: "Security change" },
   mfa_enroll: { icon: ShieldCheck, color: "text-green-500 bg-green-500/10", label: "MFA enabled" },
   mfa_unenroll: { icon: ShieldWarning, color: "text-amber-500 bg-amber-500/10", label: "MFA disabled" },
+  tag: { icon: TagIcon, color: "text-indigo-500 bg-indigo-500/10", label: "Tagged" },
+  untag: { icon: TagIcon, color: "text-slate-500 bg-slate-500/10", label: "Untagged" },
 };
 
 export default function ActivityPage() {
@@ -101,6 +104,11 @@ export default function ActivityPage() {
                       <div className="text-sm font-bold text-foreground">
                         <span className="text-muted-foreground font-normal mr-1.5 uppercase tracking-wide text-[11px]">{config.label}</span>
                         <span className="truncate inline-block max-w-[200px] md:max-w-md align-bottom">{resourceName}</span>
+                        {log.metadata?.tag_name && (
+                          <span className="ml-2 text-[10px] font-black uppercase tracking-widest bg-primary/5 text-primary/70 px-2 py-0.5 rounded-md border border-primary/10">
+                            {log.metadata.tag_name}
+                          </span>
+                        )}
                       </div>
                       <div className="text-[10px] text-muted-foreground/80 font-bold bg-muted/80 backdrop-blur px-3 py-1 rounded-xl shadow-sm border border-border/40 ml-auto md:ml-0">
                         {formatDate(log.created_at)}

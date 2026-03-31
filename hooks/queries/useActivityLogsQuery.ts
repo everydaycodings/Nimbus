@@ -1,14 +1,14 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { getActivityLogs } from "@/actions/activity";
 import { queryKeys } from "@/lib/query-keys";
 
 export function useActivityLogsQuery(limit = 20) {
   const queryClient = useQueryClient();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
     const channelId = `activity_log_changes_${Date.now()}`;
@@ -33,7 +33,7 @@ export function useActivityLogsQuery(limit = 20) {
   }, [supabase, queryClient]);
 
   return useQuery({
-    queryKey: queryKeys.activity(),
+    queryKey: queryKeys.activity(limit),
     queryFn: () => getActivityLogs(limit),
     staleTime: 1000 * 60 * 5, // 5 minutes
   });

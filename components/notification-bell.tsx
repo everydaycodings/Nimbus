@@ -16,7 +16,8 @@ import {
   ShieldCheck,
   ShieldWarning,
   CheckCircle,
-  Clock
+  Clock,
+  Tag as TagIcon
 } from "@phosphor-icons/react";
 import { 
   DropdownMenu, 
@@ -45,6 +46,8 @@ const ACTION_MAP: Record<string, { icon: any, color: string, glow: string, label
   security_update: { icon: ShieldCheck, color: "text-orange-400 bg-orange-500/10", glow: "shadow-orange-500/20", label: "Security change" },
   mfa_enroll: { icon: ShieldCheck, color: "text-emerald-400 bg-emerald-500/10", glow: "shadow-emerald-500/20", label: "MFA enabled" },
   mfa_unenroll: { icon: ShieldWarning, color: "text-orange-400 bg-orange-500/10", glow: "shadow-orange-500/20", label: "MFA disabled" },
+  tag: { icon: TagIcon, color: "text-indigo-400 bg-indigo-500/10", glow: "shadow-indigo-500/20", label: "Tagged" },
+  untag: { icon: TagIcon, color: "text-slate-500 bg-slate-500/10", glow: "shadow-slate-500/20", label: "Untagged" },
 };
 
 export function NotificationBell() {
