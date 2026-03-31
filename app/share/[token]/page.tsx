@@ -11,10 +11,10 @@ import {
 } from "@phosphor-icons/react/dist/ssr";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { CloudIcon } from "@phosphor-icons/react";
 import { ShareDownloadButton } from "@/components/ShareDownloadButton";
 import { PasswordGate } from "@/components/PasswordGate";
 import { cookies } from "next/headers";
+import { VideoPlayer, AudioPlayer, ImageViewer } from "@/components/FilePreviewDialog";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -145,20 +145,18 @@ export default async function SharePage({
 
         <div className="flex-1 flex items-center justify-center p-8 overflow-hidden">
           {file.mime_type.startsWith("image/") && (
-            <img src={signedUrl} alt={file.name} className="max-w-full max-h-full object-contain rounded-xl shadow-2xl" />
+            <ImageViewer src={signedUrl} fileName={file.name} />
           )}
           {file.mime_type === "application/pdf" && (
             <iframe src={signedUrl} className="w-full h-full rounded-xl border border-border" title={file.name} />
           )}
           {file.mime_type.startsWith("video/") && (
-            <video src={signedUrl} controls className="max-w-full max-h-full rounded-xl shadow-2xl" />
+            <div className="w-full h-full flex items-center justify-center max-w-5xl max-h-[80vh]">
+               <VideoPlayer src={signedUrl} fileName={file.name} />
+            </div>
           )}
           {file.mime_type.startsWith("audio/") && (
-            <div className="flex flex-col items-center gap-6">
-              <MusicNote size={80} className="text-pink-400/60" />
-              <p className="text-sm font-medium text-foreground">{file.name}</p>
-              <audio src={signedUrl} controls className="w-80" />
-            </div>
+            <AudioPlayer src={signedUrl} fileName={file.name} />
           )}
           {!["image/", "video/", "audio/"].some((t) => file.mime_type.startsWith(t)) &&
             file.mime_type !== "application/pdf" && (
