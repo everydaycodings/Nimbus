@@ -137,7 +137,7 @@ export default function LoginPage() {
               <div className="grid grid-cols-2 gap-4">
                 <Button 
                   variant="outline" 
-                  className="w-full h-11 bg-background hover:bg-accent hover:text-accent-foreground transition-all"
+                  className="w-full h-11 bg-background hover:bg-accent hover:text-accent-foreground cursor-pointer transition-all"
                   onClick={() => handleOAuthLogin('github')}
                   disabled={isLoading}
                   type="button"
@@ -147,7 +147,7 @@ export default function LoginPage() {
                 </Button>
                 <Button 
                   variant="outline" 
-                  className="w-full h-11 bg-background hover:bg-accent hover:text-accent-foreground transition-all"
+                  className="w-full h-11 bg-background hover:bg-accent hover:text-accent-foreground cursor-pointer transition-all"
                   onClick={() => handleOAuthLogin('google')}
                   disabled={isLoading}
                   type="button"
@@ -215,7 +215,7 @@ export default function LoginPage() {
                 
                 <Button 
                   type="submit" 
-                  className="w-full h-12 mt-4 font-bold transition-all active:scale-[0.98] rounded-xl shadow-lg shadow-primary/20" 
+                  className="w-full h-12 mt-4 font-bold transition-all active:scale-[0.98] cursor-pointer rounded-xl shadow-lg shadow-primary/20" 
                   disabled={isLoading}
                 >
                   {isLoading ? (

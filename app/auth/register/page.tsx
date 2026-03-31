@@ -99,7 +99,7 @@ export default function RegisterPage() {
           <div className="grid grid-cols-2 gap-4">
             <Button 
               variant="outline" 
-              className="w-full h-11 bg-background hover:bg-accent hover:text-accent-foreground transition-all"
+              className="w-full h-11 bg-background hover:bg-accent hover:text-accent-foreground transition-all cursor-pointer"
               onClick={() => handleOAuthLogin('github')}
               disabled={isLoading}
               type="button"
@@ -109,7 +109,7 @@ export default function RegisterPage() {
             </Button>
             <Button 
               variant="outline" 
-              className="w-full h-11 bg-background hover:bg-accent hover:text-accent-foreground transition-all"
+              className="w-full h-11 bg-background hover:bg-accent hover:text-accent-foreground transition-allcursor-pointer"
               onClick={() => handleOAuthLogin('google')}
               disabled={isLoading}
               type="button"
@@ -210,7 +210,7 @@ export default function RegisterPage() {
             
             <Button 
               type="submit" 
-              className="w-full h-11 mt-4 text-primary-foreground font-medium transition-all hover:scale-[1.02]" 
+              className="w-full h-11 mt-4 text-primary-foreground font-medium transition-all hover:scale-[1.02] cursor-pointer" 
               disabled={isLoading}
             >
               {isLoading ? (

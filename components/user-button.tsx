@@ -24,7 +24,7 @@ export function UserButton() {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="relative outline-none rounded-full transition-transform hover:scale-105 active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background group">
+      <DropdownMenuTrigger className="relative outline-none rounded-full transition-transform hover:scale-105 active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 cursor-pointer focus-visible:ring-offset-background group">
         <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-primary to-blue-500 opacity-20 blur-sm pointer-events-none group-hover:opacity-40 transition-opacity" />
         <Avatar className="w-7 h-7 md:w-8 md:h-8 border border-border/80 shadow-sm relative z-10 transition-all group-hover:border-primary/50">
           <AvatarImage src={user.user_metadata?.avatar_url} />
