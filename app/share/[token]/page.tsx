@@ -13,6 +13,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { CloudIcon } from "@phosphor-icons/react";
 import { ShareDownloadButton } from "@/components/ShareDownloadButton";
+import { PasswordGate } from "@/components/PasswordGate";
+import { cookies } from "next/headers";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -75,7 +77,7 @@ export default async function SharePage({
 
   const { data: link } = await supabase
     .from("share_links")
-    .select("id, resource_id, resource_type, role, expires_at")
+    .select("id, resource_id, resource_type, role, expires_at, password_hash")
     .eq("token", token)
     .maybeSingle();
 
@@ -92,6 +94,15 @@ export default async function SharePage({
         </div>
       </div>
     );
+  }
+
+  // ── Password gate ────────────────────────────────────────────────
+  if (link.password_hash) {
+    const cookieStore = await cookies();
+    const unlocked = cookieStore.get(`share_unlocked_${token}`);
+    if (!unlocked || unlocked.value !== "1") {
+      return <PasswordGate token={token} />;
+    }
   }
 
   // ══════════════════════════════════════════════════════════════

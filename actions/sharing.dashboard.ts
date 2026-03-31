@@ -26,7 +26,7 @@ export async function getMySharedItems() {
 
   const { data: rawLinks } = await supabase
     .from("share_links")
-    .select("id, token, role, expires_at, created_at, resource_id, resource_type")
+    .select("id, token, role, expires_at, created_at, resource_id, resource_type, password_hash")
     .eq("owner_id", user.id)
     .order("created_at", { ascending: false });
 
@@ -37,7 +37,14 @@ export async function getMySharedItems() {
         ? "name, mime_type, tags:file_tags(tag:tags(id, name, color))" 
         : "name, tags:folder_tags(tag:tags(id, name, color))";
       const { data: resource } = await supabase.from(table).select(select).eq("id", link.resource_id).single();
-      return { ...link, resource_name: (resource as any)?.name ?? "Deleted item", mime_type: (resource as any)?.mime_type ?? null, tags: (resource as any)?.tags ?? [] };
+      return { 
+        ...link, 
+        is_password_protected: !!link.password_hash,
+        password_hash: undefined,
+        resource_name: (resource as any)?.name ?? "Deleted item", 
+        mime_type: (resource as any)?.mime_type ?? null, 
+        tags: (resource as any)?.tags ?? [] 
+      };
     })
   );
 

@@ -3,6 +3,7 @@
 
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
+import bcrypt from "bcryptjs";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -160,10 +161,11 @@ export async function getSharedUsers(
 
 // ── Create a public share link ────────────────────────────────
 export async function createShareLink(
-  resourceId:   string,
-  resourceType: "file" | "folder",
-  role:         "viewer" | "editor",
-  expiresInDays?: number  // undefined = never expires
+  resourceId:    string,
+  resourceType:  "file" | "folder",
+  role:          "viewer" | "editor",
+  expiresInDays?: number,  // undefined = never expires
+  password?:     string    // undefined = no password
 ) {
   const supabaseServer = await createSupabaseClient();
   const authUserResponse = await supabaseServer.auth.getUser();
@@ -188,6 +190,10 @@ export async function createShareLink(
     ? new Date(Date.now() + expiresInDays * 86400000).toISOString()
     : null;
 
+  const passwordHash = password && password.trim()
+    ? await bcrypt.hash(password.trim(), 10)
+    : null;
+
   const { data, error } = await supabase
     .from("share_links")
     .insert({
@@ -196,12 +202,19 @@ export async function createShareLink(
       owner_id:      owner.id,
       role,
       expires_at:    expiresAt,
+      password_hash: passwordHash,
     })
     .select()
     .single();
 
   if (error) throw new Error(error.message);
-  return data;
+
+  // Return a safe version — never expose the hash to the client
+  return {
+    ...data,
+    is_password_protected: !!data.password_hash,
+    password_hash: undefined,
+  };
 }
 
 // ── Get existing share links for a resource ───────────────────
@@ -220,14 +233,20 @@ export async function getShareLinks(
 
   const { data, error } = await supabase
     .from("share_links")
-    .select("id, token, role, expires_at, created_at")
+    .select("id, token, role, expires_at, created_at, password_hash")
     .eq("resource_id", resourceId)
     .eq("resource_type", resourceType)
     .eq("owner_id", owner.id)
     .order("created_at", { ascending: false });
 
   if (error) throw new Error(error.message);
-  return data ?? [];
+
+  // Convert password_hash to a safe boolean — never send the hash to the client
+  return (data ?? []).map((row) => ({
+    ...row,
+    is_password_protected: !!row.password_hash,
+    password_hash: undefined,
+  }));
 }
 
 // ── Delete a share link ───────────────────────────────────────

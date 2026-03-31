@@ -76,6 +76,7 @@ create table public.permissions (
 
 -- ── 5. SHARE LINKS ───────────────────────────────────────────
 -- Public/unlisted links (no account required to access)
+-- password_hash: bcrypt hash of an optional access password; null = no password required
 create table public.share_links (
   id            uuid primary key default gen_random_uuid(),
   resource_id   uuid not null,
@@ -84,6 +85,7 @@ create table public.share_links (
   token         text not null unique default encode(gen_random_bytes(32), 'hex'),
   role          text not null default 'viewer' check (role in ('viewer', 'editor')),
   expires_at    timestamptz,               -- null = never expires
+  password_hash text,                      -- null = public link; bcrypt hash = password protected
   created_at    timestamptz not null default now()
 );
 

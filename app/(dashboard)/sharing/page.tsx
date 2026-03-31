@@ -8,7 +8,7 @@ import {
   Image, FilePdf, FileVideo, MusicNote,
   Eye, PencilSimple, Check, Copy, CaretDown,
   DownloadSimple, CopySimple, ArrowSquareIn,
-  Funnel,
+  Funnel, LockSimple,
 } from "@phosphor-icons/react";
 import { useSearchParams } from "next/navigation";
 import { FileFilters } from "@/components/FileFilters";
@@ -89,6 +89,7 @@ interface SharedLink {
   expires_at: string | null; created_at: string;
   resource_id: string; resource_type: "file" | "folder";
   resource_name: string; mime_type?: string;
+  is_password_protected: boolean;
 }
 
 interface SharedPerson {
@@ -166,11 +167,17 @@ function LinksDropdown({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className={cn(
-                      "text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded",
+                      "text-[8px] uppercase tracking-wider font-bold px-1 py-0.5 rounded",
                       link.role === "editor" ? "text-amber-400 bg-amber-400/10" : "text-teal-400 bg-teal-400/10"
                     )}>
                       {link.role}
                     </span>
+                    {link.is_password_protected && (
+                      <span className="flex items-center gap-0.5 text-[8px] px-1.5 py-0.5 rounded-full font-bold bg-[#2da07a]/10 text-[#2da07a]">
+                        <LockSimple size={8} weight="bold" />
+                        PROTECTED
+                      </span>
+                    )}
                     <span className={cn(
                       "text-[10px] font-medium",
                       expiry.urgent ? "text-red-400" : "text-muted-foreground"

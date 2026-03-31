@@ -10,9 +10,11 @@ import {
   Check,
   Trash,
   Eye,
+  EyeSlash,
   PencilSimple,
   Globe,
   Clock,
+  LockSimple,
 } from "@phosphor-icons/react";
 import {
   shareWithUser,
@@ -49,11 +51,12 @@ interface SharedUser {
 }
 
 interface ShareLink {
-  id:         string;
-  token:      string;
-  role:       "viewer" | "editor";
-  expires_at: string | null;
-  created_at: string;
+  id:                   string;
+  token:                string;
+  role:                 "viewer" | "editor";
+  expires_at:           string | null;
+  created_at:           string;
+  is_password_protected: boolean;
 }
 
 const TEAL = "#2da07a";
@@ -106,15 +109,18 @@ function normalizeSharedUsers(raw: any[]): SharedUser[] {
 }
 
 export function ShareDialog({ resourceId, resourceName, resourceType, onClose }: Props) {
-  const [tab,          setTab]          = useState<Tab>("people");
-  const [email,        setEmail]        = useState("");
-  const [role,         setRole]         = useState<"viewer" | "editor">("viewer");
-  const [linkRole,     setLinkRole]     = useState<"viewer" | "editor">("viewer");
-  const [expiryMins,   setExpiryMins]   = useState<number | null>(60 * 24 * 7); // default 1 week
-  const [sharedUsers,  setSharedUsers]  = useState<SharedUser[]>([]);
-  const [shareLinks,   setShareLinks]   = useState<ShareLink[]>([]);
-  const [copied,       setCopied]       = useState<string | null>(null);
-  const [isPending,    startTransition] = useTransition();
+  const [tab,              setTab]              = useState<Tab>("people");
+  const [email,            setEmail]            = useState("");
+  const [role,             setRole]             = useState<"viewer" | "editor">("viewer");
+  const [linkRole,         setLinkRole]         = useState<"viewer" | "editor">("viewer");
+  const [expiryMins,       setExpiryMins]       = useState<number | null>(60 * 24 * 7); // default 1 week
+  const [passwordProtect,  setPasswordProtect]  = useState(false);
+  const [linkPassword,     setLinkPassword]     = useState("");
+  const [showLinkPassword, setShowLinkPassword] = useState(false);
+  const [sharedUsers,      setSharedUsers]      = useState<SharedUser[]>([]);
+  const [shareLinks,       setShareLinks]       = useState<ShareLink[]>([]);
+  const [copied,           setCopied]           = useState<string | null>(null);
+  const [isPending,        startTransition]     = useTransition();
 
   const queryClient = useQueryClient();
 
@@ -178,13 +184,19 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
           ? undefined
           : expiryMins / (60 * 24);
 
+        const password = passwordProtect && linkPassword.trim() ? linkPassword.trim() : undefined;
+
         const link = await createShareLink(
           resourceId,
           resourceType,
           linkRole,
-          expiresInDays
+          expiresInDays,
+          password
         );
         setShareLinks((prev) => [link, ...prev]);
+        // Reset password fields after creation
+        setPasswordProtect(false);
+        setLinkPassword("");
         queryClient.invalidateQueries({ queryKey: queryKeys.sharing() });
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to create link");
@@ -412,22 +424,74 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
                     ))}
                   </div>
                 </div>
+
+                {/* Password protect row */}
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <LockSimple size={15} weight="duotone" className="text-muted-foreground" />
+                      <span className="text-sm text-foreground font-medium">Password protect</span>
+                    </div>
+                    {/* Toggle switch */}
+                    <button
+                      role="switch"
+                      aria-checked={passwordProtect}
+                      onClick={() => { setPasswordProtect((v) => !v); setLinkPassword(""); }}
+                      className={cn(
+                        "relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none",
+                        passwordProtect ? "" : "bg-border"
+                      )}
+                      style={passwordProtect ? { backgroundColor: TEAL } : {}}
+                    >
+                      <span
+                        className={cn(
+                          "inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform",
+                          passwordProtect ? "translate-x-4.5" : "translate-x-0.5"
+                        )}
+                      />
+                    </button>
+                  </div>
+
+                  {passwordProtect && (
+                    <div className="relative">
+                      <input
+                        type={showLinkPassword ? "text" : "password"}
+                        value={linkPassword}
+                        onChange={(e) => setLinkPassword(e.target.value)}
+                        placeholder="Set a password…"
+                        className={cn(
+                          "w-full px-3 py-2 pr-9 rounded-xl text-sm bg-background border text-foreground",
+                          "focus:outline-none focus:ring-1 transition-all placeholder:text-muted-foreground",
+                          "border-border focus:ring-[#2da07a]/30 focus:border-[#2da07a]/50"
+                        )}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowLinkPassword((v) => !v)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                        tabIndex={-1}
+                      >
+                        {showLinkPassword ? <EyeSlash size={14} /> : <Eye size={14} />}
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Create button */}
               <button
                 onClick={handleCreateLink}
-                disabled={isPending}
+                disabled={isPending || (passwordProtect && !linkPassword.trim())}
                 className={cn(
                   "w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white transition-all",
-                  isPending ? "opacity-50 cursor-not-allowed" : "hover:opacity-90"
+                  isPending || (passwordProtect && !linkPassword.trim()) ? "opacity-50 cursor-not-allowed" : "hover:opacity-90"
                 )}
                 style={{ backgroundColor: TEAL }}
               >
                 <LinkIcon size={15} />
                 {isPending
-                  ? "Creating..."
-                  : `Create ${linkRole} link · ${selectedExpiry.label}`
+                  ? "Creating…"
+                  : `Create ${linkRole} link · ${selectedExpiry.label}${passwordProtect && linkPassword.trim() ? " · 🔒" : ""}`
                 }
               </button>
 
@@ -456,6 +520,16 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
                             <span className="text-xs font-medium text-foreground capitalize">{link.role}</span>
+                            {link.is_password_protected && (
+                              <span
+                                className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                                style={{ backgroundColor: `${TEAL}18`, color: TEAL }}
+                                title="Password protected"
+                              >
+                                <LockSimple size={9} weight="bold" />
+                                Protected
+                              </span>
+                            )}
                             <span className="text-xs text-muted-foreground">·</span>
                             <span className={cn("text-xs", expired ? "text-red-400" : "text-muted-foreground")}>
                               {expired ? "Expired" : getExpiryLabel(link.expires_at)}
