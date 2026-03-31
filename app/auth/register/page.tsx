@@ -221,13 +221,19 @@ export default function RegisterPage() {
             </Button>
           </form>
         </CardContent>
-        <CardFooter className="flex justify-center border-t border-border/30 pt-6">
+        <CardFooter className="flex flex-col space-y-3 justify-center border-t border-border/30 pt-6 bg-muted/5">
           <p className="text-sm text-muted-foreground">
             Already have an account?{" "}
-            <Link href="/auth/login" className="text-primary font-medium hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 rounded-sm">
+            <Link href="/auth/login" className="text-primary font-bold hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 rounded-sm">
               Sign in
             </Link>
           </p>
+          <Link 
+            href="/auth/forgot-password" 
+            className="text-xs text-muted-foreground hover:text-primary transition-colors font-medium"
+          >
+            Forgot password?
+          </Link>
         </CardFooter>
       </Card>
     </div>
