@@ -12,6 +12,7 @@ import { User, EnvelopeSimple, LockKey, CircleNotch, Camera, Eye, EyeSlash } fro
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useUserQuery } from "@/hooks/queries/useUserQuery";
+import { SessionManager } from "./SessionManager";
 
 export default function SettingsPage() {
   const supabase = createClient();
@@ -352,6 +353,9 @@ export default function SettingsPage() {
               </CardFooter>
             </form>
           </Card>
+
+          {/* Session Management */}
+          <SessionManager />
         </div>
       </div>
     </div>
