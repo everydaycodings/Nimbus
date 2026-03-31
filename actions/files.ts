@@ -39,9 +39,6 @@ export async function getFiles(
   const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
-  const user = await getUserId(userId);
-  if (!user) throw new Error("User not found");
-
   const page = options?.page ?? 1;
   const query = options?.query;
 
@@ -49,7 +46,7 @@ export async function getFiles(
   const from = (page - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
 
-  // ── FOLDERS ─────────────────────────────────────
+  // ── FOLDERS QUERY ─────────────────────────────────
   let folderSelect = "id, name, created_at, updated_at, is_starred, parent_folder_id, tags:folder_tags(tag:tags(id, name, color))";
   if (options?.tagId) {
     folderSelect = "id, name, created_at, updated_at, is_starred, parent_folder_id, tags:folder_tags!inner(tag:tags(id, name, color))";
@@ -58,7 +55,7 @@ export async function getFiles(
   let folderQuery = supabase
     .from("folders")
     .select(folderSelect)
-    .eq("owner_id", user.id)
+    .eq("owner_id", userId)
     .eq("is_trashed", false);
 
   if (options?.tagId) {
@@ -73,15 +70,11 @@ export async function getFiles(
     folderQuery = folderQuery.ilike("name", `%${query}%`);
   }
 
-  // Sorting folders (only by name for now as they have no size/type)
-  const sortBy = options?.sortBy === "name" ? "name" : "created_at";
-  const sortOrder = options?.sortOrder === "desc" ? { ascending: false } : { ascending: true };
-  folderQuery = folderQuery.order(sortBy, sortOrder);
+  const folderSortBy = options?.sortBy === "name" ? "name" : "created_at";
+  const folderSortOrder = options?.sortOrder === "desc" ? { ascending: false } : { ascending: true };
+  folderQuery = folderQuery.order(folderSortBy, folderSortOrder);
 
-  const { data: folders, error: folderError } = await folderQuery;
-  if (folderError) throw new Error(folderError.message);
-
-  // ── FILES ───────────────────────────────────────
+  // ── FILES QUERY ───────────────────────────────────
   let fileSelect = "id, name, mime_type, size, created_at, updated_at, is_starred, parent_folder_id, s3_key, tags:file_tags(tag:tags(id, name, color))";
   if (options?.tagId) {
     fileSelect = "id, name, mime_type, size, created_at, updated_at, is_starred, parent_folder_id, s3_key, tags:file_tags!inner(tag:tags(id, name, color))";
@@ -90,7 +83,7 @@ export async function getFiles(
   let fileQuery = supabase
     .from("files")
     .select(fileSelect)
-    .eq("owner_id", user.id)
+    .eq("owner_id", userId)
     .eq("is_trashed", false)
     .eq("upload_status", "complete");
 
@@ -106,8 +99,6 @@ export async function getFiles(
   }
 
   if (options?.type && options.type !== "all") {
-    // We can't easily use FILE_TYPE_MAP here because it's in a different file
-    // and this is a server action. I'll pass the mime types directly or handle it here.
     if (options.type === "image") fileQuery = fileQuery.ilike("mime_type", "image/%");
     else if (options.type === "video") fileQuery = fileQuery.ilike("mime_type", "video/%");
     else if (options.type === "audio") fileQuery = fileQuery.ilike("mime_type", "audio/%");
@@ -128,13 +119,21 @@ export async function getFiles(
   const fileSortOrder = options?.sortOrder === "asc" ? { ascending: true } : { ascending: false };
   fileQuery = fileQuery.order(fileSortBy, fileSortOrder).range(from, to);
 
-  const { data: files, error: fileError } = await fileQuery;
-  if (fileError) throw new Error(fileError.message);
+  // ── EXECUTE IN PARALLEL ──────────────────────────
+  const [userResult, foldersResult, filesResult] = await Promise.all([
+    getUserId(userId),
+    folderQuery,
+    fileQuery,
+  ]);
+
+  if (!userResult) throw new Error("User not found");
+  if (foldersResult.error) throw new Error(foldersResult.error.message);
+  if (filesResult.error) throw new Error(filesResult.error.message);
 
   return {
-    folders: folders ?? [],
-    files: files ?? [],
-    user,
+    folders: foldersResult.data ?? [],
+    files: filesResult.data ?? [],
+    user: userResult,
   };
 }
 

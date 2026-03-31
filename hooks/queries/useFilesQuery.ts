@@ -18,10 +18,12 @@ interface FileQueryOptions {
 
 export function useFilesQuery(
   parentFolderId: string | null = null,
-  options?: FileQueryOptions
+  options?: FileQueryOptions,
+  initialData?: any
 ) {
   return useQuery({
     queryKey: queryKeys.files(parentFolderId, options),
     queryFn: () => getFiles(parentFolderId, options),
+    initialData,
   });
 }

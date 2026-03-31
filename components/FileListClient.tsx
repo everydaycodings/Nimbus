@@ -16,7 +16,7 @@ import { useFilesQuery } from "@/hooks/queries/useFilesQuery";
 
 const TEAL = "#2da07a";
 
-export function FileListClient() {
+export function FileListClient({ initialData }: { initialData?: any }) {
   const router = useRouter();
   const [currentFolder, setCurrentFolder] = useState<string | null>(null);
   const [breadcrumbs, setBreadcrumbs] = useState<{ id: string; name: string }[]>([]);
@@ -79,7 +79,7 @@ export function FileListClient() {
     maxSize,
   };
 
-  const { data, refetch: refresh } = useFilesQuery(activeFolderId, queryOptions);
+  const { data, refetch: refresh } = useFilesQuery(activeFolderId, queryOptions, initialData);
 
   const files = (data?.files ?? []) as any[];
   const folders = query ? [] : ((data?.folders ?? []) as any[]);
