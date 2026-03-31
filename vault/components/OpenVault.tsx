@@ -322,7 +322,7 @@ export function OpenVault({
     parentFolderId: currentFolderId,
     onSuccess: () => invalidateVaultCache(),
   });
-  const { download, preview, decrypting } = useVaultDownload(cryptoKey);
+  const { download, preview, decrypting, clearPreviewCache } = useVaultDownload(cryptoKey);
 
   const invalidateVaultCache = async () => {
     await getQueryClient().invalidateQueries({ queryKey: ["vaults"] });
@@ -407,22 +407,20 @@ export function OpenVault({
     try {
       const objectUrl = await preview(file.id, file.original_mime_type);
       if (objectUrl) {
-        setPreviewing((prev) => prev ? { ...prev, objectUrl } : null);
+        setPreviewing((prev) => (prev && prev.fileId === file.id ? { ...prev, objectUrl } : prev));
       } else {
-        setPreviewing(null);
+        setPreviewing((prev) => (prev && prev.fileId === file.id ? null : prev));
       }
     } catch {
       alert("Failed to decrypt file for preview.");
-      setPreviewing(null);
+      setPreviewing((prev) => (prev && prev.fileId === file.id ? null : prev));
     } finally {
-      setLoadingPreview(null);
+      setLoadingPreview((prev) => (prev === file.id ? null : prev));
     }
   };
 
   const closePreview = () => {
-    if (previewing?.objectUrl) {
-      URL.revokeObjectURL(previewing.objectUrl);
-    }
+    // We no longer revoke the objectUrl immediately so that the memory cache can reuse it
     setPreviewing(null);
     setLoadingPreview(null);
   };
@@ -444,6 +442,7 @@ export function OpenVault({
       }
 
       if (deleteDialog.type === "vault") {
+        clearPreviewCache();
         clearVaultSession(vault.id);
         await deleteVault(vault.id);
         onRefreshVaults();
@@ -478,7 +477,7 @@ export function OpenVault({
 
           {/* Lock */}
           <button
-            onClick={() => { clearVaultSession(vault.id); onLock(); }}
+            onClick={() => { clearPreviewCache(); clearVaultSession(vault.id); onLock(); }}
             className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium bg-secondary border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
           >
             <LockSimple size={15} />

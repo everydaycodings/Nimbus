@@ -5,6 +5,10 @@ import { useState } from "react";
 import { decryptFile, VAULT_MAX_PREVIEW_FILE_SIZE } from "@/vault/lib/crypto";
 import { getVaultDownloadUrl }              from "@/vault/actions/vault.actions";
 
+// Cache to store decrypted preview object URLs to prevent re-downloading/decrypting
+const vaultPreviewCache = new Map<string, { url: string; timestamp: number }>();
+const CACHE_TTL = 3600 * 1000; // 1 hour in milliseconds
+
 // ── Can this file be previewed? ───────────────────────────────
 // Rules:
 //   1. Files above VAULT_MAX_FILE_SIZE → download only (memory safety)
@@ -66,16 +70,34 @@ export function useVaultDownload(key: CryptoKey) {
     fileId:           string,
     originalMimeType: string
   ): Promise<string | null> => {
+    // Check cache
+    const cached = vaultPreviewCache.get(fileId);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      return cached.url;
+    }
+
     try {
       const signedUrl     = await getVaultDownloadUrl(fileId);
       const res           = await fetch(signedUrl);
       const encryptedBlob = await res.blob();
       const decryptedBlob = await decryptFile(encryptedBlob, key, originalMimeType);
-      return URL.createObjectURL(decryptedBlob);
+      
+      const url = URL.createObjectURL(decryptedBlob);
+      
+      // Store in cache
+      vaultPreviewCache.set(fileId, { url, timestamp: Date.now() });
+      
+      return url;
     } catch {
       return null;
     }
   };
 
-  return { download, preview, decrypting };
+  // Optional: Function to clear cache on vault lock
+  const clearPreviewCache = () => {
+    vaultPreviewCache.forEach((entry) => URL.revokeObjectURL(entry.url));
+    vaultPreviewCache.clear();
+  };
+
+  return { download, preview, decrypting, clearPreviewCache };
 }
