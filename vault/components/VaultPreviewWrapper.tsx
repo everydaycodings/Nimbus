@@ -84,7 +84,7 @@ export function VaultPreviewWrapper({
             </div>
 
             {/* Content */}
-            <div className="flex-1 flex items-center justify-center p-6">
+            <div className="flex-1 flex items-center justify-center p-6 overflow-hidden min-h-0">
 
                 {/* 🔥 LOADING STATE */}
                 {isLoading && (
