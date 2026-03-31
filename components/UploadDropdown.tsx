@@ -89,15 +89,16 @@ export function ActionsDropdown({
           <div className="h-px bg-border my-1" />
 
           {/* Upload Folder */}
-          <div className="px-3 py-2.5 hover:bg-accent transition-colors">
-            <UploadFolderButton
-              parentFolderId={null}
-              onSuccess={() => {
-                refresh();
-                setOpen(false);
-              }}
-            />
-          </div>
+          <UploadFolderButton
+            variant="ghost"
+            parentFolderId={null}
+            onSelect={() => setOpen(false)}
+            onSuccess={() => {
+              refresh();
+              setOpen(false);
+            }}
+            className="px-3 py-2.5 h-auto font-normal"
+          />
         </div>
       )}
     </div>
