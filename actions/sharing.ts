@@ -151,7 +151,7 @@ export async function getSharedUsers(
 
   const { data, error } = await supabase
     .from("permissions")
-    .select("user_id, role, users(id, email, full_name, avatar_url)")
+    .select("user_id, role, users(id, email, name, avatar_url)")
     .eq("resource_id", resourceId)
     .eq("resource_type", resourceType);
 

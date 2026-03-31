@@ -34,7 +34,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (user) {
-      setName(user.user_metadata?.name || user.user_metadata?.full_name || "");
+      setName(user.user_metadata?.name || "");
       setEmail(user.email || "");
     }
   }, [user]);
@@ -235,7 +235,7 @@ export default function SettingsPage() {
               <CardFooter className="bg-muted/5 border-t border-border/30 pt-4 pb-4 flex justify-end">
                 <Button 
                   type="submit" 
-                  disabled={isProfileLoading || name === (user?.user_metadata?.name || user?.user_metadata?.full_name)}
+                  disabled={isProfileLoading || name === (user?.user_metadata?.name || user?.user_metadata?.name)}
                   className="w-full md:w-auto h-11 px-8 rounded-xl font-medium active:scale-95 transition-transform shadow-md hover:shadow-lg hover:bg-primary/90"
                 >
                   {isProfileLoading ? (

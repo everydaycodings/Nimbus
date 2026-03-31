@@ -112,7 +112,7 @@ export default function ActivityPage() {
                         {formatTimeAgo(log.created_at)}
                       </span>
                       <span className="w-1.5 h-1.5 rounded-full bg-border/40" />
-                      <span className="text-[9px] uppercase tracking-[0.15em] text-primary/60 font-black">
+                      <span className="text-[9px] uppercase tracking-[0.15em] text-primary font-black">
                         {log.resource_type}
                       </span>
                     </div>

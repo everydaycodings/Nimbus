@@ -45,7 +45,7 @@ interface SharedUser {
   users: {
     id:         string;
     email:      string;
-    full_name:  string | null;
+    name:  string | null;
     avatar_url: string | null;
   };
 }
@@ -100,7 +100,7 @@ function normalizeSharedUsers(raw: any[]): SharedUser[] {
         users: {
           id:         String(u.id),
           email:      String(u.email),
-          full_name:  u.full_name  ?? null,
+          name:  u.name  ?? null,
           avatar_url: u.avatar_url ?? null,
         },
       };
@@ -321,13 +321,13 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
                         className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0 text-white"
                         style={{ backgroundColor: TEAL }}
                       >
-                        {getInitials(su.users.full_name, su.users.email)}
+                        {getInitials(su.users.name, su.users.email)}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-foreground truncate">
-                          {su.users.full_name ?? su.users.email}
+                          {su.users.name ?? su.users.email}
                         </p>
-                        {su.users.full_name && (
+                        {su.users.name && (
                           <p className="text-xs text-muted-foreground truncate">{su.users.email}</p>
                         )}
                       </div>

@@ -41,7 +41,7 @@ export function UserButton() {
       <DropdownMenuContent align="end" className="w-64 p-2 border-border/50 bg-background/80 backdrop-blur-xl shadow-2xl rounded-xl">
         <DropdownMenuLabel className="font-normal p-3">
           <div className="flex flex-col space-y-2">
-            <p className="text-sm font-semibold leading-none tracking-tight">{user.user_metadata?.full_name || 'User Account'}</p>
+            <p className="text-sm font-semibold leading-none tracking-tight">{user.user_metadata?.name || 'User Account'}</p>
             <p className="text-xs leading-none text-muted-foreground">{user.email}</p>
           </div>
         </DropdownMenuLabel>

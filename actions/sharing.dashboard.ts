@@ -61,12 +61,12 @@ export async function getMySharedItems() {
       : "id, name, owner_id, tags:folder_tags(tag:tags(id, name, color))";
     const { data: resource } = await supabase.from(table).select(select).eq("id", perm.resource_id).single();
     if (!resource || (resource as any).owner_id !== user.id) continue;
-    const { data: sharedUser } = await supabase.from("users").select("email, full_name").eq("id", perm.user_id).single();
+    const { data: sharedUser } = await supabase.from("users").select("email, name").eq("id", perm.user_id).single();
     people.push({
       permission_id: perm.id, resource_id: perm.resource_id,
       resource_type: perm.resource_type, resource_name: (resource as any).name ?? "Deleted item",
       mime_type: (resource as any).mime_type ?? null, role: perm.role,
-      user_email: sharedUser?.email ?? "Unknown", user_name: sharedUser?.full_name ?? null,
+      user_email: sharedUser?.email ?? "Unknown", user_name: sharedUser?.name ?? null,
       shared_at: perm.created_at, tags: (resource as any).tags ?? [],
     });
   }
@@ -98,13 +98,13 @@ export async function getSharedWithMe() {
       : "id, name, owner_id, tags:folder_tags(tag:tags(id, name, color))";
     const { data: resource } = await supabase.from(table).select(select).eq("id", perm.resource_id).single();
     if (!resource || (resource as any).owner_id === user.id) continue;
-    const { data: owner } = await supabase.from("users").select("email, full_name").eq("id", (resource as any).owner_id).single();
+    const { data: owner } = await supabase.from("users").select("email, name").eq("id", (resource as any).owner_id).single();
     items.push({
       permission_id: perm.id, resource_id: perm.resource_id,
       resource_type: perm.resource_type, role: perm.role, shared_at: perm.created_at,
       name: (resource as any).name, mime_type: (resource as any).mime_type ?? null,
       size: (resource as any).size ?? null, s3_key: (resource as any).s3_key ?? null,
-      owner_email: owner?.email ?? "Unknown", owner_name: owner?.full_name ?? null,
+      owner_email: owner?.email ?? "Unknown", owner_name: owner?.name ?? null,
       tags: (resource as any).tags ?? [],
     });
   }

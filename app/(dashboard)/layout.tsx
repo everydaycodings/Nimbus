@@ -36,7 +36,7 @@ export default async function DashboardLayout({
     await supabase.from("users").insert({
       id: userId,
       email: authUserResponse.data.user?.email,
-      full_name: authUserResponse.data.user?.user_metadata?.full_name,
+      name: authUserResponse.data.user?.user_metadata?.name,
       avatar_url: authUserResponse.data.user?.user_metadata?.avatar_url,
     });
     user = await getUser(userId);
