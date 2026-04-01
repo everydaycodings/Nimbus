@@ -1,4 +1,10 @@
+import type { Metadata } from "next";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
+
+export const metadata: Metadata = {
+  title: "Dashboard",
+  description: "Manage your files in the cloud.",
+};
 import { redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import { ClientLayout } from "./ClientLayout";

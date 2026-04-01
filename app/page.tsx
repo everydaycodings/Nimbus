@@ -1,8 +1,21 @@
 import { LandingPageClient } from "./landing-page-client";
 
 export const metadata = {
-  title: "Nimbus - Open Source File Vault",
-  description: "A fast, privacy-focused, and open-source file manager and encrypted vault.",
+  title: "Open Source File Vault",
+  description: "A fast, privacy-focused, and open-source file manager and encrypted vault. Secure your files with end-to-end privacy and effortless organization.",
+  openGraph: {
+    title: "Nimbus - Open Source File Vault",
+    description: "A fast, privacy-focused, and open-source file manager and encrypted vault.",
+    url: "https://nimbus.everydaycodings.com",
+    siteName: "Nimbus",
+    images: ["/logo.png"],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Nimbus - Open Source File Vault",
+    description: "A fast, privacy-focused, and open-source file manager and encrypted vault.",
+    images: ["/logo.png"],
+  },
 };
 
 async function getGithubStars(): Promise<number> {

@@ -15,6 +15,66 @@ import { ShareDownloadButton } from "@/components/ShareDownloadButton";
 import { PasswordGate } from "@/components/PasswordGate";
 import { cookies } from "next/headers";
 import { VideoPlayer, AudioPlayer, ImageViewer } from "@/components/FilePreviewDialog";
+import { Metadata } from "next";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ token: string }>;
+}): Promise<Metadata> {
+  const { token } = await params;
+
+  const { data: link } = await supabase
+    .from("share_links")
+    .select("resource_id, resource_type")
+    .eq("token", token)
+    .maybeSingle();
+
+  if (!link) return { title: "Shared Resource | Nimbus" };
+
+  let title = "Shared Resource";
+  let description = "View this shared resource on Nimbus.";
+
+  if (link.resource_type === "file") {
+    const { data: file } = await supabase
+      .from("files")
+      .select("name, size")
+      .eq("id", link.resource_id)
+      .maybeSingle();
+
+    if (file) {
+      title = `Shared: ${file.name}`;
+      description = `View or download this file (${formatBytes(file.size)}) on Nimbus.`;
+    }
+  } else if (link.resource_type === "folder") {
+    const { data: folder } = await supabase
+      .from("folders")
+      .select("name")
+      .eq("id", link.resource_id)
+      .maybeSingle();
+
+    if (folder) {
+      title = `Folder: ${folder.name}`;
+      description = `View this shared folder on Nimbus.`;
+    }
+  }
+
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      images: ["/logo.png"],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: ["/logo.png"],
+    },
+  };
+}
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,

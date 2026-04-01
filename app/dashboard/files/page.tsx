@@ -1,6 +1,11 @@
-// app/(dashboard)/files/page.tsx
 import { getFiles } from "@/actions/files";
 import { FileListClient } from "@/components/FileListClient";
+import { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Files",
+  description: "View and manage your files on Nimbus.",
+};
 
 export default async function FilesPage(props: {
   searchParams: Promise<any>;
