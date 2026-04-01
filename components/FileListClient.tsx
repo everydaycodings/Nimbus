@@ -112,7 +112,7 @@ export function FileListClient({ initialData }: { initialData?: any }) {
     const pathIds = newPath.map((c) => c.id).join(",");
     const pathNames = newPath.map((c) => encodeURIComponent(c.name)).join(",");
 
-    router.push(`/files?path=${pathIds}&names=${pathNames}`);
+    router.push(`/dashboard/files?path=${pathIds}&names=${pathNames}`);
   };
 
   const navigateToBreadcrumb = (index: number) => {
@@ -121,11 +121,11 @@ export function FileListClient({ initialData }: { initialData?: any }) {
     const pathIds = newCrumbs.map((c) => c.id).join(",");
     const pathNames = newCrumbs.map((c) => encodeURIComponent(c.name)).join(",");
 
-    router.push(`/files?path=${pathIds}&names=${pathNames}`);
+    router.push(`/dashboard/files?path=${pathIds}&names=${pathNames}`);
   };
 
   const navigateToRoot = () => {
-    router.push("/files");
+    router.push("/dashboard/files");
   };
 
   return (

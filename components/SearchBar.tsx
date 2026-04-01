@@ -170,7 +170,7 @@ export function SearchBar() {
 
     if (result.type === "folder") {
       // Navigate to files page and open this folder
-      router.push(`/files?folder=${result.id}&name=${encodeURIComponent(result.name)}`);
+      router.push(`/dashboard/files?folder=${result.id}&name=${encodeURIComponent(result.name)}`);
     } else {
       // Open file preview dialog directly from search
       setPreviewFile({ id: result.id, name: result.name, mimeType: result.mime_type ?? "" });

@@ -55,7 +55,7 @@ export default function LoginPage() {
       }
 
       toast.success("Successfully logged in!");
-      router.push("/");
+      router.push("/dashboard");
       router.refresh();
     } catch (error: any) {
       toast.error(error.message || "An error occurred during login");
@@ -83,7 +83,7 @@ export default function LoginPage() {
       if (verifyError) throw verifyError;
 
       toast.success("MFA verified! Logging in...");
-      router.push("/");
+      router.push("/dashboard");
       router.refresh();
     } catch (error: any) {
       toast.error(error.message || "Invalid verification code");

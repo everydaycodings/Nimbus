@@ -10,7 +10,7 @@ export function useStorageStatsQuery() {
 
   useEffect(() => {
     // Listen for any change on the files table to keep storage stats in sync
-    const channelId = `storage_stats_realtime_${Date.now()}`;
+    const channelId = `storage_stats_realtime_${Math.random().toString(36).substring(7)}`;
     const channel = supabase
       .channel(channelId)
       .on(

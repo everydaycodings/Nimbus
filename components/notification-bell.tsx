@@ -167,7 +167,7 @@ export function NotificationBell() {
         <DropdownMenuSeparator className="m-0 opacity-20" />
         <div className="p-3 bg-foreground/[0.01]">
           <Link 
-            href="/activity"
+            href="/dashboard/activity"
             className="flex items-center justify-center gap-2 text-[11px] font-bold text-muted-foreground hover:text-primary transition-all py-2.5 px-4 hover:bg-primary/5 rounded-xl w-full group/link"
           >
             <span>View All Activity</span>

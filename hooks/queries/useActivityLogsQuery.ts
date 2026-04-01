@@ -11,7 +11,7 @@ export function useActivityLogsQuery(limit = 20) {
   const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
-    const channelId = `activity_log_changes_${Date.now()}`;
+    const channelId = `activity_log_changes_${Math.random().toString(36).substring(7)}`;
     const channel = supabase
       .channel(channelId)
       .on(

@@ -31,14 +31,14 @@ import { useMobileSidebar } from "@/hooks/useSidebarMobile";
 
 
 const navItems = [
-  { name: "Home", icon: House, href: "/" },
-  { name: "My Files", icon: FolderSimple, href: "/files" },
-  { name: "Private Vault", icon: VaultIcon, href: "/vault" },
-  { name: "Recent", icon: Clock, href: "/recent" },
-  { name: "Starred", icon: Star, href: "/starred" },
-  { name: "Sharing", icon: ShareNetworkIcon, href: "/sharing" },
-  { name: "Activity", icon: Clock, href: "/activity" },
-  { name: "Trash", icon: Trash, href: "/trash" },
+  { name: "Home", icon: House, href: "/dashboard" },
+  { name: "My Files", icon: FolderSimple, href: "/dashboard/files" },
+  { name: "Private Vault", icon: VaultIcon, href: "/dashboard/vault" },
+  { name: "Recent", icon: Clock, href: "/dashboard/recent" },
+  { name: "Starred", icon: Star, href: "/dashboard/starred" },
+  { name: "Sharing", icon: ShareNetworkIcon, href: "/dashboard/sharing" },
+  { name: "Activity", icon: Clock, href: "/dashboard/activity" },
+  { name: "Trash", icon: Trash, href: "/dashboard/trash" },
 ];
 
 const TEAL = "#2da07a";
@@ -71,7 +71,7 @@ export function Sidebar({ storageLimit }: SidebarProps) {
       )}
     >
       {/* ── Logo ── */}
-      <Link href="/" className="block">
+      <Link href="/dashboard" className="block">
         <div
           className={cn(
             "flex items-center gap-2.5 px-4 pt-5 pb-4 cursor-pointer",
@@ -110,7 +110,7 @@ export function Sidebar({ storageLimit }: SidebarProps) {
               <button
                 key={item.name}
                 onClick={() => {
-                  router.push("/files"); // 🔥 HERE
+                  router.push("/dashboard/files"); // 🔥 HERE
                 }}
                 className={cn(
                   "group flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-all duration-150 w-full text-left cursor-pointer",
@@ -220,7 +220,7 @@ export function MobileSidebar({ storageLimit }: SidebarProps) {
         <SheetTitle className="sr-only">Navigation</SheetTitle>
 
         {/* Logo */}
-        <Link href="/" className="block" onClick={close}>
+        <Link href="/dashboard" className="block" onClick={close}>
           <div className="flex items-center gap-2.5 px-4 pt-5 pb-4 cursor-pointer">
             <div
               className="flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center"
@@ -244,7 +244,7 @@ export function MobileSidebar({ storageLimit }: SidebarProps) {
                 <button
                   key={item.name}
                   onClick={() => {
-                    router.push("/files");
+                    router.push("/dashboard/files");
                     close();
                   }}
                   className={cn(

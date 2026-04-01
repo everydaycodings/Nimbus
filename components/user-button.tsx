@@ -47,7 +47,7 @@ export function UserButton() {
         </DropdownMenuLabel>
         <DropdownMenuSeparator className="bg-border/40" />
         <div className="p-1">
-          <DropdownMenuItem onClick={() => router.push('/settings')} className="cursor-pointer p-3 rounded-md transition-colors hover:bg-primary/10 focus:bg-primary/10 group">
+          <DropdownMenuItem onClick={() => router.push('/dashboard/settings')} className="cursor-pointer p-3 rounded-md transition-colors hover:bg-primary/10 focus:bg-primary/10 group">
             <Gear className="mr-3 h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" weight="duotone" />
             <span className="font-medium group-hover:text-primary transition-colors">Settings</span>
           </DropdownMenuItem>

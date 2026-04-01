@@ -164,7 +164,7 @@ export default function HomePage() {
           files={files}
           folders={folders}
           onFolderOpen={(id) => {
-            router.push(`/files?folder=${id}`);
+            router.push(`/dashboard/files?folder=${id}`);
           }}
           onRefresh={refresh}
         />
