@@ -13,7 +13,9 @@ import {
   ShareNetwork,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
-import { toggleStar, trashItem, restoreItem, renameItem } from "@/actions/files";
+import { toggleStar, trashItem, restoreItem, renameItem, getFiles } from "@/actions/files";
+import { queryKeys } from "@/lib/query-keys";
+import { useQueryClient } from "@tanstack/react-query";
 import { MoveDialog } from "@/components/MoveDialog";
 import { RenameDialog } from "@/components/rename";
 import { MoveToTrash } from "@/components/MoveToTrash";
@@ -175,8 +177,19 @@ function ListRow({
     handleStar, handleTrash, handleRestore, handleMainClick, handleDownload
   } = useItemActions({ id, name, type, isStarred, onRefresh });
 
+  const queryClient = useQueryClient();
   const [showTagPicker, setShowTagPicker] = useState(false);
   const tags = meta?.tags?.map(t => t.tag) ?? [];
+
+  const prefetchFolder = () => {
+    if (type === "folder" && !showRestore) {
+      queryClient.prefetchQuery({
+        queryKey: queryKeys.files(id),
+        queryFn: () => getFiles(id),
+        staleTime: 1000 * 30, // 30 seconds
+      });
+    }
+  };
 
   return (
     <>
@@ -184,7 +197,11 @@ function ListRow({
         "group flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 hover:bg-accent",
         isPending && "opacity-50 pointer-events-none"
       )}>
-        <div className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer" onClick={() => handleMainClick(onFolderOpen)}>
+        <div 
+          className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer" 
+          onClick={() => handleMainClick(onFolderOpen)}
+          onMouseEnter={prefetchFolder}
+        >
           <div className="flex-shrink-0 w-8 h-8 flex items-center justify-center">
             {type === "folder"
               ? <FolderSimple size={22} weight="fill" style={{ color: TEAL }} />
@@ -305,8 +322,19 @@ function GridCard({
     handleStar, handleTrash, handleRestore, handleMainClick, handleDownload
   } = useItemActions({ id, name, type, isStarred, onRefresh });
 
+  const queryClient = useQueryClient();
   const [showTagPicker, setShowTagPicker] = useState(false);
   const tags = meta?.tags?.map(t => t.tag) ?? [];
+
+  const prefetchFolder = () => {
+    if (type === "folder" && !showRestore) {
+      queryClient.prefetchQuery({
+        queryKey: queryKeys.files(id),
+        queryFn: () => getFiles(id),
+        staleTime: 1000 * 30,
+      });
+    }
+  };
 
   return (
     <>
@@ -320,6 +348,7 @@ function GridCard({
           className="flex items-center justify-center cursor-pointer select-none rounded-t-2xl overflow-hidden"
           style={{ height: 120, background: type === "folder" ? `${TEAL}0d` : "var(--secondary)" }}
           onClick={() => handleMainClick(onFolderOpen)}
+          onMouseEnter={prefetchFolder}
         >
           {type === "folder"
             ? <FolderSimple size={52} weight="fill" style={{ color: TEAL }} />

@@ -335,3 +335,21 @@ export async function getRecentFiles(options?: { tagId?: string }) {
   if (error) throw new Error(error.message);
   return data ?? [];
 }
+// ── Fetch aggregate storage statistics (RPC) ──────────────────
+export async function getStorageStats() {
+  const supabaseServer = await createSupabaseClient();
+  const { data: { user } } = await supabaseServer.auth.getUser();
+  if (!user) throw new Error("Unauthorized");
+
+  const { data, error } = await supabase.rpc("get_storage_stats", {
+    p_owner_id: user.id,
+  });
+
+  if (error) throw new Error(error.message);
+  return data as {
+    image: number;
+    video: number;
+    document: number;
+    other: number;
+  };
+}

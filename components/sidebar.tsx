@@ -20,7 +20,8 @@ import {
 import { cn } from "@/lib/utils";
 import { UploadZone } from "@/components/UploadZone";
 import { StorageUsage } from "./StorageUsage";
-import { getFiles } from "@/actions/files";
+import { getStorageStats } from "@/actions/files";
+import { useStorageStatsQuery } from "@/hooks/queries/useStorageStatsQuery";
 import {
   Sheet,
   SheetContent,
@@ -49,28 +50,18 @@ function formatBytes(bytes: number) {
 }
 
 interface SidebarProps {
-  storageUsed: number;
   storageLimit: number;
 }
 
 
-export function Sidebar({ storageUsed, storageLimit }: SidebarProps) {
+export function Sidebar({ storageLimit }: SidebarProps) {
   const [open, setOpen] = useState(true);
   const pathname = usePathname();
-  const router = useRouter(); // ✅ NEW
+  const router = useRouter();
 
-  const [files, setFiles] = useState<any[]>([]);
+  const { data: stats, isLoading } = useStorageStatsQuery();
 
-  useEffect(() => {
-    getFiles(null).then((data) => setFiles(data.files));
-  }, []);
-
-  const {
-    imageBytes,
-    videoBytes,
-    docBytes,
-    otherBytes,
-  } = calculateStorageUsage(files);
+  const used = (stats?.image ?? 0) + (stats?.video ?? 0) + (stats?.document ?? 0) + (stats?.other ?? 0);
 
   return (
     <aside
@@ -168,13 +159,13 @@ export function Sidebar({ storageUsed, storageLimit }: SidebarProps) {
 
       <StorageUsage
         total={storageLimit}
-        used={storageUsed}
+        used={used}
         open={open}
         categories={[
-          { label: "Images", size: imageBytes, color: "#22c55e" },
-          { label: "Videos", size: videoBytes, color: "#3b82f6" },
-          { label: "Docs", size: docBytes, color: "#eab308" },
-          { label: "Other", size: otherBytes, color: "#ef4444" },
+          { label: "Images", size: stats?.image ?? 0, color: "#22c55e" },
+          { label: "Videos", size: stats?.video ?? 0, color: "#3b82f6" },
+          { label: "Docs", size: stats?.document ?? 0, color: "#eab308" },
+          { label: "Other", size: stats?.other ?? 0, color: "#ef4444" },
         ]}
       />
 
@@ -210,19 +201,13 @@ export function Sidebar({ storageUsed, storageLimit }: SidebarProps) {
 // ═══════════════════════════════════════════════════════════════
 // Mobile Sidebar — Sheet overlay for small screens
 // ═══════════════════════════════════════════════════════════════
-export function MobileSidebar({ storageUsed, storageLimit }: SidebarProps) {
+export function MobileSidebar({ storageLimit }: SidebarProps) {
   const { isOpen, close } = useMobileSidebar();
   const pathname = usePathname();
   const router = useRouter();
 
-  const [files, setFiles] = useState<any[]>([]);
-
-  useEffect(() => {
-    getFiles(null).then((data) => setFiles(data.files));
-  }, []);
-
-  const { imageBytes, videoBytes, docBytes, otherBytes } =
-    calculateStorageUsage(files);
+  const { data: stats } = useStorageStatsQuery();
+  const used = (stats?.image ?? 0) + (stats?.video ?? 0) + (stats?.document ?? 0) + (stats?.other ?? 0);
 
   // Auto-close when navigating
   useEffect(() => {
@@ -307,13 +292,13 @@ export function MobileSidebar({ storageUsed, storageLimit }: SidebarProps) {
 
         <StorageUsage
           total={storageLimit}
-          used={storageUsed}
+          used={used}
           open={true}
           categories={[
-            { label: "Images", size: imageBytes, color: "#22c55e" },
-            { label: "Videos", size: videoBytes, color: "#3b82f6" },
-            { label: "Docs", size: docBytes, color: "#eab308" },
-            { label: "Other", size: otherBytes, color: "#ef4444" },
+            { label: "Images", size: stats?.image ?? 0, color: "#22c55e" },
+            { label: "Videos", size: stats?.video ?? 0, color: "#3b82f6" },
+            { label: "Docs", size: stats?.document ?? 0, color: "#eab308" },
+            { label: "Other", size: stats?.other ?? 0, color: "#ef4444" },
           ]}
         />
       </SheetContent>

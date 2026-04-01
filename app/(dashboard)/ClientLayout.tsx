@@ -24,14 +24,12 @@ export function ClientLayout({
         {/* Desktop sidebar — hidden on mobile */}
         <div className="hidden md:block">
           <Sidebar
-            storageUsed={user.storage_used}
             storageLimit={user.storage_limit}
           />
         </div>
 
         {/* Mobile sidebar — Sheet overlay, only on small screens */}
         <MobileSidebar
-          storageUsed={user.storage_used}
           storageLimit={user.storage_limit}
         />
 
