@@ -198,8 +198,9 @@ function ListRow({
         isPending && "opacity-50 pointer-events-none"
       )}>
         <div 
-          className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer" 
-          onClick={() => handleMainClick(onFolderOpen)}
+          className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer select-none" 
+          onClick={() => type === "file" && handleMainClick(onFolderOpen)}
+          onDoubleClick={() => type === "folder" && handleMainClick(onFolderOpen)}
           onMouseEnter={prefetchFolder}
         >
           <div className="flex-shrink-0 w-8 h-8 flex items-center justify-center">
@@ -347,7 +348,8 @@ function GridCard({
         <div
           className="flex items-center justify-center cursor-pointer select-none rounded-t-2xl overflow-hidden"
           style={{ height: 120, background: type === "folder" ? `${TEAL}0d` : "var(--secondary)" }}
-          onClick={() => handleMainClick(onFolderOpen)}
+          onClick={() => type === "file" && handleMainClick(onFolderOpen)}
+          onDoubleClick={() => type === "folder" && handleMainClick(onFolderOpen)}
           onMouseEnter={prefetchFolder}
         >
           {type === "folder"
@@ -358,7 +360,11 @@ function GridCard({
 
         {/* Footer */}
         <div className="flex items-start gap-2 px-3 py-2.5">
-          <div className="flex-1 min-w-0 cursor-pointer" onClick={() => handleMainClick(onFolderOpen)}>
+          <div 
+            className="flex-1 min-w-0 cursor-pointer select-none" 
+            onClick={() => type === "file" && handleMainClick(onFolderOpen)}
+            onDoubleClick={() => type === "folder" && handleMainClick(onFolderOpen)}
+          >
             <p className="text-xs font-medium text-foreground truncate mb-0.5">{name}</p>
             {meta && (
               <p className="text-[10px] text-muted-foreground mb-1">

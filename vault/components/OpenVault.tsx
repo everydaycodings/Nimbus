@@ -614,15 +614,14 @@ export function OpenVault({
                   {filteredFolders.map((folder) => (
                     <div
                       key={folder.id}
-                      className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-accent transition-colors cursor-pointer"
-                      onClick={() => openFolder(folder)}
+                      className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-accent transition-colors cursor-pointer select-none"
+                      onDoubleClick={() => openFolder(folder)}
                       onMouseEnter={() => prefetchFolder(folder.id)}
                     >
                       <FolderSimple size={18} weight="fill" style={{ color: TEAL }} />
 
                       <div
                         className="flex-1 min-w-0"
-                        onClick={() => openFolder(folder)}
                       >
                         <p className="text-sm font-medium text-foreground truncate">
                           {folder.name}
@@ -681,7 +680,7 @@ export function OpenVault({
                     return (
                       <div
                         key={file.id}
-                        className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-accent transition-colors cursor-pointer"
+                        className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-accent transition-colors cursor-pointer select-none"
                         onClick={() => { if (isPreviewable) handlePreview(file); }}
                       >
                         <div className="relative flex-shrink-0">
@@ -757,9 +756,9 @@ export function OpenVault({
                     {filteredFolders.map((folder) => (
                       <div
                         key={folder.id}
-                        onClick={() => openFolder(folder)}
+                        onDoubleClick={() => openFolder(folder)}
                         onMouseEnter={() => prefetchFolder(folder.id)}
-                        className="group cursor-pointer rounded-2xl border border-border bg-card hover:shadow-md hover:border-[#2da07a]/30 transition-all"
+                        className="group cursor-pointer rounded-2xl border border-border bg-card hover:shadow-md hover:border-[#2da07a]/30 transition-all select-none"
                       >
                         <div
                           className="flex items-center justify-center rounded-t-2xl"
@@ -769,7 +768,7 @@ export function OpenVault({
                         </div>
 
                         <div className="px-3 py-2.5 flex items-start gap-2">
-                          <div className="flex-1 min-w-0 cursor-pointer" onClick={() => openFolder(folder)}>
+                          <div className="flex-1 min-w-0 cursor-pointer">
                             <p className="text-xs font-medium text-foreground truncate mb-0.5">
                               {folder.name}
                             </p>
@@ -832,7 +831,7 @@ export function OpenVault({
                       return (
                         <div
                           key={file.id}
-                          className="group rounded-2xl border border-border bg-card hover:shadow-md hover:border-[#2da07a]/30 transition-all cursor-pointer relative"
+                          className="group rounded-2xl border border-border bg-card hover:shadow-md hover:border-[#2da07a]/30 transition-all cursor-pointer relative select-none"
                           onClick={() => { if (isPreviewable) handlePreview(file); }}
                         >
                           <div
