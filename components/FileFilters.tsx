@@ -210,7 +210,7 @@ export function FileFilters({ className = "mb-6" }: { className?: string }) {
       </DropdownMenu>
 
       {/* Tags Filter */}
-      {!pathname.startsWith("/vault") && (
+      {!pathname.startsWith("/dashboard/vault") && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className={cn(
