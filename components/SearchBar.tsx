@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
   MagnifyingGlass,
@@ -377,14 +378,15 @@ export function SearchBar() {
         )}
       </div>
 
-      {/* ── File preview dialog — opens when a file result is clicked ── */}
-      {previewFile && (
+      {/* ── File preview dialog — rendered via portal to escape navbar stacking context ── */}
+      {previewFile && createPortal(
         <FilePreviewDialog
           fileId={previewFile.id}
           fileName={previewFile.name}
           mimeType={previewFile.mimeType}
           onClose={() => setPreviewFile(null)}
-        />
+        />,
+        document.body
       )}
     </>
   );
