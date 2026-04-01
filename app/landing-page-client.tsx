@@ -30,15 +30,15 @@ export function LandingPageClient({ initialStars }: LandingPageClientProps) {
       {/* ── Navigation ── */}
       <nav className="fixed top-0 inset-x-0 h-16 border-b border-border/30 bg-background/70 backdrop-blur-xl z-50">
         <div className="max-w-6xl mx-auto px-4 md:px-6 h-full flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <Link href="/" className="flex items-center gap-2 cursor-pointer group">
             <div 
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-sm" 
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-sm transition-transform group-hover:scale-105" 
               style={{ backgroundColor: TEAL }}
             >
               <CloudArrowUp size={20} weight="bold" />
             </div>
-            <span className="font-bold text-xl tracking-tight">nimbus</span>
-          </div>
+            <span className="font-bold text-xl tracking-tight transition-colors group-hover:text-[#2da07a]">nimbus</span>
+          </Link>
           <div className="flex items-center gap-3 md:gap-4">
             <a 
               href="https://github.com/everydaycodings/Nimbus" 
@@ -46,13 +46,13 @@ export function LandingPageClient({ initialStars }: LandingPageClientProps) {
               rel="noreferrer"
               className="hidden sm:flex text-muted-foreground hover:text-foreground transition-colors"
             >
-              <Button variant="ghost" className="gap-2">
+              <Button variant="ghost" className="gap-2 cursor-pointer">
                 <GithubLogo size={20} />
                 <span className="sr-only sm:not-sr-only">GitHub</span>
               </Button>
             </a>
             <Link href="/dashboard">
-              <Button style={{ backgroundColor: TEAL, color: "white" }} className="hover:opacity-90 shadow-sm font-medium">
+              <Button style={{ backgroundColor: TEAL, color: "white" }} className="hover:opacity-90 shadow-sm font-medium cursor-pointer">
                 Go to Dashboard
               </Button>
             </Link>
@@ -94,13 +94,13 @@ export function LandingPageClient({ initialStars }: LandingPageClientProps) {
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 w-full sm:w-auto">
               <Link href="/dashboard" className="w-full sm:w-auto">
-                <Button size="lg" className="h-12 px-8 text-base w-full sm:w-auto gap-2 group shadow-md" style={{ backgroundColor: TEAL, color: "white" }}>
+                <Button size="lg" className="h-12 px-8 text-base w-full sm:w-auto gap-2 group shadow-md cursor-pointer" style={{ backgroundColor: TEAL, color: "white" }}>
                   Get Started 
                   <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
                 </Button>
               </Link>
               <a href="https://github.com/everydaycodings/Nimbus" target="_blank" rel="noreferrer" className="w-full sm:w-auto">
-                <Button size="lg" variant="outline" className="h-12 px-8 text-base w-full sm:w-auto gap-2 border-border/50 hover:bg-secondary/50">
+                <Button size="lg" variant="outline" className="h-12 px-8 text-base w-full sm:w-auto gap-2 border-border/50 hover:bg-secondary/50 cursor-pointer">
                   <GithubLogo size={20} />
                   View the Code
                 </Button>
@@ -380,12 +380,12 @@ export function LandingPageClient({ initialStars }: LandingPageClientProps) {
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 w-full sm:w-auto">
               <Link href="/dashboard" className="w-full sm:w-auto">
-                <Button size="lg" className="h-12 px-8 text-base w-full sm:w-auto gap-2 shadow-md hover:shadow-lg transition-all" style={{ backgroundColor: TEAL, color: "white" }}>
+                <Button size="lg" className="h-12 px-8 text-base w-full sm:w-auto gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer" style={{ backgroundColor: TEAL, color: "white" }}>
                   Open Dashboard
                 </Button>
               </Link>
               <a href="https://github.com/everydaycodings/Nimbus" target="_blank" rel="noreferrer" className="w-full sm:w-auto">
-                <Button size="lg" variant="outline" className="h-12 px-8 text-base w-full sm:w-auto gap-2 border-border/50 hover:bg-secondary/50">
+                <Button size="lg" variant="outline" className="h-12 px-8 text-base w-full sm:w-auto gap-2 border-border/50 hover:bg-secondary/50 cursor-pointer">
                   <GithubLogo size={20} />
                   Star on GitHub
                 </Button>
