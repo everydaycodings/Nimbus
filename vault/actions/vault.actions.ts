@@ -59,19 +59,14 @@ export async function getVaults(): Promise<Vault[]> {
   const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
-  const [userResult, vaultsResult] = await Promise.all([
-    getUser(userId),
-    supabase
-      .from("vaults")
-      .select("id, name, salt, verification_token, created_at, updated_at")
-      .eq("owner_id", userId)
-      .order("created_at", { ascending: false }),
-  ]);
+  const { data, error } = await supabase
+    .from("vaults")
+    .select("id, name, salt, verification_token, created_at, updated_at")
+    .eq("owner_id", userId)
+    .order("created_at", { ascending: false });
 
-  if (!userResult) throw new Error("User not found");
-  if (vaultsResult.error) throw new Error(vaultsResult.error.message);
-
-  return vaultsResult.data ?? [];
+  if (error) throw new Error(error.message);
+  return data ?? [];
 }
 
 // ── Delete vault (and all its files) ─────────────────────────
@@ -95,6 +90,7 @@ export async function deleteVault(vaultId: string) {
 }
 
 // ── List vault files ──────────────────────────────────────────
+// ── List vault files ──────────────────────────────────────────
 export async function getVaultFiles(vaultId: string) {
   const supabaseServer = await createSupabaseClient();
   const authUserResponse = await supabaseServer.auth.getUser();
@@ -102,27 +98,19 @@ export async function getVaultFiles(vaultId: string) {
   const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
-  const user = await getUser(userId);
-  if (!user) throw new Error("User not found");
-
-  // Verify ownership
-  const { data: vault } = await supabase
-    .from("vaults")
-    .select("id")
-    .eq("id", vaultId)
-    .eq("owner_id", user.id)
-    .single();
-
-  if (!vault) throw new Error("Vault not found");
-
+  // Single-hit verification and fetch: fetch vault items only if the user owns the vault
   const { data, error } = await supabase
     .from("vault_files")
-    .select("id, name, original_mime_type, size, s3_key, created_at, updated_at")
+    .select(`
+      id, name, original_mime_type, size, s3_key, created_at, updated_at,
+      vaults!inner(owner_id)
+    `)
     .eq("vault_id", vaultId)
+    .eq("vaults.owner_id", userId)
     .order("created_at", { ascending: false });
 
   if (error) throw new Error(error.message);
-  return data ?? [];
+  return (data ?? []).map(({ vaults, ...rest }) => rest);
 }
 
 // ── Save vault file metadata after upload ─────────────────────

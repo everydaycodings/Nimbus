@@ -38,6 +38,8 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/query-keys";
 import VaultUploadDropdown from "./VaultUploadDropdown";
 import DeleteConfirmDialog from "./DeleteConfirmDialog";
 import { formatBytes, formatDate } from "@/lib/format";
@@ -308,7 +310,22 @@ export function OpenVault({
 
   const { layout, handleLayoutChange } = useLayout("nimbus-layout");
 
+  const queryClient = useQueryClient();
   const { data, isLoading: loading, refetch: refresh } = useVaultItemsQuery(vault.id, currentFolderId);
+
+  const prefetchFolder = (folderId: string) => {
+    queryClient.prefetchQuery({
+      queryKey: queryKeys.vaultItems(vault.id, folderId),
+      queryFn: async () => {
+        const [folders, files] = await Promise.all([
+          getVaultFolders(vault.id, folderId),
+          getVaultFilesInFolder(vault.id, folderId),
+        ]);
+        return { folders, files };
+      },
+      staleTime: 1000 * 30,
+    });
+  };
   const folders = data?.folders ?? [];
   const files = data?.files ?? [];
 
@@ -599,6 +616,7 @@ export function OpenVault({
                       key={folder.id}
                       className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-accent transition-colors cursor-pointer"
                       onClick={() => openFolder(folder)}
+                      onMouseEnter={() => prefetchFolder(folder.id)}
                     >
                       <FolderSimple size={18} weight="fill" style={{ color: TEAL }} />
 
@@ -740,6 +758,7 @@ export function OpenVault({
                       <div
                         key={folder.id}
                         onClick={() => openFolder(folder)}
+                        onMouseEnter={() => prefetchFolder(folder.id)}
                         className="group cursor-pointer rounded-2xl border border-border bg-card hover:shadow-md hover:border-[#2da07a]/30 transition-all"
                       >
                         <div

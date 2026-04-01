@@ -82,15 +82,14 @@ export async function getVaultFolders(
   const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
-  const user = await getUser(userId);
-  if (!user) throw new Error("User not found");
-
-  await assertVaultOwner(vaultId, user.id);
-
   const query = supabase
     .from("vault_folders")
-    .select("id, name, created_at, updated_at, parent_folder_id")
+    .select(`
+      id, name, created_at, updated_at, parent_folder_id,
+      vaults!inner(owner_id)
+    `)
     .eq("vault_id", vaultId)
+    .eq("vaults.owner_id", userId)
     .order("name");
 
   const { data, error } = await (
@@ -100,7 +99,7 @@ export async function getVaultFolders(
   );
 
   if (error) throw new Error(error.message);
-  return data ?? [];
+  return (data ?? []).map(({ vaults, ...rest }) => rest);
 }
 
 // ── List files in a folder (null = root) ─────────────────────
@@ -114,15 +113,14 @@ export async function getVaultFilesInFolder(
   const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
-  const user = await getUser(userId);
-  if (!user) throw new Error("User not found");
-
-  await assertVaultOwner(vaultId, user.id);
-
   const query = supabase
     .from("vault_files")
-    .select("id, name, original_mime_type, size, created_at, updated_at, parent_folder_id")
+    .select(`
+      id, name, original_mime_type, size, created_at, updated_at, parent_folder_id,
+      vaults!inner(owner_id)
+    `)
     .eq("vault_id", vaultId)
+    .eq("vaults.owner_id", userId)
     .order("created_at", { ascending: false });
 
   const { data, error } = await (
@@ -132,7 +130,7 @@ export async function getVaultFilesInFolder(
   );
 
   if (error) throw new Error(error.message);
-  return data ?? [];
+  return (data ?? []).map(({ vaults, ...rest }) => rest);
 }
 
 // ── Delete a folder (cascades to children via DB) ─────────────

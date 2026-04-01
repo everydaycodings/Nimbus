@@ -9,12 +9,16 @@ import { UnlockVaultDialog } from "@/vault/components/UnlockVaultDialog";
 import { OpenVault } from "@/vault/components/OpenVault";
 import { deriveKey, base64ToBuffer, verifyPassword } from "@/vault/lib/crypto";
 import { loadVaultSession, clearVaultSession } from "@/vault/lib/session";
+import { useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/query-keys";
+import { getVaultFolders, getVaultFilesInFolder } from "@/vault/actions/vault.folders.actions";
 
 const TEAL = "#2da07a";
 
 import { Vault } from "@/vault/types/vault";
 
 export function VaultPage({ initialData }: { initialData?: Vault[] }) {
+  const queryClient = useQueryClient();
   const { data: vaults = [], isLoading: loading, refetch: loadVaults } = useVaultsQuery(initialData);
   const [showCreate, setShowCreate] = useState(false);
   const [unlockTarget, setUnlockTarget] = useState<Vault | null>(null);
@@ -121,6 +125,19 @@ export function VaultPage({ initialData }: { initialData?: Vault[] }) {
             <button
               key={vault.id}
               onClick={() => tryAutoUnlock(vault)}
+              onMouseEnter={() => {
+                queryClient.prefetchQuery({
+                  queryKey: queryKeys.vaultItems(vault.id, null),
+                  queryFn: async () => {
+                    const [folders, files] = await Promise.all([
+                      getVaultFolders(vault.id, null),
+                      getVaultFilesInFolder(vault.id, null),
+                    ]);
+                    return { folders, files };
+                  },
+                  staleTime: 1000 * 30, // 30 seconds
+                });
+              }}
               className="group flex flex-col p-4 rounded-2xl border border-border bg-card hover:border-[#2da07a]/30 hover:bg-[#2da07a]/5 transition-all cursor-pointer text-left"
             >
               <div className="flex items-center justify-between mb-3">
