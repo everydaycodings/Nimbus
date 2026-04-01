@@ -34,8 +34,7 @@ export async function getFiles(
   }
 ) {
   const supabaseServer = await createSupabaseClient();
-  const authUserResponse = await supabaseServer.auth.getUser();
-  const authUser = authUserResponse.data.user;
+  const { data: { user: authUser } } = await supabaseServer.auth.getUser();
   const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
@@ -67,7 +66,10 @@ export async function getFiles(
     : folderQuery.is("parent_folder_id", null);
 
   if (query) {
-    folderQuery = folderQuery.ilike("name", `%${query}%`);
+    // Use textSearch for GIN index optimization
+    // Appending :* allows prefix matching (e.g., "port" finds "portable")
+    const searchTerms = query.trim().split(/\s+/).map(t => `${t}:*`).join(" & ");
+    folderQuery = folderQuery.textSearch("name", searchTerms, { config: "english" });
   }
 
   const folderSortBy = options?.sortBy === "name" ? "name" : "created_at";
@@ -95,7 +97,8 @@ export async function getFiles(
     : fileQuery.is("parent_folder_id", null);
 
   if (query) {
-    fileQuery = fileQuery.ilike("name", `%${query}%`);
+    const searchTerms = query.trim().split(/\s+/).map(t => `${t}:*`).join(" & ");
+    fileQuery = fileQuery.textSearch("name", searchTerms, { config: "english" });
   }
 
   if (options?.type && options.type !== "all") {
@@ -119,14 +122,13 @@ export async function getFiles(
   const fileSortOrder = options?.sortOrder === "asc" ? { ascending: true } : { ascending: false };
   fileQuery = fileQuery.order(fileSortBy, fileSortOrder).range(from, to);
 
-  // ── EXECUTE IN PARALLEL ──────────────────────────
+  // ── EXECUTE IN PARALLEL (Metadata + Data) ──────────
   const [userResult, foldersResult, filesResult] = await Promise.all([
     getUserId(userId),
     folderQuery,
     fileQuery,
   ]);
 
-  if (!userResult) throw new Error("User not found");
   if (foldersResult.error) throw new Error(foldersResult.error.message);
   if (filesResult.error) throw new Error(filesResult.error.message);
 
@@ -140,13 +142,9 @@ export async function getFiles(
 // ── Fetch starred files + folders ────────────────────────────
 export async function getStarredItems(options?: { tagId?: string }) {
   const supabaseServer = await createSupabaseClient();
-  const authUserResponse = await supabaseServer.auth.getUser();
-  const authUser = authUserResponse.data.user;
+  const { data: { user: authUser } } = await supabaseServer.auth.getUser();
   const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
-
-  const user = await getUserId(userId);
-  if (!user) throw new Error("User not found");
 
   const folderSelect = options?.tagId 
     ? "id, name, created_at, updated_at, is_starred, tags:folder_tags!inner(tag:tags(id, name, color))"
@@ -159,7 +157,7 @@ export async function getStarredItems(options?: { tagId?: string }) {
   let folderQuery = supabase
     .from("folders")
     .select(folderSelect)
-    .eq("owner_id", user.id)
+    .eq("owner_id", userId)
     .eq("is_starred", true)
     .eq("is_trashed", false);
   
@@ -170,7 +168,7 @@ export async function getStarredItems(options?: { tagId?: string }) {
   let fileQuery = supabase
     .from("files")
     .select(fileSelect)
-    .eq("owner_id", user.id)
+    .eq("owner_id", userId)
     .eq("is_starred", true)
     .eq("is_trashed", false)
     .eq("upload_status", "complete");
@@ -190,25 +188,21 @@ export async function getStarredItems(options?: { tagId?: string }) {
 // ── Fetch trashed items ───────────────────────────────────────
 export async function getTrashedItems() {
   const supabaseServer = await createSupabaseClient();
-  const authUserResponse = await supabaseServer.auth.getUser();
-  const authUser = authUserResponse.data.user;
+  const { data: { user: authUser } } = await supabaseServer.auth.getUser();
   const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
-
-  const user = await getUserId(userId);
-  if (!user) throw new Error("User not found");
 
   const [{ data: folders }, { data: files }] = await Promise.all([
     supabase
       .from("folders")
       .select("id, name, trashed_at")
-      .eq("owner_id", user.id)
+      .eq("owner_id", userId)
       .eq("is_trashed", true)
       .order("trashed_at", { ascending: false }),
     supabase
       .from("files")
       .select("id, name, mime_type, size, trashed_at, s3_key")
-      .eq("owner_id", user.id)
+      .eq("owner_id", userId)
       .eq("is_trashed", true)
       .order("trashed_at", { ascending: false }),
   ]);
@@ -315,13 +309,9 @@ export async function renameItem(
 // ── Fetch 20 most recently uploaded files ─────────────────────
 export async function getRecentFiles(options?: { tagId?: string }) {
   const supabaseServer = await createSupabaseClient();
-  const authUserResponse = await supabaseServer.auth.getUser();
-  const authUser = authUserResponse.data.user;
+  const { data: { user: authUser } } = await supabaseServer.auth.getUser();
   const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
-
-  const user = await getUserId(userId);
-  if (!user) throw new Error("User not found");
 
   const select = options?.tagId
     ? "id, name, mime_type, size, created_at, updated_at, is_starred, s3_key, parent_folder_id, tags:file_tags!inner(tag:tags(id, name, color))"
@@ -330,7 +320,7 @@ export async function getRecentFiles(options?: { tagId?: string }) {
   let query = supabase
     .from("files")
     .select(select)
-    .eq("owner_id", user.id)
+    .eq("owner_id", userId)
     .eq("is_trashed", false)
     .eq("upload_status", "complete");
 

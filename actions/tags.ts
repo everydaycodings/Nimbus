@@ -23,16 +23,15 @@ async function getUserId(userId: string) {
 
 // ── Fetch all user tags ─────────────────────────────────────
 export async function getTags(): Promise<Tag[]> {
-  const userId = (await (await createSupabaseClient()).auth.getUser()).data.user?.id;
+  const supabaseServer = await createSupabaseClient();
+  const { data: { user: authUser } } = await supabaseServer.auth.getUser();
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
-
-  const user = await getUserId(userId);
-  if (!user) throw new Error("User not found");
 
   const { data, error } = await supabase
     .from("tags")
     .select("*")
-    .eq("owner_id", user.id)
+    .eq("owner_id", userId)
     .order("name", { ascending: true });
 
   if (error) throw new Error(error.message);
@@ -41,15 +40,14 @@ export async function getTags(): Promise<Tag[]> {
 
 // ── Create a tag ────────────────────────────────────────────
 export async function createTag(name: string, color: string) {
-  const userId = (await (await createSupabaseClient()).auth.getUser()).data.user?.id;
+  const supabaseServer = await createSupabaseClient();
+  const { data: { user: authUser } } = await supabaseServer.auth.getUser();
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
-
-  const user = await getUserId(userId);
-  if (!user) throw new Error("User not found");
 
   const { data, error } = await supabase
     .from("tags")
-    .insert({ name, color, owner_id: user.id })
+    .insert({ name, color, owner_id: userId })
     .select()
     .single();
 
@@ -60,17 +58,16 @@ export async function createTag(name: string, color: string) {
 
 // ── Update a tag ────────────────────────────────────────────
 export async function updateTag(id: string, name: string, color: string) {
-  const userId = (await (await createSupabaseClient()).auth.getUser()).data.user?.id;
+  const supabaseServer = await createSupabaseClient();
+  const { data: { user: authUser } } = await supabaseServer.auth.getUser();
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
-
-  const user = await getUserId(userId);
-  if (!user) throw new Error("User not found");
 
   const { error } = await supabase
     .from("tags")
     .update({ name, color })
     .eq("id", id)
-    .eq("owner_id", user.id);
+    .eq("owner_id", userId);
 
   if (error) throw new Error(error.message);
   revalidatePath("/");
@@ -78,17 +75,16 @@ export async function updateTag(id: string, name: string, color: string) {
 
 // ── Delete a tag ────────────────────────────────────────────
 export async function deleteTag(id: string) {
-  const userId = (await (await createSupabaseClient()).auth.getUser()).data.user?.id;
+  const supabaseServer = await createSupabaseClient();
+  const { data: { user: authUser } } = await supabaseServer.auth.getUser();
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
-
-  const user = await getUserId(userId);
-  if (!user) throw new Error("User not found");
 
   const { error } = await supabase
     .from("tags")
     .delete()
     .eq("id", id)
-    .eq("owner_id", user.id);
+    .eq("owner_id", userId);
 
   if (error) throw new Error(error.message);
   revalidatePath("/");

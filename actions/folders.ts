@@ -23,17 +23,16 @@ export async function createFolder(
   name: string,
   parentFolderId: string | null = null
 ) {
-  const userId = (await (await createSupabaseClient()).auth.getUser()).data.user?.id
+  const supabaseServer = await createSupabaseClient();
+  const { data: { user: authUser } } = await supabaseServer.auth.getUser();
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized")
-
-  const user = await getUserId(userId)
-  if (!user) throw new Error("User not found")
 
   // Check for duplicate name in same parent
   const { data: existing } = await supabase
     .from("folders")
     .select("id")
-    .eq("owner_id", user.id)
+    .eq("owner_id", userId)
     .eq("name", name)
     .eq("is_trashed", false)
     .is("parent_folder_id", parentFolderId)
@@ -45,7 +44,7 @@ export async function createFolder(
     .from("folders")
     .insert({
       name,
-      owner_id: user.id,
+      owner_id: userId,
       parent_folder_id: parentFolderId,
     })
     .select()
@@ -60,17 +59,16 @@ export async function moveFile(
   fileId: string,
   targetFolderId: string | null // null = move to root
 ) {
-  const userId = (await (await createSupabaseClient()).auth.getUser()).data.user?.id
+  const supabaseServer = await createSupabaseClient();
+  const { data: { user: authUser } } = await supabaseServer.auth.getUser();
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized")
-
-  const user = await getUserId(userId)
-  if (!user) throw new Error("User not found")
 
   const { error } = await supabase
     .from("files")
     .update({ parent_folder_id: targetFolderId })
     .eq("id", fileId)
-    .eq("owner_id", user.id)
+    .eq("owner_id", userId)
 
   if (error) throw new Error(error.message)
 }
@@ -80,11 +78,10 @@ export async function moveFolder(
   folderId: string,
   targetFolderId: string | null
 ) {
-  const userId = (await (await createSupabaseClient()).auth.getUser()).data.user?.id
+  const supabaseServer = await createSupabaseClient();
+  const { data: { user: authUser } } = await supabaseServer.auth.getUser();
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized")
-
-  const user = await getUserId(userId)
-  if (!user) throw new Error("User not found")
 
   // Prevent moving a folder into itself or its own children
   if (folderId === targetFolderId) {
@@ -102,7 +99,7 @@ export async function moveFolder(
     .from("folders")
     .update({ parent_folder_id: targetFolderId })
     .eq("id", folderId)
-    .eq("owner_id", user.id)
+    .eq("owner_id", userId)
 
   if (error) throw new Error(error.message)
 }
@@ -133,16 +130,15 @@ async function checkIsDescendant(
 
 // ── Get full folder tree (for move picker) ────────────────────
 export async function getFolderTree(excludeFolderId?: string) {
-  const userId = (await (await createSupabaseClient()).auth.getUser()).data.user?.id
+  const supabaseServer = await createSupabaseClient();
+  const { data: { user: authUser } } = await supabaseServer.auth.getUser();
+  const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized")
-
-  const user = await getUserId(userId)
-  if (!user) throw new Error("User not found")
 
   const { data, error } = await supabase
     .from("folders")
     .select("id, name, parent_folder_id")
-    .eq("owner_id", user.id)
+    .eq("owner_id", userId)
     .eq("is_trashed", false)
     .order("name")
 
