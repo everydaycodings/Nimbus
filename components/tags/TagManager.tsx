@@ -4,7 +4,9 @@
 import { useState, useTransition, useEffect } from "react";
 import { Plus, Pencil, Trash, X, Check } from "@phosphor-icons/react";
 import { Tag } from "@/types/tags";
-import { getTags, createTag, updateTag, deleteTag } from "@/actions/tags";
+import { useQueryClient } from "@tanstack/react-query";
+import { useTagsQuery } from "@/hooks/queries/useTagsQuery";
+import { createTag, updateTag, deleteTag } from "@/actions/tags";
 import {
   Dialog,
   DialogContent,
@@ -32,31 +34,18 @@ const COLORS = [
 
 interface TagManagerProps {
   onClose: () => void;
-  onTagsChange?: () => void;
 }
 
-export function TagManager({ onClose, onTagsChange }: TagManagerProps) {
-  const [tags, setTags] = useState<Tag[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+export function TagManager({ onClose }: TagManagerProps) {
+  const { data: tags = [], isLoading } = useTagsQuery();
+  const queryClient = useQueryClient();
   const [editingTag, setEditingTag] = useState<Tag | null>(null);
   const [newName, setNewName] = useState("");
   const [newColor, setNewColor] = useState(COLORS[0]);
   const [isPending, startTransition] = useTransition();
 
-  useEffect(() => {
-    fetchTags();
-  }, []);
-
-  const fetchTags = async () => {
-    setIsLoading(true);
-    try {
-      const data = await getTags();
-      setTags(data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsLoading(false);
-    }
+  const invalidateTags = () => {
+    queryClient.invalidateQueries({ queryKey: ["tags"] });
   };
 
   const handleCreateOrUpdate = () => {
@@ -72,8 +61,7 @@ export function TagManager({ onClose, onTagsChange }: TagManagerProps) {
         setNewName("");
         setNewColor(COLORS[0]);
         setEditingTag(null);
-        fetchTags();
-        onTagsChange?.();
+        invalidateTags();
       } catch (err) {
         console.error(err);
       }
@@ -86,8 +74,7 @@ export function TagManager({ onClose, onTagsChange }: TagManagerProps) {
     startTransition(async () => {
       try {
         await deleteTag(id);
-        fetchTags();
-        onTagsChange?.();
+        invalidateTags();
       } catch (err) {
         console.error(err);
       }

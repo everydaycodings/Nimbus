@@ -4,7 +4,8 @@
 import { useState, useTransition, useEffect } from "react";
 import { Plus, Tag as TagIcon, Check, PlusCircle, PencilSimple } from "@phosphor-icons/react";
 import { Tag } from "@/types/tags";
-import { getTags, assignTag, unassignTag } from "@/actions/tags";
+import { useTagsQuery } from "@/hooks/queries/useTagsQuery";
+import { assignTag, unassignTag } from "@/actions/tags";
 import {
   Dialog,
   DialogContent,
@@ -31,26 +32,9 @@ export function TagPicker({
   onClose,
   onSuccess,
 }: TagPickerProps) {
-  const [availableTags, setAvailableTags] = useState<Tag[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { data: availableTags = [], isLoading } = useTagsQuery();
   const [showManager, setShowManager] = useState(false);
   const [isPending, startTransition] = useTransition();
-
-  useEffect(() => {
-    fetchTags();
-  }, []);
-
-  const fetchTags = async () => {
-    setIsLoading(true);
-    try {
-      const data = await getTags();
-      setAvailableTags(data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const toggleTag = (tag: Tag) => {
     const isAssigned = currentTagIds.includes(tag.id);
@@ -71,7 +55,7 @@ export function TagPicker({
   };
 
   if (showManager) {
-    return <TagManager onClose={() => setShowManager(false)} onTagsChange={fetchTags} />;
+    return <TagManager onClose={() => setShowManager(false)} />;
   }
 
   return (

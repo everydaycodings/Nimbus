@@ -16,7 +16,7 @@ import {
   Tag as TagIcon,
 } from "@phosphor-icons/react";
 import { useState, useEffect } from "react";
-import { getTags } from "@/actions/tags";
+import { useTagsQuery } from "@/hooks/queries/useTagsQuery";
 import { Tag } from "@/types/tags";
 import { cn } from "@/lib/utils";
 import {
@@ -55,11 +55,7 @@ export function FileFilters({ className = "mb-6" }: { className?: string }) {
   const currentSortOrder = (searchParams.get("sortOrder") as SortOrder) || "desc";
   const currentTagId = searchParams.get("tagId") || null;
 
-  const [tags, setTags] = useState<Tag[]>([]);
-
-  useEffect(() => {
-    getTags().then(setTags).catch(console.error);
-  }, []);
+  const { data: tags = [] } = useTagsQuery();
 
   const updateParams = (updates: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParams.toString());
