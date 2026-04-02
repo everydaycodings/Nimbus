@@ -1,4 +1,5 @@
 import { LandingPageClient } from "./landing-page-client";
+import { createClient } from "@/lib/supabase/server";
 
 export const metadata = {
   title: "Open Source File Vault",
@@ -34,5 +35,8 @@ async function getGithubStars(): Promise<number> {
 
 export default async function LandingPage() {
   const stars = await getGithubStars();
-  return <LandingPageClient initialStars={stars} />;
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  return <LandingPageClient initialStars={stars} user={user} />;
 }

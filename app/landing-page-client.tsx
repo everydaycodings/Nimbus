@@ -21,9 +21,10 @@ const TEAL = "#2da07a";
 
 interface LandingPageClientProps {
   initialStars: number;
+  user?: any;
 }
 
-export function LandingPageClient({ initialStars }: LandingPageClientProps) {
+export function LandingPageClient({ initialStars, user }: LandingPageClientProps) {
   return (
     <div className="min-h-screen bg-background text-foreground selection:bg-[#2da07a]/30 font-sans">
       
@@ -53,7 +54,7 @@ export function LandingPageClient({ initialStars }: LandingPageClientProps) {
             </a>
             <Link href="/dashboard">
               <Button style={{ backgroundColor: TEAL, color: "white" }} className="hover:opacity-90 shadow-sm font-medium cursor-pointer">
-                Go to Dashboard
+                {user ? "Go to Dashboard" : "Sign In"}
               </Button>
             </Link>
           </div>
@@ -95,7 +96,7 @@ export function LandingPageClient({ initialStars }: LandingPageClientProps) {
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 w-full sm:w-auto">
               <Link href="/dashboard" className="w-full sm:w-auto">
                 <Button size="lg" className="h-12 px-8 text-base w-full sm:w-auto gap-2 group shadow-md cursor-pointer" style={{ backgroundColor: TEAL, color: "white" }}>
-                  Get Started 
+                  {user ? "Open Dashboard" : "Get Started"}
                   <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
                 </Button>
               </Link>
@@ -381,7 +382,7 @@ export function LandingPageClient({ initialStars }: LandingPageClientProps) {
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 w-full sm:w-auto">
               <Link href="/dashboard" className="w-full sm:w-auto">
                 <Button size="lg" className="h-12 px-8 text-base w-full sm:w-auto gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer" style={{ backgroundColor: TEAL, color: "white" }}>
-                  Open Dashboard
+                  {user ? "Open Dashboard" : "Get Started Now"}
                 </Button>
               </Link>
               <a href="https://github.com/everydaycodings/Nimbus" target="_blank" rel="noreferrer" className="w-full sm:w-auto">
