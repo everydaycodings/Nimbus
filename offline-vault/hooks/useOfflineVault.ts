@@ -157,13 +157,23 @@ export function useOfflineVault() {
     }
   }, [derivedKey, activeVaultId, createFolder, uploadFile, setLoading]);
 
-  const downloadFile = useCallback(async (meta: storage.FileMetadata) => {
-    if (!derivedKey || !activeVaultId) return;
-    setLoading(true);
+  const decryptFile = useCallback(async (meta: storage.FileMetadata) => {
+    if (!derivedKey || !activeVaultId) return null;
     try {
       const encrypted = await storage.getFileFromOpfs(activeVaultId, meta.id);
       const decrypted = await crypto.decryptBuffer(encrypted, derivedKey);
-      const blob = new Blob([decrypted], { type: meta.contentType });
+      return new Blob([decrypted], { type: meta.contentType });
+    } catch (e: any) {
+      toast.error("Failed to decrypt file.");
+      return null;
+    }
+  }, [derivedKey, activeVaultId]);
+
+  const downloadFile = useCallback(async (meta: storage.FileMetadata) => {
+    setLoading(true);
+    try {
+      const blob = await decryptFile(meta);
+      if (!blob) return;
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -175,7 +185,31 @@ export function useOfflineVault() {
     } finally {
       setLoading(false);
     }
-  }, [derivedKey, activeVaultId]);
+  }, [decryptFile, setLoading]);
+
+  const renameItem = useCallback(async (item: storage.FileMetadata, newName: string) => {
+    if (!activeVaultId) return;
+    try {
+      const updated = { ...item, name: newName, lastModified: Date.now() };
+      await storage.saveMetadata(updated);
+      await refreshFiles();
+      toast.success("Item renamed.");
+    } catch (e: any) {
+      toast.error("Rename failed.");
+    }
+  }, [activeVaultId, refreshFiles]);
+
+  const moveItem = useCallback(async (item: storage.FileMetadata, newParentId: string | null) => {
+    if (!activeVaultId) return;
+    try {
+      const updated = { ...item, parentId: newParentId, lastModified: Date.now() };
+      await storage.saveMetadata(updated);
+      await refreshFiles();
+      toast.success("Item moved.");
+    } catch (e: any) {
+      toast.error("Move failed.");
+    }
+  }, [activeVaultId, refreshFiles]);
 
   const deleteItem = useCallback(async (item: storage.FileMetadata) => {
     if (!activeVaultId) return;
@@ -218,6 +252,9 @@ export function useOfflineVault() {
     uploadFolder,
     createFolder,
     downloadFile,
+    decryptFile,
+    renameItem,
+    moveItem,
     deleteItem,
     deleteVault,
     refreshFiles,

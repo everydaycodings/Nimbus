@@ -29,6 +29,7 @@ import { LayoutToggle } from "@/components/ui/LayoutToggle";
 import { useLayout } from "@/hooks/useLayout";
 import VaultItemMenu from "@/vault/components/VaultItemMenu";
 import { FileIcon } from "@/components/ui/FileIcon";
+import { VaultPreviewWrapper } from "@/vault/components/VaultPreviewWrapper";
 
 const TEAL = "#2da07a";
 
@@ -103,6 +104,9 @@ export default function LocalFileExplorer() {
     uploadFolder, 
     createFolder, 
     downloadFile, 
+    decryptFile,
+    renameItem,
+    moveItem,
     deleteItem, 
     lockVault, 
     activeVaultName, 
@@ -111,6 +115,14 @@ export default function LocalFileExplorer() {
 
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [showCreateFolder, setShowCreateFolder] = useState(false);
+  const [previewing, setPreviewing] = useState<{
+    objectUrl: string | null;
+    fileName: string;
+    mimeType: string;
+    fileId: string;
+  } | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState<string | null>(null);
+
   const searchParams = useSearchParams();
   const { layout, handleLayoutChange } = useLayout("nimbus-layout");
 
@@ -167,6 +179,32 @@ export default function LocalFileExplorer() {
 
   const handleUploadMany = (fileList: FileList | File[]) => {
     Array.from(fileList).forEach(file => uploadFile(file, currentFolderId));
+  };
+
+  const handlePreview = async (file: any) => {
+    setLoadingPreview(file.id);
+    setPreviewing({ objectUrl: null, fileName: file.name, mimeType: file.contentType || "", fileId: file.id });
+    try {
+      const blob = await decryptFile(file);
+      if (blob) {
+         const objectUrl = URL.createObjectURL(blob);
+         setPreviewing((prev) => (prev && prev.fileId === file.id ? { ...prev, objectUrl } : prev));
+      } else {
+        setPreviewing(null);
+      }
+    } catch {
+      setPreviewing(null);
+    } finally {
+      setLoadingPreview(null);
+    }
+  };
+
+  const closePreview = () => {
+    if (previewing?.objectUrl) {
+      URL.revokeObjectURL(previewing.objectUrl);
+    }
+    setPreviewing(null);
+    setLoadingPreview(null);
   };
 
   return (
@@ -283,18 +321,23 @@ export default function LocalFileExplorer() {
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-foreground truncate">{folder.name}</p>
                         </div>
-                        <div className="flex items-center gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity" 
+                             onClick={(e) => e.stopPropagation()}
+                             onDoubleClick={(e) => e.stopPropagation()}
+                        >
                            <VaultItemMenu
                               type="folder"
                               id={folder.id}
                               name={folder.name}
                               onRename={() => {
-                                const newName = prompt("New name:", folder.name);
-                                // This would need a renameFolder in useOfflineVault, assuming we can use createFolder for now or just stick to deleting/recreating but rename is better.
-                                // For now we keep it identical but rename logic is omitted for simplicity unless requested.
+                                const name = prompt("Rename to:", folder.name);
+                                if (name && name !== folder.name) renameItem(folder, name);
                               }}
                               onDelete={() => { if(confirm('Delete?')) deleteItem(folder); }}
-                              onMove={() => {}}
+                              onMove={() => {
+                                const pId = prompt("Move to parent ID (leave empty for root):", folder.parentId || "");
+                                if (pId !== null) moveItem(folder, pId || null);
+                              }}
                            />
                         </div>
                       </div>
@@ -309,6 +352,7 @@ export default function LocalFileExplorer() {
                     {filteredFiles.map((file) => (
                       <div
                         key={file.id}
+                        onClick={() => handlePreview(file)}
                         className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-accent transition-colors cursor-pointer select-none"
                       >
                          <div className="relative flex-shrink-0">
@@ -318,14 +362,24 @@ export default function LocalFileExplorer() {
                            <p className="text-sm font-medium truncate">{file.name}</p>
                            <p className="text-xs text-muted-foreground">{formatBytes(file.size)}</p>
                          </div>
-                         <div className="flex items-center gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                         <div className="flex items-center gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity" 
+                              onClick={(e) => e.stopPropagation()}
+                              onDoubleClick={(e) => e.stopPropagation()}
+                         >
                             <VaultItemMenu
                               type="file"
                               id={file.id}
                               name={file.name}
-                              onRename={() => {}}
+                              onRename={() => {
+                                const name = prompt("Rename to:", file.name);
+                                if (name && name !== file.name) renameItem(file, name);
+                              }}
                               onDelete={() => { if(confirm('Delete?')) deleteItem(file); }}
-                              onMove={() => {}}
+                              onMove={() => {
+                                const pId = prompt("Move to parent ID:", file.parentId || "");
+                                if (pId !== null) moveItem(file, pId || null);
+                              }}
+                              onDetails={() => handlePreview(file)}
                               onDownload={() => downloadFile(file)}
                             />
                          </div>
@@ -352,7 +406,10 @@ export default function LocalFileExplorer() {
                     >
                       <FolderSimple size={42} weight="fill" style={{ color: TEAL }} />
                       
-                      <div className="absolute top-2 right-2 flex gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                      <div className="absolute top-2 right-2 flex gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity" 
+                           onClick={(e) => e.stopPropagation()}
+                           onDoubleClick={(e) => e.stopPropagation()}
+                      >
                         <VaultItemMenu
                           type="folder"
                           id={folder.id}
@@ -378,6 +435,7 @@ export default function LocalFileExplorer() {
                 {filteredFiles.map((file) => (
                   <div
                     key={file.id}
+                    onClick={() => handlePreview(file)}
                     className="group cursor-pointer rounded-2xl border border-border bg-card hover:shadow-md hover:border-[#2da07a]/30 transition-all select-none overflow-hidden"
                   >
                     <div
@@ -386,14 +444,28 @@ export default function LocalFileExplorer() {
                     >
                       <FileIcon mimeType={file.contentType || ""} size={42} />
                       
-                      <div className="absolute top-2 right-2 flex gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                      <div className="absolute top-2 left-2 p-1.5 rounded-full bg-black/20 backdrop-blur-md border border-white/10 shadow-sm pointer-events-none">
+                         <Eye size={12} weight="bold" className="text-white" />
+                      </div>
+
+                      <div className="absolute top-2 right-2 flex gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity" 
+                           onClick={(e) => e.stopPropagation()}
+                           onDoubleClick={(e) => e.stopPropagation()}
+                      >
                         <VaultItemMenu
                           type="file"
                           id={file.id}
                           name={file.name}
-                          onRename={() => {}}
+                          onRename={() => {
+                            const name = prompt("Rename to:", file.name);
+                            if (name && name !== file.name) renameItem(file, name);
+                          }}
                           onDelete={() => { if(confirm('Delete?')) deleteItem(file); }}
-                          onMove={() => {}}
+                          onMove={() => {
+                            const pId = prompt("Move to parent ID:", file.parentId || "");
+                            if (pId !== null) moveItem(file, pId || null);
+                          }}
+                          onDetails={() => handlePreview(file)}
                           onDownload={() => downloadFile(file)}
                         />
                       </div>
@@ -419,6 +491,17 @@ export default function LocalFileExplorer() {
         <CreateLocalFolderDialog
           onSuccess={(name) => createFolder(name, currentFolderId)}
           onClose={() => setShowCreateFolder(false)}
+        />
+      )}
+
+      {previewing && (
+        <VaultPreviewWrapper
+          objectUrl={previewing.objectUrl}
+          fileName={previewing.fileName}
+          mimeType={previewing.mimeType}
+          isLoading={Boolean(loadingPreview && loadingPreview === previewing.fileId)}
+          onClose={closePreview}
+          onDownload={() => downloadFile(previewing as any)}
         />
       )}
     </div>
