@@ -24,12 +24,14 @@ interface Props {
     uploadMany: (files: FileList | File[]) => void;
     uploadFolder: (files: FileList) => void;
     setShowCreateFolder: (v: boolean) => void;
+    isFragmented?: boolean;
 }
 
 export default function VaultUploadDropdown({
     uploadMany,
     uploadFolder,
     setShowCreateFolder,
+    isFragmented = false,
 }: Props) {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const folderInputRef = useRef<HTMLInputElement | null>(null);
@@ -82,7 +84,7 @@ export default function VaultUploadDropdown({
                         <div className="flex flex-col">
                             <span>Upload files</span>
                             <span className="text-[10px] text-muted-foreground">
-                                max {VAULT_MAX_FILE_SIZE_LABEL}
+                                max {isFragmented ? "50 MB" : VAULT_MAX_FILE_SIZE_LABEL}
                             </span>
                         </div>
                     </DropdownMenuItem>

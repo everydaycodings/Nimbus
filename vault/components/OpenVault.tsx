@@ -71,6 +71,7 @@ interface Vault {
   name: string;
   salt: string;
   verification_token: string;
+  is_fragmented: boolean;
 }
 
 interface Breadcrumb {
@@ -331,6 +332,7 @@ export function OpenVault({
 
   const { uploadMany } = useVaultUpload(vault.id, cryptoKey, {
     parentFolderId: currentFolderId,
+    isFragmented: vault.is_fragmented,
     onSuccess: () => invalidateVaultCache(),
   });
   const { uploadFolder } = useVaultFolderUpload({
@@ -490,6 +492,7 @@ export function OpenVault({
             uploadMany={uploadMany}
             uploadFolder={uploadFolder}
             setShowCreateFolder={setShowCreateFolder}
+            isFragmented={vault.is_fragmented}
           />
 
           {/* Lock */}

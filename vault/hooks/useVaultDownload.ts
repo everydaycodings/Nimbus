@@ -2,7 +2,7 @@
 "use client";
 
 import { useState } from "react";
-import { decryptFile, VAULT_MAX_PREVIEW_FILE_SIZE } from "@/vault/lib/crypto";
+import { decryptFile, decryptBuffer, VAULT_MAX_PREVIEW_FILE_SIZE } from "@/vault/lib/crypto";
 import { getVaultDownloadUrl }              from "@/vault/actions/vault.actions";
 import { getVaultFolderHierarchy }          from "@/vault/actions/vault.folders.actions";
 import JSZip from "jszip";
@@ -41,11 +41,29 @@ export function useVaultDownload(key: CryptoKey) {
     setDecrypting((prev) => new Set(prev).add(fileId));
 
     try {
-      const signedUrl     = await getVaultDownloadUrl(fileId);
-      const res           = await fetch(signedUrl);
-      if (!res.ok) throw new Error("Failed to fetch file");
-      const encryptedBlob = await res.blob();
-      const decryptedBlob = await decryptFile(encryptedBlob, key, originalMimeType);
+      const result = await getVaultDownloadUrl(fileId);
+      let decryptedBlob: Blob;
+
+      if (result.isFragmented && result.fragments) {
+        // ───────────────── Fragmented Recovery ─────────────────
+        const decryptedChunks: ArrayBuffer[] = [];
+        for (const fragment of result.fragments) {
+            const res = await fetch(fragment.url);
+            if (!res.ok) throw new Error(`Failed to fetch fragment ${fragment.chunkIndex}`);
+            const encryptedChunk = await res.arrayBuffer();
+            const decryptedChunk = await decryptBuffer(new Uint8Array(encryptedChunk), key);
+            decryptedChunks.push(decryptedChunk);
+        }
+        decryptedBlob = new Blob(decryptedChunks, { type: originalMimeType });
+      } else if (result.url) {
+        // ───────────────── Standard Recovery ─────────────────
+        const res = await fetch(result.url);
+        if (!res.ok) throw new Error("Failed to fetch file");
+        const encryptedBlob = await res.blob();
+        decryptedBlob = await decryptFile(encryptedBlob, key, originalMimeType);
+      } else {
+        throw new Error("Invalid download response");
+      }
 
       const url = URL.createObjectURL(decryptedBlob);
       const a   = Object.assign(document.createElement("a"), {
@@ -79,10 +97,26 @@ export function useVaultDownload(key: CryptoKey) {
     }
 
     try {
-      const signedUrl     = await getVaultDownloadUrl(fileId);
-      const res           = await fetch(signedUrl);
-      const encryptedBlob = await res.blob();
-      const decryptedBlob = await decryptFile(encryptedBlob, key, originalMimeType);
+      const result = await getVaultDownloadUrl(fileId);
+      let decryptedBlob: Blob;
+
+      if (result.isFragmented && result.fragments) {
+        const decryptedChunks: ArrayBuffer[] = [];
+        for (const fragment of result.fragments) {
+            const res = await fetch(fragment.url);
+            if (!res.ok) throw new Error(`Failed to fetch fragment ${fragment.chunkIndex}`);
+            const encryptedChunk = await res.arrayBuffer();
+            const decryptedChunk = await decryptBuffer(new Uint8Array(encryptedChunk), key);
+            decryptedChunks.push(decryptedChunk);
+        }
+        decryptedBlob = new Blob(decryptedChunks, { type: originalMimeType });
+      } else if (result.url) {
+        const res = await fetch(result.url);
+        const encryptedBlob = await res.blob();
+        decryptedBlob = await decryptFile(encryptedBlob, key, originalMimeType);
+      } else {
+        return null;
+      }
       
       const url = URL.createObjectURL(decryptedBlob);
       
@@ -119,11 +153,28 @@ export function useVaultDownload(key: CryptoKey) {
         const chunk = hierarchy.slice(i, i + CHUNK_SIZE);
         await Promise.all(
           chunk.map(async (file) => {
-            const signedUrl     = await getVaultDownloadUrl(file.id);
-            const res           = await fetch(signedUrl);
-            if (!res.ok) throw new Error(`Failed to fetch ${file.name}`);
-            const encryptedBlob = await res.blob();
-            const decryptedBlob = await decryptFile(encryptedBlob, key, file.mimeType);
+            const result = await getVaultDownloadUrl(file.id);
+            let decryptedBlob: Blob;
+
+            if (result.isFragmented && result.fragments) {
+                const decryptedChunks: ArrayBuffer[] = [];
+                for (const fragment of result.fragments) {
+                    const res = await fetch(fragment.url);
+                    if (!res.ok) throw new Error(`Failed to fetch ${file.name} chunk ${fragment.chunkIndex}`);
+                    const encryptedChunk = await res.arrayBuffer();
+                    const decryptedChunk = await decryptBuffer(new Uint8Array(encryptedChunk), key);
+                    decryptedChunks.push(decryptedChunk);
+                }
+                decryptedBlob = new Blob(decryptedChunks, { type: file.mimeType });
+            } else if (result.url) {
+                const res = await fetch(result.url);
+                if (!res.ok) throw new Error(`Failed to fetch ${file.name}`);
+                const encryptedBlob = await res.blob();
+                decryptedBlob = await decryptFile(encryptedBlob, key, file.mimeType);
+            } else {
+                throw new Error(`Invalid download for ${file.name}`);
+            }
+
             zip.file(file.path, decryptedBlob);
           })
         );

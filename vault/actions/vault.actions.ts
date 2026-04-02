@@ -28,6 +28,7 @@ export async function createVault(input: {
   name:              string;
   saltBase64:        string;    // random salt for PBKDF2
   verificationToken: string;    // AES-GCM encrypted token to verify password
+  isFragmented?:      boolean;
 }) {
   const supabaseServer = await createSupabaseClient();
   const authUserResponse = await supabaseServer.auth.getUser();
@@ -46,6 +47,7 @@ export async function createVault(input: {
       owner_id:           user.id,
       salt:               input.saltBase64,
       verification_token: input.verificationToken,
+      is_fragmented:      input.isFragmented ?? false,
     })
     .select()
     .single();
@@ -64,7 +66,7 @@ export async function getVaults(): Promise<Vault[]> {
 
   const { data, error } = await supabase
     .from("vaults")
-    .select("id, name, salt, verification_token, created_at, updated_at")
+    .select("id, name, salt, verification_token, is_fragmented, created_at, updated_at")
     .eq("owner_id", userId)
     .not("name", "ilike", `${STEALTH_NAME_PREFIX}%`)
     .order("created_at", { ascending: false });
@@ -84,7 +86,7 @@ export async function getVaultById(vaultId: string): Promise<Vault | null> {
   // Use service role to bypass RLS for discovery, but manually verify ownership
   const { data, error } = await supabase
     .from("vaults")
-    .select("id, name, salt, verification_token, created_at, updated_at, owner_id")
+    .select("id, name, salt, verification_token, is_fragmented, created_at, updated_at, owner_id")
     .eq("id", vaultId)
     .single();
 
@@ -148,6 +150,9 @@ export async function saveVaultFile(input: {
   s3Key:            string;
   s3Bucket:         string;
   parentFolderId?: string | null;
+  isFragmented?:    boolean;
+  chunkCount?:      number;
+  chunks?:          Array<{ s3Key: string, size: number, chunkIndex: number, hash?: string }>;
 }) {
   const supabaseServer = await createSupabaseClient();
   const authUserResponse = await supabaseServer.auth.getUser();
@@ -189,11 +194,30 @@ export async function saveVaultFile(input: {
       s3_key:             input.s3Key,
       s3_bucket:          input.s3Bucket,
       parent_folder_id:   input.parentFolderId ?? null,
+      is_fragmented:      input.isFragmented ?? false,
+      chunk_count:        input.chunkCount ?? 1,
     })
     .select()
     .single();
 
   if (error) throw new Error(error.message);
+
+  if (input.isFragmented && input.chunks && input.chunks.length > 0) {
+    const { error: chunkError } = await supabase
+      .from("vault_file_chunks")
+      .insert(
+        input.chunks.map(c => ({
+          file_id: data.id,
+          chunk_index: c.chunkIndex,
+          s3_key: c.s3Key,
+          s3_bucket: input.s3Bucket,
+          size: c.size,
+          hash: c.hash
+        }))
+      );
+    if (chunkError) throw new Error(chunkError.message);
+  }
+
   return data;
 }
 
@@ -237,6 +261,7 @@ export async function getVaultPresignedUrl(input: {
   fileName: string;
   mimeType: string;
   size:     number;  // encrypted size (larger than original)
+  chunkCount?: number;
 }) {
   const supabaseServer = await createSupabaseClient();
   const authUserResponse = await supabaseServer.auth.getUser();
@@ -256,6 +281,12 @@ export async function getVaultPresignedUrl(input: {
 
   if (!vault) throw new Error("Vault not found");
 
+  // Server-side size limit for fragmented files
+  const FRAGMENTED_MAX = 50 * 1024 * 1024;
+  if (input.chunkCount && input.chunkCount > 1 && input.size > FRAGMENTED_MAX) {
+    throw new Error("Fragmented files are limited to 50MB");
+  }
+
   // Import S3 utilities
   const { PutObjectCommand } = await import("@aws-sdk/client-s3");
   const { getSignedUrl }     = await import("@aws-sdk/s3-request-presigner");
@@ -273,6 +304,22 @@ export async function getVaultPresignedUrl(input: {
 
   const presignedUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
 
+  if (input.chunkCount && input.chunkCount > 1) {
+    const chunkUrls = [];
+    for (let i = 0; i < input.chunkCount; i++) {
+        const chunkId = randomUUID();
+        const chunkS3Key = `vault/${user.id}/${input.vaultId}/chunks/${fileId}/${chunkId}.chunk`;
+        const chunkCommand = new PutObjectCommand({
+            Bucket: BUCKET,
+            Key: chunkS3Key,
+            ContentType: "application/octet-stream",
+        });
+        const chunkUrl = await getSignedUrl(s3, chunkCommand, { expiresIn: 600 });
+        chunkUrls.push({ presignedUrl: chunkUrl, s3Key: chunkS3Key, chunkIndex: i });
+    }
+    return { presignedUrl, s3Key, fileId, bucket: BUCKET, chunks: chunkUrls };
+  }
+
   return { presignedUrl, s3Key, fileId, bucket: BUCKET };
 }
 
@@ -289,7 +336,7 @@ export async function getVaultDownloadUrl(fileId: string) {
 
   const { data: file } = await supabase
     .from("vault_files")
-    .select("id, s3_key, s3_bucket, name, vaults(owner_id)")
+    .select("id, s3_key, s3_bucket, name, is_fragmented, chunk_count, vaults(owner_id)")
     .eq("id", fileId)
     .single();
 
@@ -300,6 +347,27 @@ export async function getVaultDownloadUrl(fileId: string) {
   const { getSignedUrl }     = await import("@aws-sdk/s3-request-presigner");
   const { s3 }               = await import("@/lib/s3");
 
+  if (file.is_fragmented) {
+    const { data: chunks, error: chunkError } = await supabase
+        .from("vault_file_chunks")
+        .select("s3_key, chunk_index, size")
+        .eq("file_id", fileId)
+        .order("chunk_index", { ascending: true });
+    
+    if (chunkError || !chunks) throw new Error("Failed to load fragments");
+
+    const fragments = [];
+    for (const chunk of chunks) {
+        const command = new GetObjectCommand({
+            Bucket: file.s3_bucket,
+            Key: chunk.s3_key,
+        });
+        const url = await getSignedUrl(s3, command, { expiresIn: 600 });
+        fragments.push({ url, chunkIndex: chunk.chunk_index, size: chunk.size });
+    }
+    return { isFragmented: true, fragments, fileName: file.name };
+  }
+
   const command = new GetObjectCommand({
     Bucket:                     file.s3_bucket,
     Key:                        file.s3_key,
@@ -307,7 +375,7 @@ export async function getVaultDownloadUrl(fileId: string) {
   });
 
   const url = await getSignedUrl(s3, command, { expiresIn: 300 }); // short — decryption is immediate
-  return url;
+  return { isFragmented: false, url, fileName: file.name };
 }
 
 // ── Rename vault file ─────────────────────────────────────────

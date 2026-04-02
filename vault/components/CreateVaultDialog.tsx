@@ -23,6 +23,7 @@ export function CreateVaultDialog({ onSuccess, onClose }: Props) {
   const [confirm,     setConfirm]     = useState("");
   const [showPw,      setShowPw]      = useState(false);
   const [isStealth,   setIsStealth]   = useState(false);
+  const [isFragmented, setIsFragmented] = useState(false);
   const [isPending,   startTransition] = useTransition();
 
   const strength = (() => {
@@ -67,7 +68,8 @@ export function CreateVaultDialog({ onSuccess, onClose }: Props) {
           id: vaultId,
           name: finalName, 
           saltBase64, 
-          verificationToken 
+          verificationToken,
+          isFragmented
         });
         toast.success("Vault created successfully!");
         onSuccess();
@@ -176,7 +178,11 @@ export function CreateVaultDialog({ onSuccess, onClose }: Props) {
                   type="checkbox" 
                   className="hidden" 
                   checked={isStealth} 
-                  onChange={(e) => setIsStealth(e.target.checked)} 
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setIsStealth(checked);
+                    if (checked) setIsFragmented(true);
+                  }} 
                 />
                 <div 
                   className={cn(
@@ -196,6 +202,38 @@ export function CreateVaultDialog({ onSuccess, onClose }: Props) {
                 This vault will be invisible in your list. To access it, simply enter its password on the regular unlock screen.
               </p>
             )}
+          </div>
+
+          {/* File Fragmentation Toggle */}
+          <div className="flex flex-col gap-2 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 group transition-all">
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <ShieldCheck size={16} className={cn("transition-colors", isFragmented ? "text-blue-400" : "text-muted-foreground")} />
+                <span className={cn("text-xs font-medium transition-colors", isFragmented ? "text-blue-400" : "text-muted-foreground")}>
+                  File Fragmentation
+                </span>
+                <input 
+                  type="checkbox" 
+                  className="hidden" 
+                  checked={isFragmented} 
+                  onChange={(e) => setIsFragmented(e.target.checked)} 
+                />
+                <div 
+                  className={cn(
+                    "w-8 h-4.5 rounded-full relative transition-all duration-300 cursor-pointer",
+                    isFragmented ? "bg-blue-500" : "bg-muted-foreground/30"
+                  )}
+                >
+                  <div className={cn(
+                    "absolute top-0.5 left-0.5 w-3.5 h-3.5 bg-white rounded-full transition-all duration-300 shadow-sm",
+                    isFragmented ? "translate-x-3.5" : "translate-x-0"
+                  )} />
+                </div>
+              </label>
+            </div>
+            <p className="text-[10px] text-blue-400/80 leading-relaxed">
+              Splits files into multiple encrypted fragments. Higher protection against breaches, but limited to 50MB per file.
+            </p>
           </div>
 
           {/* Warning */}

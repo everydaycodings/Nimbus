@@ -13,8 +13,10 @@ const DEFAULT_MAX_MB = 100
 const MAX_MB = Number(process.env.NEXT_PUBLIC_VAULT_MAX_FILE_SIZE_MB || DEFAULT_MAX_MB)
 
 export const VAULT_MAX_FILE_SIZE = MAX_MB * 1024 * 1024 // e.g., 100 MB
+export const VAULT_FRAGMENTED_MAX_FILE_SIZE = 50 * 1024 * 1024 // 50 MB limit for fragmented files
 export const VAULT_MAX_PREVIEW_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
 export const VAULT_MAX_FILE_SIZE_LABEL = `${MAX_MB} MB`
+export const FRAGMENT_SIZE = 5 * 1024 * 1024 // 5 MB chunks
 
 export const STEALTH_NAME_PREFIX = "Archive_"
 
@@ -99,6 +101,24 @@ export async function encryptFile(file: File, key: CryptoKey): Promise<Blob> {
   return new Blob([result], { type: "application/octet-stream" })
 }
 
+/**
+ * Encrypts a raw buffer (used for file fragmentation/sharding).
+ * Returns: [IV (12 bytes)] + [AES-GCM ciphertext]
+ */
+export async function encryptBuffer(data: ArrayBuffer | Uint8Array, key: CryptoKey): Promise<Uint8Array> {
+  const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES))
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    data as ArrayBuffer
+  )
+
+  const result = new Uint8Array(IV_BYTES + ciphertext.byteLength)
+  result.set(iv, 0)
+  result.set(new Uint8Array(ciphertext), IV_BYTES)
+  return result
+}
+
 // ── Decrypt a file ────────────────────────────────────────────
 export async function decryptFile(
   encryptedBlob: Blob,
@@ -117,6 +137,20 @@ export async function decryptFile(
   )
 
   return new Blob([plaintext], { type: originalMimeType })
+}
+
+/**
+ * Decrypts a raw buffer fragment.
+ */
+export async function decryptBuffer(encryptedData: Uint8Array, key: CryptoKey): Promise<ArrayBuffer> {
+  const iv = encryptedData.slice(0, IV_BYTES)
+  const ciphertext = encryptedData.slice(IV_BYTES)
+
+  return crypto.subtle.decrypt(
+    { name: "AES-GCM", iv },
+    key,
+    ciphertext
+  )
 }
 
 // ── Password verification token ───────────────────────────────

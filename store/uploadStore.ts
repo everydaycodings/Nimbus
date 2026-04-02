@@ -6,7 +6,7 @@ export type UploadItem = {
   id: string;
   name: string;
   progress: number;
-  status: "uploading" | "complete" | "error" | "cancelled";
+  status: "encrypting" | "uploading" | "complete" | "error" | "cancelled";
   fileId?: string | null;
   source?: "vault" | "drive";
   error?: string;
