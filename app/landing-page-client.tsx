@@ -13,7 +13,10 @@ import {
   MagnifyingGlass,
   Tag,
   ShareNetwork,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Ghost,
+  Key,
+  Eye
 } from "@phosphor-icons/react";
 
 // Teal brand color based on dashboard usages
@@ -228,6 +231,119 @@ export function LandingPageClient({ initialStars, user }: LandingPageClientProps
                       <div className="w-full h-10 rounded-md flex items-center justify-center font-medium text-white shadow-sm" style={{ backgroundColor: TEAL }}>
                         Unlock Vault
                       </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Feature: Stealth Mode (Plausible Deniability) */}
+            <div className="flex flex-col md:flex-row-reverse items-center gap-12 lg:gap-20 relative">
+              {/* Background glow for Stealth section */}
+              <div className="absolute -z-10 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-[150%] bg-[radial-gradient(ellipse_60%_60%_at_50%_50%,rgba(168,85,247,0.08),rgba(255,255,255,0))] dark:bg-[radial-gradient(ellipse_60%_60%_at_50%_50%,rgba(168,85,247,0.06),rgba(0,0,0,0))] pointer-events-none" />
+              
+              <div className="flex-1 space-y-6">
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-purple-500/10 border border-purple-500/20">
+                  <Ghost size={24} className="text-purple-500" weight="duotone" />
+                </div>
+                <h3 className="text-3xl md:text-4xl font-bold tracking-tight">Beyond Encryption: <br/><span className="text-purple-500">Plausible Deniability</span></h3>
+                <p className="text-lg text-muted-foreground leading-relaxed text-balance">
+                  The ultimate privacy layer. Use different passwords to unlock different realities. No one—not even a server admin—can prove your hidden vault exists.
+                </p>
+                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
+                  <li className="flex items-center gap-3 text-muted-foreground text-sm">
+                    <div className="w-8 h-8 rounded-full bg-purple-500/10 flex items-center justify-center flex-shrink-0">
+                      <Ghost size={16} className="text-purple-500" />
+                    </div>
+                    Hidden even from DB lists
+                  </li>
+                  <li className="flex items-center gap-3 text-muted-foreground text-sm">
+                    <div className="w-8 h-8 rounded-full bg-purple-500/10 flex items-center justify-center flex-shrink-0">
+                      <Key size={16} className="text-purple-500" />
+                    </div>
+                    One field, dual passwords
+                  </li>
+                  <li className="flex items-center gap-3 text-muted-foreground text-sm">
+                    <div className="w-8 h-8 rounded-full bg-purple-500/10 flex items-center justify-center flex-shrink-0">
+                      <Eye size={16} className="text-purple-500" />
+                    </div>
+                    Deterministic stealth IDs
+                  </li>
+                  <li className="flex items-center gap-3 text-muted-foreground text-sm">
+                    <div className="w-8 h-8 rounded-full bg-purple-500/10 flex items-center justify-center flex-shrink-0">
+                      <ShieldCheck size={16} className="text-purple-500" />
+                    </div>
+                    Zero-knowledge stealth
+                  </li>
+                </ul>
+              </div>
+
+              <div className="flex-1 w-full relative">
+                <div className="rounded-2xl border border-border/40 bg-secondary/10 p-2 shadow-2xl backdrop-blur-sm relative overflow-hidden group">
+                  <div className="rounded-xl border border-border/40 bg-background overflow-hidden aspect-[4/3] flex flex-col shadow-inner relative">
+                    {/* Split View Mockup */}
+                    <div className="flex-1 flex overflow-hidden">
+                      {/* Left: Normal Reality */}
+                      <div className="flex-1 border-r border-border/20 bg-secondary/5 p-4 flex flex-col gap-3">
+                        <div className="h-6 w-16 bg-foreground/10 rounded-full mb-1" />
+                        <div className="flex items-center gap-2 p-2 rounded-lg bg-background border border-border/40 shadow-sm">
+                           <div className="w-8 h-8 rounded bg-teal-500/10 flex items-center justify-center">
+                              <FolderLock size={16} className="text-[#2da07a]" weight="duotone" />
+                           </div>
+                           <div className="h-2 w-20 bg-foreground/10 rounded-full" />
+                        </div>
+                        {[1,2].map(i => (
+                          <div key={i} className="flex items-center gap-2 p-2 rounded-lg bg-background border border-border/40 shadow-sm opacity-60">
+                            <div className="w-8 h-8 rounded bg-muted-foreground/10 flex items-center justify-center" />
+                            <div className="h-2 w-16 bg-muted-foreground/10 rounded-full" />
+                          </div>
+                        ))}
+                        <div className="mt-auto pt-2 border-t border-border/20 text-[10px] text-muted-foreground font-mono">
+                          PASS: my-taxes-2026
+                        </div>
+                      </div>
+                      
+                      {/* Right: Stealth Reality */}
+                      <div className="flex-1 bg-purple-500/[0.03] p-4 flex flex-col gap-3 relative">
+                        <div className="absolute top-2 right-2 opacity-20">
+                           <Ghost size={40} className="text-purple-500" weight="duotone" />
+                        </div>
+                        <div className="h-6 w-16 bg-purple-500/10 rounded-full mb-1" />
+                        <div className="flex items-center gap-2 p-2 rounded-lg bg-purple-500/10 border border-purple-500/20 shadow-sm ring-1 ring-purple-500/20">
+                           <div className="w-8 h-8 rounded bg-purple-500/20 flex items-center justify-center">
+                              <Ghost size={16} className="text-purple-500" weight="duotone" />
+                           </div>
+                           <div className="h-2 w-20 bg-purple-500/40 rounded-full" />
+                        </div>
+                        {[1,2].map(i => (
+                          <div key={i} className="flex items-center gap-2 p-2 rounded-lg bg-purple-500/5 border border-purple-500/10 shadow-sm">
+                            <div className="w-8 h-8 rounded bg-purple-500/10 flex items-center justify-center">
+                              <ShieldCheck size={16} className="text-purple-500/40" />
+                            </div>
+                            <div className="h-2 w-12 bg-purple-500/20 rounded-full" />
+                          </div>
+                        ))}
+                        <div className="mt-auto pt-2 border-t border-border/20 text-[10px] text-purple-500/70 font-mono">
+                          PASS: hidden-ghost-key
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Center Password Field overlap */}
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 rounded-xl border border-border/40 bg-background/90 backdrop-blur-xl shadow-2xl p-4 flex flex-col gap-3 group-hover:scale-110 transition-transform duration-500 ring-1 ring-white/10">
+                       <div className="flex items-center gap-2">
+                          <Key size={14} className="text-muted-foreground" />
+                          <div className="h-2 w-20 bg-foreground/10 rounded-full" />
+                       </div>
+                       <div className="h-8 rounded-lg bg-secondary/50 border border-border flex items-center px-3 justify-between">
+                          <div className="flex gap-1">
+                             {[1,2,3,4,5,6].map(i => <div key={i} className="w-1.5 h-1.5 rounded-full bg-foreground/40" />)}
+                          </div>
+                          <Eye size={12} className="text-muted-foreground" />
+                       </div>
+                       <div className="h-8 rounded-lg bg-foreground text-background flex items-center justify-center text-[10px] font-bold uppercase tracking-wider shadow-sm">
+                          Unlock Access
+                       </div>
                     </div>
                   </div>
                 </div>
