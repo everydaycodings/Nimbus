@@ -139,7 +139,7 @@ export default async function SharePage({
 
   const { data: link } = await supabase
     .from("share_links")
-    .select("id, resource_id, resource_type, role, expires_at, password_hash, max_views, view_count, can_download")
+    .select("id, resource_id, resource_type, role, expires_at, password_hash, max_views, view_count, can_download, grace_period_ms")
     .eq("token", token)
     .maybeSingle();
 
@@ -442,7 +442,8 @@ export default async function SharePage({
       ip={ip}
       initialViewStatus={user_view.view_status as any}
       activatedAt={user_view.activated_at}
-      isSelfDestruct={!!updatedLink.max_views && updatedLink.max_views > 0} // Pass whether it's a self-destruct link
+      isSelfDestruct={!!updatedLink.max_views && updatedLink.max_views > 0} 
+      gracePeriodMs={updatedLink.grace_period_ms}
     >
       {await renderContent()}
     </SharePageClient>

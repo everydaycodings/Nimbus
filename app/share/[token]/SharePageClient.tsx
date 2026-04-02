@@ -22,17 +22,18 @@ interface Props {
   ip: string;
   initialViewStatus: "pending" | "active" | "consumed";
   activatedAt: string | null;
-  isSelfDestruct?: boolean; // New prop
-  children: React.ReactNode; // The actual file/folder content
+  isSelfDestruct?: boolean; 
+  gracePeriodMs?: number;
+  children: React.ReactNode; 
 }
 
-export function SharePageClient({ linkId, token, ip, initialViewStatus, activatedAt, isSelfDestruct, children }: Props) {
+export function SharePageClient({ linkId, token, ip, initialViewStatus, activatedAt, isSelfDestruct, gracePeriodMs, children }: Props) {
   const [viewStatus, setViewStatus] = useState(initialViewStatus);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const GRACE_PERIOD_MS = 10 * 60 * 1000; // 10 minutes
+  const GRACE_PERIOD_MS = gracePeriodMs || 10 * 60 * 1000;
 
   useEffect(() => {
     if (!isSelfDestruct) return; // Normal link doesn't need a timer
@@ -118,9 +119,9 @@ export function SharePageClient({ linkId, token, ip, initialViewStatus, activate
            
            <div className="space-y-2">
              <h1 className="text-xl font-bold text-foreground">Protected Resource</h1>
-             <p className="text-sm text-muted-foreground">
-               This is a <strong>View Once</strong> file. Once you reveal it, you will have 10 minutes to view or download it before it is permanently destroyed.
-             </p>
+              <p className="text-sm text-muted-foreground">
+                This is a <strong>View Once</strong> file. Once you reveal it, you will have {Math.floor(GRACE_PERIOD_MS / 60000) > 0 ? `${Math.floor(GRACE_PERIOD_MS / 60000)} minutes` : `${Math.floor(GRACE_PERIOD_MS / 1000)} seconds`} to view or download it before it is permanently destroyed.
+              </p>
            </div>
 
            <button

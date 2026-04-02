@@ -62,6 +62,7 @@ interface ShareLink {
   view_count:            number;
   self_destruct_target:  "link" | "resource";
   can_download:          boolean;
+  grace_period_ms:       number;
 }
 
 const TEAL = "#2da07a";
@@ -126,6 +127,7 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
   const [maxViews,         setMaxViews]         = useState<number>(1);
   const [sdTarget,         setSdTarget]         = useState<"link" | "resource">("link");
   const [canDownload,      setCanDownload]      = useState(false);
+  const [gracePeriodMs,    setGracePeriodMs]    = useState(600000); // 10 minutes default
   const [sharedUsers,      setSharedUsers]      = useState<SharedUser[]>([]);
   const [shareLinks,       setShareLinks]       = useState<ShareLink[]>([]);
   const [copied,           setCopied]           = useState<string | null>(null);
@@ -195,7 +197,8 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
           password,
           selfDestruct ? maxViews : undefined,
           sdTarget,
-          canDownload
+          canDownload,
+          gracePeriodMs
         );
         setShareLinks((prev) => [link, ...prev]);
         // Reset password fields after creation
@@ -511,6 +514,35 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
                           </p>
                         )}
                       </div>
+
+                      {/* Grace Period Selection */}
+                      <div className="flex flex-col gap-2 pt-1 border-t border-border/50">
+                        <p className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground px-1">View Duration</p>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {[
+                            { label: "10s", ms: 10000 },
+                            { label: "30s", ms: 30000 },
+                            { label: "1m", ms: 60000 },
+                            { label: "2m", ms: 120000 },
+                            { label: "5m", ms: 300000 },
+                            { label: "10m", ms: 600000 },
+                          ].map((opt) => (
+                            <button
+                              key={opt.ms}
+                              onClick={() => setGracePeriodMs(opt.ms)}
+                              className={cn(
+                                "px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all border",
+                                gracePeriodMs === opt.ms
+                                  ? "text-white border-transparent shadow-sm"
+                                  : "text-muted-foreground border-border hover:text-foreground hover:border-foreground/20 bg-transparent"
+                              )}
+                              style={gracePeriodMs === opt.ms ? { backgroundColor: TEAL, borderColor: TEAL } : {}}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -635,6 +667,14 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
                                   Destructive
                                 </span>
                               </>
+                            )}
+                            {link.max_views && (
+                               <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-accent text-muted-foreground font-medium">
+                                 {link.grace_period_ms >= 60000 
+                                   ? `${Math.floor(link.grace_period_ms / 60000)}m` 
+                                   : `${Math.floor(link.grace_period_ms / 1000)}s`
+                                 } view
+                               </span>
                             )}
                           </div>
                           <p className="text-xs text-muted-foreground truncate">{url}</p>
