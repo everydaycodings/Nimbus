@@ -2,16 +2,19 @@
 // All cryptography runs in the browser using the Web Crypto API.
 // The password and derived key NEVER leave the client.
 //
-// Max file size for vault: 500 MB
+// Max file size for vault: 100 MB
 // Above this, AES-GCM would require buffering the entire file in memory
 // which risks crashing the browser tab.
 
 const PBKDF2_ITERATIONS = 310_000
 const SALT_BYTES = 16
 const IV_BYTES = 12
-export const VAULT_MAX_FILE_SIZE = 500 * 1024 * 1024 // 500 MB
+const DEFAULT_MAX_MB = 100
+const MAX_MB = Number(process.env.NEXT_PUBLIC_VAULT_MAX_FILE_SIZE_MB || DEFAULT_MAX_MB)
+
+export const VAULT_MAX_FILE_SIZE = MAX_MB * 1024 * 1024 // e.g., 100 MB
 export const VAULT_MAX_PREVIEW_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
-export const VAULT_MAX_FILE_SIZE_LABEL = "500 MB"
+export const VAULT_MAX_FILE_SIZE_LABEL = `${MAX_MB} MB`
 
 // ── Key derivation ────────────────────────────────────────────
 export async function deriveKey(

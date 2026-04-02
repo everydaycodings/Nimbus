@@ -16,6 +16,7 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { VAULT_MAX_FILE_SIZE_LABEL } from "../lib/crypto";
 
 const TEAL = "#2da07a";
 
@@ -81,7 +82,7 @@ export default function VaultUploadDropdown({
                         <div className="flex flex-col">
                             <span>Upload files</span>
                             <span className="text-[10px] text-muted-foreground">
-                                max 500 MB
+                                max {VAULT_MAX_FILE_SIZE_LABEL}
                             </span>
                         </div>
                     </DropdownMenuItem>
