@@ -20,7 +20,9 @@ import {
   Clock,
   LockSimple,
   DownloadSimple,
-  Warning
+  Warning,
+  HardDrive,
+  FolderSimplePlus
 } from "@phosphor-icons/react";
 
 // Teal brand color based on dashboard usages
@@ -235,6 +237,76 @@ export function LandingPageClient({ initialStars, user }: LandingPageClientProps
                       <div className="w-full h-10 rounded-md flex items-center justify-center font-medium text-white shadow-sm" style={{ backgroundColor: TEAL }}>
                         Unlock Vault
                       </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Feature: Offline Vault (New) */}
+            <div className="flex flex-col md:flex-row items-center gap-12 lg:gap-20">
+              <div className="flex-1 space-y-6">
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-[#2da07a]/10 border border-[#2da07a]/20">
+                  <HardDrive size={24} style={{ color: TEAL }} weight="duotone" />
+                </div>
+                <h3 className="text-3xl md:text-4xl font-bold tracking-tight">Offline-First <span style={{ color: TEAL }}>Local Safe</span></h3>
+                <p className="text-lg text-muted-foreground leading-relaxed text-balance">
+                  Absolute privacy means no servers. Store your most sensitive assets in an isolated browser-side vault that never touches the cloud.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
+                  <div className="p-4 rounded-2xl bg-secondary/30 border border-border/40 hover:border-primary/20 transition-colors">
+                    <HardDrive size={20} style={{ color: TEAL }} className="mb-2" weight="fill" />
+                    <h4 className="font-bold text-sm mb-1">Zero-Server Storage</h4>
+                    <p className="text-xs text-muted-foreground leading-relaxed">Files stay in your browser's sandboxed filesystem (OPFS).</p>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-secondary/30 border border-border/40 hover:border-primary/20 transition-colors">
+                    <ShieldCheck size={20} style={{ color: TEAL }} className="mb-2" weight="fill" />
+                    <h4 className="font-bold text-sm mb-1">Multi-Vault Isolation</h4>
+                    <p className="text-xs text-muted-foreground leading-relaxed">Create separate secure containers with unique passphrases.</p>
+                  </div>
+                   <div className="p-4 rounded-2xl bg-secondary/30 border border-border/40 hover:border-primary/20 transition-colors">
+                    <FolderSimplePlus size={20} style={{ color: TEAL }} className="mb-2" weight="fill" />
+                    <h4 className="font-bold text-sm mb-1">Folder Hierarchies</h4>
+                    <p className="text-xs text-muted-foreground leading-relaxed">Full folder support with recursive local encrypted uploads.</p>
+                  </div>
+                   <div className="p-4 rounded-2xl bg-secondary/30 border border-border/40 hover:border-primary/20 transition-colors">
+                    <LockSimple size={20} style={{ color: TEAL }} className="mb-2" weight="fill" />
+                    <h4 className="font-bold text-sm mb-1">AES-256-GCM</h4>
+                    <p className="text-xs text-muted-foreground leading-relaxed">Client-side derivation using PBKDF2 with 310k iterations.</p>
+                  </div>
+                </div>
+              </div>
+              <div className="flex-1 w-full relative">
+                <div className="rounded-2xl border border-border/40 bg-secondary/10 p-2 shadow-2xl backdrop-blur-md relative overflow-hidden group">
+                  <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#2da07a 1px, transparent 1px)', backgroundSize: '16px 16px' }} />
+                  <div className="rounded-xl border border-border/40 bg-background overflow-hidden aspect-[4/3] flex flex-col shadow-inner relative">
+                    <div className="h-10 border-b border-border/20 bg-secondary/20 flex items-center px-4 justify-between">
+                       <div className="h-2 w-24 bg-foreground/10 rounded-full" />
+                       <ShieldCheck size={14} style={{ color: TEAL }} weight="fill" />
+                    </div>
+                    <div className="flex-1 p-6 grid grid-cols-2 gap-4">
+                       {[1,2].map(i => (
+                         <div key={i} className="rounded-2xl border border-border/40 bg-background/50 p-4 flex flex-col items-center justify-center gap-2 shadow-sm">
+                           <div className="w-10 h-10 rounded-xl bg-secondary/50 flex items-center justify-center">
+                              <LockSimple size={20} style={{ color: TEAL }} weight="duotone" />
+                           </div>
+                           <div className="h-2 w-16 bg-foreground/10 rounded-full" />
+                           <div className="h-1.5 w-10 bg-muted-foreground/10 rounded-full" />
+                         </div>
+                       ))}
+                       <div className="col-span-2 mt-2 space-y-2">
+                          {[1,2].map(i => (
+                            <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-[#2da07a]/5 border border-[#2da07a]/10">
+                               <FolderSimplePlus size={18} style={{ color: TEAL }} weight="fill" />
+                               <div className="h-2 w-32 bg-foreground/10 rounded-full" />
+                               <div className="ml-auto h-2 w-8 bg-muted-foreground/10 rounded-full" />
+                            </div>
+                          ))}
+                       </div>
+                    </div>
+                    <div className="absolute bottom-4 right-4 px-3 py-1.5 rounded-full bg-background/80 backdrop-blur-md border border-border/40 shadow-lg flex items-center gap-2">
+                       <div className="w-2 h-2 rounded-full bg-[#2da07a] animate-pulse" />
+                       <span className="text-[10px] font-black uppercase tracking-widest text-[#2da07a]">Locked Locally</span>
                     </div>
                   </div>
                 </div>

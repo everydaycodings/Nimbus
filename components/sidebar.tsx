@@ -34,6 +34,7 @@ const navItems = [
   { name: "Home", icon: House, href: "/dashboard" },
   { name: "My Files", icon: FolderSimple, href: "/dashboard/files" },
   { name: "Private Vault", icon: VaultIcon, href: "/dashboard/vault" },
+  { name: "Offline Vault", icon: HardDrive, href: "/dashboard/offline" },
   { name: "Recent", icon: Clock, href: "/dashboard/recent" },
   { name: "Starred", icon: Star, href: "/dashboard/starred" },
   { name: "Sharing", icon: ShareNetworkIcon, href: "/dashboard/sharing" },
