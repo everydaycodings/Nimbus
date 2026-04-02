@@ -16,7 +16,11 @@ import {
   Image as ImageIcon,
   Ghost,
   Key,
-  Eye
+  Eye,
+  Clock,
+  LockSimple,
+  DownloadSimple,
+  Warning
 } from "@phosphor-icons/react";
 
 // Teal brand color based on dashboard usages
@@ -402,54 +406,75 @@ export function LandingPageClient({ initialStars, user }: LandingPageClientProps
               </div>
             </div>
 
-            {/* Feature 3: Preview & Sharing */}
+            {/* Feature 3: Advanced Sharing */}
             <div className="flex flex-col md:flex-row items-center gap-12 lg:gap-20">
               <div className="flex-1 space-y-6">
                 <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-orange-500/10 border border-orange-500/20">
                   <ShareNetwork size={24} className="text-orange-500" weight="duotone" />
                 </div>
-                <h3 className="text-3xl md:text-4xl font-bold tracking-tight">Preview & Share Instantly</h3>
+                <h3 className="text-3xl md:text-4xl font-bold tracking-tight">Enterprise-Grade Sharing</h3>
                 <p className="text-lg text-muted-foreground leading-relaxed text-balance">
-                  View images, read PDFs, and check documents directly within the browser. Generate secure sharing links to collaborate with people outside your workspace.
+                  Share files securely with anyone. From self-destructing "Reveal and Burn" links to password-protected transfers, you're always in control of your data.
                 </p>
-                <ul className="space-y-3 mt-4">
-                  <li className="flex items-center gap-3 text-muted-foreground"><ImageIcon size={20} className="text-orange-500" /> Beautiful media viewer</li>
-                  <li className="flex items-center gap-3 text-muted-foreground"><ShareNetwork size={20} className="text-orange-500" /> Public share links with expiration</li>
-                  <li className="flex items-center gap-3 text-muted-foreground"><ShieldCheck size={20} className="text-orange-500" /> No signup required for guests</li>
+                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-y-3 gap-x-6 mt-4">
+                  <li className="flex items-center gap-3 text-muted-foreground text-sm"><ShieldCheck size={18} className="text-orange-500" /> Reveal & Burn (Self-destruct)</li>
+                  <li className="flex items-center gap-3 text-muted-foreground text-sm"><LockSimple size={18} className="text-orange-500" /> Password-protected links</li>
+                  <li className="flex items-center gap-3 text-muted-foreground text-sm"><DownloadSimple size={18} className="text-orange-500" /> Toggle download permissions</li>
+                  <li className="flex items-center gap-3 text-muted-foreground text-sm"><Clock size={18} className="text-orange-500" /> Configurable link expiry</li>
                 </ul>
               </div>
               <div className="flex-1 w-full relative">
                 <div className="rounded-2xl border border-border/40 bg-secondary/10 p-2 shadow-xl backdrop-blur-sm relative">
                   <div className="absolute -right-8 top-8 w-32 h-32 bg-orange-500/10 rounded-full blur-2xl" />
                   <div className="rounded-xl border border-border/40 bg-background overflow-hidden aspect-[4/3] flex flex-col shadow-inner relative z-10">
-                    {/* Underlying image preview graphic */}
                     <div className="flex-1 bg-secondary/20 flex flex-col relative overflow-hidden">
-                       <div className="absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-black/20 to-transparent flex items-center justify-between px-4 z-10">
-                          <div className="h-2.5 w-32 bg-foreground/40 rounded-full" />
-                          <div className="flex gap-3">
-                             <div className="h-6 w-6 rounded bg-foreground/10" />
-                             <div className="h-6 w-6 rounded bg-foreground/10" />
-                          </div>
+                       <div className="absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-black/10 to-transparent flex items-center justify-between px-4 z-10">
+                          <div className="h-2 w-24 bg-foreground/20 rounded-full" />
                        </div>
-                       <div className="flex-1 m-4 mt-12 rounded-lg bg-orange-500/10 border border-orange-500/20 flex flex-col items-center justify-center gap-4">
-                          <ImageIcon size={48} className="text-orange-500/40" weight="duotone" />
-                          <div className="h-2 w-24 bg-orange-500/20 rounded-full" />
+                       <div className="flex-1 m-4 mt-10 rounded-lg bg-orange-500/5 border border-orange-500/10 flex flex-col items-center justify-center gap-4">
+                          <ImageIcon size={40} className="text-orange-500/30" weight="duotone" />
                        </div>
                     </div>
                     {/* Share Link Popover simulated */}
-                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-[85%] rounded-xl border border-border/50 bg-background/95 backdrop-blur-md shadow-2xl p-4 flex flex-col z-20">
-                       <div className="flex items-center gap-2 mb-3">
-                         <div className="w-6 h-6 rounded bg-orange-500/10 flex items-center justify-center">
-                           <ShareNetwork size={12} className="text-orange-500" />
+                    <div className="absolute bottom-4 left-4 right-4 rounded-xl border border-border/50 bg-background/95 backdrop-blur-md shadow-2xl p-4 flex flex-col z-20 overflow-hidden">
+                       <div className="flex items-center justify-between mb-4">
+                         <div className="flex items-center gap-2">
+                           <div className="w-6 h-6 rounded bg-orange-500/10 flex items-center justify-center">
+                             <ShareNetwork size={12} className="text-orange-500" />
+                           </div>
+                           <span className="text-xs font-bold truncate">project_assets.zip</span>
                          </div>
-                         <span className="text-sm font-semibold">Share "project_mockup.jpg"</span>
+                         <div className="h-5 px-2 rounded-full bg-red-500/10 border border-red-500/20 flex items-center gap-1.5 animate-pulse">
+                           <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                           <span className="text-[9px] font-black uppercase text-red-600">Reveal & Burn</span>
+                         </div>
                        </div>
-                       <div className="flex gap-2">
-                         <div className="flex-1 h-8 rounded-md bg-secondary/50 border border-border flex items-center px-3 overflow-hidden">
-                           <span className="text-xs text-muted-foreground whitespace-nowrap truncate">https://nimbus.app/v/xy7B...</span>
+
+                       <div className="flex flex-col gap-2 mb-4">
+                         <div className="flex items-center gap-2">
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-500/10 border border-teal-500/20 text-[#2da07a] font-medium flex items-center gap-1">
+                               <LockSimple size={9} weight="bold" /> Protected
+                            </span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-500/10 border border-teal-500/20 text-[#2da07a] font-medium flex items-center gap-1">
+                               <DownloadSimple size={9} weight="bold" /> Read-only
+                            </span>
+                            <span className="text-[10px] text-muted-foreground ml-auto">Expires in 1h</span>
                          </div>
-                         <div className="h-8 px-4 rounded-md bg-foreground text-background flex items-center justify-center text-xs font-semibold shadow-sm">
-                           Copy
+                         <div className="flex gap-2">
+                           <div className="flex-1 h-8 rounded-lg bg-secondary/50 border border-border flex items-center px-3 overflow-hidden">
+                             <span className="text-[10px] text-muted-foreground font-mono truncate">nimbus.app/share/xP9k...</span>
+                           </div>
+                           <div className="h-8 px-3 rounded-lg bg-foreground text-background flex items-center justify-center text-[10px] font-bold shadow-sm">
+                             Copy
+                           </div>
+                         </div>
+                       </div>
+                       
+                       <div className="flex items-center gap-2 pt-3 border-t border-border/40">
+                         <div className="w-6 h-6 rounded-full bg-foreground/10 border border-border/40" />
+                         <div className="h-2.5 w-24 bg-foreground/10 rounded-full" />
+                         <div className="ml-auto flex -space-x-2">
+                            {[1,2,3].map(i => <div key={i} className="w-5 h-5 rounded-full border-2 border-background bg-secondary shadow-sm" />)}
                          </div>
                        </div>
                     </div>
