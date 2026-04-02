@@ -220,3 +220,54 @@ export async function moveVaultFolder(
 
   if (error) throw new Error(error.message);
 }
+// ── Get folder hierarchy (recursive) ──────────────────────────
+export async function getVaultFolderHierarchy(
+  vaultId:  string,
+  folderId: string,
+  path = ""
+): Promise<any[]> {
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
+  if (!userId) throw new Error("Unauthorized");
+
+  // Verify vault ownership
+  await assertVaultOwner(vaultId, userId);
+
+  const [{ data: files }, { data: folders }] = await Promise.all([
+    supabase
+      .from("vault_files")
+      .select("id, name, original_mime_type, size")
+      .eq("vault_id", vaultId)
+      .eq("parent_folder_id", folderId),
+    supabase
+      .from("vault_folders")
+      .select("id, name")
+      .eq("vault_id", vaultId)
+      .eq("parent_folder_id", folderId)
+  ]);
+
+  let results: any[] = [];
+
+  for (const file of files || []) {
+    results.push({
+      id: file.id,
+      name: file.name,
+      mimeType: file.original_mime_type,
+      size: file.size,
+      path: `${path}${file.name}`
+    });
+  }
+
+  if (folders && folders.length > 0) {
+    const nestedResults = await Promise.all(
+      folders.map(f => getVaultFolderHierarchy(vaultId, f.id, `${path}${f.name}/`))
+    );
+    for (const nested of nestedResults) {
+      results.push(...nested);
+    }
+  }
+
+  return results;
+}

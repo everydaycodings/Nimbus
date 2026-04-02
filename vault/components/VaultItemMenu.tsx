@@ -13,6 +13,7 @@ import {
   Trash,
   FolderSimple,
   Info,
+  DownloadSimple,
 } from "@phosphor-icons/react";
 
 interface Props {
@@ -24,6 +25,7 @@ interface Props {
   onDelete: () => void;
   onMove: () => void;
   onDetails?: () => void;
+  onDownload?: () => void;
 }
 
 export default function VaultItemMenu({
@@ -31,6 +33,7 @@ export default function VaultItemMenu({
   onDelete,
   onMove,
   onDetails,
+  onDownload,
 }: Props) {
   return (
     <DropdownMenu>
@@ -52,6 +55,12 @@ export default function VaultItemMenu({
         {onDetails && (
           <DropdownMenuItem onClick={onDetails}>
             <Info className="mr-2" /> Details
+          </DropdownMenuItem>
+        )}
+        
+        {onDownload && (
+          <DropdownMenuItem onClick={onDownload}>
+            <DownloadSimple className="mr-2" /> Download
           </DropdownMenuItem>
         )}
 

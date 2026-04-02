@@ -339,7 +339,7 @@ export function OpenVault({
     parentFolderId: currentFolderId,
     onSuccess: () => invalidateVaultCache(),
   });
-  const { download, preview, decrypting, clearPreviewCache } = useVaultDownload(cryptoKey);
+  const { download, downloadFolder, preview, decrypting, clearPreviewCache } = useVaultDownload(cryptoKey);
 
   const invalidateVaultCache = async () => {
     await getQueryClient().invalidateQueries({ queryKey: ["vaults"] });
@@ -658,6 +658,7 @@ export function OpenVault({
                               is_starred: false,
                             })
                           }
+                          onDownload={() => downloadFolder(vault.id, folder.id, folder.name)}
                         />
                       </div>
                     </div>
@@ -733,6 +734,7 @@ export function OpenVault({
                                 is_starred: false,
                               })
                             }
+                            onDownload={() => download(file.id, file.name, file.original_mime_type)}
                           />
                         </div>
                       </div>
@@ -806,6 +808,7 @@ export function OpenVault({
                                   is_starred: false,
                                 })
                               }
+                              onDownload={() => downloadFolder(vault.id, folder.id, folder.name)}
                             />
                           </div>
                         </div>
@@ -888,6 +891,7 @@ export function OpenVault({
                                     is_starred: false,
                                   })
                                 }
+                                onDownload={() => download(file.id, file.name, file.original_mime_type)}
                               />
                             </div>
                           </div>
