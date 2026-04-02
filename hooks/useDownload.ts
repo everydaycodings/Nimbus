@@ -11,31 +11,37 @@ const CACHE_TTL = 3600 * 1000; // 1 hour in milliseconds
 export function useDownload() {
   const [downloading, setDownloading] = useState<Set<string>>(new Set());
 
-  const download = async (fileId: string, fileName: string) => {
-    if (downloading.has(fileId)) return;
+  const download = async (id: string, name: string, type: "file" | "folder" = "file") => {
+    if (downloading.has(id)) return;
 
-    setDownloading((prev) => new Set(prev).add(fileId));
+    setDownloading((prev) => new Set(prev).add(id));
 
     try {
-      const res = await fetch(`/api/download?fileId=${fileId}&inline=false`);
-      if (!res.ok) throw new Error("Failed to get download URL");
+      if (type === "file") {
+        // ── Single file: Get signed URL then download ──
+        const res = await fetch(`/api/download?fileId=${id}&inline=false`);
+        if (!res.ok) throw new Error("Failed to get download URL");
 
-      const { url } = await res.json();
+        const { url } = await res.json();
 
-      // Trigger browser download without navigating away
-      const a = document.createElement("a");
-      a.href     = url;
-      a.download = fileName;
-      a.rel      = "noopener noreferrer";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+        const a = document.createElement("a");
+        a.href     = url;
+        a.download = name;
+        a.rel      = "noopener noreferrer";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } else {
+        // ── Folder: Trigger streaming ZIP download (direct navigation) ──
+        // Using window.location.href for streaming to disk (zero-buffering)
+        window.location.href = `/api/download?folderId=${id}`;
+      }
     } catch (err) {
       console.error("[download] error:", err);
     } finally {
       setDownloading((prev) => {
         const next = new Set(prev);
-        next.delete(fileId);
+        next.delete(id);
         return next;
       });
     }

@@ -207,7 +207,7 @@ export async function createShareLink(
       role,
       expires_at:           expiresAt,
       password_hash:        passwordHash,
-      max_views:            maxViews ?? null,
+      max_views:            (maxViews && maxViews > 0) ? maxViews : null,
       self_destruct_target: selfDestructTarget,
     })
     .select()

@@ -438,6 +438,7 @@ export default async function SharePage({
       ip={ip}
       initialViewStatus={user_view.view_status as any}
       activatedAt={user_view.activated_at}
+      isSelfDestruct={!!updatedLink.max_views && updatedLink.max_views > 0} // Pass whether it's a self-destruct link
     >
       {await renderContent()}
     </SharePageClient>

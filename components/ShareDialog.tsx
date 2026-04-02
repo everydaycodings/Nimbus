@@ -520,12 +520,14 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
                   "w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white transition-all",
                   isPending || (passwordProtect && !linkPassword.trim()) ? "opacity-50 cursor-not-allowed" : "hover:opacity-90"
                 )}
-                style={{ backgroundColor: TEAL }}
+                style={{ backgroundColor: (selfDestruct && sdTarget === "resource") ? "#ef4444" : TEAL }}
               >
-                <LinkIcon size={15} />
+                {selfDestruct && sdTarget === "resource" ? <Warning size={15} weight="bold" /> : <LinkIcon size={15} />}
                 {isPending
                   ? "Creating…"
-                  : `Create link · ${selectedExpiry.label}${selfDestruct ? ` · ${maxViews} ${maxViews === 1 ? 'view' : 'views'}` : ""}${passwordProtect && linkPassword.trim() ? " · 🔒" : ""}`
+                  : selfDestruct && sdTarget === "resource"
+                    ? `Create Destructive Link · ${selectedExpiry.label} · ${maxViews} views`
+                    : `Create link · ${selectedExpiry.label}${selfDestruct ? ` · ${maxViews} ${maxViews === 1 ? 'view' : 'views'}` : ""}${passwordProtect && linkPassword.trim() ? " · 🔒" : ""}`
                 }
               </button>
 
@@ -541,8 +543,9 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
                       <div
                         key={link.id}
                         className={cn(
-                          "flex items-center gap-3 px-3 py-2.5 rounded-xl border",
-                          expired ? "border-red-500/20 bg-red-500/5" : "border-border bg-secondary"
+                          "flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-colors",
+                          expired ? "border-red-500/20 bg-red-500/5" :
+                          link.self_destruct_target === "resource" ? "border-red-500/30 bg-red-500/5" : "border-border bg-secondary"
                         )}
                       >
                         <Globe
@@ -553,7 +556,6 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
                         />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-medium text-foreground capitalize">{link.role}</span>
                             {link.is_password_protected && (
                               <span
                                 className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full font-medium"
@@ -571,7 +573,15 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
                             {link.max_views && (
                               <>
                                 <span className="text-xs text-muted-foreground">·</span>
-                                <span className={cn("text-xs", link.view_count >= (link.max_views ?? 0) ? "text-red-400" : "text-muted-foreground")}>
+                                <span
+                                  className={cn(
+                                    "inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-tight transition-all",
+                                    link.view_count >= (link.max_views ?? 0)
+                                      ? "bg-red-500 text-white shadow-sm"
+                                      : "bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 shadow-[0_0_8px_-2px_rgba(239,68,68,0.2)]"
+                                  )}
+                                  title="Self-destruct link: link will be deleted after limited views"
+                                >
                                   {link.view_count}/{link.max_views} views
                                 </span>
                               </>
@@ -579,7 +589,7 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
                             {link.self_destruct_target === "resource" && (
                               <>
                                 <span className="text-xs text-muted-foreground">·</span>
-                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-500/10 text-red-500 font-bold uppercase tracking-tighter">
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-600 text-white font-black uppercase tracking-widest shadow-sm ring-2 ring-red-500/20 animate-pulse">
                                   Destructive
                                 </span>
                               </>

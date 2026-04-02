@@ -22,10 +22,11 @@ interface Props {
   ip: string;
   initialViewStatus: "pending" | "active" | "consumed";
   activatedAt: string | null;
+  isSelfDestruct?: boolean; // New prop
   children: React.ReactNode; // The actual file/folder content
 }
 
-export function SharePageClient({ linkId, token, ip, initialViewStatus, activatedAt, children }: Props) {
+export function SharePageClient({ linkId, token, ip, initialViewStatus, activatedAt, isSelfDestruct, children }: Props) {
   const [viewStatus, setViewStatus] = useState(initialViewStatus);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [isStarting, setIsStarting] = useState(false);
@@ -34,6 +35,8 @@ export function SharePageClient({ linkId, token, ip, initialViewStatus, activate
   const GRACE_PERIOD_MS = 10 * 60 * 1000; // 10 minutes
 
   useEffect(() => {
+    if (!isSelfDestruct) return; // Normal link doesn't need a timer
+
     if (viewStatus === "active" && activatedAt) {
       const start = new Date(activatedAt).getTime();
       const end = start + GRACE_PERIOD_MS;
@@ -81,6 +84,12 @@ export function SharePageClient({ linkId, token, ip, initialViewStatus, activate
     finishShareView(linkId, ip);
     setViewStatus("consumed");
   };
+
+  // --- Non-Self-Destruct Mode (Normal Link) ---
+  // We only treat it as self-destruct if isSelfDestruct is explicitly true
+  if (isSelfDestruct !== true) {
+    return <>{children}</>;
+  }
 
   if (viewStatus === "consumed") {
     return (

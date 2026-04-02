@@ -14,7 +14,6 @@ import { useSearchParams } from "next/navigation";
 import { FileFilters } from "@/components/FileFilters";
 import {
   getSharedFileDownloadUrl,
-  getSharedFolderZip,
 } from "@/actions/sharing.dashboard";
 import { useSharingQuery } from "@/hooks/queries/useSharingQuery";
 import {
@@ -431,38 +430,29 @@ function SharedWithMeCard({
 
     try {
       if (item.resource_type === "file") {
-        // ── Single file ──────────────────────────────────────
+        // ── Single file: Signed URL ─────────────────────────
         const { url, name } = await getSharedFileDownloadUrl(item.resource_id);
         const a = Object.assign(document.createElement("a"), { href: url, download: name });
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
+        setDownloading(false);
 
       } else {
-        // ── Folder → zip ─────────────────────────────────────
-        // Server builds the zip and returns base64
-        setDlProgress("Building zip...");
-        const { base64, fileName } = await getSharedFolderZip(item.resource_id);
-
-        setDlProgress("Preparing download...");
-
-        // Convert base64 → Uint8Array → Blob
-        const binary = atob(base64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        const blob = new Blob([bytes], { type: "application/zip" });
-
-        const url = URL.createObjectURL(blob);
-        const a = Object.assign(document.createElement("a"), { href: url, download: fileName });
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(url), 10_000);
+        // ── Folder → Optimized Stream ───────────────────────
+        setDlProgress("Starting zip...");
+        // Direct navigation for zero-buffering browser streaming
+        window.location.href = `/api/download?folderId=${item.resource_id}`;
+        
+        // Reset state after a short delay since we can't track native download start easily
+        setTimeout(() => {
+          setDownloading(false);
+          setDlProgress(null);
+        }, 2000);
       }
     } catch (err) {
       console.error("[download]", err);
       alert("Download failed. Please try again.");
-    } finally {
       setDownloading(false);
       setDlProgress(null);
     }
