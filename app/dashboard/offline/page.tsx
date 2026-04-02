@@ -9,10 +9,8 @@ export const metadata: Metadata = {
 
 export default function OfflineVaultPage() {
   return (
-    <div className="h-full flex flex-col p-4 md:p-8">
-       <div className="flex-1 bg-card rounded-3xl border shadow-sm overflow-hidden min-h-[600px]">
-          <OfflineDashboard />
-       </div>
+    <div className="h-full flex flex-col">
+      <OfflineDashboard />
     </div>
   );
 }

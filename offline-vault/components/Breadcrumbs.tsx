@@ -3,6 +3,7 @@
 
 import { CaretRight, House } from "@phosphor-icons/react";
 import { useOfflineVault } from "../hooks/useOfflineVault";
+import { cn } from "@/lib/utils";
 
 const TEAL = "#2da07a";
 
@@ -14,12 +15,12 @@ interface Breadcrumb {
 interface Props {
   currentFolderId: string | null;
   setCurrentFolderId: (id: string | null) => void;
+  className?: string;
 }
 
-export default function Breadcrumbs({ currentFolderId, setCurrentFolderId }: Props) {
+export default function Breadcrumbs({ currentFolderId, setCurrentFolderId, className }: Props) {
   const { files } = useOfflineVault();
 
-  // Compute the path from current folder to root
   const getPath = () => {
     const path: Breadcrumb[] = [];
     let currentId = currentFolderId;
@@ -34,28 +35,37 @@ export default function Breadcrumbs({ currentFolderId, setCurrentFolderId }: Pro
       }
     }
 
-    path.unshift({ id: null, name: "Root" });
     return path;
   };
 
   const path = getPath();
 
   return (
-    <nav className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap px-4 py-2 bg-secondary/20 rounded-2xl border border-border/40 scrollbar-hide max-w-full">
-      {path.map((crumb, index) => (
-        <div key={crumb.id || "root"} className="flex items-center gap-1.5 group">
-          {index > 0 && <CaretRight size={12} className="text-muted-foreground opacity-40 shrink-0" />}
+    <div className={cn("flex items-center gap-1 text-sm mb-4 flex-shrink-0 overflow-x-auto scrollbar-hide whitespace-nowrap", className)}>
+      <button
+        onClick={() => setCurrentFolderId(null)}
+        className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 text-sm"
+      >
+        <House size={13} />
+        <span>Vault</span>
+      </button>
+
+      {path.map((crumb, i) => (
+        <span key={crumb.id || "root"} className="flex items-center gap-1">
+          <CaretRight size={11} className="text-muted-foreground" />
           <button
             onClick={() => setCurrentFolderId(crumb.id)}
-            className={`text-xs font-bold transition-all px-2 py-1 rounded-lg hover:bg-secondary/60 flex items-center gap-1.5 ${
-              index === path.length - 1 ? "text-foreground bg-card shadow-sm border border-border/60" : "text-muted-foreground hover:text-foreground"
-            }`}
+            className={cn(
+              "transition-colors text-sm",
+              i === path.length - 1
+                ? "text-foreground font-medium"
+                : "text-muted-foreground hover:text-foreground"
+            )}
           >
-            {crumb.id === null && <House size={14} weight="fill" style={{ color: TEAL }} />}
             {crumb.name}
           </button>
-        </div>
+        </span>
       ))}
-    </nav>
+    </div>
   );
 }

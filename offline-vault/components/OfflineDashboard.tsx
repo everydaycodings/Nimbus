@@ -7,17 +7,9 @@ import LocalFileExplorer from "./LocalFileExplorer";
 export default function OfflineDashboard() {
   const { isUnlocked } = useOfflineVault();
 
-  if (!isUnlocked) {
-    return (
-      <div className="h-full w-full overflow-y-auto bg-background/20">
-        <VaultSelector />
-      </div>
-    );
-  }
-
   return (
-    <div className="h-full w-full overflow-hidden bg-background/20">
-      <LocalFileExplorer />
+    <div className="p-4 md:p-6 h-full overflow-y-auto">
+      {isUnlocked ? <LocalFileExplorer /> : <VaultSelector />}
     </div>
   );
 }
