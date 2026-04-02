@@ -169,7 +169,8 @@ export async function createShareLink(
   expiresInDays?: number,  // undefined = never expires
   password?:     string,   // undefined = no password
   maxViews?:     number,   // undefined = unlimited
-  selfDestructTarget: "link" | "resource" = "link"
+  selfDestructTarget: "link" | "resource" = "link",
+  canDownload:   boolean = false
 ) {
   const supabaseServer = await createSupabaseClient();
   const authUserResponse = await supabaseServer.auth.getUser();
@@ -209,6 +210,7 @@ export async function createShareLink(
       password_hash:        passwordHash,
       max_views:            (maxViews && maxViews > 0) ? maxViews : null,
       self_destruct_target: selfDestructTarget,
+      can_download:         canDownload,
     })
     .select()
     .single();
@@ -239,7 +241,7 @@ export async function getShareLinks(
 
   const { data, error } = await supabase
     .from("share_links")
-    .select("id, token, role, expires_at, created_at, password_hash, max_views, view_count, self_destruct_target")
+    .select("id, token, role, expires_at, created_at, password_hash, max_views, view_count, self_destruct_target, can_download")
     .eq("resource_id", resourceId)
     .eq("resource_type", resourceType)
     .eq("owner_id", owner.id)

@@ -139,7 +139,7 @@ export default async function SharePage({
 
   const { data: link } = await supabase
     .from("share_links")
-    .select("id, resource_id, resource_type, role, expires_at, password_hash, max_views, view_count")
+    .select("id, resource_id, resource_type, role, expires_at, password_hash, max_views, view_count, can_download")
     .eq("token", token)
     .maybeSingle();
 
@@ -226,7 +226,7 @@ export default async function SharePage({
           <header className="sticky top-0 z-10 flex items-center justify-between px-6 py-3 border-b border-border bg-background/80 backdrop-blur-sm">
             <Logo />
             <div className="flex items-center gap-2">
-              <ShareDownloadButton token={token} />
+              {link.can_download && <ShareDownloadButton token={token} />}
               <span className="text-xs text-muted-foreground border border-border rounded-full px-2 py-0.5">
                 {link.role === "viewer" ? "View only" : "Can edit"}
               </span>
@@ -258,15 +258,17 @@ export default async function SharePage({
                     <p className="text-sm font-semibold text-foreground">{file.name}</p>
                     <p className="text-xs text-muted-foreground mt-1">{formatBytes(file.size)}</p>
                   </div>
-                  <a
-                    href={signedUrl}
-                    download={file.name}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white hover:opacity-90 transition-all shadow-sm"
-                    style={{ backgroundColor: TEAL }}
-                  >
-                    <DownloadSimple size={16} weight="bold" />
-                    Download file
-                  </a>
+                  {link.can_download && (
+                    <a
+                      href={signedUrl}
+                      download={file.name}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white hover:opacity-90 transition-all shadow-sm"
+                      style={{ backgroundColor: TEAL }}
+                    >
+                      <DownloadSimple size={16} weight="bold" />
+                      Download file
+                    </a>
+                  )}
                 </div>
               )}
           </div>
@@ -334,7 +336,7 @@ export default async function SharePage({
           <header className="sticky top-0 z-10 flex items-center justify-between px-6 py-3 border-b border-border bg-background/80 backdrop-blur-sm">
             <Logo />
             <div className="flex items-center gap-2">
-              {!isEmpty && <ShareDownloadButton token={token} />}
+              {!isEmpty && link.can_download && <ShareDownloadButton token={token} />}
               <span className="text-xs text-muted-foreground border border-border rounded-full px-2 py-0.5">
                 {link.role === "viewer" ? "View only" : "Can edit"}
               </span>
@@ -402,12 +404,14 @@ export default async function SharePage({
                               ) : (
                                 <FileMimeIcon mimeType={file.mime_type} size={36} />
                               )}
-                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                <a href={file.signedUrl} download={file.name} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-white shadow-sm" style={{ backgroundColor: TEAL }}>
-                                  <DownloadSimple size={13} weight="bold" />
-                                  Download
-                                </a>
-                              </div>
+                              {link.can_download && (
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                  <a href={file.signedUrl} download={file.name} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-white shadow-sm" style={{ backgroundColor: TEAL }}>
+                                    <DownloadSimple size={13} weight="bold" />
+                                    Download
+                                  </a>
+                                </div>
+                              )}
                             </div>
                             <div className="px-3 py-2.5">
                               <p className="text-xs font-medium text-foreground truncate">{file.name}</p>

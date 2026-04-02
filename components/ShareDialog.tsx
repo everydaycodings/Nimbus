@@ -16,6 +16,7 @@ import {
   LockSimple,
   ShieldCheck,
   Warning,
+  DownloadSimple,
 } from "@phosphor-icons/react";
 import {
   shareWithUser,
@@ -60,6 +61,7 @@ interface ShareLink {
   max_views:             number | null;
   view_count:            number;
   self_destruct_target:  "link" | "resource";
+  can_download:          boolean;
 }
 
 const TEAL = "#2da07a";
@@ -123,6 +125,7 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
   const [selfDestruct,     setSelfDestruct]     = useState(false);
   const [maxViews,         setMaxViews]         = useState<number>(1);
   const [sdTarget,         setSdTarget]         = useState<"link" | "resource">("link");
+  const [canDownload,      setCanDownload]      = useState(false);
   const [sharedUsers,      setSharedUsers]      = useState<SharedUser[]>([]);
   const [shareLinks,       setShareLinks]       = useState<ShareLink[]>([]);
   const [copied,           setCopied]           = useState<string | null>(null);
@@ -191,7 +194,8 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
           expiresInDays,
           password,
           selfDestruct ? maxViews : undefined,
-          sdTarget
+          sdTarget,
+          canDownload
         );
         setShareLinks((prev) => [link, ...prev]);
         // Reset password fields after creation
@@ -510,6 +514,34 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
                     </div>
                   )}
                 </div>
+
+                {/* Allow Download row */}
+                <div className="flex flex-col gap-2 pt-1 border-t border-border/50">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <DownloadSimple size={15} weight="duotone" className="text-muted-foreground" />
+                      <span className="text-sm text-foreground font-medium">Allow download</span>
+                    </div>
+                    {/* Toggle switch */}
+                    <button
+                      role="switch"
+                      aria-checked={canDownload}
+                      onClick={() => setCanDownload(!canDownload)}
+                      className={cn(
+                        "relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none",
+                        canDownload ? "" : "bg-border"
+                      )}
+                      style={canDownload ? { backgroundColor: TEAL } : {}}
+                    >
+                      <span
+                        className={cn(
+                          "inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform",
+                          canDownload ? "translate-x-4.5" : "translate-x-0.5"
+                        )}
+                      />
+                    </button>
+                  </div>
+                </div>
               </div>
 
               {/* Create button */}
@@ -564,6 +596,16 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
                               >
                                 <LockSimple size={9} weight="bold" />
                                 Protected
+                              </span>
+                            )}
+                            {link.can_download && (
+                              <span
+                                className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                                style={{ backgroundColor: `${TEAL}18`, color: TEAL }}
+                                title="Download enabled"
+                              >
+                                <DownloadSimple size={9} weight="bold" />
+                                Downloadable
                               </span>
                             )}
                             <span className="text-xs text-muted-foreground">·</span>

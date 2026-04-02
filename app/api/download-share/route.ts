@@ -15,12 +15,16 @@ export async function GET(req: NextRequest) {
 
   const { data: link } = await supabase
     .from("share_links")
-    .select("resource_id, resource_type")
+    .select("resource_id, resource_type, can_download")
     .eq("token", token)
     .maybeSingle()
 
   if (!link) {
     return new Response("Link not found", { status: 404 })
+  }
+
+  if (!link.can_download) {
+    return new Response("Download disabled for this link", { status: 403 })
   }
 
   // ════════════════════════════════════
