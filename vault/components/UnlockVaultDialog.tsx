@@ -3,23 +3,20 @@
 
 import { useState, useTransition } from "react";
 import { X, LockKey, Eye, EyeSlash, LockKeyOpen } from "@phosphor-icons/react";
-import { deriveKey, verifyPassword, base64ToBuffer } from "@/vault/lib/crypto";
+import { deriveKey, verifyPassword, base64ToBuffer, deriveStealthId } from "@/vault/lib/crypto";
 import { saveVaultSession, loadVaultSession }        from "@/vault/lib/session";
+import { getVaultById } from "@/vault/actions/vault.actions";
+import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 const TEAL = "#2da07a";
 
-interface Vault {
-  id:                 string;
-  name:               string;
-  salt:               string;
-  verification_token: string;
-}
+import { Vault } from "@/vault/types/vault";
 
 interface Props {
   vault:     Vault;
-  onUnlock:  (key: CryptoKey) => void;
+  onUnlock:  (key: CryptoKey, discoveredVault?: Vault) => void;
   onClose:   () => void;
 }
 
@@ -34,18 +31,38 @@ export function UnlockVaultDialog({ vault, onUnlock, onClose }: Props) {
 
     startTransition(async () => {
       try {
-        const salt = base64ToBuffer(vault.salt);
-        const key  = await deriveKey(password, salt);
-        const ok   = await verifyPassword(key, vault.verification_token);
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { toast.error("User session not found"); return; }
+
+        let currentVault = vault;
+        let salt = base64ToBuffer(currentVault.salt);
+        let key  = await deriveKey(password, salt);
+        let ok   = await verifyPassword(key, currentVault.verification_token);
+
+        // [Discovery Step]
+        // If it failed, check if this password belongs to a hidden vault
+        if (!ok) {
+          const stealthId = await deriveStealthId(user.id, password);
+          const hiddenVault = await getVaultById(stealthId);
+          
+          if (hiddenVault) {
+            currentVault = hiddenVault;
+            salt = base64ToBuffer(currentVault.salt);
+            key  = await deriveKey(password, salt);
+            ok   = await verifyPassword(key, currentVault.verification_token);
+          }
+        }
 
         if (!ok) {
           toast.error("Incorrect password. Try again.");
           return;
         }
 
-        if (remember) saveVaultSession(vault.id, password);
-        onUnlock(key);
-      } catch {
+        if (remember) saveVaultSession(currentVault.id, password);
+        onUnlock(key, currentVault.id !== vault.id ? currentVault : undefined);
+      } catch (err) {
+        console.error(err);
         toast.error("Something went wrong. Try again.");
       }
     });

@@ -48,8 +48,8 @@ export function VaultPage({ initialData }: { initialData?: Vault[] }) {
     }
   };
 
-  const handleUnlocked = (key: CryptoKey) => {
-    setOpenVault(unlockTarget);
+  const handleUnlocked = (key: CryptoKey, discoveredVault?: Vault) => {
+    setOpenVault(discoveredVault || unlockTarget);
     setOpenKey(key);
     setUnlockTarget(null);
   };

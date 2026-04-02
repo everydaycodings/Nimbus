@@ -16,6 +16,8 @@ export const VAULT_MAX_FILE_SIZE = MAX_MB * 1024 * 1024 // e.g., 100 MB
 export const VAULT_MAX_PREVIEW_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
 export const VAULT_MAX_FILE_SIZE_LABEL = `${MAX_MB} MB`
 
+export const STEALTH_NAME_PREFIX = "Archive_"
+
 // ── Key derivation ────────────────────────────────────────────
 export async function deriveKey(
   password: string,
@@ -47,6 +49,31 @@ export async function deriveKey(
     false,
     ["encrypt", "decrypt"]
   )
+}
+
+/**
+ * Derives a deterministic UUID from the user ID and password.
+ * This allows "discovery" of hidden vaults without them being linked to the user in a list.
+ */
+export async function deriveStealthId(
+  userId: string,
+  password: string
+): Promise<string> {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(userId + password + "nimbus-stealth-v1")
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data)
+  const hashArray = new Uint8Array(hashBuffer)
+
+  // Use the first 16 bytes of the hash to create a UUID-like string
+  // Format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+  const hex = Array.from(hashArray.slice(0, 16))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("")
+
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(
+    16,
+    20
+  )}-${hex.slice(20, 32)}`
 }
 
 export function generateSalt(): Uint8Array {

@@ -4,9 +4,11 @@
 import { useState, useTransition } from "react";
 import { X, LockKey, Eye, EyeSlash, ShieldCheck } from "@phosphor-icons/react";
 import { createVault }                      from "@/vault/actions/vault.actions";
-import { deriveKey, generateSalt, encryptVerificationToken, bufferToBase64 } from "@/vault/lib/crypto";
+import { deriveKey, generateSalt, encryptVerificationToken, bufferToBase64, deriveStealthId, STEALTH_NAME_PREFIX } from "@/vault/lib/crypto";
+import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { Ghost, Info } from "@phosphor-icons/react";
 
 const TEAL = "#2da07a";
 
@@ -20,6 +22,7 @@ export function CreateVaultDialog({ onSuccess, onClose }: Props) {
   const [password,    setPassword]    = useState("");
   const [confirm,     setConfirm]     = useState("");
   const [showPw,      setShowPw]      = useState(false);
+  const [isStealth,   setIsStealth]   = useState(false);
   const [isPending,   startTransition] = useTransition();
 
   const strength = (() => {
@@ -35,18 +38,37 @@ export function CreateVaultDialog({ onSuccess, onClose }: Props) {
   const strengthColor = ["", "#ef4444", "#f97316", "#eab308", TEAL, TEAL][strength];
 
   const handleCreate = () => {
-    if (!name.trim())           { toast.error("Vault name is required"); return; }
+    if (!isStealth && !name.trim()) { toast.error("Vault name is required"); return; }
     if (password.length < 8)    { toast.error("Password must be at least 8 characters"); return; }
     if (password !== confirm)   { toast.error("Passwords do not match"); return; }
 
     startTransition(async () => {
       try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { toast.error("User session not found"); return; }
+
         const salt              = generateSalt();
         const key               = await deriveKey(password, salt);
         const verificationToken = await encryptVerificationToken(key);
         const saltBase64        = bufferToBase64(salt);
 
-        await createVault({ name: name.trim(), saltBase64, verificationToken });
+        let vaultId: string | undefined = undefined;
+        let finalName = name.trim();
+
+        if (isStealth) {
+          vaultId = await deriveStealthId(user.id, password);
+          // Random suffix for "Archive_XXXXXX"
+          const suffix = Math.random().toString(36).substring(2, 8).toUpperCase();
+          finalName = `${STEALTH_NAME_PREFIX}${suffix}`;
+        }
+
+        await createVault({ 
+          id: vaultId,
+          name: finalName, 
+          saltBase64, 
+          verificationToken 
+        });
         toast.success("Vault created successfully!");
         onSuccess();
         onClose();
@@ -75,11 +97,12 @@ export function CreateVaultDialog({ onSuccess, onClose }: Props) {
 
         <div className="flex flex-col gap-3">
           {/* Vault name */}
-          <div>
+          <div className={cn("transition-all", isStealth ? "opacity-30 pointer-events-none" : "opacity-100")}>
             <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Vault name</label>
             <input
+              disabled={isStealth}
               type="text"
-              value={name}
+              value={isStealth ? "Stealth Archive" : name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Personal documents"
               className="w-full px-3 py-2 rounded-xl text-sm bg-secondary border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-[#2da07a]/30 focus:border-[#2da07a]/50 placeholder:text-muted-foreground transition-all"
@@ -141,6 +164,40 @@ export function CreateVaultDialog({ onSuccess, onClose }: Props) {
             />
           </div>
 
+          {/* Stealth Mode Toggle */}
+          <div className="flex flex-col gap-2 p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 group transition-all">
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <Ghost size={16} className={cn("transition-colors", isStealth ? "text-purple-400" : "text-muted-foreground")} />
+                <span className={cn("text-xs font-medium transition-colors", isStealth ? "text-purple-400" : "text-muted-foreground")}>
+                  Stealth Mode
+                </span>
+                <input 
+                  type="checkbox" 
+                  className="hidden" 
+                  checked={isStealth} 
+                  onChange={(e) => setIsStealth(e.target.checked)} 
+                />
+                <div 
+                  className={cn(
+                    "w-8 h-4.5 rounded-full relative transition-all duration-300 cursor-pointer",
+                    isStealth ? "bg-purple-500" : "bg-muted-foreground/30"
+                  )}
+                >
+                  <div className={cn(
+                    "absolute top-0.5 left-0.5 w-3.5 h-3.5 bg-white rounded-full transition-all duration-300 shadow-sm",
+                    isStealth ? "translate-x-3.5" : "translate-x-0"
+                  )} />
+                </div>
+              </label>
+            </div>
+            {isStealth && (
+              <p className="text-[10px] text-purple-400/80 leading-relaxed animate-in fade-in slide-in-from-top-1">
+                This vault will be invisible in your list. To access it, simply enter its password on the regular unlock screen.
+              </p>
+            )}
+          </div>
+
           {/* Warning */}
           <div className="flex gap-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
             <ShieldCheck size={15} className="text-amber-400 flex-shrink-0 mt-0.5" />
@@ -152,16 +209,16 @@ export function CreateVaultDialog({ onSuccess, onClose }: Props) {
           {/* Submit */}
           <button
             onClick={handleCreate}
-            disabled={isPending || !name.trim() || password.length < 8 || password !== confirm}
+            disabled={isPending || (!isStealth && !name.trim()) || password.length < 8 || password !== confirm}
             className={cn(
               "w-full py-2.5 rounded-xl text-sm font-medium text-white transition-all mt-1",
-              isPending || !name.trim() || password.length < 8 || password !== confirm
+              isPending || (!isStealth && !name.trim()) || password.length < 8 || password !== confirm
                 ? "opacity-40 cursor-not-allowed"
                 : "hover:opacity-90"
             )}
-            style={{ backgroundColor: TEAL }}
+            style={{ backgroundColor: isStealth ? "#a855f7" : TEAL }}
           >
-            {isPending ? "Creating vault..." : "Create vault"}
+            {isPending ? "Creating vault..." : isStealth ? "Create stealth vault" : "Create vault"}
           </button>
         </div>
       </div>

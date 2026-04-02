@@ -4,6 +4,7 @@
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 import { Vault } from "@/vault/types/vault";
+import { STEALTH_NAME_PREFIX } from "@/vault/lib/crypto";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -23,6 +24,7 @@ async function getUser(userId: string) {
 // salt and verificationToken are computed client-side and passed here.
 // The server stores them but NEVER sees the password.
 export async function createVault(input: {
+  id?:               string;
   name:              string;
   saltBase64:        string;    // random salt for PBKDF2
   verificationToken: string;    // AES-GCM encrypted token to verify password
@@ -39,6 +41,7 @@ export async function createVault(input: {
   const { data, error } = await supabase
     .from("vaults")
     .insert({
+      id:                 input.id,
       name:               input.name,
       owner_id:           user.id,
       salt:               input.saltBase64,
@@ -63,10 +66,33 @@ export async function getVaults(): Promise<Vault[]> {
     .from("vaults")
     .select("id, name, salt, verification_token, created_at, updated_at")
     .eq("owner_id", userId)
+    .not("name", "ilike", `${STEALTH_NAME_PREFIX}%`)
     .order("created_at", { ascending: false });
 
   if (error) throw new Error(error.message);
   return data ?? [];
+}
+
+// ── Get vault by ID ───────────────────────────────────────────
+export async function getVaultById(vaultId: string): Promise<Vault | null> {
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
+  if (!userId) throw new Error("Unauthorized");
+
+  // Use service role to bypass RLS for discovery, but manually verify ownership
+  const { data, error } = await supabase
+    .from("vaults")
+    .select("id, name, salt, verification_token, created_at, updated_at, owner_id")
+    .eq("id", vaultId)
+    .single();
+
+  if (error || !data) return null;
+  if (data.owner_id !== userId) return null;
+
+  const { owner_id, ...vault } = data;
+  return vault as Vault;
 }
 
 // ── Delete vault (and all its files) ─────────────────────────
