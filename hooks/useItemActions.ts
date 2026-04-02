@@ -77,7 +77,7 @@ export function useItemActions({ id, name, type, isStarred, onRefresh }: UseItem
     if (type === "folder") onFolderOpen?.(id, name);
   };
 
-  const handleDownload = () => download(id, name);
+  const handleDownload = () => download(id, name, type);
 
   return {
     showMoveDialog, setShowMoveDialog,

@@ -118,11 +118,9 @@ function DotsMenu({
             <DropdownMenuItem onClick={onMove}>Move to...</DropdownMenuItem>
             <DropdownMenuItem onClick={onShare}>Share</DropdownMenuItem>
 
-            {type === "file" && (
-              <DropdownMenuItem onClick={onDownload}>
-                Download
-              </DropdownMenuItem>
-            )}
+            <DropdownMenuItem onClick={onDownload}>
+              Download
+            </DropdownMenuItem>
 
             <DropdownMenuItem onClick={onStar}>
               {isStarred ? "Unstar" : "Star"}
@@ -238,11 +236,9 @@ function ListRow({
                 <button onClick={() => setShowShare(true)} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
                   <ShareNetwork size={15} />
                 </button>
-                {type === "file" && (
-                  <button onClick={handleDownload} disabled={isDownloading} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
-                    <DownloadSimple size={15} />
-                  </button>
-                )}
+                <button onClick={handleDownload} disabled={isDownloading} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
+                  <DownloadSimple size={15} />
+                </button>
                 <button onClick={() => setShowTrashDialog(true)} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-red-400 transition-colors">
                   <Trash size={15} />
                 </button>
