@@ -11,19 +11,15 @@ import {
   Trash,
   Eye,
   EyeSlash,
-  PencilSimple,
   Globe,
   Clock,
   LockSimple,
   ShieldCheck,
   Warning,
-  Infinity,
-  Fingerprint,
 } from "@phosphor-icons/react";
 import {
   shareWithUser,
   removePermission,
-  updatePermissionRole,
   getSharedUsers,
   createShareLink,
   getShareLinks,
@@ -118,8 +114,8 @@ function normalizeSharedUsers(raw: any[]): SharedUser[] {
 export function ShareDialog({ resourceId, resourceName, resourceType, onClose }: Props) {
   const [tab,              setTab]              = useState<Tab>("people");
   const [email,            setEmail]            = useState("");
-  const [role,             setRole]             = useState<"viewer" | "editor">("viewer");
-  const [linkRole,         setLinkRole]         = useState<"viewer" | "editor">("viewer");
+  const [role]                  = useState<"viewer" | "editor">("viewer");
+  const [linkRole]              = useState<"viewer" | "editor">("viewer");
   const [expiryMins,       setExpiryMins]       = useState<number | null>(60 * 24 * 7); // default 1 week
   const [passwordProtect,  setPasswordProtect]  = useState(false);
   const [linkPassword,     setLinkPassword]     = useState("");
@@ -176,15 +172,7 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
     });
   };
 
-  const handleUpdateRole = (targetUserId: string, newRole: "viewer" | "editor") => {
-    startTransition(async () => {
-      await updatePermissionRole(resourceId, resourceType, targetUserId, newRole);
-      setSharedUsers((prev) =>
-        prev.map((u) => u.user_id === targetUserId ? { ...u, role: newRole } : u)
-      );
-      queryClient.invalidateQueries({ queryKey: queryKeys.sharing() });
-    });
-  };
+
 
   const handleCreateLink = () => {
     startTransition(async () => {
@@ -298,14 +286,7 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
                   )}
                   disabled={isPending}
                 />
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value as "viewer" | "editor")}
-                  className="px-2 py-2 rounded-xl text-sm bg-secondary border border-border text-foreground focus:outline-none cursor-pointer"
-                >
-                  <option value="viewer">Viewer</option>
-                  <option value="editor">Editor</option>
-                </select>
+
                 <button
                   onClick={handleShareWithUser}
                   disabled={isPending || !email.trim()}
@@ -343,14 +324,7 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
                           <p className="text-xs text-muted-foreground truncate">{su.users.email}</p>
                         )}
                       </div>
-                      <select
-                        value={su.role}
-                        onChange={(e) => handleUpdateRole(su.user_id, e.target.value as "viewer" | "editor")}
-                        className="text-xs bg-transparent text-muted-foreground focus:outline-none cursor-pointer hover:text-foreground transition-colors"
-                      >
-                        <option value="viewer">Viewer</option>
-                        <option value="editor">Editor</option>
-                      </select>
+                      <span className="text-xs text-muted-foreground mr-2">Viewer</span>
                       <button
                         onClick={() => handleRemoveUser(su.user_id)}
                         className="p-1 rounded-lg opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all"
@@ -375,42 +349,7 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
 
               {/* ── Link config card ── */}
               <div className="rounded-xl border border-border bg-secondary p-4 flex flex-col gap-3">
-                {/* Access level */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {linkRole === "viewer"
-                      ? <Eye size={15} weight="duotone" className="text-muted-foreground" />
-                      : <PencilSimple size={15} weight="duotone" className="text-muted-foreground" />
-                    }
-                    <span className="text-sm text-foreground font-medium">Access</span>
-                  </div>
-                  <div className="flex rounded-lg overflow-hidden border border-border text-xs">
-                    <button
-                      onClick={() => setLinkRole("viewer")}
-                      className={cn(
-                        "px-3 py-1.5 transition-colors",
-                        linkRole === "viewer"
-                          ? "text-white"
-                          : "text-muted-foreground hover:text-foreground bg-transparent"
-                      )}
-                      style={linkRole === "viewer" ? { backgroundColor: TEAL } : {}}
-                    >
-                      Viewer
-                    </button>
-                    <button
-                      onClick={() => setLinkRole("editor")}
-                      className={cn(
-                        "px-3 py-1.5 transition-colors border-l border-border",
-                        linkRole === "editor"
-                          ? "text-white"
-                          : "text-muted-foreground hover:text-foreground bg-transparent"
-                      )}
-                      style={linkRole === "editor" ? { backgroundColor: TEAL } : {}}
-                    >
-                      Editor
-                    </button>
-                  </div>
-                </div>
+
 
                 {/* Expiry picker */}
                 <div className="flex items-center justify-between">
@@ -586,7 +525,7 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
                 <LinkIcon size={15} />
                 {isPending
                   ? "Creating…"
-                  : `Create ${linkRole} link · ${selectedExpiry.label}${selfDestruct ? ` · ${maxViews} ${maxViews === 1 ? 'view' : 'views'}` : ""}${passwordProtect && linkPassword.trim() ? " · 🔒" : ""}`
+                  : `Create link · ${selectedExpiry.label}${selfDestruct ? ` · ${maxViews} ${maxViews === 1 ? 'view' : 'views'}` : ""}${passwordProtect && linkPassword.trim() ? " · 🔒" : ""}`
                 }
               </button>
 

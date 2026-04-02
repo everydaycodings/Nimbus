@@ -168,12 +168,6 @@ function LinksDropdown({
               <div className={cn("px-2 py-2 flex flex-col gap-1.5 rounded-lg transition-colors", expired && "opacity-50")}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className={cn(
-                      "text-[8px] uppercase tracking-wider font-bold px-1 py-0.5 rounded",
-                      link.role === "editor" ? "text-amber-400 bg-amber-400/10" : "text-teal-400 bg-teal-400/10"
-                    )}>
-                      {link.role}
-                    </span>
                     {link.is_password_protected && (
                       <span className="flex items-center gap-0.5 text-[8px] px-1.5 py-0.5 rounded-full font-bold bg-[#2da07a]/10 text-[#2da07a]">
                         <LockSimple size={8} weight="bold" />
@@ -259,12 +253,6 @@ function PeopleDropdown({
                   <p className="truncate text-[11px] font-semibold text-foreground leading-none">
                     {p.user_name ?? p.user_email.split("@")[0]}
                   </p>
-                  <span className={cn(
-                    "text-[9px] font-bold px-1 py-0.5 rounded uppercase leading-none",
-                    p.role === "editor" ? "text-amber-400 bg-amber-400/10" : "text-teal-400 bg-teal-400/10"
-                  )}>
-                    {p.role}
-                  </span>
                 </div>
                 <p className="truncate text-[10px] text-muted-foreground mt-1 leading-none">
                   {p.user_email}
