@@ -26,7 +26,7 @@ export async function getMySharedItems() {
 
   const { data: rawLinks } = await supabase
     .from("share_links")
-    .select("id, token, role, expires_at, created_at, resource_id, resource_type, password_hash")
+    .select("id, token, role, expires_at, created_at, resource_id, resource_type, password_hash, max_views, view_count")
     .eq("owner_id", user.id)
     .order("created_at", { ascending: false });
 

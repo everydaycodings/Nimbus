@@ -15,6 +15,10 @@ import {
   Globe,
   Clock,
   LockSimple,
+  ShieldCheck,
+  Warning,
+  Infinity,
+  Fingerprint,
 } from "@phosphor-icons/react";
 import {
   shareWithUser,
@@ -57,6 +61,9 @@ interface ShareLink {
   expires_at:           string | null;
   created_at:           string;
   is_password_protected: boolean;
+  max_views:             number | null;
+  view_count:            number;
+  self_destruct_target:  "link" | "resource";
 }
 
 const TEAL = "#2da07a";
@@ -117,6 +124,9 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
   const [passwordProtect,  setPasswordProtect]  = useState(false);
   const [linkPassword,     setLinkPassword]     = useState("");
   const [showLinkPassword, setShowLinkPassword] = useState(false);
+  const [selfDestruct,     setSelfDestruct]     = useState(false);
+  const [maxViews,         setMaxViews]         = useState<number>(1);
+  const [sdTarget,         setSdTarget]         = useState<"link" | "resource">("link");
   const [sharedUsers,      setSharedUsers]      = useState<SharedUser[]>([]);
   const [shareLinks,       setShareLinks]       = useState<ShareLink[]>([]);
   const [copied,           setCopied]           = useState<string | null>(null);
@@ -191,7 +201,9 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
           resourceType,
           linkRole,
           expiresInDays,
-          password
+          password,
+          selfDestruct ? maxViews : undefined,
+          sdTarget
         );
         setShareLinks((prev) => [link, ...prev]);
         // Reset password fields after creation
@@ -476,6 +488,89 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
                     </div>
                   )}
                 </div>
+
+                {/* Self-destruct row */}
+                <div className="flex flex-col gap-3 pt-1 border-t border-border/50">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck size={15} weight="duotone" className="text-muted-foreground" />
+                      <span className="text-sm text-foreground font-medium">Self-destruct</span>
+                    </div>
+                    <button
+                      role="switch"
+                      aria-checked={selfDestruct}
+                      onClick={() => setSelfDestruct(!selfDestruct)}
+                      className={cn(
+                        "relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none",
+                        selfDestruct ? "" : "bg-border"
+                      )}
+                      style={selfDestruct ? { backgroundColor: TEAL } : {}}
+                    >
+                      <span
+                        className={cn(
+                          "inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform",
+                          selfDestruct ? "translate-x-4.5" : "translate-x-0.5"
+                        )}
+                      />
+                    </button>
+                  </div>
+
+                  {selfDestruct && (
+                    <div className="flex flex-col gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                      {/* Max Views */}
+                      <div className="flex items-center justify-between bg-background/50 rounded-xl px-3 py-2 border border-border">
+                        <span className="text-xs text-muted-foreground">Expire after</span>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min={1}
+                            max={999}
+                            value={maxViews}
+                            onChange={(e) => setMaxViews(Math.max(1, parseInt(e.target.value) || 1))}
+                            className="w-12 bg-transparent text-right text-xs font-semibold focus:outline-none"
+                          />
+                          <span className="text-xs text-muted-foreground">{maxViews === 1 ? "view" : "views"}</span>
+                        </div>
+                      </div>
+
+                      {/* SD Target */}
+                      <div className="flex flex-col gap-2">
+                        <p className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground px-1">Behavior</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            onClick={() => setSdTarget("link")}
+                            className={cn(
+                              "flex flex-col items-center gap-1.5 p-2.5 rounded-xl border transition-all text-center",
+                              sdTarget === "link"
+                                ? "bg-background border-[#2da07a]/40 shadow-sm"
+                                : "bg-transparent border-border hover:bg-background/50"
+                            )}
+                          >
+                            <Globe size={16} weight={sdTarget === "link" ? "fill" : "duotone"} style={{ color: sdTarget === "link" ? TEAL : undefined }} />
+                            <span className={cn("text-[11px] font-medium", sdTarget === "link" ? "text-foreground" : "text-muted-foreground")}>Delete link</span>
+                          </button>
+                          <button
+                            onClick={() => setSdTarget("resource")}
+                            className={cn(
+                              "flex flex-col items-center gap-1.5 p-2.5 rounded-xl border transition-all text-center group",
+                              sdTarget === "resource"
+                                ? "bg-red-500/5 border-red-500/40 shadow-sm"
+                                : "bg-transparent border-border hover:bg-red-500/5 hover:border-red-500/20"
+                            )}
+                          >
+                            <Warning size={16} weight={sdTarget === "resource" ? "fill" : "duotone"} className={cn(sdTarget === "resource" ? "text-red-500" : "text-muted-foreground group-hover:text-red-500/60")} />
+                            <span className={cn("text-[11px] font-medium", sdTarget === "resource" ? "text-red-600" : "text-muted-foreground group-hover:text-red-500/60")}>Delete original</span>
+                          </button>
+                        </div>
+                        {sdTarget === "resource" && (
+                          <p className="text-[10px] text-red-500/80 px-1 leading-relaxed">
+                            ⚠️ Warning: The actual {resourceType} will be permanently deleted after {maxViews} {maxViews === 1 ? "view" : "views"}.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Create button */}
@@ -491,7 +586,7 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
                 <LinkIcon size={15} />
                 {isPending
                   ? "Creating…"
-                  : `Create ${linkRole} link · ${selectedExpiry.label}${passwordProtect && linkPassword.trim() ? " · 🔒" : ""}`
+                  : `Create ${linkRole} link · ${selectedExpiry.label}${selfDestruct ? ` · ${maxViews} ${maxViews === 1 ? 'view' : 'views'}` : ""}${passwordProtect && linkPassword.trim() ? " · 🔒" : ""}`
                 }
               </button>
 
@@ -534,6 +629,22 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
                             <span className={cn("text-xs", expired ? "text-red-400" : "text-muted-foreground")}>
                               {expired ? "Expired" : getExpiryLabel(link.expires_at)}
                             </span>
+                            {link.max_views && (
+                              <>
+                                <span className="text-xs text-muted-foreground">·</span>
+                                <span className={cn("text-xs", link.view_count >= (link.max_views ?? 0) ? "text-red-400" : "text-muted-foreground")}>
+                                  {link.view_count}/{link.max_views} views
+                                </span>
+                              </>
+                            )}
+                            {link.self_destruct_target === "resource" && (
+                              <>
+                                <span className="text-xs text-muted-foreground">·</span>
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-500/10 text-red-500 font-bold uppercase tracking-tighter">
+                                  Destructive
+                                </span>
+                              </>
+                            )}
                           </div>
                           <p className="text-xs text-muted-foreground truncate">{url}</p>
                         </div>

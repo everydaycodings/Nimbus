@@ -90,6 +90,8 @@ interface SharedLink {
   resource_id: string; resource_type: "file" | "folder";
   resource_name: string; mime_type?: string;
   is_password_protected: boolean;
+  max_views:             number | null;
+  view_count:            number;
 }
 
 interface SharedPerson {
@@ -176,6 +178,12 @@ function LinksDropdown({
                       <span className="flex items-center gap-0.5 text-[8px] px-1.5 py-0.5 rounded-full font-bold bg-[#2da07a]/10 text-[#2da07a]">
                         <LockSimple size={8} weight="bold" />
                         PROTECTED
+                      </span>
+                    )}
+                    {link.max_views && (
+                      <span className="flex items-center gap-0.5 text-[8px] px-1.5 py-0.5 rounded-full font-bold bg-orange-500/10 text-orange-500 uppercase">
+                        <Trash size={8} weight="bold" />
+                        Self-Destruct ({link.view_count}/{link.max_views})
                       </span>
                     )}
                     <span className={cn(
@@ -597,7 +605,7 @@ export default function SharingPage() {
 
   const { data, isLoading: loading, refetch: load } = useSharingQuery();
   
-  const links = (data?.mine?.links ?? []) as SharedLink[];
+  const links = (data?.mine?.links ?? []) as unknown as SharedLink[];
   const people = (data?.mine?.people ?? []) as SharedPerson[];
   const sharedWithMe = (data?.withMe ?? []) as SharedWithMeItem[];
 
