@@ -22,7 +22,17 @@ import {
   DownloadSimple,
   Warning,
   HardDrive,
-  FolderSimplePlus
+  FolderSimplePlus,
+  House,
+  Star,
+  Trash,
+  Bell,
+  CaretDown,
+  SquaresFour,
+  List,
+  File,
+  FolderSimple,
+  Plus
 } from "@phosphor-icons/react";
 
 // Teal brand color based on dashboard usages
@@ -119,71 +129,188 @@ export function LandingPageClient({ initialStars, user }: LandingPageClientProps
           </div>
         </section>
 
-        {/* ── App Preview (Minimalist Graphic) ── */}
-        <section className="px-4 md:px-6 max-w-5xl mx-auto mb-24 md:mb-32 relative">
-          <div className="rounded-2xl border border-border/40 bg-secondary/10 p-2 md:p-3 shadow-2xl backdrop-blur-sm">
-            <div className="rounded-xl border border-border/40 bg-background overflow-hidden aspect-[16/10] sm:aspect-video flex flex-col shadow-inner">
+        {/* ── App Preview (Dashboard Reference) ── */}
+        <section className="px-4 md:px-6 max-w-6xl mx-auto mb-24 md:mb-32 relative group">
+          {/* Enhanced background glow */}
+          <div className="absolute -inset-4 bg-gradient-to-tr from-[#2da07a]/20 via-transparent to-purple-500/10 blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-1000 pointer-events-none" />
+          
+          <div className="relative rounded-2xl border border-border/40 bg-[#0d0d0d] p-2 md:p-3 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.5)] backdrop-blur-md transform transition-all duration-700 hover:-translate-y-2">
+            <div className="rounded-xl border border-border/40 bg-[#0d0d0d] overflow-hidden aspect-[4/5] sm:aspect-video flex flex-col shadow-inner">
+              
               {/* Fake App header */}
-              <div className="h-10 md:h-12 border-b border-border/40 flex items-center px-4 gap-4 bg-secondary/20">
-                <div className="flex gap-1.5 md:gap-2">
-                  <div className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full bg-red-500/30 border border-red-500/40" />
-                  <div className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full bg-yellow-500/30 border border-yellow-500/40" />
-                  <div className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full bg-green-500/30 border border-green-500/40" />
+              <div className="h-12 sm:h-14 border-b border-white/5 flex items-center px-4 sm:px-6 gap-2 sm:gap-4 bg-[#0d0d0d]">
+                {/* Search box inspired by image */}
+                <div className="h-8 sm:h-9 flex-1 max-w-md rounded-lg bg-secondary/10 flex items-center px-3 sm:px-4 border border-white/5 shadow-inner group/search overflow-hidden">
+                  <MagnifyingGlass size={16} className="text-muted-foreground mr-2 sm:mr-3 shrink-0" />
+                  <span className="text-[10px] sm:text-xs text-muted-foreground flex-1 truncate">Search files and folders...</span>
+                  <span className="ml-auto hidden md:inline-block px-1.5 py-0.5 rounded-md border border-white/10 bg-black/40 text-[9px] font-mono opacity-50">⌘K</span>
                 </div>
-                <div className="h-6 flex-1 max-w-sm rounded-md bg-background/50 mx-auto flex items-center px-3 border border-border/40 shadow-sm">
-                  <MagnifyingGlass size={12} className="text-muted-foreground mr-2" />
-                  <div className="w-24 h-1.5 bg-muted-foreground/20 rounded-full" />
+
+                <div className="flex items-center gap-3 sm:gap-4 ml-auto shrink-0">
+                   <Bell size={18} className="text-muted-foreground opacity-60 hidden sm:block" />
+                   <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-teal-500/80 to-teal-200/80 border border-white/10 shadow-sm" />
                 </div>
               </div>
+
               {/* Fake App Body */}
               <div className="flex-1 flex overflow-hidden">
-                <div className="w-48 md:w-56 border-r border-border/40 hidden sm:flex flex-col p-4 gap-2 bg-secondary/5">
-                  <div className="h-3 w-16 bg-muted-foreground/20 rounded-full mb-3 ml-2" />
-                  <div className="h-9 rounded-md bg-[#2da07a]/10 border border-[#2da07a]/20 flex items-center px-3 gap-3">
-                     <CloudArrowUp size={16} style={{ color: TEAL }} weight="duotone" />
-                     <div className="h-2 w-16 bg-[#2da07a]/40 rounded-full" />
+                
+                {/* Dashboard Sidebar */}
+                <div className="w-48 md:w-56 border-r border-white/5 hidden sm:flex flex-col p-4 bg-[#0d0d0d]">
+                  <div className="flex items-center gap-2 mb-8 px-2">
+                     <div className="w-6 h-6 rounded bg-[#2da07a] flex items-center justify-center text-white scale-90">
+                        <CloudArrowUp size={14} weight="bold" />
+                     </div>
+                     <span className="text-sm font-bold tracking-tight">Nimbus</span>
                   </div>
-                  <div className="h-9 rounded-md hover:bg-secondary/40 flex items-center px-3 gap-3 transition-colors">
-                     <FolderLock size={16} className="text-muted-foreground" weight="duotone" />
-                     <div className="h-2 w-12 bg-muted-foreground/30 rounded-full" />
+                  
+                  <div className="space-y-0.5 mb-8">
+                    {[
+                      { icon: House, label: "Home", active: true },
+                      { icon: HardDrive, label: "My Files" },
+                      { icon: FolderLock, label: "Private Vault" },
+                      { icon: ShieldCheck, label: "Offline Vault" },
+                      { icon: Clock, label: "Recent" },
+                      { icon: Star, label: "Starred" },
+                      { icon: ShareNetwork, label: "Sharing" },
+                      { icon: Sparkle, label: "Activity" },
+                      { icon: Trash, label: "Trash" },
+                    ].map((item, idx) => (
+                      <div 
+                        key={idx} 
+                        className={`h-9 rounded-lg flex items-center px-3 gap-3 transition-all ${
+                          item.active 
+                            ? 'bg-[#2da07a]/10 text-[#2da07a]' 
+                            : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'
+                        }`}
+                      >
+                         <item.icon size={18} weight={item.active ? "fill" : "regular"} />
+                         <span className="text-xs font-medium">{item.label}</span>
+                      </div>
+                    ))}
                   </div>
-                  <div className="h-9 rounded-md hover:bg-secondary/40 flex items-center px-3 gap-3 transition-colors">
-                     <Tag size={16} className="text-muted-foreground" weight="duotone" />
-                     <div className="h-2 w-14 bg-muted-foreground/30 rounded-full" />
+                  
+                  {/* Storage Section with breakdown colors from image */}
+                  <div className="mt-auto p-3 bg-white/[0.02] rounded-xl border border-white/5">
+                    <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-2">
+                       <span className="font-bold uppercase tracking-tighter opacity-50">Storage</span>
+                       <span className="font-medium">87.8 MB / 1.00 GB</span>
+                    </div>
+                    <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden flex mb-3">
+                       <div className="h-full bg-blue-500" style={{ width: '15%' }} />
+                       <div className="h-full bg-purple-500" style={{ width: '25%' }} />
+                       <div className="h-full bg-yellow-500" style={{ width: '10%' }} />
+                       <div className="h-full bg-red-500" style={{ width: '3%' }} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-y-1.5 mt-2">
+                       {[
+                         { color: 'bg-[#2da07a]', label: 'Images' },
+                         { color: 'bg-blue-500', label: 'Videos' },
+                         { color: 'bg-yellow-500', label: 'Docs' },
+                         { color: 'bg-red-500', label: 'Other' },
+                       ].map((t, i) => (
+                         <div key={i} className="flex items-center gap-1.5 text-[9px] text-muted-foreground font-medium">
+                            <div className={`w-1.5 h-1.5 rounded-full ${t.color}`} />
+                            {t.label}
+                         </div>
+                       ))}
+                    </div>
                   </div>
                 </div>
-                <div className="flex-1 p-4 md:p-8 flex flex-col gap-6 md:gap-8 bg-background">
-                  <div className="flex items-center justify-between">
-                    <div className="h-5 w-24 md:w-32 bg-foreground/10 rounded-full" />
-                    <div className="h-8 w-8 rounded-full bg-secondary/50 border border-border/50 hidden md:block" />
+
+                {/* Main Content Area */}
+                <div className="flex-1 p-4 sm:p-8 flex flex-col gap-4 sm:gap-6 bg-[#000000]/20 overflow-y-auto">
+                  
+                  {/* Dashboard Header */}
+                  <div className="flex items-end justify-between">
+                    <div>
+                      <h2 className="text-xl sm:text-2xl font-bold mb-0.5 sm:mb-1 leading-none">Home</h2>
+                      <p className="text-[9px] sm:text-[10px] text-muted-foreground opacity-50 uppercase font-black tracking-widest leading-none">3 folders, 8 files</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="h-8 sm:h-9 px-3 sm:px-4 rounded-lg bg-white/[0.03] border border-white/10 text-white flex items-center gap-2 text-[11px] sm:text-xs font-bold hover:bg-white/10 transition-colors cursor-pointer">
+                        <Plus size={14} weight="bold" />
+                        <span>New</span>
+                        <CaretDown size={12} weight="bold" className="opacity-40" />
+                      </div>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                     {[1,2,3,4].map(i => (
-                       <div key={i} className="aspect-square rounded-xl border border-border/40 bg-secondary/10 flex flex-col items-center justify-center gap-3 hover:bg-secondary/20 transition-colors">
-                         {i === 1 ? (
-                           <FolderLock size={28} className="text-muted-foreground/50" weight="duotone" />
-                         ) : i === 2 ? (
-                           <ImageIcon size={28} className="text-muted-foreground/50" weight="duotone" />
-                         ) : (
-                           <CloudArrowUp size={28} className="text-muted-foreground/50" weight="duotone" />
-                         )}
-                         <div className="h-1.5 w-10 bg-muted-foreground/20 rounded-full" />
+
+                  {/* Filter chips from image - Scrollable on mobile */}
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-2 overflow-x-auto pb-2 sm:pb-0 scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0">
+                       {["All Files", "Sort", "Size", "Tags"].map((f, i) => (
+                         <div key={i} className="h-7 sm:h-8 px-2.5 sm:px-3 rounded-md bg-white/[0.03] border border-white/5 flex items-center gap-2 text-[9px] sm:text-[10px] font-bold text-muted-foreground hover:bg-white/10 transition-colors cursor-pointer whitespace-nowrap overflow-hidden">
+                            <div className="w-4 h-4 rounded border border-white/10 flex items-center justify-center opacity-40 shrink-0">
+                               {i === 0 ? <SquaresFour size={10} /> : <List size={10} />}
+                            </div>
+                            {f}
+                            <CaretDown size={10} className="opacity-40 shrink-0" />
+                         </div>
+                       ))}
+                    </div>
+                    <div className="h-7 sm:h-8 p-1 rounded-md bg-white/[0.03] border border-white/5 items-center hidden sm:flex">
+                       <div className="h-5 sm:h-6 w-5 sm:w-6 rounded bg-black/40 flex items-center justify-center text-muted-foreground">
+                          <List size={14} />
                        </div>
-                     ))}
+                       <div className="h-5 sm:h-6 w-5 sm:w-6 rounded flex items-center justify-center text-white">
+                          <SquaresFour size={14} />
+                       </div>
+                    </div>
                   </div>
-                  <div className="flex-1 rounded-xl border border-border/40 bg-secondary/5 flex flex-col p-4 gap-4">
-                     <div className="w-full h-10 border-b border-border/40 flex items-center gap-4 px-2">
-                       <div className="h-2 w-32 bg-muted-foreground/20 rounded-full" />
-                       <div className="h-2 w-16 bg-muted-foreground/20 rounded-full ml-auto" />
-                     </div>
-                     <div className="flex items-center gap-4 px-2">
-                       <div className="h-6 w-6 rounded bg-muted-foreground/10" />
-                       <div className="h-2 w-40 bg-muted-foreground/20 rounded-full" />
-                     </div>
-                     <div className="flex items-center gap-4 px-2">
-                       <div className="h-6 w-6 rounded bg-muted-foreground/10" />
-                       <div className="h-2 w-24 bg-muted-foreground/20 rounded-full" />
-                     </div>
+
+                  {/* Folders Section */}
+                  <div>
+                    <h3 className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-3 sm:mb-4 opacity-40">Folders</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
+                       {[
+                         { label: "Torrent", date: "Mar 31, 2026" },
+                         { label: "zip", date: "Mar 31, 2026", tags: true },
+                         { label: "Memories", date: "Apr 1, 2026" },
+                       ].map((folder, i) => (
+                         <div key={i} className={`rounded-2xl border border-white/5 bg-white/[0.02] p-4 sm:p-5 flex flex-col gap-6 sm:gap-10 group/card hover:bg-white/[0.04] transition-all cursor-pointer ${i === 2 ? 'hidden sm:flex' : 'flex'}`}>
+                            <FolderSimple size={32} weight="fill" className="text-[#2da07a]" />
+                            <div className="min-w-0">
+                               <div className="text-xs sm:text-sm font-bold mb-0.5 sm:mb-1 truncate">{folder.label}</div>
+                               <div className="text-[9px] sm:text-[10px] text-muted-foreground opacity-40">{folder.date}</div>
+                               {folder.tags && (
+                                 <div className="flex gap-1 mt-2.5 sm:mt-3 overflow-hidden">
+                                    <div className="h-3.5 sm:h-4 px-1.5 sm:px-2 rounded-full bg-blue-500/10 text-[7px] sm:text-[8px] text-blue-500 font-bold border border-blue-500/20 flex items-center">src</div>
+                                    <div className="h-3.5 sm:h-4 px-1.5 sm:px-2 rounded-full bg-red-500/10 text-[7px] sm:text-[8px] text-red-500 font-bold border border-red-500/20 flex items-center">docs</div>
+                                 </div>
+                               )}
+                            </div>
+                         </div>
+                       ))}
+                    </div>
+                  </div>
+
+                  {/* Files Section */}
+                  <div>
+                    <h3 className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-3 sm:mb-4 opacity-40">Files</h3>
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                       {[
+                         { label: "happy-cat.png", sub: "487.2 KB • Apr 2", icon: ImageIcon, color: "text-purple-500", bg: "bg-purple-500/15" },
+                         { label: "Gemin_image.png", sub: "1.9 MB • Apr 1", icon: ImageIcon, color: "text-purple-500", bg: "bg-purple-500/15", project: true },
+                         { label: "shopease.zip", sub: "30.5 MB • Apr 1", icon: File, color: "text-white/40", bg: "bg-white/5" },
+                         { label: "code-src.zip", sub: "9.5 MB • Apr 1", icon: File, color: "text-white/40", bg: "bg-white/5" },
+                       ].map((file, i) => (
+                         <div key={i} className="rounded-2xl border border-white/5 bg-white/[0.02] p-4 sm:p-5 flex flex-col gap-6 sm:gap-10 group/card hover:bg-white/[0.04] transition-all cursor-pointer">
+                            <div className={`w-10 sm:w-12 h-10 sm:h-12 rounded-xl flex items-center justify-center ${file.bg} shadow-inner shrink-0`}>
+                               <file.icon size={20} weight={file.icon === File ? "regular" : "fill"} className={file.color} />
+                            </div>
+                            <div className="min-w-0">
+                               <div className="text-[10px] sm:text-[11px] font-bold truncate mb-0.5 sm:mb-1">{file.label}</div>
+                               <div className="text-[8px] sm:text-[9px] text-muted-foreground opacity-40 mb-1.5 sm:mb-2 truncate">{file.sub}</div>
+                               <div className="flex gap-1 overflow-hidden">
+                                 {file.project && (
+                                   <div className="h-3.5 sm:h-4 px-1.5 sm:px-2 rounded-full bg-[#2da07a]/10 text-[7px] sm:text-[8px] text-[#2da07a] font-bold border border-[#2da07a]/20 flex items-center">Projects</div>
+                                 )}
+                               </div>
+                            </div>
+                         </div>
+                       ))}
+                    </div>
                   </div>
                 </div>
               </div>
