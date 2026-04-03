@@ -12,7 +12,7 @@ import { queryKeys } from "@/lib/query-keys";
 interface Props {
   id: string;
   name: string;
-  type: "file" | "folder";
+  type: "file" | "folder" | "version";
   onSuccess: () => void;
   onClose: () => void;
 }

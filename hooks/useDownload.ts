@@ -11,7 +11,7 @@ const CACHE_TTL = 3600 * 1000; // 1 hour in milliseconds
 export function useDownload() {
   const [downloading, setDownloading] = useState<Set<string>>(new Set());
 
-  const download = async (id: string, name: string, type: "file" | "folder" = "file", downloadUrl?: string | null) => {
+  const download = async (id: string, name: string, type: "file" | "folder" | "version" = "file", downloadUrl?: string | null) => {
     if (downloading.has(id)) return;
 
     setDownloading((prev) => new Set(prev).add(id));

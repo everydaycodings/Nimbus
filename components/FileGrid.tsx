@@ -49,8 +49,11 @@ interface FileItem {
   created_at: string;
   is_starred: boolean;
   s3_key: string;
+  type?: "file" | "version";
   updated_at?: string;
   tags?: { tag: Tag }[];
+  signed_url?: string | null;
+  download_url?: string | null;
 }
 
 interface FolderItem {
@@ -91,7 +94,7 @@ function DotsMenu({
   onVersionHistory,
   size = 15,
 }: {
-  type: "file" | "folder";
+  type: "file" | "folder" | "version";
   isStarred: boolean;
   showRestore?: boolean;
   onRename: () => void;
@@ -168,7 +171,7 @@ function DotsMenu({
 function ListRow({
   id, name, type, meta, isStarred, showRestore, onFolderOpen, onRefresh,
 }: {
-  id: string; name: string; type: "file" | "folder";
+  id: string; name: string; type: "file" | "folder" | "version";
   meta?: { mimeType?: string; size?: number; date: string; updated_at?: string; s3_key?: string; signed_url?: string | null; download_url?: string | null; tags?: { tag: Tag }[] };
   isStarred: boolean; showRestore?: boolean;
   onFolderOpen?: (id: string, name: string) => void; onRefresh?: () => void;
@@ -274,10 +277,10 @@ function ListRow({
         </div>
       </div>
 
-      {showMoveDialog && <MoveDialog itemId={id} itemName={name} itemType={type} onSuccess={() => onRefresh?.()} onClose={() => setShowMoveDialog(false)} />}
-      {showRenameDialog && <RenameDialog id={id} name={name} type={type} onSuccess={() => onRefresh?.()} onClose={() => setShowRenameDialog(false)} />}
+      {showMoveDialog && <MoveDialog itemId={id} itemName={name} itemType={type as "file" | "folder"} onSuccess={() => onRefresh?.()} onClose={() => setShowMoveDialog(false)} />}
+      {showRenameDialog && <RenameDialog id={id} name={name} type={type as "file" | "folder"} onSuccess={() => onRefresh?.()} onClose={() => setShowRenameDialog(false)} />}
       {showTrashDialog && <MoveToTrash id={id} name={name} type={type} onSuccess={() => onRefresh?.()} onClose={() => setShowTrashDialog(false)} />}
-      {showShare && <ShareDialog resourceId={id} resourceName={name} resourceType={type} onClose={() => setShowShare(false)} />}
+      {showShare && <ShareDialog resourceId={id} resourceName={name} resourceType={type as "file" | "folder"} onClose={() => setShowShare(false)} />}
       {showVersionHistory && <VersionHistoryDialog fileId={id} fileName={name} onClose={() => setShowVersionHistory(false)} />}
       {showPreview && <FilePreviewDialog fileId={id} fileName={name} mimeType={meta?.mimeType ?? ""} signedUrl={meta?.signed_url} downloadUrl={meta?.download_url} onClose={() => setShowPreview(false)} />}
       {showDetails && (
@@ -299,7 +302,7 @@ function ListRow({
       {showTagPicker && (
         <TagPicker
           itemId={id}
-          itemType={type}
+          itemType={type as "file" | "folder"}
           currentTagIds={tags.map(t => t.id)}
           onClose={() => setShowTagPicker(false)}
           onSuccess={() => onRefresh?.()}
@@ -315,7 +318,7 @@ function ListRow({
 function GridCard({
   id, name, type, meta, isStarred, showRestore, onFolderOpen, onRefresh,
 }: {
-  id: string; name: string; type: "file" | "folder";
+  id: string; name: string; type: "file" | "folder" | "version";
   meta?: { mimeType?: string; size?: number; date: string; updated_at?: string; s3_key?: string; signed_url?: string | null; download_url?: string | null; tags?: { tag: Tag }[] };
   isStarred: boolean; showRestore?: boolean;
   onFolderOpen?: (id: string, name: string) => void; onRefresh?: () => void;
@@ -428,10 +431,10 @@ function GridCard({
         )}
       </div>
 
-      {showMoveDialog && <MoveDialog itemId={id} itemName={name} itemType={type} onSuccess={() => onRefresh?.()} onClose={() => setShowMoveDialog(false)} />}
-      {showRenameDialog && <RenameDialog id={id} name={name} type={type} onSuccess={() => onRefresh?.()} onClose={() => setShowRenameDialog(false)} />}
+      {showMoveDialog && <MoveDialog itemId={id} itemName={name} itemType={type as "file" | "folder"} onSuccess={() => onRefresh?.()} onClose={() => setShowMoveDialog(false)} />}
+      {showRenameDialog && <RenameDialog id={id} name={name} type={type as "file" | "folder"} onSuccess={() => onRefresh?.()} onClose={() => setShowRenameDialog(false)} />}
       {showTrashDialog && <MoveToTrash id={id} name={name} type={type} onSuccess={() => onRefresh?.()} onClose={() => setShowTrashDialog(false)} />}
-      {showShare && <ShareDialog resourceId={id} resourceName={name} resourceType={type} onClose={() => setShowShare(false)} />}
+      {showShare && <ShareDialog resourceId={id} resourceName={name} resourceType={type as "file" | "folder"} onClose={() => setShowShare(false)} />}
       {showVersionHistory && <VersionHistoryDialog fileId={id} fileName={name} onClose={() => setShowVersionHistory(false)} />}
       {showPreview && <FilePreviewDialog fileId={id} fileName={name} mimeType={meta?.mimeType ?? ""} signedUrl={meta?.signed_url} downloadUrl={meta?.download_url} onClose={() => setShowPreview(false)} />}
       {showDetails && (
@@ -453,7 +456,7 @@ function GridCard({
       {showTagPicker && (
         <TagPicker
           itemId={id}
-          itemType={type}
+          itemType={type as "file" | "folder"}
           currentTagIds={tags.map(t => t.id)}
           onClose={() => setShowTagPicker(false)}
           onSuccess={() => onRefresh?.()}
@@ -529,7 +532,7 @@ export function FileGrid({
           {files.length > 0 && (
             <div>
               <p className="px-3 py-1 text-xs text-muted-foreground/60 font-medium">Files</p>
-                {files.map((f: any) => <ListRow key={f.id} id={f.id} name={f.name} type="file" isStarred={f.is_starred} meta={{ mimeType: f.mime_type, size: f.size, date: f.created_at, updated_at: f.updated_at, s3_key: f.s3_key, signed_url: f.signed_url, download_url: f.download_url, tags: f.tags }} {...shared} />)}
+                {files.map((f: any) => <ListRow key={f.id} id={f.id} name={f.name} type={f.type || "file"} isStarred={f.is_starred} meta={{ mimeType: f.mime_type, size: f.size, date: f.created_at, updated_at: f.updated_at, s3_key: f.s3_key, signed_url: f.signed_url, download_url: f.download_url, tags: f.tags }} {...shared} />)}
             </div>
           )}
         </div>
@@ -550,7 +553,7 @@ export function FileGrid({
             <div>
               <p className="text-xs text-muted-foreground/60 font-medium mb-2">Files</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                {files.map((f: any) => <GridCard key={f.id} id={f.id} name={f.name} type="file" isStarred={f.is_starred} meta={{ mimeType: f.mime_type, size: f.size, date: f.created_at, updated_at: f.updated_at, s3_key: f.s3_key, signed_url: f.signed_url, download_url: f.download_url, tags: f.tags }} {...shared} />)}
+                {files.map((f: any) => <GridCard key={f.id} id={f.id} name={f.name} type={f.type || "file"} isStarred={f.is_starred} meta={{ mimeType: f.mime_type, size: f.size, date: f.created_at, updated_at: f.updated_at, s3_key: f.s3_key, signed_url: f.signed_url, download_url: f.download_url, tags: f.tags }} {...shared} />)}
               </div>
             </div>
           )}

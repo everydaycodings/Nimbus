@@ -42,7 +42,7 @@ export function useTrashMutation() {
   const invalidate = useInvalidateFiles();
 
   return useMutation({
-    mutationFn: ({ id, type }: { id: string; type: "file" | "folder" }) =>
+    mutationFn: ({ id, type }: { id: string; type: "file" | "folder" | "version" }) =>
       trashItem(id, type),
     onSuccess: invalidate,
   });
@@ -53,7 +53,7 @@ export function useRestoreMutation() {
   const invalidate = useInvalidateFiles();
 
   return useMutation({
-    mutationFn: ({ id, type }: { id: string; type: "file" | "folder" }) =>
+    mutationFn: ({ id, type }: { id: string; type: "file" | "folder" | "version" }) =>
       restoreItem(id, type),
     onSuccess: invalidate,
   });

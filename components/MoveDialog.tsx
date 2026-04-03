@@ -18,7 +18,7 @@ interface FolderNode {
 interface Props {
   itemId: string;
   itemName: string;
-  itemType: "file" | "folder";
+  itemType: "file" | "folder" | "version";
   onSuccess: (targetFolderId: string | null) => void; // ✅ updated
   onClose: () => void;
   copyMode?: boolean; // ✅ added

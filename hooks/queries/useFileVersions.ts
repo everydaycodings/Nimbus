@@ -48,7 +48,7 @@ export function useFileVersions(fileId: string) {
       return res.json();
     },
     onSuccess: () => {
-      toast.success("Version deleted");
+      toast.success("Version moved to trash");
       queryClient.invalidateQueries({ queryKey: queryKeys.versions(fileId) });
     },
     onError: (err: any) => {
@@ -57,7 +57,7 @@ export function useFileVersions(fileId: string) {
   });
 
   return {
-    versions: data?.versions ?? [],
+    versions: (data?.versions ?? []).filter((v: any) => !v.is_trashed),
     isLoading,
     error,
     restoreVersion: restoreMutation.mutate,

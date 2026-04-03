@@ -164,7 +164,7 @@ export function VersionHistoryDialog({
                       className="h-8 w-8 rounded-lg hover:bg-red-500/10 hover:text-red-500 transition-colors"
                       onClick={() => deleteVersion(version.id)}
                       disabled={isDeleting}
-                      title="Delete version"
+                      title="Move to trash"
                     >
                       {isDeleting ? (
                         <Spinner size={16} className="animate-spin" />
@@ -182,6 +182,7 @@ export function VersionHistoryDialog({
         <div className="p-4 border-t border-border/50 bg-muted/20">
           <p className="text-[10px] text-center text-muted-foreground leading-relaxed">
             Restoring a version will move the current version to history.<br />
+            Trashed versions can be recovered from the Trash.<br />
             Storage is consumed for each saved version.
           </p>
         </div>

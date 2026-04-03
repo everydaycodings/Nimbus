@@ -198,7 +198,7 @@ export async function getTrashedItems() {
   const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
 
-  const [{ data: folders }, { data: files }] = await Promise.all([
+  const [{ data: folders }, { data: files }, { data: versions }] = await Promise.all([
     supabase
       .from("folders")
       .select("id, name, trashed_at")
@@ -211,11 +211,28 @@ export async function getTrashedItems() {
       .eq("owner_id", userId)
       .eq("is_trashed", true)
       .order("trashed_at", { ascending: false }),
+    supabase
+      .from("file_versions")
+      .select("id, file_id, name, mime_type, size, trashed_at, s3_key, version_number")
+      .eq("is_trashed", true)
+      .order("trashed_at", { ascending: false }),
   ]);
 
   const signedFiles = await signFiles((files as any[]) ?? []);
+  const signedVersions = await signFiles((versions as any[]) ?? []);
 
-  return { folders: folders ?? [], files: signedFiles };
+  // Map versions to a format that FileGrid can handle or tag them
+  const versionItems = signedVersions.map((v: any) => ({
+    ...v,
+    type: "version",
+    original_name: v.name,
+    name: `${v.name} (V${v.version_number})`,
+  }));
+
+  return { 
+    folders: folders ?? [], 
+    files: [...signedFiles, ...versionItems] 
+  };
 }
 
 // ── Toggle star ───────────────────────────────────────────────
@@ -245,7 +262,7 @@ export async function toggleStar(
 }
 
 // ── Move to trash ─────────────────────────────────────────────
-export async function trashItem(id: string, type: "file" | "folder") {
+export async function trashItem(id: string, type: "file" | "folder" | "version") {
   const supabaseServer = await createSupabaseClient();
   const authUserResponse = await supabaseServer.auth.getUser();
   const authUser = authUserResponse.data.user;
@@ -255,19 +272,20 @@ export async function trashItem(id: string, type: "file" | "folder") {
   const user = await getUserId(userId);
   if (!user) throw new Error("User not found");
 
-  const table = type === "file" ? "files" : "folders";
+  const table = type === "file" ? "files" : type === "folder" ? "folders" : "file_versions";
 
   const { error } = await supabase
     .from(table)
     .update({ is_trashed: true })
-    .eq("id", id)
-    .eq("owner_id", user.id);
+    .eq("id", id);
+    // Note: file_versions doesn't have owner_id, but it's protected by RLS
+    // we could add .eq("file_id", ...) if we had it.
 
   if (error) throw new Error(error.message);
 }
 
 // ── Restore from trash ────────────────────────────────────────
-export async function restoreItem(id: string, type: "file" | "folder") {
+export async function restoreItem(id: string, type: "file" | "folder" | "version") {
   const supabaseServer = await createSupabaseClient();
   const authUserResponse = await supabaseServer.auth.getUser();
   const authUser = authUserResponse.data.user;
@@ -277,13 +295,12 @@ export async function restoreItem(id: string, type: "file" | "folder") {
   const user = await getUserId(userId);
   if (!user) throw new Error("User not found");
 
-  const table = type === "file" ? "files" : "folders";
+  const table = type === "file" ? "files" : type === "folder" ? "folders" : "file_versions";
 
   const { error } = await supabase
     .from(table)
     .update({ is_trashed: false })
-    .eq("id", id)
-    .eq("owner_id", user.id);
+    .eq("id", id);
 
   if (error) throw new Error(error.message);
 }
@@ -291,7 +308,7 @@ export async function restoreItem(id: string, type: "file" | "folder") {
 // ── Rename ────────────────────────────────────────────────────
 export async function renameItem(
   id:   string,
-  type: "file" | "folder",
+  type: "file" | "folder" | "version",
   name: string
 ) {
   const supabaseServer = await createSupabaseClient();
@@ -303,13 +320,13 @@ export async function renameItem(
   const user = await getUserId(userId);
   if (!user) throw new Error("User not found");
 
-  const table = type === "file" ? "files" : "folders";
+  const table = type === "file" ? "files" : type === "folder" ? "folders" : "file_versions";
 
   const { error } = await supabase
     .from(table)
     .update({ name })
-    .eq("id", id)
-    .eq("owner_id", user.id);
+    .eq("id", id);
+    // Again, file_versions is protected by RLS
 
   if (error) throw new Error(error.message);
 }

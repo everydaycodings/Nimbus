@@ -10,7 +10,7 @@ interface DetailsDialogProps {
   item: {
     id: string;
     name: string;
-    type: "file" | "folder";
+    type: "file" | "folder" | "version";
     mime_type?: string;
     size?: number;
     created_at: string;
@@ -24,7 +24,7 @@ interface DetailsDialogProps {
 export function DetailsDialog({ item, onClose }: DetailsDialogProps) {
   const details = [
     { label: "Name", value: item.name },
-    { label: "Type", value: item.type === "folder" ? "Folder" : item.mime_type || "File" },
+    { label: "Type", value: item.type === "folder" ? "Folder" : item.type === "version" ? "File Version" : item.mime_type || "File" },
     { 
       label: "Created", 
       value: (

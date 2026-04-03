@@ -35,29 +35,17 @@ export async function DELETE(
     return Response.json({ error: "Version not found" }, { status: 404 });
   }
 
-  // 2. Delete from S3
-  try {
-    const command = new DeleteObjectCommand({
-      Bucket: versionToDelete.s3_bucket || BUCKET,
-      Key:    versionToDelete.s3_key,
-    });
-    await s3.send(command);
-  } catch (err) {
-    console.error("[version delete] S3 delete error:", err);
-    // Continue even if S3 delete fails (orphaned object)
-  }
-
-  // 3. Delete from database
+  // 2. Soft delete from database (set is_trashed = true)
   const { error: dbError } = await supabase
     .from("file_versions")
-    .delete()
+    .update({ is_trashed: true })
     .eq("id", versionId);
 
   if (dbError) {
     return Response.json({ error: dbError.message }, { status: 500 });
   }
 
-  // 4. Log activity
+  // 3. Log activity
   await supabase.from("activity_log").insert({
     user_id:       userId,
     resource_id:   fileId,

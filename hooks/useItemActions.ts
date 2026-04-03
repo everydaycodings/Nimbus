@@ -11,7 +11,7 @@ import {
 interface UseItemActionsProps {
   id: string;
   name: string;
-  type: "file" | "folder";
+  type: "file" | "folder" | "version";
   isStarred: boolean;
   signedUrl?: string | null;
   downloadUrl?: string | null;
@@ -36,8 +36,9 @@ export function useItemActions({ id, name, type, isStarred, signedUrl, downloadU
   const isDownloading = downloading.has(id);
 
   const handleStar = () => {
+    if (type === "version") return;
     starMutation.mutate(
-      { id, type, starred: isStarred },
+      { id, type: type as "file" | "folder", starred: isStarred },
       {
         onSuccess: () => {
           toast.success(isStarred ? "Unstarred" : "Starred");

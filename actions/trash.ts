@@ -26,28 +26,46 @@ export async function emptyTrash() {
 
   if (!user) throw new Error("User not found");
 
-  // Get all trashed files (need s3_key to delete from S3)
-  const { data: files } = await supabase
-    .from("files")
-    .select("id, s3_key")
-    .eq("owner_id", user.id)
-    .eq("is_trashed", true);
+  // Get all trashed files + versions (need s3_key to delete from S3)
+  const [{ data: files }, { data: versions }] = await Promise.all([
+    supabase
+      .from("files")
+      .select("id, s3_key")
+      .eq("owner_id", user.id)
+      .eq("is_trashed", true),
+    supabase
+      .from("file_versions")
+      .select("id, s3_key")
+      .eq("is_trashed", true)
+  ]);
 
-  // Delete from S3 first
-  if (files && files.length > 0) {
+  // Combine S3 keys to delete
+  const keysToDelete = [
+    ...(files || []).map(f => f.s3_key),
+    ...(versions || []).map(v => v.s3_key)
+  ];
+
+  if (keysToDelete.length > 0) {
     await Promise.allSettled(
-      files.map((file) =>
-        s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: file.s3_key }))
+      keysToDelete.map(key =>
+        s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }))
       )
     );
   }
 
-  // Delete files from Supabase (storage trigger fires automatically)
+  // Delete from Supabase
   if (files && files.length > 0) {
     await supabase
       .from("files")
       .delete()
       .eq("owner_id", user.id)
+      .eq("is_trashed", true);
+  }
+
+  if (versions && versions.length > 0) {
+    await supabase
+      .from("file_versions")
+      .delete()
       .eq("is_trashed", true);
   }
 
