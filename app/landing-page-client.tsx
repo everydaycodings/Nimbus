@@ -18,6 +18,8 @@ import {
   Key,
   Eye,
   Clock,
+  ClockCounterClockwise,
+  ArrowCounterClockwise,
   LockSimple,
   DownloadSimple,
   Warning,
@@ -599,6 +601,61 @@ export function LandingPageClient({ initialStars, user }: LandingPageClientProps
                           <Sparkle size={18} className={i === 1 ? "text-yellow-500" : "text-muted-foreground/20"} weight={i === 1 ? "fill" : "regular"} />
                         </div>
                       ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Feature: File Versioning */}
+            <div className="flex flex-col md:flex-row items-center gap-12 lg:gap-20">
+              <div className="flex-1 space-y-6">
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-[#2da07a]/10 border border-[#2da07a]/20">
+                  <ClockCounterClockwise size={24} style={{ color: TEAL }} weight="duotone" />
+                </div>
+                <h3 className="text-3xl md:text-4xl font-bold tracking-tight">Version <span style={{ color: TEAL }}>Control</span></h3>
+                <p className="text-lg text-muted-foreground leading-relaxed text-balance">
+                  Never worry about overwriting or losing changes. Nimbus automatically keeps track of every version of your files, allowing you to restore or download previous states instantly.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
+                  <div className="p-4 rounded-2xl bg-secondary/30 border border-border/40 hover:border-primary/20 transition-colors">
+                    <ClockCounterClockwise size={20} style={{ color: TEAL }} className="mb-2" weight="fill" />
+                    <h4 className="font-bold text-sm mb-1">Time Travel</h4>
+                    <p className="text-xs text-muted-foreground leading-relaxed">Instantly jump back to any previous version of your document.</p>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-secondary/30 border border-border/40 hover:border-primary/20 transition-colors">
+                    <DownloadSimple size={20} style={{ color: TEAL }} className="mb-2" weight="fill" />
+                    <h4 className="font-bold text-sm mb-1">Partial Recovery</h4>
+                    <p className="text-xs text-muted-foreground leading-relaxed">Download old versions without affecting your current file.</p>
+                  </div>
+                </div>
+              </div>
+              <div className="flex-1 w-full relative">
+                <div className="rounded-2xl border border-border/40 bg-secondary/10 p-2 shadow-2xl backdrop-blur-md relative overflow-hidden group">
+                  <div className="rounded-xl border border-border/40 bg-background overflow-hidden aspect-[4/3] flex flex-col shadow-inner relative">
+                    <div className="h-10 border-b border-border/20 bg-secondary/20 flex items-center px-4 justify-between">
+                       <div className="h-2 w-24 bg-foreground/10 rounded-full" />
+                       <ClockCounterClockwise size={14} style={{ color: TEAL }} weight="fill" />
+                    </div>
+                    <div className="flex-1 p-6 flex flex-col gap-3">
+                       {[1,2,3].map(i => (
+                         <div key={i} className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${i === 1 ? 'bg-[#2da07a]/5 border-[#2da07a]/20 shadow-sm' : 'bg-background/50 border-border/40 opacity-60'}`}>
+                            <div className="w-8 h-8 rounded-lg bg-secondary flex flex-col items-center justify-center text-[8px] font-bold text-muted-foreground">
+                               <span className="opacity-60">V</span>{4-i}
+                            </div>
+                            <div className="space-y-1.5 flex-1">
+                               <div className={`h-2 rounded-full ${i === 1 ? 'bg-foreground/20 w-32' : 'bg-foreground/10 w-24'}`} />
+                               <div className="h-1.5 w-16 bg-muted-foreground/10 rounded-full" />
+                            </div>
+                            {i === 1 ? (
+                              <div className="px-2 py-1 rounded-md bg-[#2da07a] text-[8px] font-bold text-white uppercase tracking-wider">Current</div>
+                            ) : (
+                               <div className="w-6 h-6 rounded-md border border-border/60 flex items-center justify-center">
+                                  <ArrowCounterClockwise size={12} className="text-muted-foreground" weight="bold" />
+                               </div>
+                            )}
+                         </div>
+                       ))}
                     </div>
                   </div>
                 </div>
