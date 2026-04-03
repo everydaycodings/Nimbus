@@ -219,7 +219,7 @@ export function LandingPageClient({ initialStars, user }: LandingPageClientProps
                 </div>
 
                 {/* Main Content Area */}
-                <div className="flex-1 p-4 sm:p-8 flex flex-col gap-4 sm:gap-6 bg-[#000000]/20 overflow-y-auto">
+                <div className="flex-1 p-4 sm:p-6 flex flex-col gap-4 sm:gap-6 bg-[#000000]/20 overflow-y-auto">
                   
                   {/* Dashboard Header */}
                   <div className="flex items-end justify-between">
@@ -268,8 +268,8 @@ export function LandingPageClient({ initialStars, user }: LandingPageClientProps
                          { label: "zip", date: "Mar 31, 2026", tags: true },
                          { label: "Memories", date: "Apr 1, 2026" },
                        ].map((folder, i) => (
-                         <div key={i} className={`rounded-2xl border border-white/5 bg-white/[0.02] p-4 sm:p-5 flex flex-col gap-6 sm:gap-10 group/card hover:bg-white/[0.04] transition-all cursor-pointer ${i === 2 ? 'hidden sm:flex' : 'flex'}`}>
-                            <FolderSimple size={32} weight="fill" className="text-[#2da07a]" />
+                         <div key={i} className={`rounded-xl border border-white/5 bg-white/[0.02] p-3 sm:p-4 flex flex-col gap-3 sm:gap-4 group/card hover:bg-white/[0.04] transition-all cursor-pointer ${i === 2 ? 'hidden sm:flex' : 'flex'}`}>
+                            <FolderSimple size={24} weight="fill" className="text-[#2da07a]" />
                             <div className="min-w-0">
                                <div className="text-xs sm:text-sm font-bold mb-0.5 sm:mb-1 truncate">{folder.label}</div>
                                <div className="text-[9px] sm:text-[10px] text-muted-foreground opacity-40">{folder.date}</div>
@@ -295,9 +295,9 @@ export function LandingPageClient({ initialStars, user }: LandingPageClientProps
                          { label: "shopease.zip", sub: "30.5 MB • Apr 1", icon: File, color: "text-white/40", bg: "bg-white/5" },
                          { label: "code-src.zip", sub: "9.5 MB • Apr 1", icon: File, color: "text-white/40", bg: "bg-white/5" },
                        ].map((file, i) => (
-                         <div key={i} className="rounded-2xl border border-white/5 bg-white/[0.02] p-4 sm:p-5 flex flex-col gap-6 sm:gap-10 group/card hover:bg-white/[0.04] transition-all cursor-pointer">
-                            <div className={`w-10 sm:w-12 h-10 sm:h-12 rounded-xl flex items-center justify-center ${file.bg} shadow-inner shrink-0`}>
-                               <file.icon size={20} weight={file.icon === File ? "regular" : "fill"} className={file.color} />
+                         <div key={i} className="rounded-xl border border-white/5 bg-white/[0.02] p-3 sm:p-3.5 flex flex-col gap-3 sm:gap-4 group/card hover:bg-white/[0.04] transition-all cursor-pointer">
+                            <div className={`w-8 sm:w-9 h-8 sm:h-9 rounded-lg flex items-center justify-center ${file.bg} shadow-inner shrink-0`}>
+                               <file.icon size={16} weight={file.icon === File ? "regular" : "fill"} className={file.color} />
                             </div>
                             <div className="min-w-0">
                                <div className="text-[10px] sm:text-[11px] font-bold truncate mb-0.5 sm:mb-1">{file.label}</div>
