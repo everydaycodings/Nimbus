@@ -14,10 +14,11 @@ interface UseItemActionsProps {
   type: "file" | "folder";
   isStarred: boolean;
   signedUrl?: string | null;
+  downloadUrl?: string | null;
   onRefresh?: () => void;
 }
 
-export function useItemActions({ id, name, type, isStarred, signedUrl, onRefresh }: UseItemActionsProps) {
+export function useItemActions({ id, name, type, isStarred, signedUrl, downloadUrl, onRefresh }: UseItemActionsProps) {
   const [showMoveDialog, setShowMoveDialog] = useState(false);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [showTrashDialog, setShowTrashDialog] = useState(false);
@@ -78,7 +79,10 @@ export function useItemActions({ id, name, type, isStarred, signedUrl, onRefresh
     if (type === "folder") onFolderOpen?.(id, name);
   };
 
-  const handleDownload = () => download(id, name, type, signedUrl);
+  const handleDownload = () => {
+    if (isDownloading) return;
+    download(id, name, type, downloadUrl);
+  };
 
   return {
     showMoveDialog, setShowMoveDialog,

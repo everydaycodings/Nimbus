@@ -36,6 +36,7 @@ interface Props {
   fileName: string;
   mimeType: string;
   signedUrl?: string | null;
+  downloadUrl?: string | null;
   onClose: () => void;
 }
 
@@ -645,7 +646,7 @@ export function ImageViewer({ src, fileName }: { src: string; fileName: string }
 // ═══════════════════════════════════════════════════════════════
 // MAIN DIALOG
 // ═══════════════════════════════════════════════════════════════
-export function FilePreviewDialog({ fileId, fileName, mimeType, signedUrl, onClose }: Props) {
+export function FilePreviewDialog({ fileId, fileName, mimeType, signedUrl, downloadUrl, onClose }: Props) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const { download, downloading, getPreviewUrl } = useDownload();
@@ -680,7 +681,7 @@ export function FilePreviewDialog({ fileId, fileName, mimeType, signedUrl, onClo
 
         <div className="flex items-center gap-2 flex-shrink-0 ml-4">
           <button
-            onClick={() => download(fileId, fileName, "file", signedUrl)}
+            onClick={() => download(fileId, fileName, "file", downloadUrl)}
             disabled={isDownloading}
             className={cn(
               "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium text-white transition-all",
@@ -718,7 +719,7 @@ export function FilePreviewDialog({ fileId, fileName, mimeType, signedUrl, onClo
               <p className="text-xs text-muted-foreground mt-1">No preview available for this file type</p>
             </div>
             <button
-              onClick={() => download(fileId, fileName)}
+              onClick={() => download(fileId, fileName, "file", downloadUrl)}
               disabled={isDownloading}
               className={cn(
                 "flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium text-white transition-all",

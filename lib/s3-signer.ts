@@ -16,21 +16,33 @@ export async function signFiles(
 
   const signPromises = files.map(async (file) => {
     try {
-      const command = new GetObjectCommand({
+      // 1. Signed URL for Preview (inline)
+      const previewCommand = new GetObjectCommand({
         Bucket: BUCKET,
         Key: file.s3_key,
-        // We set inline by default for pre-signed URLs so they can be used for previews.
-        // The download header can be overridden on the client using the `download` attribute.
         ResponseContentDisposition: `inline; filename="${file.name}"`,
         ResponseContentType: file.mime_type,
         ResponseCacheControl: "public, max-age=31536000, immutable",
       });
 
-      const signedUrl = await getSignedUrl(s3, command, { expiresIn });
-      return { ...file, signed_url: signedUrl };
+      // 2. Signed URL for Download (attachment)
+      const downloadCommand = new GetObjectCommand({
+        Bucket: BUCKET,
+        Key: file.s3_key,
+        ResponseContentDisposition: `attachment; filename="${file.name}"`,
+        ResponseContentType: file.mime_type,
+        ResponseCacheControl: "public, max-age=31536000, immutable",
+      });
+
+      const [signedUrl, downloadUrl] = await Promise.all([
+        getSignedUrl(s3, previewCommand, { expiresIn }),
+        getSignedUrl(s3, downloadCommand, { expiresIn }),
+      ]);
+
+      return { ...file, signed_url: signedUrl, download_url: downloadUrl };
     } catch (error) {
       console.error(`[s3-signer] Failed to sign ${file.s3_key}:`, error);
-      return { ...file, signed_url: null };
+      return { ...file, signed_url: null, download_url: null };
     }
   });
 

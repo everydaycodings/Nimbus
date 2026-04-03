@@ -11,13 +11,13 @@ const CACHE_TTL = 3600 * 1000; // 1 hour in milliseconds
 export function useDownload() {
   const [downloading, setDownloading] = useState<Set<string>>(new Set());
 
-  const download = async (id: string, name: string, type: "file" | "folder" = "file", initialUrl?: string | null) => {
+  const download = async (id: string, name: string, type: "file" | "folder" = "file", downloadUrl?: string | null) => {
     if (downloading.has(id)) return;
 
     setDownloading((prev) => new Set(prev).add(id));
 
     try {
-      let url = initialUrl;
+      let url = downloadUrl;
 
       if (!url) {
         if (type === "file") {
@@ -35,23 +35,16 @@ export function useDownload() {
       }
 
       if (url) {
-        // If we have a URL (especially a pre-signed S3 one), fetching as a blob
-        // is the only reliable way to force a download across origins.
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("Download fetch failed");
+        // We use a hidden iframe or direct location change for attachment URLs.
+        // This triggers the browser's native download manager, allowing the user
+        // to see progress and even close the tab while it continues.
+        const iframe = document.createElement("iframe");
+        iframe.style.display = "none";
+        iframe.src = url;
+        document.body.appendChild(iframe);
         
-        const blob = await res.blob();
-        const blobUrl = URL.createObjectURL(blob);
-        
-        const a = document.createElement("a");
-        a.href = blobUrl;
-        a.download = name;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        
-        // Clean up the object URL to free memory
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
+        // Remove the iframe after a short delay
+        setTimeout(() => document.body.removeChild(iframe), 3000);
       }
     } catch (err) {
       console.error("[download] error:", err);
