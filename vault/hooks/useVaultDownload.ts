@@ -5,6 +5,7 @@ import { useState } from "react";
 import { decryptFile, decryptBuffer, VAULT_MAX_PREVIEW_FILE_SIZE } from "@/vault/lib/crypto";
 import { getVaultDownloadUrl }              from "@/vault/actions/vault.actions";
 import { getVaultFolderHierarchy }          from "@/vault/actions/vault.folders.actions";
+import { useZippingStore }                  from "@/store/zippingStore";
 import JSZip from "jszip";
 
 // Cache to store decrypted preview object URLs to prevent re-downloading/decrypting
@@ -31,6 +32,7 @@ export function canPreviewVaultFile(
 
 export function useVaultDownload(key: CryptoKey) {
   const [decrypting, setDecrypting] = useState<Set<string>>(new Set());
+  const { addZipping, updateZipping, removeZipping } = useZippingStore();
 
   const download = async (
     fileId:           string,
@@ -143,14 +145,30 @@ export function useVaultDownload(key: CryptoKey) {
     if (decrypting.has(folderId)) return;
     setDecrypting((prev) => new Set(prev).add(folderId));
 
+    const downloadId = Math.random().toString(36).substring(7);
+
     try {
       const hierarchy = await getVaultFolderHierarchy(vaultId, folderId);
       const zip = new JSZip();
 
+      addZipping({
+        id: downloadId,
+        name: folderName,
+        totalFiles: hierarchy.length,
+        filesProcessed: 0,
+        progress: 0,
+        status: "preparing",
+      });
+
       // Download and decrypt files in chunks to avoid overwhelming the browser
       const CHUNK_SIZE = 5;
+      let processedCount = 0;
+
       for (let i = 0; i < hierarchy.length; i += CHUNK_SIZE) {
         const chunk = hierarchy.slice(i, i + CHUNK_SIZE);
+        
+        updateZipping(downloadId, { status: "zipping" });
+
         await Promise.all(
           chunk.map(async (file) => {
             const result = await getVaultDownloadUrl(file.id);
@@ -176,10 +194,18 @@ export function useVaultDownload(key: CryptoKey) {
             }
 
             zip.file(file.path, decryptedBlob);
+            
+            processedCount++;
+            const progress = Math.round((processedCount / hierarchy.length) * 100);
+            updateZipping(downloadId, {
+              filesProcessed: processedCount,
+              progress,
+            });
           })
         );
       }
 
+      updateZipping(downloadId, { status: "downloading" });
       const content = await zip.generateAsync({ type: "blob" });
       const url     = URL.createObjectURL(content);
       const a       = Object.assign(document.createElement("a"), {
@@ -189,8 +215,12 @@ export function useVaultDownload(key: CryptoKey) {
       a.click();
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
+
+      updateZipping(downloadId, { status: "complete", progress: 100 });
+      setTimeout(() => removeZipping(downloadId), 5000);
     } catch (err) {
       console.error("[vault folder download]", err);
+      updateZipping(downloadId, { status: "error", error: "Download failed" });
       throw err;
     } finally {
       setDecrypting((prev) => {
