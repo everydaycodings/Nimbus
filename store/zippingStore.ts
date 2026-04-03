@@ -2,13 +2,17 @@
 
 import { create } from "zustand";
 
+import { DownloadStatus } from "@/vault/types/vault";
+
 export type ZippingItem = {
   id: string;
   name: string;
   progress: number;
-  status: "preparing" | "zipping" | "downloading" | "complete" | "error";
+  status: DownloadStatus;
   totalFiles: number;
   filesProcessed: number;
+  type: "file" | "folder";
+  mimeType?: string;
   error?: string;
 };
 

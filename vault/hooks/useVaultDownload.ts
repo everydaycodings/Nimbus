@@ -42,27 +42,54 @@ export function useVaultDownload(key: CryptoKey) {
     if (decrypting.has(fileId)) return;
     setDecrypting((prev) => new Set(prev).add(fileId));
 
+    const downloadId = `vault-file-${fileId}-${Math.random().toString(36).substring(7)}`;
+
     try {
+      addZipping({
+        id: downloadId,
+        name: fileName,
+        totalFiles: 1,
+        filesProcessed: 0,
+        progress: 0,
+        status: "preparing",
+        type: "file",
+        mimeType: originalMimeType,
+      });
+
       const result = await getVaultDownloadUrl(fileId);
       let decryptedBlob: Blob;
 
       if (result.isFragmented && result.fragments) {
         // ───────────────── Fragmented Recovery ─────────────────
         const decryptedChunks: ArrayBuffer[] = [];
-        for (const fragment of result.fragments) {
+        const totalFragments = result.fragments.length;
+        
+        updateZipping(downloadId, { status: "downloading", totalFiles: totalFragments });
+
+        for (let i = 0; i < result.fragments.length; i++) {
+            const fragment = result.fragments[i];
             const res = await fetch(fragment.url);
             if (!res.ok) throw new Error(`Failed to fetch fragment ${fragment.chunkIndex}`);
             const encryptedChunk = await res.arrayBuffer();
             const decryptedChunk = await decryptBuffer(new Uint8Array(encryptedChunk), key);
             decryptedChunks.push(decryptedChunk);
+            
+            const progress = Math.round(((i + 1) / totalFragments) * 100);
+            updateZipping(downloadId, { 
+              filesProcessed: i + 1, 
+              progress 
+            });
         }
         decryptedBlob = new Blob(decryptedChunks, { type: originalMimeType });
       } else if (result.url) {
         // ───────────────── Standard Recovery ─────────────────
+        updateZipping(downloadId, { status: "downloading", progress: 20 });
         const res = await fetch(result.url);
         if (!res.ok) throw new Error("Failed to fetch file");
         const encryptedBlob = await res.blob();
+        updateZipping(downloadId, { progress: 60 });
         decryptedBlob = await decryptFile(encryptedBlob, key, originalMimeType);
+        updateZipping(downloadId, { progress: 90 });
       } else {
         throw new Error("Invalid download response");
       }
@@ -74,9 +101,13 @@ export function useVaultDownload(key: CryptoKey) {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+      
+      updateZipping(downloadId, { status: "complete", progress: 100 });
+      setTimeout(() => removeZipping(downloadId), 5000);
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
     } catch (err) {
       console.error("[vault download]", err);
+      updateZipping(downloadId, { status: "error", error: "Download failed" });
       throw err;
     } finally {
       setDecrypting((prev) => {
@@ -145,7 +176,7 @@ export function useVaultDownload(key: CryptoKey) {
     if (decrypting.has(folderId)) return;
     setDecrypting((prev) => new Set(prev).add(folderId));
 
-    const downloadId = Math.random().toString(36).substring(7);
+    const downloadId = `vault-folder-${folderId}-${Math.random().toString(36).substring(7)}`;
 
     try {
       const hierarchy = await getVaultFolderHierarchy(vaultId, folderId);
@@ -158,6 +189,7 @@ export function useVaultDownload(key: CryptoKey) {
         filesProcessed: 0,
         progress: 0,
         status: "preparing",
+        type: "folder",
       });
 
       // Download and decrypt files in chunks to avoid overwhelming the browser
@@ -205,7 +237,7 @@ export function useVaultDownload(key: CryptoKey) {
         );
       }
 
-      updateZipping(downloadId, { status: "downloading" });
+      updateZipping(downloadId, { status: "downloading", progress: 95 });
       const content = await zip.generateAsync({ type: "blob" });
       const url     = URL.createObjectURL(content);
       const a       = Object.assign(document.createElement("a"), {

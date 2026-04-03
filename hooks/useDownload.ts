@@ -22,15 +22,31 @@ export function useDownload() {
 
     try {
       let url = downloadUrl;
+      const downloadId = type === "file" ? `file-${id}-${Math.random().toString(36).substring(7)}` : id;
 
       if (!url) {
-        if (type === "file") {
-          // ── Single file: Get signed URL then download ──
+        if (type === "file" || type === "version") {
+          // ── Single file: Add to store, get signed URL then download ──
+          addZipping({
+            id: downloadId,
+            name: name,
+            totalFiles: 1,
+            filesProcessed: 0,
+            progress: 0,
+            status: "preparing",
+            type: "file",
+          });
+
           const res = await fetch(`/api/download?fileId=${id}&inline=false`);
-          if (!res.ok) throw new Error("Failed to get download URL");
+          if (!res.ok) {
+            updateZipping(downloadId, { status: "error", error: "Failed to get download URL" });
+            throw new Error("Failed to get download URL");
+          }
 
           const data = await res.json();
           url = data.url;
+
+          updateZipping(downloadId, { status: "downloading", progress: 50 });
         } else {
           // ── Folder: Initialize, add to store, subscribe to progress, then download ──
           const res = await fetch("/api/download/init", {
@@ -39,27 +55,28 @@ export function useDownload() {
             body: JSON.stringify({ folderId: id }),
           });
           if (!res.ok) throw new Error("Failed to initialize folder download");
-          const { downloadId, totalFiles, name: folderName } = await res.json();
+          const { downloadId: serverDownloadId, totalFiles, name: folderName } = await res.json();
 
           addZipping({
-            id: downloadId,
+            id: serverDownloadId,
             name: folderName,
             totalFiles,
             filesProcessed: 0,
             progress: 0,
             status: "preparing",
+            type: "folder",
           });
 
           // Subscribe to real-time progress
           let triggered = false;
-          const channel = supabase.channel(`download:${downloadId}`);
+          const channel = supabase.channel(`download:${serverDownloadId}`);
           
           channel
             .on("broadcast", { event: "progress" }, ({ payload }) => {
               const { filesProcessed, totalFiles, status: progressStatus } = payload;
               const progress = Math.round((filesProcessed / totalFiles) * 100);
               
-              updateZipping(downloadId, {
+              updateZipping(serverDownloadId, {
                 filesProcessed,
                 totalFiles,
                 progress: progressStatus === "started" ? 0 : progress,
@@ -67,7 +84,7 @@ export function useDownload() {
               });
               
               if (progressStatus === "complete") {
-                setTimeout(() => removeZipping(downloadId), 5000);
+                setTimeout(() => removeZipping(serverDownloadId), 5000);
                 void channel.unsubscribe();
               }
             })
@@ -76,7 +93,7 @@ export function useDownload() {
                 triggered = true;
                 
                 // Once subscribed, trigger the stream via hidden iframe
-                const streamUrl = `/api/download?folderId=${id}&downloadId=${downloadId}`;
+                const streamUrl = `/api/download?folderId=${id}&downloadId=${serverDownloadId}`;
                 const iframe = document.createElement("iframe");
                 iframe.style.display = "none";
                 iframe.src = streamUrl;
@@ -102,6 +119,11 @@ export function useDownload() {
         iframe.src = url;
         document.body.appendChild(iframe);
         
+        if (type === "file" || type === "version") {
+          updateZipping(downloadId, { status: "complete", progress: 100 });
+          setTimeout(() => removeZipping(downloadId), 5000);
+        }
+
         // Remove the iframe after a short delay
         setTimeout(() => {
           if (document.body.contains(iframe)) {
