@@ -10,7 +10,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY!
 );
 
-interface FileEntry {
+export interface FileEntry {
   name: string;
   s3_key: string;
   path: string;
@@ -21,7 +21,7 @@ interface FileEntry {
  * Minimal queries: 1 query for all files in the hierarchy if possible, 
  * but standard parent_id recursion is safer for deep trees without complex CTEs.
  */
-async function getAllFiles(folderId: string, path = ""): Promise<FileEntry[]> {
+export async function getAllFiles(folderId: string, path = ""): Promise<FileEntry[]> {
   const [{ data: files }, { data: folders }] = await Promise.all([
     supabase
       .from("files")
@@ -59,8 +59,10 @@ async function getAllFiles(folderId: string, path = ""): Promise<FileEntry[]> {
   return result;
 }
 
-export async function createFolderZipStream(folderId: string, folderName: string) {
+export async function createFolderZipStream(folderId: string, folderName: string, downloadId?: string) {
   const allFiles = await getAllFiles(folderId);
+  const totalFiles = allFiles.length;
+  let filesProcessed = 0;
 
   const stream = new PassThrough();
   // 🔥 Optimization: Level 1 compression (Fastest) instead of Level 9
@@ -70,6 +72,39 @@ export async function createFolderZipStream(folderId: string, folderName: string
     console.error("[archiver error]", err);
     stream.destroy(err);
   });
+
+  // 🔥 Progress Broadcasting
+  let channel: any = null;
+  if (downloadId) {
+    channel = supabase.channel(`download:${downloadId}`);
+    channel.subscribe((status: string) => {
+      if (status === "SUBSCRIBED") {
+        // Send an immediate "started" event to sync the UI
+        channel.send({
+          type: "broadcast",
+          event: "progress",
+          payload: {
+            filesProcessed: 0,
+            totalFiles,
+            status: "started"
+          }
+        }).catch((err: any) => console.error("[broadcast error]", err));
+      }
+    });
+
+    archive.on("entry", () => {
+      filesProcessed++;
+      channel.send({
+        type: "broadcast",
+        event: "progress",
+        payload: {
+          filesProcessed,
+          totalFiles,
+          status: "zipping"
+        }
+      }).catch((err: any) => console.error("[broadcast error]", err));
+    });
+  }
 
   archive.pipe(stream);
 
@@ -91,6 +126,19 @@ export async function createFolderZipStream(folderId: string, folderName: string
         }
       }
       await archive.finalize();
+
+      // Send final completion event
+      if (channel) {
+        channel.send({
+          type: "broadcast",
+          event: "progress",
+          payload: {
+            filesProcessed,
+            totalFiles,
+            status: "complete"
+          }
+        }).catch((err: any) => console.error("[finalize broadcast error]", err));
+      }
     } catch (err) {
       console.error("[zip stream error]", err);
       archive.abort();

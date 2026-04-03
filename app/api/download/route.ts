@@ -71,8 +71,10 @@ export async function GET(req: Request) {
       }
     }
 
+    const downloadId = searchParams.get("downloadId");
+
     // 🔥 Stream the ZIP
-    const { stream, fileName } = await createFolderZipStream(folder.id, folder.name);
+    const { stream, fileName } = await createFolderZipStream(folder.id, folder.name, downloadId || undefined);
 
     return new Response(stream as any, {
       headers: {

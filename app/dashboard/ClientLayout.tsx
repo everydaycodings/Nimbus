@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { Sidebar, MobileSidebar } from "@/components/sidebar";
 import { Navbar } from "@/components/navbar";
 import { UploadToast } from "@/components/UploadToast";
+import { DownloadingToast } from "@/components/DownloadingToast";
 import { MobileSidebarProvider } from "@/hooks/useSidebarMobile";
 
 export function ClientLayout({
@@ -47,6 +48,7 @@ export function ClientLayout({
         </div>
 
         <UploadToast />
+        <DownloadingToast />
       </div>
     </MobileSidebarProvider>
   );
