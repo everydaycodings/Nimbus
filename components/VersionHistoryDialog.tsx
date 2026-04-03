@@ -3,6 +3,7 @@
 
 import { useFileVersions } from "@/hooks/queries/useFileVersions";
 import { useUpload } from "@/hooks/useUpload";
+import { useDownload } from "@/hooks/useDownload";
 import {
   Dialog,
   DialogContent,
@@ -44,6 +45,7 @@ export function VersionHistoryDialog({
   } = useFileVersions(fileId);
 
   const { upload } = useUpload();
+  const { download, downloading } = useDownload();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -130,10 +132,17 @@ export function VersionHistoryDialog({
                       size="icon"
                       variant="ghost"
                       className="h-8 w-8 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors"
-                      onClick={() => window.open(version.signed_url)}
+                      onClick={() =>
+                        download(version.id, version.name, "file", version.download_url)
+                      }
+                      disabled={downloading.has(version.id)}
                       title="Download"
                     >
-                      <DownloadSimple size={16} weight="bold" />
+                      {downloading.has(version.id) ? (
+                        <Spinner size={16} className="animate-spin" />
+                      ) : (
+                        <DownloadSimple size={16} weight="bold" />
+                      )}
                     </Button>
                     <Button
                       size="icon"
