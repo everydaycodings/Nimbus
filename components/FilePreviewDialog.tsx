@@ -35,6 +35,7 @@ interface Props {
   fileId: string;
   fileName: string;
   mimeType: string;
+  signedUrl?: string | null;
   onClose: () => void;
 }
 
@@ -644,7 +645,7 @@ export function ImageViewer({ src, fileName }: { src: string; fileName: string }
 // ═══════════════════════════════════════════════════════════════
 // MAIN DIALOG
 // ═══════════════════════════════════════════════════════════════
-export function FilePreviewDialog({ fileId, fileName, mimeType, onClose }: Props) {
+export function FilePreviewDialog({ fileId, fileName, mimeType, signedUrl, onClose }: Props) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const { download, downloading, getPreviewUrl } = useDownload();
@@ -659,11 +660,11 @@ export function FilePreviewDialog({ fileId, fileName, mimeType, onClose }: Props
 
   useEffect(() => {
     if (!previewing) { setLoading(false); return; }
-    getPreviewUrl(fileId).then((url) => {
+    getPreviewUrl(fileId, signedUrl).then((url) => {
       setPreviewUrl(url);
       setLoading(false);
     });
-  }, [fileId, previewing]);
+  }, [fileId, previewing, signedUrl]);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black/90 backdrop-blur-md">
@@ -679,7 +680,7 @@ export function FilePreviewDialog({ fileId, fileName, mimeType, onClose }: Props
 
         <div className="flex items-center gap-2 flex-shrink-0 ml-4">
           <button
-            onClick={() => download(fileId, fileName)}
+            onClick={() => download(fileId, fileName, "file", signedUrl)}
             disabled={isDownloading}
             className={cn(
               "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium text-white transition-all",

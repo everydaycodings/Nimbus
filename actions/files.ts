@@ -3,6 +3,7 @@
 
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
+import { signFiles } from "@/lib/s3-signer";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -132,9 +133,12 @@ export async function getFiles(
   if (foldersResult.error) throw new Error(foldersResult.error.message);
   if (filesResult.error) throw new Error(filesResult.error.message);
 
+  // ── SIGN FILES FOR INSTANT ACCESS ───────────
+  const signedFiles = await signFiles((filesResult.data as any[]) ?? []);
+
   return {
     folders: foldersResult.data ?? [],
-    files: filesResult.data ?? [],
+    files: signedFiles,
     user: userResult,
   };
 }
@@ -182,7 +186,9 @@ export async function getStarredItems(options?: { tagId?: string }) {
     fileQuery.order("created_at", { ascending: false }),
   ]);
 
-  return { folders: folders ?? [], files: files ?? [] };
+  const signedFiles = await signFiles((files as any[]) ?? []);
+
+  return { folders: folders ?? [], files: signedFiles };
 }
 
 // ── Fetch trashed items ───────────────────────────────────────
@@ -207,7 +213,9 @@ export async function getTrashedItems() {
       .order("trashed_at", { ascending: false }),
   ]);
 
-  return { folders: folders ?? [], files: files ?? [] };
+  const signedFiles = await signFiles((files as any[]) ?? []);
+
+  return { folders: folders ?? [], files: signedFiles };
 }
 
 // ── Toggle star ───────────────────────────────────────────────
@@ -333,7 +341,9 @@ export async function getRecentFiles(options?: { tagId?: string }) {
     .limit(20);
 
   if (error) throw new Error(error.message);
-  return data ?? [];
+  const signedFiles = await signFiles((data as any[]) ?? []);
+
+  return signedFiles;
 }
 // ── Fetch aggregate storage statistics (RPC) ──────────────────
 export async function getStorageStats() {

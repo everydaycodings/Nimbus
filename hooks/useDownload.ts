@@ -11,30 +11,47 @@ const CACHE_TTL = 3600 * 1000; // 1 hour in milliseconds
 export function useDownload() {
   const [downloading, setDownloading] = useState<Set<string>>(new Set());
 
-  const download = async (id: string, name: string, type: "file" | "folder" = "file") => {
+  const download = async (id: string, name: string, type: "file" | "folder" = "file", initialUrl?: string | null) => {
     if (downloading.has(id)) return;
 
     setDownloading((prev) => new Set(prev).add(id));
 
     try {
-      if (type === "file") {
-        // ── Single file: Get signed URL then download ──
-        const res = await fetch(`/api/download?fileId=${id}&inline=false`);
-        if (!res.ok) throw new Error("Failed to get download URL");
+      let url = initialUrl;
 
-        const { url } = await res.json();
+      if (!url) {
+        if (type === "file") {
+          // ── Single file: Get signed URL then download ──
+          const res = await fetch(`/api/download?fileId=${id}&inline=false`);
+          if (!res.ok) throw new Error("Failed to get download URL");
 
+          const data = await res.json();
+          url = data.url;
+        } else {
+          // ── Folder: Trigger streaming ZIP download (direct navigation) ──
+          window.location.href = `/api/download?folderId=${id}`;
+          return;
+        }
+      }
+
+      if (url) {
+        // If we have a URL (especially a pre-signed S3 one), fetching as a blob
+        // is the only reliable way to force a download across origins.
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("Download fetch failed");
+        
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        
         const a = document.createElement("a");
-        a.href     = url;
+        a.href = blobUrl;
         a.download = name;
-        a.rel      = "noopener noreferrer";
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-      } else {
-        // ── Folder: Trigger streaming ZIP download (direct navigation) ──
-        // Using window.location.href for streaming to disk (zero-buffering)
-        window.location.href = `/api/download?folderId=${id}`;
+        
+        // Clean up the object URL to free memory
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
       }
     } catch (err) {
       console.error("[download] error:", err);
@@ -47,8 +64,14 @@ export function useDownload() {
     }
   };
 
-  const getPreviewUrl = async (fileId: string): Promise<string | null> => {
-    // Check cache
+  const getPreviewUrl = async (fileId: string, initialUrl?: string | null): Promise<string | null> => {
+    // 1. Check initialUrl first (Connect-First)
+    if (initialUrl) {
+      previewCache.set(fileId, { url: initialUrl, timestamp: Date.now() });
+      return initialUrl;
+    }
+
+    // 2. Check cache
     const cached = previewCache.get(fileId);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
       return cached.url;
