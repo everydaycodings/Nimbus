@@ -30,10 +30,24 @@ export async function POST(req: Request) {
     return Response.json({ error: "User not found" }, { status: 404 });
   }
 
-  const { name, mimeType, size, parentFolderId } = await req.json();
+  const { name, mimeType, size, parentFolderId, fileId: originalFileId } = await req.json();
 
   if (!name || !mimeType || !size) {
     return Response.json({ error: "Missing required fields" }, { status: 400 });
+  }
+
+  // If originalFileId is provided, verify ownership
+  if (originalFileId) {
+    const { data: originalFile, error: originalFileError } = await supabase
+      .from("files")
+      .select("id")
+      .eq("id", originalFileId)
+      .eq("owner_id", user.id)
+      .single();
+
+    if (originalFileError || !originalFile) {
+      return Response.json({ error: "Original file not found or unauthorized" }, { status: 404 });
+    }
   }
 
   if (user.storage_used + size > user.storage_limit) {
@@ -69,5 +83,5 @@ export async function POST(req: Request) {
 
   const presignedUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
 
-  return Response.json({ presignedUrl, fileId, s3Key });
+  return Response.json({ presignedUrl, fileId, s3Key, originalFileId });
 }

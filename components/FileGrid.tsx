@@ -21,6 +21,7 @@ import { RenameDialog } from "@/components/rename";
 import { MoveToTrash } from "@/components/MoveToTrash";
 import { FilePreviewDialog } from "@/components/FilePreviewDialog";
 import { ShareDialog } from "@/components/ShareDialog";
+import { VersionHistoryDialog } from "@/components/VersionHistoryDialog";
 import { useDownload } from "@/hooks/useDownload";
 import { useItemActions } from "@/hooks/useItemActions";
 import { formatDate, formatBytes } from "@/lib/format";
@@ -87,6 +88,7 @@ function DotsMenu({
   onRestore,
   onDetails,
   onTags,
+  onVersionHistory,
   size = 15,
 }: {
   type: "file" | "folder";
@@ -101,6 +103,7 @@ function DotsMenu({
   onRestore: () => void;
   onDetails: () => void;
   onTags: () => void;
+  onVersionHistory?: () => void;
   size?: number;
 }) {
   return (
@@ -133,6 +136,12 @@ function DotsMenu({
             <DropdownMenuItem onClick={onDetails}>
               Details
             </DropdownMenuItem>
+            
+            {type === "file" && (
+              <DropdownMenuItem onClick={onVersionHistory}>
+                Version History
+              </DropdownMenuItem>
+            )}
 
             <DropdownMenuSeparator />
 
@@ -175,6 +184,7 @@ function ListRow({
     handleStar, handleTrash, handleRestore, handleMainClick, handleDownload
   } = useItemActions({ id, name, type, isStarred, signedUrl: meta?.signed_url, downloadUrl: meta?.download_url, onRefresh });
 
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
   const queryClient = useQueryClient();
   const [showTagPicker, setShowTagPicker] = useState(false);
   const tags = meta?.tags?.map(t => t.tag) ?? [];
@@ -258,6 +268,7 @@ function ListRow({
               onShare={() => setShowShare(true)} onDownload={handleDownload}
               onStar={handleStar} onTrash={() => setShowTrashDialog(true)} onRestore={handleRestore}
               onDetails={() => setShowDetails(true)} onTags={() => setShowTagPicker(true)}
+              onVersionHistory={() => setShowVersionHistory(true)}
             />
           </div>
         </div>
@@ -267,6 +278,7 @@ function ListRow({
       {showRenameDialog && <RenameDialog id={id} name={name} type={type} onSuccess={() => onRefresh?.()} onClose={() => setShowRenameDialog(false)} />}
       {showTrashDialog && <MoveToTrash id={id} name={name} type={type} onSuccess={() => onRefresh?.()} onClose={() => setShowTrashDialog(false)} />}
       {showShare && <ShareDialog resourceId={id} resourceName={name} resourceType={type} onClose={() => setShowShare(false)} />}
+      {showVersionHistory && <VersionHistoryDialog fileId={id} fileName={name} onClose={() => setShowVersionHistory(false)} />}
       {showPreview && <FilePreviewDialog fileId={id} fileName={name} mimeType={meta?.mimeType ?? ""} signedUrl={meta?.signed_url} downloadUrl={meta?.download_url} onClose={() => setShowPreview(false)} />}
       {showDetails && (
         <DetailsDialog
@@ -319,6 +331,7 @@ function GridCard({
     handleStar, handleTrash, handleRestore, handleMainClick, handleDownload
   } = useItemActions({ id, name, type, isStarred, signedUrl: meta?.signed_url, downloadUrl: meta?.download_url, onRefresh });
 
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
   const queryClient = useQueryClient();
   const [showTagPicker, setShowTagPicker] = useState(false);
   const tags = meta?.tags?.map(t => t.tag) ?? [];
@@ -401,6 +414,7 @@ function GridCard({
                 onShare={() => setShowShare(true)} onDownload={handleDownload}
                 onStar={handleStar} onRestore={handleRestore}
                 onDetails={() => setShowDetails(true)} onTags={() => setShowTagPicker(true)}
+                onVersionHistory={() => setShowVersionHistory(true)}
               />
             </div>
           </div>
@@ -418,6 +432,7 @@ function GridCard({
       {showRenameDialog && <RenameDialog id={id} name={name} type={type} onSuccess={() => onRefresh?.()} onClose={() => setShowRenameDialog(false)} />}
       {showTrashDialog && <MoveToTrash id={id} name={name} type={type} onSuccess={() => onRefresh?.()} onClose={() => setShowTrashDialog(false)} />}
       {showShare && <ShareDialog resourceId={id} resourceName={name} resourceType={type} onClose={() => setShowShare(false)} />}
+      {showVersionHistory && <VersionHistoryDialog fileId={id} fileName={name} onClose={() => setShowVersionHistory(false)} />}
       {showPreview && <FilePreviewDialog fileId={id} fileName={name} mimeType={meta?.mimeType ?? ""} signedUrl={meta?.signed_url} downloadUrl={meta?.download_url} onClose={() => setShowPreview(false)} />}
       {showDetails && (
         <DetailsDialog

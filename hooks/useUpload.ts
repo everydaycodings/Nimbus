@@ -14,7 +14,7 @@ const xhrMap = new Map<string, XMLHttpRequest>()
 export function useUpload(options: UploadOptions = {}) {
   const { addUpload, updateUpload, removeUpload, uploads } = useUploadStore()
 
-  const upload = async (file: File) => {
+  const upload = async (file: File, fileIdForVersioning?: string) => {
     const tempId = crypto.randomUUID()
 
     // ✅ Add to global store
@@ -36,6 +36,7 @@ export function useUpload(options: UploadOptions = {}) {
           mimeType: file.type || "application/octet-stream",
           size: file.size,
           parentFolderId: options.parentFolderId,
+          fileId: fileIdForVersioning, // 🔥 NEW: Pass original fileId for versioning
         }),
       })
 
@@ -58,7 +59,10 @@ export function useUpload(options: UploadOptions = {}) {
       const completeRes = await fetch("/api/upload/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileId }),
+        body: JSON.stringify({ 
+          fileId,
+          originalFileId: fileIdForVersioning, // 🔥 NEW: Pass original fileId for versioning
+        }),
       })
 
       if (!completeRes.ok) {
@@ -100,7 +104,7 @@ export function useUpload(options: UploadOptions = {}) {
   }
 
   const uploadMany = (files: FileList | File[]) => {
-    Array.from(files).forEach(upload)
+    Array.from(files).forEach((f) => upload(f))
   }
 
   // ❌ Cancel upload
