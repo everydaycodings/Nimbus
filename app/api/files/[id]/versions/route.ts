@@ -120,6 +120,7 @@ export async function POST(
   const { data: updatedFile, error: updateError } = await supabase
     .from("files")
     .update({
+      name:       versionToRestore.name,
       s3_key:     versionToRestore.s3_key,
       size:       versionToRestore.size,
       mime_type:  versionToRestore.mime_type,

@@ -133,15 +133,15 @@ function DotsMenu({
               Tags
             </DropdownMenuItem>
             
-            <DropdownMenuItem onClick={onDetails}>
-              Details
-            </DropdownMenuItem>
-            
             {type === "file" && (
               <DropdownMenuItem onClick={onVersionHistory}>
                 Version History
               </DropdownMenuItem>
             )}
+            
+            <DropdownMenuItem onClick={onDetails}>
+              Details
+            </DropdownMenuItem>
 
             <DropdownMenuSeparator />
 

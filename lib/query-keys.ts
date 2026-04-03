@@ -21,6 +21,8 @@ export const queryKeys = {
 
   // Trashed items
   trash: () => ["files", "trash"] as const,
+  // File versions
+  versions: (fileId: string) => ["files", "versions", fileId] as const,
 
   // Sharing data
   sharing: () => ["sharing", "all"] as const,

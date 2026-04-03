@@ -8,7 +8,7 @@ export function useFileVersions(fileId: string) {
 
   // ── Query: Fetch versions ──
   const { data, isLoading, error } = useQuery({
-    queryKey: ["file-versions", fileId],
+    queryKey: queryKeys.versions(fileId),
     queryFn: async () => {
       const res = await fetch(`/api/files/${fileId}/versions`);
       if (!res.ok) throw new Error("Failed to fetch versions");
@@ -31,7 +31,7 @@ export function useFileVersions(fileId: string) {
     onSuccess: () => {
       toast.success("Version restored successfully");
       queryClient.invalidateQueries({ queryKey: queryKeys.all });
-      queryClient.invalidateQueries({ queryKey: ["file-versions", fileId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.versions(fileId) });
     },
     onError: (err: any) => {
       toast.error(err.message || "Failed to restore version");
@@ -49,7 +49,7 @@ export function useFileVersions(fileId: string) {
     },
     onSuccess: () => {
       toast.success("Version deleted");
-      queryClient.invalidateQueries({ queryKey: ["file-versions", fileId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.versions(fileId) });
     },
     onError: (err: any) => {
       toast.error(err.message || "Failed to delete version");
