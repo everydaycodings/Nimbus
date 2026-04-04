@@ -5,6 +5,7 @@ import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { s3, BUCKET } from "@/lib/s3";
 import { createFolderZipStream } from "@/lib/stream-zip";
+import { getEncodedContentDisposition } from "@/lib/s3-signer";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -79,7 +80,7 @@ export async function GET(req: Request) {
     return new Response(stream as any, {
       headers: {
         "Content-Type": "application/zip",
-        "Content-Disposition": `attachment; filename="${fileName}"`,
+        "Content-Disposition": getEncodedContentDisposition(fileName, "attachment"),
         "Cache-Control": "no-cache",
       },
     });
@@ -119,9 +120,7 @@ export async function GET(req: Request) {
     const command = new GetObjectCommand({
       Bucket:                     BUCKET,
       Key:                        file.s3_key,
-      ResponseContentDisposition: inline
-        ? `inline; filename="${file.name}"`
-        : `attachment; filename="${file.name}"`,
+      ResponseContentDisposition: getEncodedContentDisposition(file.name, inline ? "inline" : "attachment"),
       ResponseContentType: file.mime_type,
       ResponseCacheControl: "public, max-age=31536000, immutable",
     });

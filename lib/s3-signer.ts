@@ -4,6 +4,17 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { s3, BUCKET } from "./s3";
 
 /**
+ * Formats a Content-Disposition header with RFC 6266 compliance for non-ASCII filenames.
+ */
+export function getEncodedContentDisposition(filename: string, mode: "inline" | "attachment") {
+  // Simple ASCII fallback (remove non-ASCII)
+  const asciiName = filename.replace(/[^\x00-\x7F]/g, "_");
+  // RFC 6266 / RFC 5987 encoding
+  const encodedName = encodeURIComponent(filename).replace(/['()]/g, escape).replace(/\*/g, "%2a");
+  return `${mode}; filename="${asciiName.replace(/"/g, '\\"')}"; filename*=UTF-8''${encodedName}`;
+}
+
+/**
  * Signs a list of S3 keys in parallel for instant download/preview.
  * @param files A list of file objects containing s3_key, name, and mime_type.
  * @param expiresIn Time in seconds until the URL expires (default 1 hour).
@@ -20,7 +31,7 @@ export async function signFiles(
       const previewCommand = new GetObjectCommand({
         Bucket: BUCKET,
         Key: file.s3_key,
-        ResponseContentDisposition: `inline; filename="${file.name}"`,
+        ResponseContentDisposition: getEncodedContentDisposition(file.name, "inline"),
         ResponseContentType: file.mime_type,
         ResponseCacheControl: "public, max-age=31536000, immutable",
       });
@@ -29,7 +40,7 @@ export async function signFiles(
       const downloadCommand = new GetObjectCommand({
         Bucket: BUCKET,
         Key: file.s3_key,
-        ResponseContentDisposition: `attachment; filename="${file.name}"`,
+        ResponseContentDisposition: getEncodedContentDisposition(file.name, "attachment"),
         ResponseContentType: file.mime_type,
         ResponseCacheControl: "public, max-age=31536000, immutable",
       });

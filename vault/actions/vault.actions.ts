@@ -371,7 +371,6 @@ export async function getVaultDownloadUrl(fileId: string) {
   const command = new GetObjectCommand({
     Bucket:                     file.s3_bucket,
     Key:                        file.s3_key,
-    ResponseContentDisposition: `attachment; filename="${file.name}.enc"`,
   });
 
   const url = await getSignedUrl(s3, command, { expiresIn: 300 }); // short — decryption is immediate

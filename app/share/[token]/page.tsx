@@ -5,6 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { s3, BUCKET } from "@/lib/s3";
+import { getEncodedContentDisposition } from "@/lib/s3-signer";
 import {
   DownloadSimple, File, MusicNote,
   FolderSimple, FilePdf, Image, FileVideo, X,
@@ -215,7 +216,7 @@ export default async function SharePage({
         s3,
         new GetObjectCommand({
           Bucket: BUCKET, Key: file.s3_key,
-          ResponseContentDisposition: `inline; filename="${file.name}"`,
+          ResponseContentDisposition: getEncodedContentDisposition(file.name, "inline"),
           ResponseContentType: file.mime_type,
         }),
         { expiresIn: 3600 }
@@ -319,7 +320,7 @@ export default async function SharePage({
             new GetObjectCommand({
               Bucket: BUCKET,
               Key: f.s3_key,
-              ResponseContentDisposition: `attachment; filename="${f.name}"`,
+              ResponseContentDisposition: getEncodedContentDisposition(f.name, "attachment"),
             }),
             { expiresIn: 3600 }
           );

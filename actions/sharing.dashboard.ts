@@ -130,12 +130,13 @@ export async function getSharedFileDownloadUrl(resourceId: string) {
   const { GetObjectCommand } = await import("@aws-sdk/client-s3");
   const { getSignedUrl }     = await import("@aws-sdk/s3-request-presigner");
   const { s3, BUCKET }       = await import("@/lib/s3");
+  const { getEncodedContentDisposition } = await import("@/lib/s3-signer");
 
   const url = await getSignedUrl(
     s3,
     new GetObjectCommand({
       Bucket: file.s3_bucket ?? BUCKET, Key: file.s3_key,
-      ResponseContentDisposition: `attachment; filename="${file.name}"`,
+      ResponseContentDisposition: getEncodedContentDisposition(file.name, "attachment"),
       ResponseContentType: file.mime_type,
     }),
     { expiresIn: 3600 }
