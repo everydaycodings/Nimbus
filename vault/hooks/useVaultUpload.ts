@@ -65,9 +65,8 @@ export function useVaultUpload(vaultId: string, key: CryptoKey, options: VaultUp
     })
 
     try {
-      if (options.isFragmented) {
-        // ───────────────── Fragmented Upload Flow ─────────────────
-        const chunkCount = Math.ceil(file.size / FRAGMENT_SIZE);
+      const chunkCount = Math.ceil(file.size / FRAGMENT_SIZE);
+      if (options.isFragmented && chunkCount > 1) {
         
         // 1. Get presigned URLs for all fragments
         const { presignedUrl: manifestUrl, s3Key: manifestKey, bucket, chunks } = await getVaultPresignedUrl({
