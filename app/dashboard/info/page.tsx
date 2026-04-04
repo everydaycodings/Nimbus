@@ -4,8 +4,8 @@ import React from "react";
 
 export default function InfoPage() {
   const appDetails = [
-    { label: "Version", value: "0.0.1-alpha", isBadge: true },
-    { label: "Stage", value: "Public Alpha", isBadge: false },
+    { label: "Version", value: "1.0", isBadge: true },
+    { label: "Stage", value: "Public", isBadge: false },
     { label: "Last Updated", value: "April 04, 2026", isBadge: false },
     { 
       label: "Developed by", 
@@ -19,7 +19,7 @@ export default function InfoPage() {
       value: "Apache 2.0", 
       isBadge: false, 
       isLink: true, 
-      href: "/LICENSE" 
+      href: "https://github.com/everydaycodings/Nimbus/blob/main/LICENSE" 
     },
   ];
 
@@ -33,12 +33,9 @@ export default function InfoPage() {
             <h1 className="text-4xl md:text-5xl font-bold tracking-tight">
               Nimbus Dashboard
             </h1>
-            <span className="px-2.5 py-0.5 rounded-md bg-[#ffffff15] text-[#ffffff80] text-xs font-semibold border border-[#ffffff10] mt-1">
-              Alpha
-            </span>
           </div>
           <p className="text-[#ffffff80] text-lg font-medium">
-            Intelligent Cloud Storage. Currently in Alpha Testing.
+            Intelligent Cloud Storage
           </p>
         </div>
 
