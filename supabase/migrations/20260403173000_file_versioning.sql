@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS "public"."file_versions" (
 ALTER TABLE "public"."file_versions" ENABLE ROW LEVEL SECURITY;
 
 -- 3. Create RLS Policy
+DROP POLICY IF EXISTS "file_versions_owner_all" ON "public"."file_versions";
 CREATE POLICY "file_versions_owner_all" ON "public"."file_versions"
     USING (EXISTS (
         SELECT 1 FROM "public"."files"
@@ -34,6 +35,7 @@ ALTER TABLE "public"."activity_log" ADD CONSTRAINT "activity_log_action_check"
     CHECK (("action" = ANY (ARRAY['upload'::"text", 'download'::"text", 'delete'::"text", 'restore'::"text", 'rename'::"text", 'move'::"text", 'share'::"text", 'unshare'::"text", 'star'::"text", 'unstar'::"text", 'profile_update'::"text", 'security_update'::"text", 'mfa_enroll'::"text", 'mfa_unenroll'::"text", 'tag'::"text", 'untag'::"text", 'version_restore'::"text", 'version_delete'::"text"])));
 
 -- 5. Add index for performance
+DROP INDEX IF EXISTS "idx_file_versions_file";
 CREATE INDEX "idx_file_versions_file" ON "public"."file_versions" USING "btree" ("file_id");
 
 -- 6. Add trigger for storage accounting on file_versions
@@ -56,5 +58,6 @@ begin
 end;
 $$;
 
+DROP TRIGGER IF EXISTS "trg_file_versions_storage" ON "public"."file_versions";
 CREATE TRIGGER "trg_file_versions_storage" AFTER INSERT OR DELETE ON "public"."file_versions"
     FOR EACH ROW EXECUTE FUNCTION "public"."update_storage_used_versions"();
