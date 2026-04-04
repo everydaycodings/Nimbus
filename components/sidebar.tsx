@@ -16,6 +16,7 @@ import {
   VaultIcon,
   ShareNetworkIcon,
   CloudIcon,
+  Info,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { UploadZone } from "@/components/UploadZone";
@@ -40,6 +41,7 @@ const navItems = [
   { name: "Sharing", icon: ShareNetworkIcon, href: "/dashboard/sharing" },
   { name: "Activity", icon: Clock, href: "/dashboard/activity" },
   { name: "Trash", icon: Trash, href: "/dashboard/trash" },
+  { name: "Info", icon: Info, href: "/dashboard/info" },
 ];
 
 const TEAL = "#2da07a";

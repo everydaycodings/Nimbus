@@ -84,49 +84,78 @@ export function LandingPageClient({ initialStars, user }: LandingPageClientProps
 
       <main className="pt-16">
         {/* ── Hero Section ── */}
-        <section className="relative pt-20 pb-16 md:pt-32 md:pb-24 flex flex-col items-center text-center">
-          {/* Subtle minimal background glow */}
-          <div className="absolute top-0 inset-x-0 w-full h-full bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(45,160,122,0.15),rgba(255,255,255,0))] dark:bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(45,160,122,0.12),rgba(0,0,0,0))] pointer-events-none" />
+        <section className="relative pt-24 pb-20 md:pt-40 md:pb-32 flex flex-col items-center text-center overflow-hidden">
+          <div className="relative z-10 max-w-6xl mx-auto px-4 md:px-6 flex flex-col items-center">
+            {/* Github Stars Pill - Updated Design */}
+            <div className="mb-10 animate-fade-in translate-y-[-10px]">
+              <a 
+                href="https://github.com/everydaycodings/Nimbus"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2.5 px-1 py-1 pr-4 rounded-full border border-border/40 bg-secondary/20 backdrop-blur-md hover:bg-secondary/40 transition-all cursor-pointer shadow-sm group ring-1 ring-white/5"
+              >
+                <div className="h-7 px-3 rounded-full bg-foreground/5 dark:bg-white/5 flex items-center gap-1.5 border border-border/20">
+                  <GithubLogo size={14} weight="bold" className="text-foreground/70 group-hover:text-foreground transition-colors" />
+                  <span className="text-[11px] font-bold tracking-tight text-foreground/80 group-hover:text-foreground transition-colors uppercase">v1.1.2</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-xs md:text-sm font-semibold" style={{ color: TEAL }}>
+                  <Sparkle size={14} weight="fill" className="animate-pulse" />
+                  <span className="tracking-tight">{initialStars.toLocaleString()} GitHub Stars</span>
+                </div>
+                <div className="w-4 h-4 rounded-full bg-secondary/40 flex items-center justify-center group-hover:translate-x-0.5 transition-transform">
+                  <ArrowRight size={10} className="text-muted-foreground" weight="bold" />
+                </div>
+              </a>
+            </div>
 
-          <div className="relative z-10 max-w-5xl mx-auto px-4 md:px-6 flex flex-col items-center">
-            {/* Github Stars Pill */}
-            <a 
-              href="https://github.com/everydaycodings/Nimbus"
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 rounded-full border border-border/50 bg-secondary/30 hover:bg-secondary/60 transition-all mb-8 cursor-pointer shadow-sm group"
-            >
-              <GithubLogo size={16} className="text-muted-foreground group-hover:text-foreground transition-colors" />
-              <span className="text-xs md:text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">Proudly Open Source</span>
-              <span className="w-1 h-1 rounded-full bg-border" />
-              <div className="flex items-center gap-1 text-xs md:text-sm font-semibold" style={{ color: TEAL }}>
-                <Sparkle size={14} weight="fill" />
-                <span>{initialStars.toLocaleString()} Stars</span>
-              </div>
-            </a>
-
-            <h1 className="text-4xl md:text-6xl lg:text-7xl font-extrabold tracking-tight mb-6 max-w-4xl text-balance leading-[1.1]">
-              Take back control of your <br className="hidden md:block"/>
-              <span style={{ color: TEAL }}>cloud storage</span>
+            <h1 className="text-5xl md:text-7xl lg:text-8xl font-black tracking-tighter mb-8 max-w-5xl text-balance leading-[0.95] drop-shadow-sm">
+              The <span className="bg-clip-text text-transparent bg-gradient-to-r from-[#2da07a] via-[#3cc398] to-[#2da07a] animate-gradient-x">sovereign</span> cloud <br className="hidden md:block"/>
+              <span className="text-foreground">for your files</span>
             </h1>
             
-            <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-10 text-balance leading-relaxed">
-              Nimbus is a minimalistic, high-performance file manager with an integrated zero-knowledge encrypted vault. Self-host your data without compromises.
+            <p className="text-lg md:text-2xl text-muted-foreground/80 max-w-3xl mx-auto mb-12 text-balance leading-normal font-medium tracking-tight">
+              Nimbus is an ultra-minimalist, high-performance file manager with zero-knowledge encryption. <span className="text-foreground/60">Self-host your data. No compromises.</span>
             </p>
 
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 w-full sm:w-auto">
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-5 w-full sm:w-auto">
               <Link href="/dashboard" className="w-full sm:w-auto">
-                <Button size="lg" className="h-12 px-8 text-base w-full sm:w-auto gap-2 group shadow-md cursor-pointer" style={{ backgroundColor: TEAL, color: "white" }}>
-                  {user ? "Open Dashboard" : "Get Started"}
-                  <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                <Button 
+                  size="lg" 
+                  className="h-14 px-10 text-lg w-full sm:w-auto gap-3 group shadow-[0_10px_30px_-10px_rgba(45,160,122,0.4)] hover:shadow-[0_15px_40px_-12px_rgba(45,160,122,0.5)] transition-all duration-300 transform hover:-translate-y-0.5 active:scale-95 cursor-pointer font-bold rounded-2xl" 
+                  style={{ backgroundColor: TEAL, color: "white" }}
+                >
+                  {user ? "Open Dashboard" : "Get Started Now"}
+                  <div className="bg-white/10 p-1 rounded-md group-hover:bg-white/20 transition-colors">
+                    <ArrowRight size={18} weight="bold" />
+                  </div>
                 </Button>
               </Link>
               <a href="https://github.com/everydaycodings/Nimbus" target="_blank" rel="noreferrer" className="w-full sm:w-auto">
-                <Button size="lg" variant="outline" className="h-12 px-8 text-base w-full sm:w-auto gap-2 border-border/50 hover:bg-secondary/50 cursor-pointer">
-                  <GithubLogo size={20} />
+                <Button 
+                  size="lg" 
+                  variant="outline" 
+                  className="h-14 px-10 text-lg w-full sm:w-auto gap-3 border-border/40 bg-secondary/10 hover:bg-secondary/30 backdrop-blur-sm transition-all duration-300 transform hover:-translate-y-0.5 active:scale-95 cursor-pointer font-bold rounded-2xl group shadow-sm"
+                >
+                  <GithubLogo size={22} weight="duotone" className="group-hover:rotate-12 transition-transform" />
                   View the Code
                 </Button>
               </a>
+            </div>
+
+            {/* Decorative bottom element */}
+            <div className="mt-16 sm:mt-24 flex items-center justify-center gap-12 sm:gap-24 opacity-30 grayscale hover:grayscale-0 transition-all duration-500">
+               <div className="flex items-center gap-2">
+                 <ShieldCheck size={20} weight="fill" />
+                 <span className="text-[10px] font-black uppercase tracking-[0.2em]">End-to-End</span>
+               </div>
+               <div className="flex items-center gap-2">
+                 <CloudArrowUp size={20} weight="fill" />
+                 <span className="text-[10px] font-black uppercase tracking-[0.2em]">Self-Hosted</span>
+               </div>
+               <div className="flex items-center gap-2">
+                 <Lightning size={20} weight="fill" />
+                 <span className="text-[10px] font-black uppercase tracking-[0.2em]">Zero Latency</span>
+               </div>
             </div>
           </div>
         </section>
