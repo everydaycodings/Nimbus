@@ -32,6 +32,7 @@ export function FileListClient({ initialData }: { initialData?: any }) {
   const minSize = searchParams.get("minSize") ? Number(searchParams.get("minSize")) : undefined;
   const maxSize = searchParams.get("maxSize") ? Number(searchParams.get("maxSize")) : undefined;
   const page = Number(searchParams.get("page") || 1);
+  const tagId = searchParams.get("tagId") || undefined;
 
   // Parse path/names from URL for breadcrumbs
   const pathParam = searchParams.get("path");
@@ -77,12 +78,13 @@ export function FileListClient({ initialData }: { initialData?: any }) {
     sortOrder: sortOrder || undefined,
     minSize,
     maxSize,
+    tagId,
   };
 
   const { data, refetch: refresh } = useFilesQuery(activeFolderId, queryOptions, initialData);
 
   const files = (data?.files ?? []) as any[];
-  const folders = query ? [] : ((data?.folders ?? []) as any[]);
+  const folders = (query && !tagId) ? [] : ((data?.folders ?? []) as any[]);
 
   const { uploadMany } = useUpload({
     parentFolderId: currentFolder ?? undefined,

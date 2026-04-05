@@ -33,6 +33,7 @@ export default async function FilesPage(props: {
     sortOrder: searchParams?.sortOrder ? String(searchParams.sortOrder) : undefined,
     minSize: searchParams?.minSize ? Number(searchParams.minSize) : undefined,
     maxSize: searchParams?.maxSize ? Number(searchParams.maxSize) : undefined,
+    tagId: searchParams?.tagId ? String(searchParams.tagId) : undefined,
   };
 
   // Pre-fetch the data on the server

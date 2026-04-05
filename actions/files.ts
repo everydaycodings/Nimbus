@@ -62,9 +62,11 @@ export async function getFiles(
     folderQuery = folderQuery.eq("folder_tags.tag_id", options.tagId);
   }
 
-  folderQuery = parentFolderId
-    ? folderQuery.eq("parent_folder_id", parentFolderId)
-    : folderQuery.is("parent_folder_id", null);
+  if (!options?.tagId) {
+    folderQuery = parentFolderId
+      ? folderQuery.eq("parent_folder_id", parentFolderId)
+      : folderQuery.is("parent_folder_id", null);
+  }
 
   if (query) {
     // Use textSearch for GIN index optimization
@@ -93,9 +95,11 @@ export async function getFiles(
   if (options?.tagId) {
     fileQuery = fileQuery.eq("file_tags.tag_id", options.tagId);
   }
-  fileQuery = parentFolderId
-    ? fileQuery.eq("parent_folder_id", parentFolderId)
-    : fileQuery.is("parent_folder_id", null);
+  if (!options?.tagId) {
+    fileQuery = parentFolderId
+      ? fileQuery.eq("parent_folder_id", parentFolderId)
+      : fileQuery.is("parent_folder_id", null);
+  }
 
   if (query) {
     const searchTerms = query.trim().split(/\s+/).map(t => `${t}:*`).join(" & ");
