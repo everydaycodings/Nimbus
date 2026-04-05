@@ -19,7 +19,13 @@ import {
   deleteVaultFolder,
   renameVaultFolder,
 } from "@/vault/actions/vault.folders.actions";
-import { deleteVaultFile, renameVaultFile } from "@/vault/actions/vault.actions";
+import {
+  deleteVaultFile,
+  renameVaultFile,
+  getVaultDownloadUrl,
+} from "@/vault/actions/vault.actions";
+import { decryptBuffer, decryptFile } from "@/vault/lib/crypto";
+import { toast } from "sonner";
 import { useVaultUpload } from "@/vault/hooks/useVaultUpload";
 import { useVaultFolderUpload } from "@/vault/hooks/useVaultFolderUpload";
 import { useVaultDownload, canPreviewVaultFile } from "@/vault/hooks/useVaultDownload";
@@ -47,6 +53,7 @@ import { useLayout } from "@/hooks/useLayout";
 import { LayoutToggle } from "@/components/ui/LayoutToggle";
 import { FileIcon } from "@/components/ui/FileIcon";
 import { DetailsDialog } from "@/components/DetailsDialog";
+import { VaultNoteEditorDialog } from "@/vault/components/VaultNoteEditorDialog";
 
 const TEAL = "#2da07a";
 
@@ -301,6 +308,12 @@ export function OpenVault({
     name: string;
     type: "file" | "folder";
   } | null>(null);
+  const [noteEditor, setNoteEditor] = useState<{
+    open: boolean;
+    id?: string;
+    name?: string;
+    content?: string;
+  }>({ open: false });
   const searchParams = useSearchParams();
 
   const type = searchParams.get("type") || "all";
@@ -438,6 +451,44 @@ export function OpenVault({
     }
   };
 
+  const handleEditNote = async (file: VaultFile) => {
+    setLoadingPreview(file.id);
+    try {
+      const result = await getVaultDownloadUrl(file.id);
+      let content = "";
+
+      if (result.isFragmented && result.fragments) {
+        const decryptedChunks: ArrayBuffer[] = [];
+        for (const fragment of result.fragments) {
+          const res = await fetch(fragment.url);
+          if (!res.ok) throw new Error("Failed to fetch fragment");
+          const encryptedChunk = await res.arrayBuffer();
+          const decryptedChunk = await decryptBuffer(new Uint8Array(encryptedChunk), cryptoKey);
+          decryptedChunks.push(decryptedChunk);
+        }
+        const blob = new Blob(decryptedChunks);
+        content = await blob.text();
+      } else if (result.url) {
+        const res = await fetch(result.url);
+        const encryptedBlob = await res.blob();
+        const decryptedBlob = await decryptFile(encryptedBlob, cryptoKey, file.original_mime_type);
+        content = await decryptedBlob.text();
+      }
+
+      setNoteEditor({
+        open: true,
+        id: file.id,
+        name: file.name,
+        content: content,
+      });
+    } catch (err) {
+      console.error("Failed to fetch vault note content", err);
+      toast.error("Failed to decrypt note for editing");
+    } finally {
+      setLoadingPreview(null);
+    }
+  };
+
   const closePreview = () => {
     // We no longer revoke the objectUrl immediately so that the memory cache can reuse it
     setPreviewing(null);
@@ -492,6 +543,7 @@ export function OpenVault({
             uploadMany={uploadMany}
             uploadFolder={uploadFolder}
             setShowCreateFolder={setShowCreateFolder}
+            onNewNote={() => setNoteEditor({ open: true })}
             isFragmented={vault.is_fragmented}
           />
 
@@ -738,6 +790,7 @@ export function OpenVault({
                               })
                             }
                             onDownload={() => download(file.id, file.name, file.original_mime_type)}
+                            onEdit={() => handleEditNote(file)}
                           />
                         </div>
                       </div>
@@ -895,6 +948,7 @@ export function OpenVault({
                                   })
                                 }
                                 onDownload={() => download(file.id, file.name, file.original_mime_type)}
+                                onEdit={() => handleEditNote(file)}
                               />
                             </div>
                           </div>
@@ -975,6 +1029,19 @@ export function OpenVault({
         <DetailsDialog
           item={detailsDialog}
           onClose={() => setDetailsDialog(null)}
+        />
+      )}
+
+      {noteEditor.open && (
+        <VaultNoteEditorDialog
+          id={noteEditor.id}
+          name={noteEditor.name}
+          initialContent={noteEditor.content}
+          vaultId={vault.id}
+          cryptoKey={cryptoKey}
+          parentFolderId={currentFolderId}
+          onSuccess={invalidateVaultCache}
+          onClose={() => setNoteEditor({ open: false })}
         />
       )}
     </div>

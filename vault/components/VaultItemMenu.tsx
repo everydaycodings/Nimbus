@@ -14,6 +14,7 @@ import {
   FolderSimple,
   Info,
   DownloadSimple,
+  NotePencil,
 } from "@phosphor-icons/react";
 
 interface Props {
@@ -24,17 +25,23 @@ interface Props {
   onRename: () => void;
   onDelete: () => void;
   onMove: () => void;
+  onEdit?: () => void;
   onDetails?: () => void;
   onDownload?: () => void;
 }
 
 export default function VaultItemMenu({
+  type,
+  name,
   onRename,
   onDelete,
   onMove,
+  onEdit,
   onDetails,
   onDownload,
 }: Props) {
+  const isEditable = type === "file" && name.toLowerCase().endsWith(".txt");
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -44,6 +51,12 @@ export default function VaultItemMenu({
       </DropdownMenuTrigger>
 
       <DropdownMenuContent align="end" className="w-40">
+        {isEditable && onEdit && (
+          <DropdownMenuItem onClick={onEdit}>
+            <NotePencil className="mr-2" /> Edit
+          </DropdownMenuItem>
+        )}
+
         <DropdownMenuItem onClick={onRename}>
           <PencilSimple className="mr-2" /> Rename
         </DropdownMenuItem>

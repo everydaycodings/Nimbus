@@ -8,6 +8,7 @@ import {
     DotsThreeVertical,
     PlusIcon,
     CaretDown,
+    NotePencil,
 } from "@phosphor-icons/react";
 
 import {
@@ -24,6 +25,7 @@ interface Props {
     uploadMany: (files: FileList | File[]) => void;
     uploadFolder: (files: FileList) => void;
     setShowCreateFolder: (v: boolean) => void;
+    onNewNote?: () => void;
     isFragmented?: boolean;
 }
 
@@ -31,6 +33,7 @@ export default function VaultUploadDropdown({
     uploadMany,
     uploadFolder,
     setShowCreateFolder,
+    onNewNote,
     isFragmented = false,
 }: Props) {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -72,6 +75,14 @@ export default function VaultUploadDropdown({
                 </DropdownMenuTrigger>
 
                 <DropdownMenuContent align="start" className="w-56">
+                    {/* New Note */}
+                    {onNewNote && (
+                        <DropdownMenuItem onClick={onNewNote}>
+                            <NotePencil size={15} style={{ color: TEAL }} />
+                            <span>New note</span>
+                        </DropdownMenuItem>
+                    )}
+
                     {/* New Folder */}
                     <DropdownMenuItem onClick={() => setShowCreateFolder(true)}>
                         <FolderPlus size={15} style={{ color: TEAL }} />

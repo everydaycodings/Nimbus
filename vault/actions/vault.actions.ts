@@ -143,6 +143,7 @@ export async function getVaultFiles(vaultId: string) {
 
 // ── Save vault file metadata after upload ─────────────────────
 export async function saveVaultFile(input: {
+  id?:              string;
   vaultId:          string;
   name:             string;
   originalMimeType: string;
@@ -186,7 +187,8 @@ export async function saveVaultFile(input: {
 
   const { data, error } = await supabase
     .from("vault_files")
-    .insert({
+    .upsert({
+      id:                 input.id, // optional: if provided, updates existing; if not, inserts new
       vault_id:           input.vaultId,
       name:               input.name,
       original_mime_type: input.originalMimeType,

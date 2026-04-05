@@ -34,8 +34,9 @@ export function useVaultUpload(vaultId: string, key: CryptoKey, options: VaultUp
   const addUpload = useUploadStore((s) => s.addUpload)
   const updateUpload = useUploadStore((s) => s.updateUpload)
   const removeUpload = useUploadStore((s) => s.removeUpload)
+  const uploads = useUploadStore((s) => s.uploads)
 
-  const uploadFile = async (file: File) => {
+  const uploadFile = async (file: File, id?: string) => {
     const tempId = crypto.randomUUID()
 
     // ── Size check before doing anything ─────────────────────
@@ -128,7 +129,8 @@ export function useVaultUpload(vaultId: string, key: CryptoKey, options: VaultUp
             parentFolderId: options.parentFolderId,
             isFragmented: true,
             chunkCount,
-            chunks: uploadedChunks
+            chunks: uploadedChunks,
+            id // Pass original ID for upsert
         });
 
       } else {
@@ -182,6 +184,7 @@ export function useVaultUpload(vaultId: string, key: CryptoKey, options: VaultUp
             s3Key,
             s3Bucket: bucket,
             parentFolderId: options.parentFolderId,
+            id // Pass original ID for upsert
         })
       }
 
@@ -205,9 +208,9 @@ export function useVaultUpload(vaultId: string, key: CryptoKey, options: VaultUp
   }
 
   const uploadMany = async (files: FileList | File[]) => {
-    await Promise.allSettled(Array.from(files).map(uploadFile))
+    await Promise.allSettled(Array.from(files).map((f) => uploadFile(f)))
     options.onSuccess?.()
   }
 
-  return { uploadMany }
+  return { uploadFile, uploadMany }
 }
