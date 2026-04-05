@@ -185,7 +185,7 @@ export function DownloadingToast() {
           </div>
         ) : (
           /* 🔥 FULL VIEW */
-          <div className="flex flex-col gap-3 max-h-64 overflow-y-auto pr-1">
+          <div className="flex flex-col gap-3 max-h-80 overflow-y-auto pr-2">
             {zippings.map((z) => {
               const meta = metaRef.current[z.id];
 

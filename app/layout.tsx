@@ -6,6 +6,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { QueryProvider } from "@/components/QueryProvider";
 import { cn } from "@/lib/utils";
 import { Toaster } from "sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 const spaceGroteskHeading = Space_Grotesk({
   subsets: ["latin"],
@@ -93,7 +94,9 @@ export default function RootLayout({
             enableSystem={false}
           >
             <QueryProvider>
-              {children}
+              <TooltipProvider delayDuration={0}>
+                {children}
+              </TooltipProvider>
             </QueryProvider>
             <Toaster
               richColors

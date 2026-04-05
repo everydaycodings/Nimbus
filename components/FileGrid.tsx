@@ -39,6 +39,11 @@ import {
 import { TagBadge } from "@/components/tags/TagBadge";
 import { TagPicker } from "@/components/tags/TagPicker";
 import { Tag } from "@/types/tags";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 type Layout = "list" | "grid";
 
 interface FileItem {
@@ -245,7 +250,14 @@ function ListRow({
             }
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-foreground truncate">{name}</p>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <p className="text-sm font-medium text-foreground truncate cursor-help">{name}</p>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" align="start">
+                <p className="max-w-xs break-all">{name}</p>
+              </TooltipContent>
+            </Tooltip>
             {meta && (
               <div className="flex items-center gap-2 mt-0.5">
                 <p className="text-xs text-muted-foreground">
@@ -416,7 +428,14 @@ function GridCard({
             onClick={() => type === "file" && handleMainClick(onFolderOpen)}
             onDoubleClick={() => type === "folder" && handleMainClick(onFolderOpen)}
           >
-            <p className="text-xs font-medium text-foreground truncate mb-0.5">{name}</p>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <p className="text-xs font-medium text-foreground truncate mb-0.5 cursor-help">{name}</p>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" align="start">
+                <p className="max-w-xs break-all">{name}</p>
+              </TooltipContent>
+            </Tooltip>
             {meta && (
               <p className="text-[10px] text-muted-foreground mb-1">
                 {meta.size != null
