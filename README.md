@@ -6,11 +6,12 @@ Nimbus is an evolving cloud storage platform designed for performance, security,
 
 ## 🚀 Highlights
 
-- **🔒 Secure Vault**: A dedicated space for your most important data.
-- **📂 Advanced Folder Management**: Move, rename, and organize folders with ease.
+- **🔒 Secure Vault**: A dedicated space for your most important data with client-side encryption.
+- **📝 Note Editor**: Create and edit `.txt` files directly in your drive or encrypted vault.
+- **🌐 Offline-First Safe**: A high-security, browser-native storage layer using OPFS.
+- **🏷️ Sovereign Tagging**: Recursive tagging that cascades to all nested files and folders.
 - **⚡ Parallel Zipping**: Rapid folder downloads with real-time compression progress.
-- **🔄 Version Control**: Track history and restore previous versions of your files.
-- **✨ Premium UI**: A modern, dark-first dashboard that's fully responsive.
+- **✨ Premium UI**: A modern, dark-first dashboard that's fully responsive (v1.2).
 
 ## 🛠️ Tech Stack
 

@@ -18,6 +18,8 @@ Nimbus is built on a modern, high-performance stack, prioritizing performance an
     - **PostgreSQL**: A high-performance, relational database with robust data integrity.
     - **Database Migrations**: Managed via the Supabase CLI for reproducible environments.
 - **AWS S3**: Optional, high-availability object storage for mission-critical file management.
+- **Browser-Native APIs**: Leveraging **OPFS** (Origin Private File System) for encrypted binary storage and **IndexedDB** for local metadata in the Offline Vault.
+- **Web Crypto API**: Powering client-side AES-256-GCM encryption for both Cloud and Offline Vaults.
 
 ## Project Structure
 A high-level view of the repository organization:
@@ -29,8 +31,11 @@ A high-level view of the repository organization:
 - `supabase/`: Database migrations, configuration, and snippets.
 - `types/`: Global TypeScript definitions.
 - `vault/`: Domain-specific components and actions for the cloud vault.
+- `offline-vault/`: An entirely client-side storage implementation for maximum privacy.
 
 ## Core Workflows
 - **Zipping & Downloads**: Large-scale zipping is handled efficiently, with progress tracking broadcasted to the frontend via server-side events.
 - **File Versioning**: Soft-delete patterns and version history tracking are implemented using relational database triggers and constraints.
+- **Recursive Cascading**: Folder tagging and deletions use recursive server-side actions (for cloud) and browser-side logic (for offline) to ensure state consistency across deep hierarchies.
+- **Client-Side Editing**: Text file editing follows a "Fetch -> Decrypt -> Edit -> Encrypt -> Upload" pipeline entirely within the user's browser, ensuring raw data never touches the network.
 - **Performance Optimization**: Lazy-loading and efficient data fetching minimize initial load times.

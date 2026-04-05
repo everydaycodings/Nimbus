@@ -12,6 +12,7 @@ Nimbus places security at its core, offering multiple layers of protection for y
 The primary vault uses **client-side AES-256 encryption**.
 - **Server Blindness**: Files are encrypted before leaving your browser; neither the server nor cloud admins can access your data.
 - **In-Browser Decryption**: Securely view and manage your files instantly without compromising your keys.
+- **Integrated Note Editor**: Create, edit, and save encrypted `.txt` files directly within the vault. The editor is fully responsive and supports secure client-side persistence.
 - **Password Protection**: Access is restricted by a secure passphrase known only to you.
 
 ### 2. Offline-First "Local Safe"
@@ -19,6 +20,8 @@ A next-generation privacy layer that bypasses the cloud entirely.
 - **Sandboxed Storage**: Files are stored locally in your browser's sandboxed filesystem (OPFS).
 - **Multi-Vault Isolation**: Create separate secure containers for different purposes, each with its own unique passphrase.
 - **AES-256-GCM Performance**: Utilizes high-performance encryption with PBKDF2 (310k iterations) for local data derivation.
+- **Zero-Cloud Leakage**: Metadata is stored in **IndexedDB** and binary data in **OPFS**, ensuring that no traces of your local safe ever touch a server.
+- **Fast Performance**: Optimized for rapid access with high-speed local processing.
 
 ### 3. Plausible Deniability (Stealth Mode)
 The ultimate privacy feature for extreme situations.
@@ -33,7 +36,8 @@ The ultimate privacy feature for extreme situations.
 A modern workstation designed for efficiency and speed.
 
 ### Organization & Discovery
-- **Smart Tags**: Categorize items with custom, multi-colored tags for quick visual identification.
+- **Sovereign Tagging**: Categorize items with custom, multi-colored tags. Applying a tag to a folder automatically cascades it to all nested files and subfolders.
+- **Universal Filtering**: Tag filters now scan the entire drive, allowing you to find items regardless of their folder hierarchy.
 - **Bulk Actions**: Perform operations on multiple files and folders simultaneously.
 - **Dynamic Search (`⌘K`)**: Locate any file instantly with a global command palette and real-time filtering.
 - **Starred Items**: Favorite your most important documents for quick access.
