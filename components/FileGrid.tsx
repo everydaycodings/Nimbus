@@ -254,7 +254,7 @@ function ListRow({
               <TooltipTrigger asChild>
                 <p className="text-sm font-medium text-foreground truncate cursor-help">{name}</p>
               </TooltipTrigger>
-              <TooltipContent side="bottom" align="start">
+              <TooltipContent>
                 <p className="max-w-xs break-all">{name}</p>
               </TooltipContent>
             </Tooltip>
