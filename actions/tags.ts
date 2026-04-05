@@ -90,19 +90,64 @@ export async function deleteTag(id: string) {
   revalidatePath("/");
 }
 
+// ── Recursive: Get all descendants of a folder ────────────────
+async function getAllDescendants(folderId: string): Promise<{ folderIds: string[]; fileIds: string[] }> {
+  const { data: subfolders } = await supabase
+    .from("folders")
+    .select("id")
+    .eq("parent_folder_id", folderId)
+    .eq("is_trashed", false);
+
+  const { data: files } = await supabase
+    .from("files")
+    .select("id")
+    .eq("parent_folder_id", folderId)
+    .eq("is_trashed", false);
+
+  let folderIds = subfolders?.map((f) => f.id) || [];
+  let fileIds = files?.map((f) => f.id) || [];
+
+  for (const subId of [...folderIds]) {
+    const nested = await getAllDescendants(subId);
+    folderIds.push(...nested.folderIds);
+    fileIds.push(...nested.fileIds);
+  }
+
+  return { folderIds, fileIds };
+}
+
 // ── Assign tag to item ──────────────────────────────────────
 export async function assignTag(itemId: string, type: "file" | "folder", tagId: string) {
   const userId = (await (await createSupabaseClient()).auth.getUser()).data.user?.id;
   if (!userId) throw new Error("Unauthorized");
 
-  const table = type === "file" ? "file_tags" : "folder_tags";
-  const column = type === "file" ? "file_id" : "folder_id";
+  if (type === "file") {
+    const { error } = await supabase
+      .from("file_tags")
+      .upsert({ file_id: itemId, tag_id: tagId }, { onConflict: "file_id,tag_id" });
+    if (error) throw new Error(error.message);
+  } else {
+    // Recursive folder tagging
+    const { folderIds, fileIds } = await getAllDescendants(itemId);
+    const allFolderIds = [itemId, ...folderIds];
 
-  const { error } = await supabase
-    .from(table)
-    .upsert({ [column]: itemId, tag_id: tagId }, { onConflict: `${column},tag_id` });
+    // Batch upsert folder tags
+    const folderRows = allFolderIds.map(id => ({ folder_id: id, tag_id: tagId }));
+    const { error: folderError } = await supabase
+      .from("folder_tags")
+      .upsert(folderRows, { onConflict: "folder_id,tag_id" });
+    if (folderError) throw new Error(folderError.message);
 
-  if (error) throw new Error(error.message);
+    // Batch upsert file tags
+    if (fileIds.length > 0) {
+      const fileRows = fileIds.map(id => ({ file_id: id, tag_id: tagId }));
+      const { error: fileError } = await supabase
+        .from("file_tags")
+        .upsert(fileRows, { onConflict: "file_id,tag_id" });
+      if (fileError) throw new Error(fileError.message);
+    }
+  }
+
   revalidatePath("/");
 }
 
@@ -111,15 +156,36 @@ export async function unassignTag(itemId: string, type: "file" | "folder", tagId
   const userId = (await (await createSupabaseClient()).auth.getUser()).data.user?.id;
   if (!userId) throw new Error("Unauthorized");
 
-  const table = type === "file" ? "file_tags" : "folder_tags";
-  const column = type === "file" ? "file_id" : "folder_id";
+  if (type === "file") {
+    const { error } = await supabase
+      .from("file_tags")
+      .delete()
+      .eq("file_id", itemId)
+      .eq("tag_id", tagId);
+    if (error) throw new Error(error.message);
+  } else {
+    // Recursive folder untagging
+    const { folderIds, fileIds } = await getAllDescendants(itemId);
+    const allFolderIds = [itemId, ...folderIds];
 
-  const { error } = await supabase
-    .from(table)
-    .delete()
-    .eq(column, itemId)
-    .eq("tag_id", tagId);
+    // Batch delete folder tags
+    const { error: folderError } = await supabase
+      .from("folder_tags")
+      .delete()
+      .in("folder_id", allFolderIds)
+      .eq("tag_id", tagId);
+    if (folderError) throw new Error(folderError.message);
 
-  if (error) throw new Error(error.message);
+    // Batch delete file tags
+    if (fileIds.length > 0) {
+      const { error: fileError } = await supabase
+        .from("file_tags")
+        .delete()
+        .in("file_id", fileIds)
+        .eq("tag_id", tagId);
+      if (fileError) throw new Error(fileError.message);
+    }
+  }
+
   revalidatePath("/");
 }
