@@ -179,6 +179,7 @@ export function FileListClient({ initialData }: { initialData?: any }) {
             uploadMany={uploadMany}
             setShowCreateFolder={setShowCreateFolder}
             refresh={refresh}
+            parentFolderId={currentFolder}
           />
         </div>
       </div>
