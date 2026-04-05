@@ -96,8 +96,14 @@ export default function SettingsPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("File excessively large. Please choose an image under 5MB.");
+    const allowedTypes = ["image/jpeg", "image/png", "image/jpg", "image/webp", "image/gif"];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error("Invalid file type. Please upload a popular image format (JPEG, PNG, WEBP, or GIF).");
+      return;
+    }
+
+    if (file.size > 1 * 1024 * 1024) {
+      toast.error("File excessively large. Please choose an image under 1MB.");
       return;
     }
 
@@ -206,7 +212,7 @@ export default function SettingsPage() {
                     </div>
                     <input 
                       type="file" 
-                      accept="image/*" 
+                      accept="image/jpeg,image/png,image/webp,image/gif" 
                       className="hidden" 
                       ref={fileInputRef} 
                       onChange={handleUploadAvatar} 
