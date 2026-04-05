@@ -75,19 +75,19 @@ export function VaultNoteEditorDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in">
-      <div className="w-full max-w-4xl h-[80vh] flex flex-col bg-card border border-border rounded-2xl shadow-2xl overflow-hidden glassmorphism">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-background/80 backdrop-blur-sm animate-in fade-in">
+      <div className="w-full max-w-4xl h-full sm:h-[80vh] flex flex-col bg-card border-x-0 sm:border border-border rounded-none sm:rounded-2xl shadow-2xl overflow-hidden glassmorphism">
         
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-          <div className="flex items-center gap-3">
-            <NotePencil size={24} weight="duotone" style={{ color: TEAL }} />
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-border">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <NotePencil size={20} className="sm:w-6 sm:h-6" weight="duotone" style={{ color: TEAL }} />
             <div className="flex flex-col">
               <input
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
                 placeholder="Filename.txt"
-                className="bg-transparent text-lg font-semibold text-foreground focus:outline-none transition-all"
+                className="bg-transparent text-base sm:text-lg font-semibold text-foreground focus:outline-none transition-all w-full max-w-[150px] sm:max-w-none truncate"
                 disabled={!!id}
               />
               <p className="text-xs text-muted-foreground font-medium">
@@ -100,22 +100,22 @@ export function VaultNoteEditorDialog({
               onClick={() => handleSave()}
               disabled={isSaving}
               className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all shadow-sm",
+                "flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-medium transition-all shadow-sm",
                 "bg-[#2da07a] text-white hover:bg-[#2da07a]/90 disabled:opacity-50"
               )}
             >
               {isSaving ? (
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <div className="w-3.5 h-3.5 sm:w-4 sm:h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : (
-                <FloppyDisk size={18} weight="bold" />
+                <FloppyDisk size={16} className="sm:w-[18px] sm:h-[18px]" weight="bold" />
               )}
               Save
             </button>
             <button
               onClick={onClose}
-              className="p-2 rounded-xl text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+              className="p-1.5 sm:p-2 rounded-xl text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
             >
-              <X size={20} weight="bold" />
+              <X size={18} className="sm:w-5 sm:h-5" weight="bold" />
             </button>
           </div>
         </div>
@@ -126,18 +126,18 @@ export function VaultNoteEditorDialog({
             value={content}
             onChange={(e) => setContent(e.target.value)}
             placeholder="Start writing securely..."
-            className="flex-1 w-full h-full p-6 bg-transparent text-foreground resize-none focus:outline-none scrollbar-fancy leading-relaxed text-base placeholder:text-muted-foreground/50"
+            className="flex-1 w-full h-full p-4 sm:p-6 bg-transparent text-foreground resize-none focus:outline-none scrollbar-fancy leading-relaxed text-sm sm:text-base placeholder:text-muted-foreground/50"
             autoFocus
           />
         </div>
 
         {/* Footer info */}
-        <div className="px-6 py-2 border-t border-border bg-muted/30 flex items-center justify-between">
-          <p className="text-xs text-muted-foreground">
+        <div className="px-4 sm:px-6 py-2 border-t border-border bg-muted/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-0">
+          <p className="text-[10px] sm:text-xs text-muted-foreground">
             {content.length} characters • {content.split(/\s+/).filter(Boolean).length} words
           </p>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground italic">
-            <WarningCircle size={14} className="text-amber-500/80" />
+          <div className="flex items-center gap-2 text-[10px] sm:text-xs text-muted-foreground italic">
+            <WarningCircle size={12} className="text-amber-500/80 sm:w-3.5 sm:h-3.5" />
             Files are encrypted before even leaving your browser.
           </div>
         </div>
