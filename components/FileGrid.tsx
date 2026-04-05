@@ -92,6 +92,9 @@ function DotsMenu({
   onDetails,
   onTags,
   onVersionHistory,
+  onEdit,
+  name,
+  mimeType,
   size = 15,
 }: {
   type: "file" | "folder" | "version";
@@ -107,6 +110,9 @@ function DotsMenu({
   onDetails: () => void;
   onTags: () => void;
   onVersionHistory?: () => void;
+  onEdit?: () => void;
+  name?: string;
+  mimeType?: string;
   size?: number;
 }) {
   return (
@@ -141,6 +147,12 @@ function DotsMenu({
                 Version History
               </DropdownMenuItem>
             )}
+
+            {type === "file" && (mimeType === "text/plain" || name?.toLowerCase().endsWith(".txt")) && (
+              <DropdownMenuItem onClick={onEdit}>
+                Edit
+              </DropdownMenuItem>
+            )}
             
             <DropdownMenuItem onClick={onDetails}>
               Details
@@ -172,9 +184,21 @@ function ListRow({
   id, name, type, meta, isStarred, showRestore, onFolderOpen, onRefresh,
 }: {
   id: string; name: string; type: "file" | "folder" | "version";
-  meta?: { mimeType?: string; size?: number; date: string; updated_at?: string; s3_key?: string; signed_url?: string | null; download_url?: string | null; tags?: { tag: Tag }[] };
-  isStarred: boolean; showRestore?: boolean;
-  onFolderOpen?: (id: string, name: string) => void; onRefresh?: () => void;
+  meta?: {
+    mimeType?: string;
+    size?: number;
+    date: string;
+    updated_at?: string;
+    s3_key?: string;
+    signed_url?: string | null;
+    download_url?: string | null;
+    tags?: { tag: Tag }[];
+    onEdit?: () => void;
+  };
+  isStarred: boolean;
+  showRestore?: boolean;
+  onFolderOpen?: (id: string, name: string) => void;
+  onRefresh?: () => void;
 }) {
   const {
     showMoveDialog, setShowMoveDialog,
@@ -272,6 +296,9 @@ function ListRow({
               onStar={handleStar} onTrash={() => setShowTrashDialog(true)} onRestore={handleRestore}
               onDetails={() => setShowDetails(true)} onTags={() => setShowTagPicker(true)}
               onVersionHistory={() => setShowVersionHistory(true)}
+              onEdit={meta?.onEdit}
+              name={name}
+              mimeType={meta?.mimeType}
             />
           </div>
         </div>
@@ -319,9 +346,21 @@ function GridCard({
   id, name, type, meta, isStarred, showRestore, onFolderOpen, onRefresh,
 }: {
   id: string; name: string; type: "file" | "folder" | "version";
-  meta?: { mimeType?: string; size?: number; date: string; updated_at?: string; s3_key?: string; signed_url?: string | null; download_url?: string | null; tags?: { tag: Tag }[] };
-  isStarred: boolean; showRestore?: boolean;
-  onFolderOpen?: (id: string, name: string) => void; onRefresh?: () => void;
+  meta?: {
+    mimeType?: string;
+    size?: number;
+    date: string;
+    updated_at?: string;
+    s3_key?: string;
+    signed_url?: string | null;
+    download_url?: string | null;
+    tags?: { tag: Tag }[];
+    onEdit?: () => void;
+  };
+  isStarred: boolean;
+  showRestore?: boolean;
+  onFolderOpen?: (id: string, name: string) => void;
+  onRefresh?: () => void;
 }) {
   const {
     showMoveDialog, setShowMoveDialog,
@@ -418,6 +457,9 @@ function GridCard({
                 onStar={handleStar} onRestore={handleRestore}
                 onDetails={() => setShowDetails(true)} onTags={() => setShowTagPicker(true)}
                 onVersionHistory={() => setShowVersionHistory(true)}
+                onEdit={meta?.onEdit}
+                name={name}
+                mimeType={meta?.mimeType}
               />
             </div>
           </div>
@@ -532,7 +574,7 @@ export function FileGrid({
           {files.length > 0 && (
             <div>
               <p className="px-3 py-1 text-xs text-muted-foreground/60 font-medium">Files</p>
-                {files.map((f: any) => <ListRow key={f.id} id={f.id} name={f.name} type={f.type || "file"} isStarred={f.is_starred} meta={{ mimeType: f.mime_type, size: f.size, date: f.created_at, updated_at: f.updated_at, s3_key: f.s3_key, signed_url: f.signed_url, download_url: f.download_url, tags: f.tags }} {...shared} />)}
+                {files.map((f: any) => <ListRow key={f.id} id={f.id} name={f.name} type={f.type || "file"} isStarred={f.is_starred} meta={{ mimeType: f.mime_type, size: f.size, date: f.created_at, updated_at: f.updated_at, s3_key: f.s3_key, signed_url: f.signed_url, download_url: f.download_url, tags: f.tags, onEdit: f.onEdit }} {...shared} />)}
             </div>
           )}
         </div>
@@ -553,7 +595,7 @@ export function FileGrid({
             <div>
               <p className="text-xs text-muted-foreground/60 font-medium mb-2">Files</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                {files.map((f: any) => <GridCard key={f.id} id={f.id} name={f.name} type={f.type || "file"} isStarred={f.is_starred} meta={{ mimeType: f.mime_type, size: f.size, date: f.created_at, updated_at: f.updated_at, s3_key: f.s3_key, signed_url: f.signed_url, download_url: f.download_url, tags: f.tags }} {...shared} />)}
+                {files.map((f: any) => <GridCard key={f.id} id={f.id} name={f.name} type={f.type || "file"} isStarred={f.is_starred} meta={{ mimeType: f.mime_type, size: f.size, date: f.created_at, updated_at: f.updated_at, s3_key: f.s3_key, signed_url: f.signed_url, download_url: f.download_url, tags: f.tags, onEdit: f.onEdit }} {...shared} />)}
               </div>
             </div>
           )}

@@ -6,6 +6,7 @@ import {
   FolderPlus,
   CaretDown,
   Plus,
+  NotePencil,
 } from "@phosphor-icons/react";
 import { UploadFolderButton } from "@/components/UploadFolderButton";
 
@@ -16,6 +17,7 @@ type Props = {
   setShowCreateFolder: (v: boolean) => void;
   refresh: () => void;
   parentFolderId?: string | null;
+  onNewNote?: () => void;
 };
 
 export function ActionsDropdown({
@@ -23,6 +25,7 @@ export function ActionsDropdown({
   setShowCreateFolder,
   refresh,
   parentFolderId,
+  onNewNote,
 }: Props) {
   const [open, setOpen] = useState(false);
 
@@ -85,6 +88,24 @@ export function ActionsDropdown({
               style={{ color: TEAL }}
             />
             <span>New folder</span>
+          </button>
+
+          {/* New Note */}
+          <button
+            onClick={() => {
+              // We'll pass this via prop from FileListClient
+              if (onNewNote) onNewNote();
+              setOpen(false);
+            }}
+            className="w-full flex items-center gap-3 px-3 py-2.5 text-sm 
+            hover:bg-accent transition-colors"
+          >
+            <NotePencil
+              size={16}
+              weight="duotone"
+              style={{ color: TEAL }}
+            />
+            <span>New note</span>
           </button>
 
           {/* Divider */}

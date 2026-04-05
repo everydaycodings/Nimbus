@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { CreateFolderDialog } from "./CreateFolderDialog";
 import { ActionsDropdown } from "./UploadDropdown";
 import { FileFilters } from "./FileFilters";
+import { NoteEditorDialog } from "./NoteEditorDialog";
 import { useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 import { useFilesQuery } from "@/hooks/queries/useFilesQuery";
@@ -22,6 +23,12 @@ export function FileListClient({ initialData }: { initialData?: any }) {
   const [breadcrumbs, setBreadcrumbs] = useState<{ id: string; name: string }[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [showCreateFolder, setShowCreateFolder] = useState(false);
+  const [noteEditor, setNoteEditor] = useState<{
+    open: boolean;
+    id?: string;
+    name?: string;
+    content?: string;
+  }>({ open: false });
   const searchParams = useSearchParams();
 
   // Derive query options from URL params
@@ -107,6 +114,31 @@ export function FileListClient({ initialData }: { initialData?: any }) {
     }
   };
 
+  // ── Note Editing ──────────────────────────────────────────
+  const handleEditNote = async (file: any) => {
+    try {
+      // If we have a signedUrl, we can fetch the content
+      let content = "";
+      if (file.signed_url || file.download_url) {
+        const res = await fetch(file.signed_url || file.download_url);
+        if (res.ok) content = await res.text();
+      }
+      setNoteEditor({
+        open: true,
+        id: file.id,
+        name: file.name,
+        content: content,
+      });
+    } catch (err) {
+      console.error("Failed to fetch note content", err);
+    }
+  };
+
+  const enhancedFiles = files.map((f) => ({
+    ...f,
+    onEdit: () => handleEditNote(f),
+  }));
+
   // ── Folder navigation ─────────────────────────────────────
   const openFolder = (id: string, name: string) => {
     const newPath = [...breadcrumbs, { id, name }];
@@ -180,6 +212,7 @@ export function FileListClient({ initialData }: { initialData?: any }) {
             setShowCreateFolder={setShowCreateFolder}
             refresh={refresh}
             parentFolderId={currentFolder}
+            onNewNote={() => setNoteEditor({ open: true })}
           />
         </div>
       </div>
@@ -195,6 +228,17 @@ export function FileListClient({ initialData }: { initialData?: any }) {
         />
       )}
 
+      {noteEditor.open && (
+        <NoteEditorDialog
+          id={noteEditor.id}
+          name={noteEditor.name}
+          initialContent={noteEditor.content}
+          parentFolderId={currentFolder}
+          onSuccess={refresh}
+          onClose={() => setNoteEditor({ open: false })}
+        />
+      )}
+
       {/* ── Drag overlay hint ── */}
       {isDragging && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -207,7 +251,7 @@ export function FileListClient({ initialData }: { initialData?: any }) {
 
       {/* ── File grid ── */}
       <FileGrid
-        files={files}
+        files={enhancedFiles}
         folders={folders}
         onFolderOpen={openFolder}
         onRefresh={refresh}

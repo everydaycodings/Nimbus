@@ -12,6 +12,7 @@ import { CreateFolderDialog } from "@/components/CreateFolderDialog";
 import { useUpload } from "@/hooks/useUpload";
 import { cn } from "@/lib/utils";
 import { ActionsDropdown } from "@/components/UploadDropdown";
+import { NoteEditorDialog } from "@/components/NoteEditorDialog";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FileFilters } from "@/components/FileFilters";
 import { useFilesQuery } from "@/hooks/queries/useFilesQuery";
@@ -21,6 +22,12 @@ const TEAL = "#2da07a";
 export default function HomePage() {
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [noteEditor, setNoteEditor] = useState<{
+    open: boolean;
+    id?: string;
+    name?: string;
+    content?: string;
+  }>({ open: false });
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -50,6 +57,30 @@ export default function HomePage() {
     parentFolderId: undefined,
     onSuccess: () => refresh(),
   });
+  
+  // ── Note Editing ──────────────────────────────────────────
+  const handleEditNote = async (file: any) => {
+    try {
+      let content = "";
+      if (file.signed_url || file.download_url) {
+        const res = await fetch(file.signed_url || file.download_url);
+        if (res.ok) content = await res.text();
+      }
+      setNoteEditor({
+        open: true,
+        id: file.id,
+        name: file.name,
+        content: content,
+      });
+    } catch (err) {
+      console.error("Failed to fetch note content", err);
+    }
+  };
+
+  const enhancedFiles = files.map((f) => ({
+    ...f,
+    onEdit: () => handleEditNote(f),
+  }));
 
   // ── Drag and drop ─────────────────────────────────────────
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
@@ -95,6 +126,7 @@ export default function HomePage() {
             uploadMany={uploadMany}
             setShowCreateFolder={setShowCreateFolder}
             refresh={refresh}
+            onNewNote={() => setNoteEditor({ open: true })}
           />
         </div>
       </div>
@@ -161,7 +193,7 @@ export default function HomePage() {
         </div>
       ) : (
         <FileGrid
-          files={files}
+          files={enhancedFiles}
           folders={folders}
           onFolderOpen={(id) => {
             router.push(`/dashboard/files?folder=${id}`);
@@ -176,6 +208,17 @@ export default function HomePage() {
           parentFolderId={null}
           onSuccess={refresh}
           onClose={() => setShowCreateFolder(false)}
+        />
+      )}
+
+      {noteEditor.open && (
+        <NoteEditorDialog
+          id={noteEditor.id}
+          name={noteEditor.name}
+          initialContent={noteEditor.content}
+          parentFolderId={null}
+          onSuccess={refresh}
+          onClose={() => setNoteEditor({ open: false })}
         />
       )}
     </div>
