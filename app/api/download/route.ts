@@ -1,4 +1,5 @@
 // app/api/download/route.ts
+import { Readable } from "stream";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
@@ -77,7 +78,7 @@ export async function GET(req: Request) {
     // 🔥 Stream the ZIP
     const { stream, fileName } = await createFolderZipStream(folder.id, folder.name, downloadId || undefined);
 
-    return new Response(stream as any, {
+    return new Response(Readable.toWeb(stream) as any, {
       headers: {
         "Content-Type": "application/zip",
         "Content-Disposition": getEncodedContentDisposition(fileName, "attachment"),

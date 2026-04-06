@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server"
+import { Readable } from "stream"
 import { createClient } from "@supabase/supabase-js"
 import { s3, BUCKET } from "@/lib/s3"
 import { GetObjectCommand } from "@aws-sdk/client-s3"
@@ -46,7 +47,7 @@ export async function GET(req: NextRequest) {
       })
     )
 
-    return new Response(s3Object.Body as any, {
+    return new Response(Readable.toWeb(s3Object.Body as any) as any, {
       headers: {
         "Content-Type": file.mime_type,
         "Content-Disposition": `attachment; filename="${file.name}"`,
@@ -69,7 +70,7 @@ export async function GET(req: NextRequest) {
     // 🔥 use the optimized stream utility
     const { stream, fileName } = await createFolderZipStream(link.resource_id, folderName)
 
-    return new Response(stream as any, {
+    return new Response(Readable.toWeb(stream) as any, {
       headers: {
         "Content-Type": "application/zip",
         "Content-Disposition": `attachment; filename="${fileName}"`,

@@ -64,7 +64,7 @@ export async function createFolderZipStream(folderId: string, folderName: string
   const totalFiles = allFiles.length;
   let filesProcessed = 0;
 
-  const stream = new PassThrough();
+  const stream = new PassThrough({ highWaterMark: 1024 * 1024 * 4 }); // 4MB buffer for smoother streaming
   // 🔥 Optimization: Level 1 compression (Fastest) instead of Level 9
   const archive = archiver("zip", { zlib: { level: 1 } });
 
@@ -122,7 +122,29 @@ export async function createFolderZipStream(folderId: string, folderName: string
         );
 
         if (s3Object.Body) {
-          archive.append(s3Object.Body as any, { name: file.path });
+          // Wait for this file to be fully consumed and appended to the ZIP
+          // before starting the next fetch. This ensures backpressure is respected
+          // and prevents memory/connection leaks for large folders (e.g. 2GB+).
+          await new Promise<void>((resolve, reject) => {
+            const onEntry = (entry: any) => {
+              if (entry.name === file.path) {
+                archive.removeListener("entry", onEntry);
+                archive.removeListener("error", onError);
+                resolve();
+              }
+            };
+            
+            // Handle fatal archive errors during this step
+            const onError = (err: any) => {
+              archive.removeListener("entry", onEntry);
+              reject(err);
+            };
+
+            archive.once("error", onError);
+            archive.on("entry", onEntry);
+            
+            archive.append(s3Object.Body as any, { name: file.path });
+          });
         }
       }
       await archive.finalize();
@@ -142,6 +164,7 @@ export async function createFolderZipStream(folderId: string, folderName: string
     } catch (err) {
       console.error("[zip stream error]", err);
       archive.abort();
+      stream.destroy(err as any);
     }
   })();
 
