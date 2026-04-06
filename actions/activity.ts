@@ -13,6 +13,9 @@ export async function getActivityLogs(page = 1, limit = 10) {
     .range(from, to);
 
   if (error) {
+    if (error.code === 'PGRST103') {
+      return { logs: [], totalCount: count || 0, hasMore: false };
+    }
     console.error("Error fetching activity logs:", error);
     throw new Error("Could not fetch activity logs");
   }

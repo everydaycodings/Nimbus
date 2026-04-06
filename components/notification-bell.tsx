@@ -51,8 +51,9 @@ const ACTION_MAP: Record<string, { icon: any, color: string, glow: string, label
 };
 
 export function NotificationBell() {
-  const { data: logs, isLoading } = useActivityLogsQuery(15);
-  const hasLogs = logs && logs.length > 0;
+  const { data, isLoading } = useActivityLogsQuery(1, 10);
+  const logs = data?.logs || [];
+  const hasLogs = logs.length > 0;
 
   return (
     <DropdownMenu>
@@ -123,7 +124,7 @@ export function NotificationBell() {
             </div>
           ) : (
             <div className="py-1">
-              {logs.map((log) => {
+              {logs.map((log: any) => {
                 const config = ACTION_MAP[log.action] || ACTION_MAP.upload;
                 const Icon = config.icon;
                 const resourceName = log.metadata?.name || log.metadata?.new_name || "Unknown Item";
