@@ -1,7 +1,7 @@
 // components/tags/TagPicker.tsx
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Plus, Tag as TagIcon, Check, PlusCircle, PencilSimple } from "@phosphor-icons/react";
 import { Tag } from "@/types/tags";
 import { useTagsQuery } from "@/hooks/queries/useTagsQuery";
@@ -34,24 +34,51 @@ export function TagPicker({
 }: TagPickerProps) {
   const { data: availableTags = [], isLoading } = useTagsQuery();
   const [showManager, setShowManager] = useState(false);
-  const [isPending, startTransition] = useTransition();
+  
+  // Track optimistic state
+  const [optimisticTagIds, setOptimisticTagIds] = useState<string[]>(currentTagIds);
+  const [pendingTagIds, setPendingTagIds] = useState<Record<string, boolean>>({});
 
-  const toggleTag = (tag: Tag) => {
-    const isAssigned = currentTagIds.includes(tag.id);
+  useEffect(() => {
+    // Sync with external state if no local mutations are pending
+    if (Object.keys(pendingTagIds).length === 0) {
+      setOptimisticTagIds(currentTagIds);
+    }
+  }, [currentTagIds, pendingTagIds]);
+
+  const toggleTag = async (tag: Tag) => {
+    if (pendingTagIds[tag.id]) return;
+
+    const isAssigned = optimisticTagIds.includes(tag.id);
     
-    startTransition(async () => {
-      try {
-        if (isAssigned) {
-          await unassignTag(itemId, itemType, tag.id);
-        } else {
-          await assignTag(itemId, itemType, tag.id);
-        }
-        getQueryClient().invalidateQueries({ queryKey: queryKeys.all });
-        onSuccess?.();
-      } catch (err) {
-        console.error(err);
+    // Optimistic update
+    setOptimisticTagIds(prev => 
+      isAssigned ? prev.filter(id => id !== tag.id) : [...prev, tag.id]
+    );
+    
+    setPendingTagIds(prev => ({ ...prev, [tag.id]: true }));
+
+    try {
+      if (isAssigned) {
+        await unassignTag(itemId, itemType, tag.id);
+      } else {
+        await assignTag(itemId, itemType, tag.id);
       }
-    });
+      getQueryClient().invalidateQueries({ queryKey: queryKeys.all });
+      onSuccess?.();
+    } catch (err) {
+      console.error(err);
+      // Revert on error
+      setOptimisticTagIds(prev => 
+        isAssigned ? [...prev, tag.id] : prev.filter(id => id !== tag.id)
+      );
+    } finally {
+      setPendingTagIds(prev => {
+        const next = { ...prev };
+        delete next[tag.id];
+        return next;
+      });
+    }
   };
 
   if (showManager) {
@@ -86,27 +113,33 @@ export function TagPicker({
             </div>
           ) : (
             availableTags.map((tag) => {
-              const isSelected = currentTagIds.includes(tag.id);
+              const isSelected = optimisticTagIds.includes(tag.id);
+              const isTagPending = pendingTagIds[tag.id];
               return (
                 <button
                   key={tag.id}
                   onClick={() => toggleTag(tag)}
-                  disabled={isPending}
+                  disabled={isTagPending}
                   className={cn(
-                    "w-full flex items-center justify-between p-2.5 rounded-lg transition-all text-left",
+                    "w-full flex items-center gap-3 p-2.5 rounded-lg transition-all text-left",
                     "hover:bg-accent/50",
-                    isPending && "opacity-50 cursor-not-allowed"
+                    isTagPending && "opacity-50 cursor-not-allowed"
                   )}
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: tag.color }} />
-                    <span className="text-sm font-medium">{tag.name}</span>
+                  <div 
+                    className={cn(
+                      "w-4 h-4 rounded border flex items-center justify-center transition-colors shrink-0",
+                      isSelected 
+                        ? "bg-primary border-primary text-primary-foreground" 
+                        : "border-muted-foreground/30 text-transparent bg-background"
+                    )}
+                  >
+                    <Check size={12} weight="bold" />
                   </div>
-                  {isSelected && (
-                    <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center">
-                      <Check size={12} weight="bold" className="text-primary" />
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: tag.color }} />
+                    <span className="text-sm font-medium truncate">{tag.name}</span>
+                  </div>
                 </button>
               );
             })
