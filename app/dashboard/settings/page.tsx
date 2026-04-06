@@ -31,7 +31,9 @@ export default function SettingsPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -76,6 +78,12 @@ export default function SettingsPage() {
 
   const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (newPassword !== confirmPassword) {
+      toast.error("Passwords do not match!");
+      return;
+    }
+
     setPasswordLoading(true);
     try {
       const { data, error } = await supabase.auth.updateUser({
@@ -84,6 +92,7 @@ export default function SettingsPage() {
       if (error) throw error;
       toast.success("Password updated successfully!");
       setNewPassword(""); // clear new password field
+      setConfirmPassword(""); // clear confirm password field
       queryClient.invalidateQueries({ queryKey: ["user"] });
     } catch (error: any) {
       toast.error(error.message || "Failed to update password");
@@ -318,7 +327,7 @@ export default function SettingsPage() {
               </CardDescription>
             </CardHeader>
             <form onSubmit={handleUpdatePassword}>
-              <CardContent>
+              <CardContent className="space-y-6">
                 <div className="space-y-4 max-w-md group/input">
                   <Label htmlFor="newPassword" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">New Password</Label>
                   <div className="relative">
@@ -344,11 +353,36 @@ export default function SettingsPage() {
                     </button>
                   </div>
                 </div>
+
+                <div className="space-y-4 max-w-md group/input">
+                  <Label htmlFor="confirmPassword" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Confirm Password</Label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-muted-foreground transition-colors group-focus-within/input:text-orange-500">
+                      <LockKey size={18} />
+                    </div>
+                    <Input
+                      id="confirmPassword"
+                      type={showConfirmPassword ? "text" : "password"}
+                      placeholder="••••••••"
+                      className="pl-11 pr-10 h-12 bg-background/50 border-border/60 focus-visible:ring-orange-500/40 transition-all rounded-xl shadow-sm"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {showConfirmPassword ? <EyeSlash size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                </div>
               </CardContent>
               <CardFooter className="bg-muted/5 border-t border-border/30 pt-4 pb-4 flex justify-end">
                 <Button 
                   type="submit" 
-                  disabled={isPasswordLoading || !newPassword}
+                  disabled={isPasswordLoading || !newPassword || !confirmPassword}
                   className="w-full md:w-auto h-11 px-8 rounded-xl font-medium active:scale-95 transition-transform shadow-md hover:shadow-lg bg-foreground text-background hover:bg-foreground/90"
                 >
                   {isPasswordLoading ? (
