@@ -14,6 +14,8 @@ import { NoteEditorDialog } from "./NoteEditorDialog";
 import { useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 import { useFilesQuery } from "@/hooks/queries/useFilesQuery";
+import { DuplicateUploadDialog } from "./DuplicateUploadDialog";
+import { checkFilesExist } from "@/actions/files";
 
 const TEAL = "#2da07a";
 
@@ -29,6 +31,11 @@ export function FileListClient({ initialData }: { initialData?: any }) {
     name?: string;
     content?: string;
   }>({ open: false });
+  const [duplicateCheck, setDuplicateCheck] = useState<{
+    open: boolean;
+    duplicates: { file: File; existingId: string }[];
+    allFiles: File[];
+  }>({ open: false, duplicates: [], allFiles: [] });
   const searchParams = useSearchParams();
 
   // Derive query options from URL params
@@ -93,10 +100,55 @@ export function FileListClient({ initialData }: { initialData?: any }) {
   const files = (data?.files ?? []) as any[];
   const folders = (query && !tagId) ? [] : ((data?.folders ?? []) as any[]);
 
-  const { uploadMany } = useUpload({
+  const { upload, uploadMany } = useUpload({
     parentFolderId: currentFolder ?? undefined,
     onSuccess: () => refresh(),
   });
+
+  const handleUploadFiles = useCallback(async (incomingFiles: FileList | File[]) => {
+    const fileList = Array.from(incomingFiles);
+    const names = fileList.map(f => f.name);
+
+    try {
+      const existingFiles = await checkFilesExist(activeFolderId, names);
+      const duplicates: { file: File; existingId: string }[] = [];
+
+      existingFiles.forEach(existing => {
+        const file = fileList.find(f => f.name === existing.name);
+        if (file) {
+          duplicates.push({ file, existingId: existing.id });
+        }
+      });
+
+      if (duplicates.length > 0) {
+        setDuplicateCheck({ open: true, duplicates, allFiles: fileList });
+      } else {
+        uploadMany(fileList);
+      }
+    } catch (err) {
+      console.error("Duplicate check failed", err);
+      uploadMany(fileList); // fall back to normal upload
+    }
+  }, [activeFolderId, uploadMany]);
+
+  const handleProcessDuplicates = (action: "upload" | "skip") => {
+    if (action === "upload") {
+      // Upload all files. For duplicates, pass existingId for versioning.
+      duplicateCheck.allFiles.forEach(file => {
+        const dup = duplicateCheck.duplicates.find(d => d.file.name === file.name);
+        upload(file, dup?.existingId);
+      });
+    } else if (action === "skip") {
+      // Upload only non-duplicates
+      const nonDuplicates = duplicateCheck.allFiles.filter(
+        f => !duplicateCheck.duplicates.some(d => d.file.name === f.name)
+      );
+      if (nonDuplicates.length > 0) {
+        uploadMany(nonDuplicates);
+      }
+    }
+    setDuplicateCheck({ open: false, duplicates: [], allFiles: [] });
+  };
 
   // ── Drag and drop ─────────────────────────────────────────
   const handleDragOver = (e: React.DragEvent) => {
@@ -110,7 +162,7 @@ export function FileListClient({ initialData }: { initialData?: any }) {
     e.preventDefault();
     setIsDragging(false);
     if (e.dataTransfer.files.length > 0) {
-      uploadMany(e.dataTransfer.files);
+      handleUploadFiles(e.dataTransfer.files);
     }
   };
 
@@ -208,7 +260,7 @@ export function FileListClient({ initialData }: { initialData?: any }) {
         {/* Right: Actions */}
         <div className="flex items-center gap-2">
           <ActionsDropdown
-            uploadMany={uploadMany}
+            onUpload={handleUploadFiles}
             setShowCreateFolder={setShowCreateFolder}
             refresh={refresh}
             parentFolderId={currentFolder}
@@ -219,7 +271,17 @@ export function FileListClient({ initialData }: { initialData?: any }) {
 
       <FileFilters />
 
-      {/* Dialog */}
+      {/* Dialogs */}
+      {duplicateCheck.open && (
+        <DuplicateUploadDialog
+          isOpen={duplicateCheck.open}
+          duplicates={duplicateCheck.duplicates.map(d => ({ name: d.file.name }))}
+          onClose={() => setDuplicateCheck({ open: false, duplicates: [], allFiles: [] })}
+          onUpload={() => handleProcessDuplicates("upload")}
+          onSkip={() => handleProcessDuplicates("skip")}
+        />
+      )}
+
       {showCreateFolder && (
         <CreateFolderDialog
           parentFolderId={currentFolder}

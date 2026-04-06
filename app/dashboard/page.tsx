@@ -1,7 +1,7 @@
 // app/(dashboard)/page.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import {
   CloudArrowUp,
   FolderPlus,
@@ -16,6 +16,8 @@ import { NoteEditorDialog } from "@/components/NoteEditorDialog";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FileFilters } from "@/components/FileFilters";
 import { useFilesQuery } from "@/hooks/queries/useFilesQuery";
+import { DuplicateUploadDialog } from "@/components/DuplicateUploadDialog";
+import { checkFilesExist } from "@/actions/files";
 
 const TEAL = "#2da07a";
 
@@ -28,6 +30,11 @@ export default function HomePage() {
     name?: string;
     content?: string;
   }>({ open: false });
+  const [duplicateCheck, setDuplicateCheck] = useState<{
+    open: boolean;
+    duplicates: { file: File; existingId: string }[];
+    allFiles: File[];
+  }>({ open: false, duplicates: [], allFiles: [] });
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -53,10 +60,52 @@ export default function HomePage() {
   const files = (data?.files ?? []) as any[];
   const folders = (data?.folders ?? []) as any[];
 
-  const { uploadMany, cancelUpload } = useUpload({
+  const { upload, uploadMany, cancelUpload } = useUpload({
     parentFolderId: undefined,
     onSuccess: () => refresh(),
   });
+
+  const handleUploadFiles = useCallback(async (incomingFiles: FileList | File[]) => {
+    const fileList = Array.from(incomingFiles);
+    const names = fileList.map(f => f.name);
+
+    try {
+      // Home page is root folder, so parentFolderId is null
+      const existingFiles = await checkFilesExist(null, names);
+      const duplicates: { file: File; existingId: string }[] = [];
+
+      existingFiles.forEach(existing => {
+        const file = fileList.find(f => f.name === existing.name);
+        if (file) {
+          duplicates.push({ file, existingId: existing.id });
+        }
+      });
+
+      if (duplicates.length > 0) {
+        setDuplicateCheck({ open: true, duplicates, allFiles: fileList });
+      } else {
+        uploadMany(fileList);
+      }
+    } catch (err) {
+      console.error("Duplicate check failed", err);
+      uploadMany(fileList);
+    }
+  }, [uploadMany]);
+
+  const handleProcessDuplicates = (action: "upload" | "skip") => {
+    if (action === "upload") {
+      duplicateCheck.allFiles.forEach(file => {
+        const dup = duplicateCheck.duplicates.find(d => d.file.name === file.name);
+        upload(file, dup?.existingId);
+      });
+    } else if (action === "skip") {
+      const nonDuplicates = duplicateCheck.allFiles.filter(
+        f => !duplicateCheck.duplicates.some(d => d.file.name === f.name)
+      );
+      if (nonDuplicates.length > 0) uploadMany(nonDuplicates);
+    }
+    setDuplicateCheck({ open: false, duplicates: [], allFiles: [] });
+  };
   
   // ── Note Editing ──────────────────────────────────────────
   const handleEditNote = async (file: any) => {
@@ -92,7 +141,7 @@ export default function HomePage() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    if (e.dataTransfer.files.length > 0) uploadMany(e.dataTransfer.files);
+    if (e.dataTransfer.files.length > 0) handleUploadFiles(e.dataTransfer.files);
   };
 
   const totalItems = files.length + folders.length;
@@ -123,7 +172,7 @@ export default function HomePage() {
 
         <div className="flex items-center gap-2">
           <ActionsDropdown
-            uploadMany={uploadMany}
+            onUpload={handleUploadFiles}
             setShowCreateFolder={setShowCreateFolder}
             refresh={refresh}
             onNewNote={() => setNoteEditor({ open: true })}
@@ -186,7 +235,7 @@ export default function HomePage() {
                 type="file"
                 multiple
                 className="hidden"
-                onChange={(e) => e.target.files && uploadMany(e.target.files)}
+                onChange={(e) => e.target.files && handleUploadFiles(e.target.files)}
               />
             </label>
           </div>
@@ -199,6 +248,17 @@ export default function HomePage() {
             router.push(`/dashboard/files?folder=${id}`);
           }}
           onRefresh={refresh}
+        />
+      )}
+
+      {/* ── Dialogs ── */}
+      {duplicateCheck.open && (
+        <DuplicateUploadDialog
+          isOpen={duplicateCheck.open}
+          duplicates={duplicateCheck.duplicates.map(d => ({ name: d.file.name }))}
+          onClose={() => setDuplicateCheck({ open: false, duplicates: [], allFiles: [] })}
+          onUpload={() => handleProcessDuplicates("upload")}
+          onSkip={() => handleProcessDuplicates("skip")}
         />
       )}
 

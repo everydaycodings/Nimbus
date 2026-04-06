@@ -13,7 +13,7 @@ import { UploadFolderButton } from "@/components/UploadFolderButton";
 const TEAL = "#2da07a";
 
 type Props = {
-  uploadMany: (files: FileList | File[]) => void;
+  onUpload: (files: FileList | File[]) => void;
   setShowCreateFolder: (v: boolean) => void;
   refresh: () => void;
   parentFolderId?: string | null;
@@ -21,7 +21,7 @@ type Props = {
 };
 
 export function ActionsDropdown({
-  uploadMany,
+  onUpload,
   setShowCreateFolder,
   refresh,
   parentFolderId,
@@ -67,7 +67,7 @@ export function ActionsDropdown({
               multiple
               className="hidden"
               onChange={(e) => {
-                if (e.target.files) uploadMany(e.target.files);
+                if (e.target.files) onUpload(e.target.files);
                 setOpen(false);
               }}
             />

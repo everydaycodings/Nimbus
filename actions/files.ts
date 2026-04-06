@@ -384,3 +384,31 @@ export async function getStorageStats() {
     other: number;
   };
 }
+
+// ── Check if files exist by name ──────────────────────────────
+export async function checkFilesExist(
+  parentFolderId: string | null,
+  names: string[]
+) {
+  const supabaseServer = await createSupabaseClient();
+  const { data: { user } } = await supabaseServer.auth.getUser();
+  if (!user) throw new Error("Unauthorized");
+
+  let query = supabase
+    .from("files")
+    .select("id, name")
+    .eq("owner_id", user.id)
+    .eq("is_trashed", false)
+    .in("name", names);
+
+  if (parentFolderId) {
+    query = query.eq("parent_folder_id", parentFolderId);
+  } else {
+    query = query.is("parent_folder_id", null);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+
+  return data as { id: string; name: string }[];
+}
