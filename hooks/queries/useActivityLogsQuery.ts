@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { getActivityLogs } from "@/actions/activity";
 import { queryKeys } from "@/lib/query-keys";
 
-export function useActivityLogsQuery(limit = 20) {
+export function useActivityLogsQuery(page = 1, limit = 20) {
   const queryClient = useQueryClient();
   const supabase = useMemo(() => createClient(), []);
 
@@ -22,7 +22,7 @@ export function useActivityLogsQuery(limit = 20) {
           table: "activity_log",
         },
         () => {
-          queryClient.invalidateQueries({ queryKey: queryKeys.activity() });
+          queryClient.invalidateQueries({ queryKey: ["activity", "logs"] });
         }
       )
       .subscribe();
@@ -33,8 +33,8 @@ export function useActivityLogsQuery(limit = 20) {
   }, [supabase, queryClient]);
 
   return useQuery({
-    queryKey: queryKeys.activity(limit),
-    queryFn: () => getActivityLogs(limit),
+    queryKey: queryKeys.activity(page, limit),
+    queryFn: () => getActivityLogs(page, limit),
     staleTime: 1000 * 60 * 5, // 5 minutes
   });
 }

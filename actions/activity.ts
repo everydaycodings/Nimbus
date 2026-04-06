@@ -1,17 +1,25 @@
 "use server";
 import { createClient } from "@/lib/supabase/server";
 
-export async function getActivityLogs(limit = 10) {
+export async function getActivityLogs(page = 1, limit = 10) {
   const supabase = await createClient();
-  const { data, error } = await supabase
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+
+  const { data, error, count } = await supabase
     .from("activity_log")
-    .select("*")
+    .select("*", { count: "exact" })
     .order("created_at", { ascending: false })
-    .limit(limit);
+    .range(from, to);
 
   if (error) {
     console.error("Error fetching activity logs:", error);
     throw new Error("Could not fetch activity logs");
   }
-  return data;
+
+  return { 
+    logs: data || [], 
+    totalCount: count || 0,
+    hasMore: count ? (from + (data?.length || 0)) < count : false
+  };
 }
