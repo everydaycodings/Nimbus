@@ -132,15 +132,12 @@ export function MFAVerificationDialog({ isOpen, onOpenChange, onSuccess }: MFAVe
                     <span className="text-[10px] font-mono text-primary/60">{verifyCode.length}/6</span>
                   </div>
                   <div className="relative group">
-                    <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-muted-foreground group-focus-within:text-primary transition-colors">
-                      <Key size={18} weight="bold" />
-                    </div>
                     <Input 
                       id="mfa-verify-code"
                       placeholder="000000"
                       value={verifyCode}
                       onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, '').substring(0, 6))}
-                      className="h-14 pl-12 text-center text-2xl tracking-[0.4em] font-mono border-border/60 focus:border-primary/50 focus:ring-primary/10 transition-all rounded-xl shadow-inner bg-muted/30"
+                      className="h-14 text-center text-2xl tracking-[0.4em] font-mono border-border/60 focus:border-primary/50 focus:ring-primary/10 transition-all rounded-xl shadow-inner bg-muted/30"
                       maxLength={6}
                       autoFocus
                     />
