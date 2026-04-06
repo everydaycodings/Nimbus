@@ -3,14 +3,16 @@
 
 import { useState } from "react";
 import { decryptFile, decryptBuffer, VAULT_MAX_PREVIEW_FILE_SIZE } from "@/vault/lib/crypto";
-import { getVaultDownloadUrl }              from "@/vault/actions/vault.actions";
+import { getVaultDownloadUrl, getVaultThumbnailDownloadUrl } from "@/vault/actions/vault.actions";
 import { getVaultFolderHierarchy }          from "@/vault/actions/vault.folders.actions";
 import { useZippingStore }                  from "@/store/zippingStore";
 import JSZip from "jszip";
 
 // Cache to store decrypted preview object URLs to prevent re-downloading/decrypting
 const vaultPreviewCache = new Map<string, { url: string; timestamp: number }>();
+const vaultThumbnailCache = new Map<string, { url: string; timestamp: number }>();
 const CACHE_TTL = 3600 * 1000; // 1 hour in milliseconds
+const THUMB_CACHE_TTL = 3600 * 1000 * 24; // 24 hours for thumbnails
 
 // ── Can this file be previewed? ───────────────────────────────
 // Rules:
@@ -166,6 +168,34 @@ export function useVaultDownload(key: CryptoKey) {
   const clearPreviewCache = () => {
     vaultPreviewCache.forEach((entry) => URL.revokeObjectURL(entry.url));
     vaultPreviewCache.clear();
+    vaultThumbnailCache.forEach((entry) => URL.revokeObjectURL(entry.url));
+    vaultThumbnailCache.clear();
+  };
+
+  const getThumbnail = async (fileId: string, thumbnailKey: string): Promise<string | null> => {
+    // Check cache
+    const cached = vaultThumbnailCache.get(fileId);
+    if (cached && Date.now() - cached.timestamp < THUMB_CACHE_TTL) {
+       return cached.url;
+    }
+
+    try {
+      const url = await getVaultThumbnailDownloadUrl(fileId);
+      if (!url) return null;
+
+      const res = await fetch(url);
+      if (!res.ok) return null;
+
+      const encryptedBlob = await res.blob();
+      const decryptedBlob = await decryptFile(encryptedBlob, key, "image/webp");
+      const objectUrl = URL.createObjectURL(decryptedBlob);
+
+      vaultThumbnailCache.set(fileId, { url: objectUrl, timestamp: Date.now() });
+      return objectUrl;
+    } catch (err) {
+      console.error("[vault thumb]", err);
+      return null;
+    }
   };
 
   const downloadFolder = async (
@@ -263,5 +293,5 @@ export function useVaultDownload(key: CryptoKey) {
     }
   };
 
-  return { download, downloadFolder, preview, decrypting, clearPreviewCache };
+  return { download, downloadFolder, preview, getThumbnail, decrypting, clearPreviewCache };
 }

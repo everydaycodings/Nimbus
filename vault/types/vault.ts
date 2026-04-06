@@ -17,6 +17,7 @@ export interface VaultFile {
   size: number;
   parent_folder_id: string | null;
   vault_id: string;
+  thumbnail_key?: string | null;
   created_at: string;
   updated_at: string;
 }

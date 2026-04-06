@@ -98,13 +98,14 @@ async function uploadFilesInFolder(
     key: CryptoKey,
     vaultId: string
   ): Promise<void> {
-    const { encryptFile, VAULT_MAX_FILE_SIZE, VAULT_MAX_FILE_SIZE_LABEL } =
+    const { encryptFile, encryptBuffer, VAULT_MAX_FILE_SIZE, VAULT_MAX_FILE_SIZE_LABEL } =
       await import("@/vault/lib/crypto");
   
     const { getVaultPresignedUrl, saveVaultFile } =
       await import("@/vault/actions/vault.actions");
   
     const { useUploadStore } = await import("@/store/uploadStore");
+    const { generateClientThumbnail } = await import("@/lib/client-thumbnail");
   
     const addUpload = useUploadStore.getState().addUpload;
     const updateUpload = useUploadStore.getState().updateUpload;
@@ -142,14 +143,31 @@ async function uploadFilesInFolder(
           // 🔐 Encrypt
           const encryptedBlob = await encryptFile(file, key);
   
+          // 📸 Thumbnail
+          let thumbKey = null;
+          let thumbUploadPromise = null;
+          const thumbnailBlob = await generateClientThumbnail(file);
+
           // 📡 Presign
-          const { presignedUrl, s3Key, bucket } =
+          const { presignedUrl, s3Key, bucket, thumbnail } =
             await getVaultPresignedUrl({
               vaultId,
               fileName: file.name,
               mimeType: file.type || "application/octet-stream",
               size: encryptedBlob.size,
+              includeThumbnail: !!thumbnailBlob,
             });
+
+          if (thumbnailBlob && thumbnail) {
+            thumbKey = thumbnail.s3Key;
+            const encryptedThumb = await encryptBuffer(await thumbnailBlob.arrayBuffer(), key);
+            
+            thumbUploadPromise = fetch(thumbnail.presignedUrl, {
+                method: "PUT",
+                body: encryptedThumb as any,
+                headers: { "Content-Type": "application/octet-stream" },
+            });
+          }
   
           // 🚀 Upload with progress
           await new Promise<void>((resolve, reject) => {
@@ -179,6 +197,10 @@ async function uploadFilesInFolder(
           });
   
           // 💾 Save metadata
+          if (thumbUploadPromise) {
+            await thumbUploadPromise;
+          }
+
           await saveVaultFile({
             vaultId,
             name: file.name,
@@ -186,6 +208,7 @@ async function uploadFilesInFolder(
             size: file.size,
             s3Key,
             s3Bucket: bucket,
+            thumbnailKey: thumbKey,
             parentFolderId,
           });
   

@@ -62,6 +62,7 @@ interface VaultFile {
   name: string;
   original_mime_type: string;
   size: number;
+  thumbnail_key?: string | null;
   created_at: string;
   updated_at?: string;
 }
@@ -91,6 +92,73 @@ interface VaultPreviewState {
   fileName: string;
   mimeType: string;
   fileId: string;
+}
+
+function VaultFileThumbnail({
+  file,
+  getThumbnail,
+  className,
+  size = 18,
+  iconSize
+}: {
+  file: VaultFile;
+  getThumbnail: (id: string, key: string) => Promise<string | null>;
+  className?: string;
+  size?: number;
+  iconSize?: number;
+}) {
+  const [thumbUrl, setThumbUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!file.thumbnail_key) return;
+
+    let mounted = true;
+    setLoading(true);
+
+    getThumbnail(file.id, file.thumbnail_key)
+      .then((url) => {
+        if (mounted && url) setThumbUrl(url);
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [file.id, file.thumbnail_key, getThumbnail]);
+
+  const isFullWidth = className?.includes("w-full");
+  const containerStyle = {
+    width: isFullWidth ? "100%" : size,
+    height: size,
+  };
+
+  if (thumbUrl) {
+    return (
+      <div 
+        className={cn("relative flex-shrink-0 rounded-lg overflow-hidden bg-secondary border border-border shadow-sm", className)} 
+        style={containerStyle}
+      >
+        <img
+          src={thumbUrl}
+          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110 animate-in fade-in"
+          alt=""
+        />
+      </div>
+    );
+  }
+
+  // Fallback: Centered icon in a div of the same size
+  return (
+    <div 
+       className={cn("flex flex-shrink-0 items-center justify-center rounded-lg bg-secondary/50", className)} 
+       style={containerStyle}
+    >
+        <FileIcon mimeType={file.original_mime_type} size={iconSize || Math.round(size * 0.7)} />
+    </div>
+  );
 }
 
 // ── Create folder dialog ──────────────────────────────────────
@@ -284,6 +352,7 @@ export function OpenVault({
   onRefreshVaults: () => void;
 }) {
   const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [previewing, setPreviewing] = useState<VaultPreviewState | null>(null);
@@ -354,11 +423,50 @@ export function OpenVault({
     parentFolderId: currentFolderId,
     onSuccess: () => invalidateVaultCache(),
   });
-  const { download, downloadFolder, preview, decrypting, clearPreviewCache } = useVaultDownload(cryptoKey);
+  const { download, downloadFolder, preview, getThumbnail, decrypting, clearPreviewCache } = useVaultDownload(cryptoKey);
 
   const invalidateVaultCache = async () => {
     await getQueryClient().invalidateQueries({ queryKey: ["vaults"] });
     return refresh();
+  };
+
+  // ── Drag and Drop ───────────────────────────────────────────
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => setIsDragging(false);
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+
+    const items = Array.from(e.dataTransfer.items || []);
+    if (items.length === 0) return;
+
+    // Check for directories
+    const hasDirectories = items.some(item => {
+      const entry = item.webkitGetAsEntry();
+      return entry && entry.isDirectory;
+    });
+
+    if (hasDirectories) {
+        // If folders are dropped, we use a trick: 
+        // Chrome's e.dataTransfer.files doesn't have webkitRelativePath.
+        // However, the folder upload input *does*.
+        // For simplicity, we'll inform the user or just upload files.
+        // But let's try to be smart if possible.
+        // Actually, Nimbus's useVaultFolderUpload expects a FileList from a webkitdirectory input.
+        // We'll just handle regular files for now to match FileListClient behavior.
+        if (e.dataTransfer.files.length > 0) {
+            uploadMany(e.dataTransfer.files);
+        }
+    } else {
+        if (e.dataTransfer.files.length > 0) {
+            uploadMany(e.dataTransfer.files);
+        }
+    }
   };
 
 
@@ -527,7 +635,29 @@ export function OpenVault({
   const folderInputRef = useRef<HTMLInputElement>(null);
 
   return (
-    <div className="flex flex-col h-full">
+    <div 
+        className={cn(
+            "flex flex-col h-full relative transition-all duration-300",
+            isDragging && "bg-[#2da07a]/[0.02]"
+        )}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+    >
+      {/* ── Drag overlay hint ── */}
+      {isDragging && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-50 p-6">
+          <div className="w-full h-full border-2 border-dashed border-[#2da07a]/40 rounded-[2rem] bg-background/60 backdrop-blur-[2px] flex flex-col items-center justify-center gap-4 transition-all duration-300">
+            <div className="w-20 h-20 rounded-full bg-[#2da07a]/10 flex items-center justify-center animate-pulse">
+                <CloudArrowUp size={40} style={{ color: TEAL }} weight="duotone" />
+            </div>
+            <div className="text-center">
+                <p className="text-xl font-bold" style={{ color: TEAL }}>Release to Encrypt & Store</p>
+                <p className="text-sm text-muted-foreground mt-1">End-to-end encryption starts automatically</p>
+            </div>
+          </div>
+        </div>
+      )}
       {/* ── Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 flex-shrink-0 gap-3">
         <div className="flex items-center gap-2 min-w-0">
@@ -650,7 +780,7 @@ export function OpenVault({
             <div className="flex flex-col gap-0.5 overflow-y-auto">
               {/* Headers */}
               <div className="flex items-center gap-3 px-3 py-1.5">
-                <div className="w-[18px]" />
+                <div className="w-8" />
                 <p className="flex-1 text-xs font-medium text-muted-foreground uppercase tracking-wide">
                   Name
                 </p>
@@ -673,7 +803,7 @@ export function OpenVault({
                       onDoubleClick={() => openFolder(folder)}
                       onMouseEnter={() => prefetchFolder(folder.id)}
                     >
-                      <FolderSimple size={18} weight="fill" style={{ color: TEAL }} />
+                      <FolderSimple size={22} weight="fill" style={{ color: TEAL }} />
 
                       <div
                         className="flex-1 min-w-0"
@@ -740,7 +870,7 @@ export function OpenVault({
                         onClick={() => { if (isPreviewable) handlePreview(file); }}
                       >
                         <div className="relative flex-shrink-0">
-                          <FileIcon mimeType={file.original_mime_type} />
+                          <VaultFileThumbnail file={file} getThumbnail={getThumbnail} size={22} />
                           {isPreviewable && (
                             <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-[#2da07a] rounded-full flex items-center justify-center border border-background shadow-sm">
                               <Eye size={8} weight="bold" className="text-white" />
@@ -819,10 +949,10 @@ export function OpenVault({
                         className="group cursor-pointer rounded-2xl border border-border bg-card hover:shadow-md hover:border-[#2da07a]/30 transition-all select-none"
                       >
                         <div
-                          className="flex items-center justify-center rounded-t-2xl"
-                          style={{ height: 100, background: `${TEAL}0d` }}
+                          className="flex items-center justify-center rounded-t-2xl overflow-hidden"
+                          style={{ height: 120, background: `${TEAL}0d` }}
                         >
-                          <FolderSimple size={42} weight="fill" style={{ color: TEAL }} />
+                          <FolderSimple size={52} weight="fill" style={{ color: TEAL }} />
                         </div>
 
                         <div className="px-3 py-2.5 flex items-start gap-2">
@@ -893,17 +1023,18 @@ export function OpenVault({
                           className="group rounded-2xl border border-border bg-card hover:shadow-md hover:border-[#2da07a]/30 transition-all cursor-pointer relative select-none"
                           onClick={() => { if (isPreviewable) handlePreview(file); }}
                         >
-                          <div
-                            className="flex items-center justify-center rounded-t-2xl relative"
-                            style={{ height: 100, background: "var(--secondary)" }}
-                          >
-                            <FileIcon mimeType={file.original_mime_type} size={40} />
-                            {isPreviewable && (
-                              <div className="absolute top-3 right-3 w-6 h-6 bg-black/40 backdrop-blur-md rounded-full flex items-center justify-center border border-white/10 shadow-sm">
-                                <Eye size={12} weight="bold" className="text-white" />
-                              </div>
-                            )}
-                          </div>
+                          <VaultFileThumbnail 
+                            file={file} 
+                            getThumbnail={getThumbnail} 
+                            size={120} 
+                            iconSize={48}
+                            className="w-full rounded-b-none border-none shadow-none bg-transparent"
+                          />
+                          {isPreviewable && (
+                            <div className="absolute top-3 right-3 w-6 h-6 bg-black/40 backdrop-blur-md rounded-full flex items-center justify-center border border-white/10 shadow-sm">
+                              <Eye size={12} weight="bold" className="text-white" />
+                            </div>
+                          )}
 
                           <div className="px-3 py-2.5 flex items-start gap-2">
                             <div className="flex-1 min-w-0 flex flex-col gap-1 cursor-pointer">

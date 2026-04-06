@@ -15,6 +15,7 @@ import {
   saveVaultFile,
 } from "@/vault/actions/vault.actions"
 import { useUploadStore } from "@/store/uploadStore"
+import { generateClientThumbnail } from "@/lib/client-thumbnail"
 
 export interface VaultUploadItem {
   id: string
@@ -142,15 +143,33 @@ export function useVaultUpload(vaultId: string, key: CryptoKey, options: VaultUp
             progress: 0,
         })
 
-        // Step 2: Get presigned URL
-        const { presignedUrl, s3Key, bucket } = await getVaultPresignedUrl({
+        // Step 2: Generate and encrypt thumbnail if possible
+        let thumbKey = null;
+        let thumbUploadPromise = null;
+
+        const thumbnailBlob = await generateClientThumbnail(file);
+        
+        // Step 3: Get presigned URLs
+        const { presignedUrl, s3Key, bucket, thumbnail } = await getVaultPresignedUrl({
             vaultId,
             fileName: file.name,
             mimeType: file.type || "application/octet-stream",
             size: encryptedBlob.size,
+            includeThumbnail: !!thumbnailBlob,
         })
 
-        // Step 3: Upload to S3 with progress
+        if (thumbnailBlob && thumbnail) {
+            thumbKey = thumbnail.s3Key;
+            const encryptedThumb = await encryptBuffer(await thumbnailBlob.arrayBuffer(), key);
+            
+            thumbUploadPromise = fetch(thumbnail.presignedUrl, {
+                method: "PUT",
+                body: encryptedThumb as any,
+                headers: { "Content-Type": "application/octet-stream" },
+            });
+        }
+
+        // Step 4: Upload main file to S3 with progress
         await new Promise<void>((resolve, reject) => {
             const xhr = new XMLHttpRequest()
 
@@ -175,7 +194,12 @@ export function useVaultUpload(vaultId: string, key: CryptoKey, options: VaultUp
             xhr.send(encryptedBlob)
         })
 
-        // Step 4: Save metadata in Supabase
+        // Step 5: Save metadata in Supabase
+        // Wait for thumbnail upload if it exists
+        if (thumbUploadPromise) {
+            await thumbUploadPromise;
+        }
+
         await saveVaultFile({
             vaultId,
             name: file.name,
@@ -183,6 +207,7 @@ export function useVaultUpload(vaultId: string, key: CryptoKey, options: VaultUp
             size: file.size,
             s3Key,
             s3Bucket: bucket,
+            thumbnailKey: thumbKey,
             parentFolderId: options.parentFolderId,
             id // Pass original ID for upsert
         })

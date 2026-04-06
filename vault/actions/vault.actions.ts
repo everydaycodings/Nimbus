@@ -130,7 +130,7 @@ export async function getVaultFiles(vaultId: string) {
   const { data, error } = await supabase
     .from("vault_files")
     .select(`
-      id, name, original_mime_type, size, s3_key, created_at, updated_at,
+      id, name, original_mime_type, size, s3_key, thumbnail_key, created_at, updated_at,
       vaults!inner(owner_id)
     `)
     .eq("vault_id", vaultId)
@@ -150,6 +150,7 @@ export async function saveVaultFile(input: {
   size:             number;       // original file size
   s3Key:            string;
   s3Bucket:         string;
+  thumbnailKey?:    string | null;
   parentFolderId?: string | null;
   isFragmented?:    boolean;
   chunkCount?:      number;
@@ -195,6 +196,7 @@ export async function saveVaultFile(input: {
       size:               input.size,
       s3_key:             input.s3Key,
       s3_bucket:          input.s3Bucket,
+      thumbnail_key:      input.thumbnailKey,
       parent_folder_id:   input.parentFolderId ?? null,
       is_fragmented:      input.isFragmented ?? false,
       chunk_count:        input.chunkCount ?? 1,
@@ -264,6 +266,7 @@ export async function getVaultPresignedUrl(input: {
   mimeType: string;
   size:     number;  // encrypted size (larger than original)
   chunkCount?: number;
+  includeThumbnail?: boolean;
 }) {
   const supabaseServer = await createSupabaseClient();
   const authUserResponse = await supabaseServer.auth.getUser();
@@ -306,6 +309,18 @@ export async function getVaultPresignedUrl(input: {
 
   const presignedUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
 
+  let thumbnailInfo;
+  if (input.includeThumbnail) {
+    const thumbS3Key = `vault/${user.id}/${input.vaultId}/${fileId}.thumb.enc`;
+    const thumbCommand = new PutObjectCommand({
+      Bucket: BUCKET,
+      Key: thumbS3Key,
+      ContentType: "application/octet-stream",
+    });
+    const thumbPresignedUrl = await getSignedUrl(s3, thumbCommand, { expiresIn: 300 });
+    thumbnailInfo = { presignedUrl: thumbPresignedUrl, s3Key: thumbS3Key };
+  }
+
   if (input.chunkCount && input.chunkCount > 1) {
     const chunkUrls = [];
     for (let i = 0; i < input.chunkCount; i++) {
@@ -319,10 +334,39 @@ export async function getVaultPresignedUrl(input: {
         const chunkUrl = await getSignedUrl(s3, chunkCommand, { expiresIn: 600 });
         chunkUrls.push({ presignedUrl: chunkUrl, s3Key: chunkS3Key, chunkIndex: i });
     }
-    return { presignedUrl, s3Key, fileId, bucket: BUCKET, chunks: chunkUrls };
+    return { presignedUrl, s3Key, fileId, bucket: BUCKET, chunks: chunkUrls, thumbnail: thumbnailInfo };
   }
 
-  return { presignedUrl, s3Key, fileId, bucket: BUCKET };
+  return { presignedUrl, s3Key, fileId, bucket: BUCKET, thumbnail: thumbnailInfo };
+}
+
+// ── Get presigned download URL for vault thumbnail ──────────
+export async function getVaultThumbnailDownloadUrl(fileId: string) {
+  const supabaseServer = await createSupabaseClient();
+  const authUserResponse = await supabaseServer.auth.getUser();
+  const authUser = authUserResponse.data.user;
+  const userId = authUser?.id;
+  if (!userId) throw new Error("Unauthorized");
+
+  const { data: file } = await supabase
+    .from("vault_files")
+    .select("id, thumbnail_key, s3_bucket, vaults(owner_id)")
+    .eq("id", fileId)
+    .single();
+
+  if (!file || !file.thumbnail_key) return null;
+  if ((file.vaults as any)?.owner_id !== userId) throw new Error("Access denied");
+
+  const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+  const { getSignedUrl }     = await import("@aws-sdk/s3-request-presigner");
+  const { s3 }               = await import("@/lib/s3");
+
+  const command = new GetObjectCommand({
+    Bucket: file.s3_bucket,
+    Key: file.thumbnail_key,
+  });
+
+  return await getSignedUrl(s3, command, { expiresIn: 3600 });
 }
 
 // ── Get presigned download URL for vault file ─────────────────

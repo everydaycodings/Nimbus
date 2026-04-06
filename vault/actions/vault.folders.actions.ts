@@ -116,7 +116,7 @@ export async function getVaultFilesInFolder(
   const query = supabase
     .from("vault_files")
     .select(`
-      id, name, original_mime_type, size, created_at, updated_at, parent_folder_id,
+      id, name, original_mime_type, size, thumbnail_key, created_at, updated_at, parent_folder_id,
       vaults!inner(owner_id)
     `)
     .eq("vault_id", vaultId)
