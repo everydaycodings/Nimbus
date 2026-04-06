@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import { X, FloppyDisk, NotePencil, WarningCircle } from "@phosphor-icons/react";
 import { useVaultUpload } from "@/vault/hooks/useVaultUpload";
+import { useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/query-keys";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -34,10 +36,13 @@ export function VaultNoteEditorDialog({
   const [isSaving, setIsSaving] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
+  const queryClient = useQueryClient();
   const { uploadFile } = useVaultUpload(vaultId, cryptoKey, {
     parentFolderId: parentFolderId ?? undefined,
     onSuccess: () => {
       setIsSaving(false);
+      queryClient.invalidateQueries({ queryKey: queryKeys.vaultItems(vaultId, parentFolderId ?? null) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.vaults() });
       toast.success(id ? "Note updated successfully" : "Note created successfully");
       onSuccess();
       onClose();

@@ -7,6 +7,7 @@ import {
     moveVaultFile,
     moveVaultFolder,
 } from "@/vault/actions/vault.folders.actions";
+import { useMoveVaultItemMutation } from "@/vault/hooks/queries/useVaultMutations";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -131,7 +132,6 @@ export default function VaultMoveDialog({
     const [tree, setTree] = useState<FolderNode[]>([]);
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
-    const [isPending, startTransition] = useTransition();
 
     // 🔥 Load ONLY vault folders
     useEffect(() => {
@@ -156,33 +156,20 @@ export default function VaultMoveDialog({
         load();
     }, [vaultId]);
 
+    const { mutateAsync: moveItems, isPending } = useMoveVaultItemMutation();
+
     // ── Move handler ─────────────────────────────────
-    const handleMove = () => {
-        startTransition(async () => {
-            try {
-                for (const item of items) {
-                    // 🚫 prevent self move
-                    if (selectedId === item.id) {
-                        toast.error("Cannot move into itself");
-                        return;
-                    }
-
-                    if (item.type === "file") {
-                        await moveVaultFile(item.id, selectedId);
-                    } else {
-                        await moveVaultFolder(item.id, selectedId);
-                    }
-                }
-
-                toast.success("Moved successfully");
-                onSuccess?.();
-                onClose();
-            } catch (err) {
-                toast.error(
-                    err instanceof Error ? err.message : "Failed to move items"
-                );
-            }
-        });
+    const handleMove = async () => {
+        try {
+            await moveItems({ items, targetFolderId: selectedId });
+            toast.success("Moved successfully");
+            onSuccess?.();
+            onClose();
+        } catch (err) {
+            toast.error(
+                err instanceof Error ? err.message : "Failed to move items"
+            );
+        }
     };
 
     return (

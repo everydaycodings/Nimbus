@@ -30,8 +30,15 @@ import { useVaultUpload } from "@/vault/hooks/useVaultUpload";
 import { useVaultFolderUpload } from "@/vault/hooks/useVaultFolderUpload";
 import { useVaultDownload, canPreviewVaultFile } from "@/vault/hooks/useVaultDownload";
 import { useVaultItemsQuery } from "@/vault/hooks/queries/useVaultQueries";
+import { 
+  useCreateVaultFolderMutation, 
+  useRenameVaultFolderMutation, 
+  useRenameVaultFileMutation, 
+  useDeleteVaultFolderMutation, 
+  useDeleteVaultFileMutation, 
+  useDeleteVaultMutation 
+} from "@/vault/hooks/queries/useVaultMutations";
 import { clearVaultSession } from "@/vault/lib/session";
-import { deleteVault } from "@/vault/actions/vault.actions";
 import { VaultPreviewWrapper } from "@/vault/components/VaultPreviewWrapper";
 import VaultMoveDialog from "@/vault/components/VaultMoveDialog";
 import VaultItemMenu from "@/vault/components/VaultItemMenu";
@@ -175,24 +182,21 @@ function CreateFolderDialog({
 }) {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const { mutateAsync: createFolder, isPending } = useCreateVaultFolderMutation();
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { inputRef.current?.select(); }, []);
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     const trimmed = name.trim();
     if (!trimmed) { setError("Name cannot be empty"); return; }
     setError(null);
-    startTransition(async () => {
-      try {
-        await createVaultFolder(vaultId, trimmed, parentFolderId);
-        onSuccess();
-        onClose();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to create folder");
-      }
-    });
+    try {
+      await createFolder({ vaultId, name: trimmed, parentFolderId });
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create folder");
+    }
   };
 
   return (
@@ -262,29 +266,31 @@ function RenameDialog({
 }) {
   const [name, setName] = useState(initialName);
   const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const { mutateAsync: renameFolder } = useRenameVaultFolderMutation();
+  const { mutateAsync: renameFile } = useRenameVaultFileMutation();
+  const [isPending, setIsPending] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { inputRef.current?.select(); }, []);
 
-  const handleRename = () => {
+  const handleRename = async () => {
     const trimmed = name.trim();
     if (!trimmed) { setError("Name cannot be empty"); return; }
     if (trimmed === initialName) { onClose(); return; }
     setError(null);
-    startTransition(async () => {
-      try {
-        if (type === "folder") {
-          await renameVaultFolder(targetId, trimmed);
-        } else {
-          await renameVaultFile(targetId, trimmed);
-        }
-        onSuccess();
-        onClose();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to rename");
+    setIsPending(true);
+    try {
+      if (type === "folder") {
+        await renameFolder({ folderId: targetId, name: trimmed });
+      } else {
+        await renameFile({ fileId: targetId, name: trimmed });
       }
-    });
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to rename");
+    } finally {
+      setIsPending(false);
+    }
   };
 
   return (
@@ -394,7 +400,7 @@ export function OpenVault({
   const { layout, handleLayoutChange } = useLayout("nimbus-layout");
 
   const queryClient = useQueryClient();
-  const { data, isLoading: loading, refetch: refresh } = useVaultItemsQuery(vault.id, currentFolderId);
+  const { data, isLoading: loading } = useVaultItemsQuery(vault.id, currentFolderId);
 
   const prefetchFolder = (folderId: string) => {
     queryClient.prefetchQuery({
@@ -415,20 +421,21 @@ export function OpenVault({
   const { uploadMany } = useVaultUpload(vault.id, cryptoKey, {
     parentFolderId: currentFolderId,
     isFragmented: vault.is_fragmented,
-    onSuccess: () => invalidateVaultCache(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.vaultItems(vault.id, currentFolderId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.vaults() });
+    },
   });
   const { uploadFolder } = useVaultFolderUpload({
     vaultId: vault.id,
     cryptoKey,
     parentFolderId: currentFolderId,
-    onSuccess: () => invalidateVaultCache(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.vaultItems(vault.id, currentFolderId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.vaults() });
+    },
   });
   const { download, downloadFolder, preview, getThumbnail, decrypting, clearPreviewCache } = useVaultDownload(cryptoKey);
-
-  const invalidateVaultCache = async () => {
-    await getQueryClient().invalidateQueries({ queryKey: ["vaults"] });
-    return refresh();
-  };
 
   // ── Drag and Drop ───────────────────────────────────────────
   const handleDragOver = (e: React.DragEvent) => {
@@ -603,6 +610,10 @@ export function OpenVault({
     setLoadingPreview(null);
   };
 
+  const { mutateAsync: deleteFileMut } = useDeleteVaultFileMutation();
+  const { mutateAsync: deleteFolderMut } = useDeleteVaultFolderMutation();
+  const { mutateAsync: deleteVaultMut } = useDeleteVaultMutation();
+
   const confirmDelete = async () => {
     if (!deleteDialog.type) return;
 
@@ -610,19 +621,17 @@ export function OpenVault({
 
     try {
       if (deleteDialog.type === "file" && deleteDialog.id) {
-        await deleteVaultFile(deleteDialog.id);
-        await invalidateVaultCache();
+        await deleteFileMut(deleteDialog.id);
       }
 
       if (deleteDialog.type === "folder" && deleteDialog.id) {
-        await deleteVaultFolder(deleteDialog.id);
-        await invalidateVaultCache();
+        await deleteFolderMut(deleteDialog.id);
       }
 
       if (deleteDialog.type === "vault") {
         clearPreviewCache();
         clearVaultSession(vault.id);
-        await deleteVault(vault.id);
+        await deleteVaultMut(vault.id);
         onRefreshVaults();
         onLock();
       }
@@ -1099,7 +1108,7 @@ export function OpenVault({
         <CreateFolderDialog
           vaultId={vault.id}
           parentFolderId={currentFolderId}
-          onSuccess={invalidateVaultCache}
+          onSuccess={() => {}}
           onClose={() => setShowCreateFolder(false)}
         />
       )}
@@ -1109,7 +1118,7 @@ export function OpenVault({
           type={renameDialog.type}
           targetId={renameDialog.id}
           initialName={renameDialog.initialName}
-          onSuccess={invalidateVaultCache}
+          onSuccess={() => {}}
           onClose={() => setRenameDialog(null)}
         />
       )}
@@ -1141,7 +1150,7 @@ export function OpenVault({
           vaultName={vault.name}
           items={[moveDialog]}
           onClose={() => setMoveDialog(null)}
-          onSuccess={invalidateVaultCache}
+          onSuccess={() => {}}
         />
       )}
 
@@ -1171,7 +1180,7 @@ export function OpenVault({
           vaultId={vault.id}
           cryptoKey={cryptoKey}
           parentFolderId={currentFolderId}
-          onSuccess={invalidateVaultCache}
+          onSuccess={() => {}}
           onClose={() => setNoteEditor({ open: false })}
         />
       )}

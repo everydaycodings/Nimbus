@@ -4,6 +4,7 @@
 import { useState, useTransition } from "react";
 import { X, LockKey, Eye, EyeSlash, ShieldCheck } from "@phosphor-icons/react";
 import { createVault }                      from "@/vault/actions/vault.actions";
+import { useCreateVaultMutation } from "@/vault/hooks/queries/useVaultMutations";
 import { deriveKey, generateSalt, encryptVerificationToken, bufferToBase64, deriveStealthId, STEALTH_NAME_PREFIX } from "@/vault/lib/crypto";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -24,7 +25,7 @@ export function CreateVaultDialog({ onSuccess, onClose }: Props) {
   const [showPw,      setShowPw]      = useState(false);
   const [isStealth,   setIsStealth]   = useState(false);
   const [isFragmented, setIsFragmented] = useState(false);
-  const [isPending,   startTransition] = useTransition();
+  const { mutateAsync: createVaultMutation, isPending } = useCreateVaultMutation();
 
   const strength = (() => {
     if (password.length === 0)  return 0;
@@ -38,46 +39,44 @@ export function CreateVaultDialog({ onSuccess, onClose }: Props) {
   const strengthLabel = ["", "Weak", "Fair", "Good", "Strong", "Very strong"][strength];
   const strengthColor = ["", "#ef4444", "#f97316", "#eab308", TEAL, TEAL][strength];
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!isStealth && !name.trim()) { toast.error("Vault name is required"); return; }
     if (password.length < 8)    { toast.error("Password must be at least 8 characters"); return; }
     if (password !== confirm)   { toast.error("Passwords do not match"); return; }
 
-    startTransition(async () => {
-      try {
-        const supabase = createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) { toast.error("User session not found"); return; }
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { toast.error("User session not found"); return; }
 
-        const salt              = generateSalt();
-        const key               = await deriveKey(password, salt);
-        const verificationToken = await encryptVerificationToken(key);
-        const saltBase64        = bufferToBase64(salt);
+      const salt              = generateSalt();
+      const key               = await deriveKey(password, salt);
+      const verificationToken = await encryptVerificationToken(key);
+      const saltBase64        = bufferToBase64(salt);
 
-        let vaultId: string | undefined = undefined;
-        let finalName = name.trim();
+      let vaultId: string | undefined = undefined;
+      let finalName = name.trim();
 
-        if (isStealth) {
-          vaultId = await deriveStealthId(user.id, password);
-          // Random suffix for "Archive_XXXXXX"
-          const suffix = Math.random().toString(36).substring(2, 8).toUpperCase();
-          finalName = `${STEALTH_NAME_PREFIX}${suffix}`;
-        }
-
-        await createVault({ 
-          id: vaultId,
-          name: finalName, 
-          saltBase64, 
-          verificationToken,
-          isFragmented
-        });
-        toast.success("Vault created successfully!");
-        onSuccess();
-        onClose();
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to create vault");
+      if (isStealth) {
+        vaultId = await deriveStealthId(user.id, password);
+        // Random suffix for "Archive_XXXXXX"
+        const suffix = Math.random().toString(36).substring(2, 8).toUpperCase();
+        finalName = `${STEALTH_NAME_PREFIX}${suffix}`;
       }
-    });
+
+      await createVaultMutation({ 
+        id: vaultId,
+        name: finalName, 
+        saltBase64, 
+        verificationToken,
+        isFragmented
+      });
+      toast.success("Vault created successfully!");
+      onSuccess();
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create vault");
+    }
   };
 
   return (
