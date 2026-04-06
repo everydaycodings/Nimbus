@@ -6,6 +6,7 @@ import {
   useStarMutation,
   useTrashMutation,
   useRestoreMutation,
+  useDeletePermanentlyMutation,
 } from "@/hooks/mutations/useFileMutations";
 
 interface UseItemActionsProps {
@@ -22,6 +23,7 @@ export function useItemActions({ id, name, type, isStarred, signedUrl, downloadU
   const [showMoveDialog, setShowMoveDialog] = useState(false);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [showTrashDialog, setShowTrashDialog] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
@@ -29,8 +31,9 @@ export function useItemActions({ id, name, type, isStarred, signedUrl, downloadU
   const starMutation = useStarMutation();
   const trashMutation = useTrashMutation();
   const restoreMutation = useRestoreMutation();
+  const deletePermanentlyMutation = useDeletePermanentlyMutation();
 
-  const isPending = starMutation.isPending || trashMutation.isPending || restoreMutation.isPending;
+  const isPending = starMutation.isPending || trashMutation.isPending || restoreMutation.isPending || deletePermanentlyMutation.isPending;
   
   const { download, downloading } = useDownload();
   const isDownloading = downloading.has(id);
@@ -74,6 +77,19 @@ export function useItemActions({ id, name, type, isStarred, signedUrl, downloadU
       }
     );
   };
+
+  const handleDeletePermanently = () => {
+    deletePermanentlyMutation.mutate(
+      { id, type },
+      {
+        onSuccess: () => {
+          toast.success("Deleted permanently");
+          onRefresh?.();
+        },
+        onError: () => toast.error("Failed to delete item permanently"),
+      }
+    );
+  };
   
   const handleMainClick = (onFolderOpen?: (id: string, name: string) => void) => {
     if (type === "file") setShowPreview(true);
@@ -89,6 +105,7 @@ export function useItemActions({ id, name, type, isStarred, signedUrl, downloadU
     showMoveDialog, setShowMoveDialog,
     showRenameDialog, setShowRenameDialog,
     showTrashDialog, setShowTrashDialog,
+    showDeleteConfirm, setShowDeleteConfirm,
     showPreview, setShowPreview,
     showShare, setShowShare,
     showDetails, setShowDetails,
@@ -97,6 +114,7 @@ export function useItemActions({ id, name, type, isStarred, signedUrl, downloadU
     handleStar,
     handleTrash,
     handleRestore,
+    handleDeletePermanently,
     handleMainClick,
     handleDownload,
   };

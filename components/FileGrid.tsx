@@ -19,6 +19,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { MoveDialog } from "@/components/MoveDialog";
 import { RenameDialog } from "@/components/rename";
 import { MoveToTrash } from "@/components/MoveToTrash";
+import { DeletePermanently } from "@/components/DeletePermanently";
 import { FilePreviewDialog } from "@/components/FilePreviewDialog";
 import { ShareDialog } from "@/components/ShareDialog";
 import { VersionHistoryDialog } from "@/components/VersionHistoryDialog";
@@ -97,6 +98,7 @@ function DotsMenu({
   onRestore,
   onDetails,
   onTags,
+  onDelete,
   onVersionHistory,
   onEdit,
   name,
@@ -115,6 +117,7 @@ function DotsMenu({
   onRestore: () => void;
   onDetails: () => void;
   onTags: () => void;
+  onDelete?: () => void;
   onVersionHistory?: () => void;
   onEdit?: () => void;
   name?: string;
@@ -174,9 +177,18 @@ function DotsMenu({
             </DropdownMenuItem>
           </>
         ) : (
-          <DropdownMenuItem onClick={onRestore}>
-            Restore
-          </DropdownMenuItem>
+          <>
+            <DropdownMenuItem onClick={onRestore}>
+              Restore
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={onDelete}
+              className="text-red-400 focus:text-red-400"
+            >
+              Delete permanently
+            </DropdownMenuItem>
+          </>
         )}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -211,11 +223,12 @@ function ListRow({
     showMoveDialog, setShowMoveDialog,
     showRenameDialog, setShowRenameDialog,
     showTrashDialog, setShowTrashDialog,
+    showDeleteConfirm, setShowDeleteConfirm,
     showPreview, setShowPreview,
     showShare, setShowShare,
     showDetails, setShowDetails,
     isPending, isDownloading,
-    handleStar, handleTrash, handleRestore, handleMainClick, handleDownload
+    handleStar, handleTrash, handleRestore, handleDeletePermanently, handleMainClick, handleDownload
   } = useItemActions({ id, name, type, isStarred, signedUrl: meta?.signed_url, downloadUrl: meta?.download_url, onRefresh });
 
   const [showVersionHistory, setShowVersionHistory] = useState(false);
@@ -310,6 +323,7 @@ function ListRow({
               onRename={() => setShowRenameDialog(true)} onMove={() => setShowMoveDialog(true)}
               onShare={() => setShowShare(true)} onDownload={handleDownload}
               onStar={handleStar} onTrash={() => setShowTrashDialog(true)} onRestore={handleRestore}
+              onDelete={() => setShowDeleteConfirm(true)}
               onDetails={() => setShowDetails(true)} onTags={() => setShowTagPicker(true)}
               onVersionHistory={() => setShowVersionHistory(true)}
               onEdit={meta?.onEdit}
@@ -323,6 +337,7 @@ function ListRow({
       {showMoveDialog && <MoveDialog itemId={id} itemName={name} itemType={type as "file" | "folder"} onSuccess={() => onRefresh?.()} onClose={() => setShowMoveDialog(false)} />}
       {showRenameDialog && <RenameDialog id={id} name={name} type={type as "file" | "folder"} onSuccess={() => onRefresh?.()} onClose={() => setShowRenameDialog(false)} />}
       {showTrashDialog && <MoveToTrash id={id} name={name} type={type} onSuccess={() => onRefresh?.()} onClose={() => setShowTrashDialog(false)} />}
+      {showDeleteConfirm && <DeletePermanently id={id} name={name} type={type} onSuccess={() => onRefresh?.()} onClose={() => setShowDeleteConfirm(false)} />}
       {showShare && <ShareDialog resourceId={id} resourceName={name} resourceType={type as "file" | "folder"} onClose={() => setShowShare(false)} />}
       {showVersionHistory && <VersionHistoryDialog fileId={id} fileName={name} onClose={() => setShowVersionHistory(false)} />}
       {showPreview && <FilePreviewDialog fileId={id} fileName={name} mimeType={meta?.mimeType ?? ""} signedUrl={meta?.signed_url} downloadUrl={meta?.download_url} onClose={() => setShowPreview(false)} />}
@@ -383,11 +398,12 @@ function GridCard({
     showMoveDialog, setShowMoveDialog,
     showRenameDialog, setShowRenameDialog,
     showTrashDialog, setShowTrashDialog,
+    showDeleteConfirm, setShowDeleteConfirm,
     showPreview, setShowPreview,
     showShare, setShowShare,
     showDetails, setShowDetails,
     isPending, isDownloading,
-    handleStar, handleTrash, handleRestore, handleMainClick, handleDownload
+    handleStar, handleTrash, handleRestore, handleDeletePermanently, handleMainClick, handleDownload
   } = useItemActions({ id, name, type, isStarred, signedUrl: meta?.signed_url, downloadUrl: meta?.download_url, onRefresh });
 
   const [showVersionHistory, setShowVersionHistory] = useState(false);
@@ -486,6 +502,7 @@ function GridCard({
                 onTrash={() => setShowTrashDialog(true)}
                 onShare={() => setShowShare(true)} onDownload={handleDownload}
                 onStar={handleStar} onRestore={handleRestore}
+                onDelete={() => setShowDeleteConfirm(true)}
                 onDetails={() => setShowDetails(true)} onTags={() => setShowTagPicker(true)}
                 onVersionHistory={() => setShowVersionHistory(true)}
                 onEdit={meta?.onEdit}
@@ -507,6 +524,7 @@ function GridCard({
       {showMoveDialog && <MoveDialog itemId={id} itemName={name} itemType={type as "file" | "folder"} onSuccess={() => onRefresh?.()} onClose={() => setShowMoveDialog(false)} />}
       {showRenameDialog && <RenameDialog id={id} name={name} type={type as "file" | "folder"} onSuccess={() => onRefresh?.()} onClose={() => setShowRenameDialog(false)} />}
       {showTrashDialog && <MoveToTrash id={id} name={name} type={type} onSuccess={() => onRefresh?.()} onClose={() => setShowTrashDialog(false)} />}
+      {showDeleteConfirm && <DeletePermanently id={id} name={name} type={type} onSuccess={() => onRefresh?.()} onClose={() => setShowDeleteConfirm(false)} />}
       {showShare && <ShareDialog resourceId={id} resourceName={name} resourceType={type as "file" | "folder"} onClose={() => setShowShare(false)} />}
       {showVersionHistory && <VersionHistoryDialog fileId={id} fileName={name} onClose={() => setShowVersionHistory(false)} />}
       {showPreview && <FilePreviewDialog fileId={id} fileName={name} mimeType={meta?.mimeType ?? ""} signedUrl={meta?.signed_url} downloadUrl={meta?.download_url} onClose={() => setShowPreview(false)} />}

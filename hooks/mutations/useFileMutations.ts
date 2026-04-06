@@ -9,7 +9,7 @@ import {
   renameItem,
 } from "@/actions/files";
 import { createFolder, moveFile, moveFolder } from "@/actions/folders";
-import { emptyTrash } from "@/actions/trash";
+import { emptyTrash, deleteItemPermanently } from "@/actions/trash";
 import { queryKeys } from "@/lib/query-keys";
 
 /** Invalidate all file/folder queries across the app */
@@ -131,6 +131,22 @@ export function useEmptyTrashMutation() {
 
   return useMutation({
     mutationFn: () => emptyTrash(),
+    onSuccess: invalidate,
+  });
+}
+
+// ── Delete permanently ─────────────────────────────────────────
+export function useDeletePermanentlyMutation() {
+  const invalidate = useInvalidateFiles();
+
+  return useMutation({
+    mutationFn: ({
+      id,
+      type,
+    }: {
+      id: string;
+      type: "file" | "folder" | "version";
+    }) => deleteItemPermanently(id, type),
     onSuccess: invalidate,
   });
 }
