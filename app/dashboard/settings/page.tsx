@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useUserQuery } from "@/hooks/queries/useUserQuery";
 import { SessionManager } from "./SessionManager";
+import { MFAVerificationDialog } from "@/components/mfa-verification-dialog";
 
 export default function SettingsPage() {
   const supabase = createClient();
@@ -34,6 +35,10 @@ export default function SettingsPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  
+  // MFA AAL2 states
+  const [isMFAVerifyOpen, setIsMFAVerifyOpen] = useState(false);
+  const [mfaAction, setMfaAction] = useState<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -41,6 +46,24 @@ export default function SettingsPage() {
       setEmail(user.email || "");
     }
   }, [user]);
+
+  const checkAAL2 = async (action: () => Promise<void>) => {
+    try {
+      const { data, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (error) throw error;
+
+      if (data.currentLevel === 'aal2' || data.nextLevel === 'aal1') {
+        // Already AAL2 or MFA not enabled
+        await action();
+      } else {
+        // MFA enabled but not verified (aal1)
+        setMfaAction(() => action);
+        setIsMFAVerifyOpen(true);
+      }
+    } catch (error: any) {
+      toast.error("Security check failed: " + error.message);
+    }
+  };
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,19 +84,21 @@ export default function SettingsPage() {
 
   const handleUpdateEmail = async (e: React.FormEvent) => {
     e.preventDefault();
-    setEmailLoading(true);
-    try {
-      const { data, error } = await supabase.auth.updateUser({
-        email: email
-      });
-      if (error) throw error;
-      toast.success("Verification email sent! Please check both old and new inboxes to confirm the change.");
-      queryClient.invalidateQueries({ queryKey: ["user"] });
-    } catch (error: any) {
-      toast.error(error.message || "Failed to update email");
-    } finally {
-      setEmailLoading(false);
-    }
+    checkAAL2(async () => {
+      setEmailLoading(true);
+      try {
+        const { data, error } = await supabase.auth.updateUser({
+          email: email
+        });
+        if (error) throw error;
+        toast.success("Verification email sent! Please check both old and new inboxes to confirm the change.");
+        queryClient.invalidateQueries({ queryKey: ["user"] });
+      } catch (error: any) {
+        toast.error(error.message || "Failed to update email");
+      } finally {
+        setEmailLoading(false);
+      }
+    });
   };
 
   const handleUpdatePassword = async (e: React.FormEvent) => {
@@ -84,21 +109,23 @@ export default function SettingsPage() {
       return;
     }
 
-    setPasswordLoading(true);
-    try {
-      const { data, error } = await supabase.auth.updateUser({
-        password: newPassword
-      });
-      if (error) throw error;
-      toast.success("Password updated successfully!");
-      setNewPassword(""); // clear new password field
-      setConfirmPassword(""); // clear confirm password field
-      queryClient.invalidateQueries({ queryKey: ["user"] });
-    } catch (error: any) {
-      toast.error(error.message || "Failed to update password");
-    } finally {
-      setPasswordLoading(false);
-    }
+    checkAAL2(async () => {
+      setPasswordLoading(true);
+      try {
+        const { data, error } = await supabase.auth.updateUser({
+          password: newPassword
+        });
+        if (error) throw error;
+        toast.success("Password updated successfully!");
+        setNewPassword(""); // clear new password field
+        setConfirmPassword(""); // clear confirm password field
+        queryClient.invalidateQueries({ queryKey: ["user"] });
+      } catch (error: any) {
+        toast.error(error.message || "Failed to update password");
+      } finally {
+        setPasswordLoading(false);
+      }
+    });
   };
 
   const handleUploadAvatar = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -397,6 +424,17 @@ export default function SettingsPage() {
           {/* Session Management */}
           <SessionManager />
         </div>
+
+        <MFAVerificationDialog 
+          isOpen={isMFAVerifyOpen}
+          onOpenChange={setIsMFAVerifyOpen}
+          onSuccess={async () => {
+            if (mfaAction) {
+              await mfaAction();
+              setMfaAction(null);
+            }
+          }}
+        />
       </div>
     </div>
   );
