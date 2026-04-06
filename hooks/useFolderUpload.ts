@@ -3,6 +3,9 @@
 
 import { useUploadStore } from "@/store/uploadStore";
 import { createFolderForUpload } from "@/actions/uploadFolder";
+import { generateClientThumbnail } from "@/lib/client-thumbnail";
+import { getQueryClient } from "@/lib/query-client";
+import { queryKeys } from "@/lib/query-keys";
 
 const xhrMap = new Map<string, XMLHttpRequest>();
 
@@ -57,7 +60,10 @@ export function useFolderUpload(options: FolderUploadOptions = {}) {
     });
 
     try {
-      // Step 1: Get presigned URL
+      // ── Step 1: Generate Thumbnail Client-Side ──
+      const thumbnailBlob = await generateClientThumbnail(file);
+
+      // ── Step 2: Get presigned URL ──
       const presignRes = await fetch("/api/upload/presign", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
@@ -66,6 +72,7 @@ export function useFolderUpload(options: FolderUploadOptions = {}) {
           mimeType:       file.type || "application/octet-stream",
           size:           file.size,
           parentFolderId: parentFolderId,
+          withThumbnail:  !!thumbnailBlob
         }),
       });
 
@@ -74,38 +81,37 @@ export function useFolderUpload(options: FolderUploadOptions = {}) {
         throw new Error(body.error ?? `Presign failed: ${presignRes.status}`);
       }
 
-      const { presignedUrl, fileId } = await presignRes.json();
+      const { 
+        presignedUrl, 
+        fileId, 
+        thumbnailPresignedUrl, 
+        thumbnailKey 
+      } = await presignRes.json();
       updateUpload(tempId, { fileId });
 
-      // Step 2: Upload to S3
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhrMap.set(tempId, xhr);
+      // ── Step 3: Upload to S3 (Parallel) ──
+      const uploadPromises: Promise<any>[] = [
+        uploadToS3(presignedUrl, file, `${tempId}-file`, (progress) => {
+          updateUpload(tempId, { progress });
+        })
+      ];
 
-        xhr.upload.addEventListener("progress", (e) => {
-          if (e.lengthComputable) {
-            updateUpload(tempId, { progress: Math.round((e.loaded / e.total) * 100) });
-          }
-        });
+      if (thumbnailPresignedUrl && thumbnailBlob) {
+        uploadPromises.push(
+          uploadToS3(thumbnailPresignedUrl, thumbnailBlob as any, `${tempId}-thumb`, () => {})
+        );
+      }
 
-        xhr.addEventListener("load", () => {
-          xhrMap.delete(tempId);
-          xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`S3 ${xhr.status}`));
-        });
+      await Promise.all(uploadPromises);
 
-        xhr.addEventListener("error", () => { xhrMap.delete(tempId); reject(new Error("Network error")); });
-        xhr.addEventListener("abort", () => { xhrMap.delete(tempId); reject(new Error("Cancelled")); });
-
-        xhr.open("PUT", presignedUrl);
-        xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
-        xhr.send(file);
-      });
-
-      // Step 3: Mark complete
+      // ── Step 4: Mark complete ──
       const completeRes = await fetch("/api/upload/complete", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileId }),
+        body: JSON.stringify({ 
+          fileId,
+          thumbnailKey
+        }),
       });
 
       if (!completeRes.ok) throw new Error("Failed to finalize upload");
@@ -159,8 +165,53 @@ export function useFolderUpload(options: FolderUploadOptions = {}) {
       );
     }
 
+    getQueryClient().invalidateQueries({ queryKey: queryKeys.all });
     options.onSuccess?.();
   }
 
   return { uploadFolder };
+}
+// ── Upload helper ──
+function uploadToS3(
+  presignedUrl: string,
+  file: File | Blob,
+  id: string,
+  onProgress: (progress: number) => void
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhrMap.set(id, xhr);
+
+    xhr.upload.addEventListener("progress", (e) => {
+      if (e.lengthComputable) {
+        onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    });
+
+    xhr.addEventListener("load", () => {
+      xhrMap.delete(id);
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+      } else {
+        reject(new Error(`S3 upload failed (${xhr.status})`));
+      }
+    });
+
+    xhr.addEventListener("error", () => {
+      xhrMap.delete(id);
+      reject(new Error("Network error"));
+    });
+
+    xhr.addEventListener("abort", () => {
+      xhrMap.delete(id);
+      reject(new Error("Upload cancelled"));
+    });
+
+    xhr.open("PUT", presignedUrl);
+    xhr.setRequestHeader(
+      "Content-Type",
+      file.type || "application/octet-stream"
+    );
+    xhr.send(file);
+  });
 }
