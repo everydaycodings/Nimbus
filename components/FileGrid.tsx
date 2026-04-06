@@ -69,6 +69,7 @@ interface FolderItem {
   created_at: string;
   updated_at?: string;
   is_starred: boolean;
+  size?: number;
   tags?: { tag: Tag }[];
 }
 
@@ -617,7 +618,7 @@ export function FileGrid({
           {folders.length > 0 && (
             <div className="mb-2">
               <p className="px-3 py-1 text-xs text-muted-foreground/60 font-medium">Folders</p>
-              {folders.map((f) => <ListRow key={f.id} id={f.id} name={f.name} type="folder" isStarred={f.is_starred} meta={{ date: f.created_at, updated_at: f.updated_at, tags: f.tags }} {...shared} />)}
+              {folders.map((f) => <ListRow key={f.id} id={f.id} name={f.name} type="folder" isStarred={f.is_starred} meta={{ date: f.created_at, updated_at: f.updated_at, tags: f.tags, size: f.size }} {...shared} />)}
             </div>
           )}
           {files.length > 0 && (
@@ -636,7 +637,7 @@ export function FileGrid({
             <div>
               <p className="text-xs text-muted-foreground/60 font-medium mb-2">Folders</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                {folders.map((f) => <GridCard key={f.id} id={f.id} name={f.name} type="folder" isStarred={f.is_starred} meta={{ date: f.created_at, updated_at: f.updated_at, tags: f.tags }} {...shared} />)}
+                {folders.map((f) => <GridCard key={f.id} id={f.id} name={f.name} type="folder" isStarred={f.is_starred} meta={{ date: f.created_at, updated_at: f.updated_at, tags: f.tags, size: f.size }} {...shared} />)}
               </div>
             </div>
           )}

@@ -47,9 +47,9 @@ export async function getFiles(
   const to = from + PAGE_SIZE - 1;
 
   // ── FOLDERS QUERY ─────────────────────────────────
-  let folderSelect = "id, name, created_at, updated_at, is_starred, parent_folder_id, tags:folder_tags(tag:tags(id, name, color))";
+  let folderSelect = "id, name, created_at, updated_at, is_starred, parent_folder_id, size, tags:folder_tags(tag:tags(id, name, color))";
   if (options?.tagId) {
-    folderSelect = "id, name, created_at, updated_at, is_starred, parent_folder_id, tags:folder_tags!inner(tag:tags(id, name, color))";
+    folderSelect = "id, name, created_at, updated_at, is_starred, parent_folder_id, size, tags:folder_tags!inner(tag:tags(id, name, color))";
   }
 
   let folderQuery = supabase
@@ -155,8 +155,8 @@ export async function getStarredItems(options?: { tagId?: string }) {
   if (!userId) throw new Error("Unauthorized");
 
   const folderSelect = options?.tagId 
-    ? "id, name, created_at, updated_at, is_starred, tags:folder_tags!inner(tag:tags(id, name, color))"
-    : "id, name, created_at, updated_at, is_starred, tags:folder_tags(tag:tags(id, name, color))";
+    ? "id, name, created_at, updated_at, is_starred, size, tags:folder_tags!inner(tag:tags(id, name, color))"
+    : "id, name, created_at, updated_at, is_starred, size, tags:folder_tags(tag:tags(id, name, color))";
   
   const fileSelect = options?.tagId
     ? "id, name, mime_type, size, created_at, updated_at, is_starred, s3_key, thumbnail_key, tags:file_tags!inner(tag:tags(id, name, color))"
@@ -205,7 +205,7 @@ export async function getTrashedItems() {
   const [{ data: folders }, { data: files }, { data: versions }] = await Promise.all([
     supabase
       .from("folders")
-      .select("id, name, trashed_at")
+      .select("id, name, trashed_at, size")
       .eq("owner_id", userId)
       .eq("is_trashed", true)
       .order("trashed_at", { ascending: false }),
