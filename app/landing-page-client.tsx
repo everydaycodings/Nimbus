@@ -96,7 +96,7 @@ export function LandingPageClient({ initialStars, user }: LandingPageClientProps
               >
                 <div className="h-7 px-3 rounded-full bg-foreground/5 dark:bg-white/5 flex items-center gap-1.5 border border-border/20">
                   <GithubLogo size={14} weight="bold" className="text-foreground/70 group-hover:text-foreground transition-colors" />
-                  <span className="text-[11px] font-bold tracking-tight text-foreground/80 group-hover:text-foreground transition-colors uppercase">v1.2</span>
+                  <span className="text-[11px] font-bold tracking-tight text-foreground/80 group-hover:text-foreground transition-colors uppercase">v{process.env.NEXT_PUBLIC_APP_VERSION || "1.2"}</span>
                 </div>
                 <div className="flex items-center gap-1.5 text-xs md:text-sm font-semibold" style={{ color: TEAL }}>
                   <Sparkle size={14} weight="fill" className="animate-pulse" />

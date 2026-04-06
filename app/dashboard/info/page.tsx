@@ -4,7 +4,7 @@ import React from "react";
 
 export default function InfoPage() {
   const appDetails = [
-    { label: "Version", value: "1.2", isBadge: true },
+    { label: "Version", value: process.env.NEXT_PUBLIC_APP_VERSION || "1.2", isBadge: true },
     { label: "Stage", value: "Public", isBadge: false },
     { label: "Last Updated", value: "April 04, 2026", isBadge: false },
     { 
