@@ -47,7 +47,7 @@ export function DetailsDialog({ item, onClose }: DetailsDialogProps) {
         </div>
       ) 
     },
-    ...(item.type === "file" && item.size !== undefined
+    ...(item.size !== undefined
       ? [{ label: "Size", value: formatBytes(item.size) }]
       : []),
     { label: "Status", value: item.is_starred ? "Starred" : "Normal" },
