@@ -16,11 +16,11 @@ export function getEncodedContentDisposition(filename: string, mode: "inline" | 
 
 /**
  * Signs a list of S3 keys in parallel for instant download/preview.
- * @param files A list of file objects containing s3_key, name, and mime_type.
+ * @param files A list of file objects containing s3_key, name, mime_type, and optional thumbnail_key.
  * @param expiresIn Time in seconds until the URL expires (default 1 hour).
  */
 export async function signFiles(
-  files: { s3_key: string; name: string; mime_type: string }[],
+  files: { s3_key: string; name: string; mime_type: string; thumbnail_key?: string | null }[],
   expiresIn: number = 3600
 ) {
   if (!files || files.length === 0) return [];
@@ -45,15 +45,41 @@ export async function signFiles(
         ResponseCacheControl: "public, max-age=31536000, immutable",
       });
 
-      const [signedUrl, downloadUrl] = await Promise.all([
+      const promises: any[] = [
         getSignedUrl(s3, previewCommand, { expiresIn }),
         getSignedUrl(s3, downloadCommand, { expiresIn }),
-      ]);
+      ];
 
-      return { ...file, signed_url: signedUrl, download_url: downloadUrl };
+      // 3. Optional: Signed URL for Thumbnail
+      if (file.thumbnail_key) {
+        const thumbCommand = new GetObjectCommand({
+          Bucket: BUCKET,
+          Key: file.thumbnail_key,
+          ResponseContentType: "image/webp",
+          ResponseCacheControl: "public, max-age=31536000, immutable",
+        });
+        promises.push(getSignedUrl(s3, thumbCommand, { expiresIn }));
+      }
+
+      const results = await Promise.all(promises);
+      const signedUrl = results[0];
+      const downloadUrl = results[1];
+      const thumbnailUrl = file.thumbnail_key ? results[2] : null;
+
+      return { 
+        ...file, 
+        signed_url: signedUrl, 
+        download_url: downloadUrl,
+        thumbnail_url: thumbnailUrl
+      };
     } catch (error) {
       console.error(`[s3-signer] Failed to sign ${file.s3_key}:`, error);
-      return { ...file, signed_url: null, download_url: null };
+      return { 
+        ...file, 
+        signed_url: null, 
+        download_url: null,
+        thumbnail_url: null
+      };
     }
   });
 

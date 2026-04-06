@@ -80,9 +80,9 @@ export async function getFiles(
   folderQuery = folderQuery.order(folderSortBy, folderSortOrder);
 
   // ── FILES QUERY ───────────────────────────────────
-  let fileSelect = "id, name, mime_type, size, created_at, updated_at, is_starred, parent_folder_id, s3_key, tags:file_tags(tag:tags(id, name, color))";
+  let fileSelect = "id, name, mime_type, size, created_at, updated_at, is_starred, parent_folder_id, s3_key, thumbnail_key, tags:file_tags(tag:tags(id, name, color))";
   if (options?.tagId) {
-    fileSelect = "id, name, mime_type, size, created_at, updated_at, is_starred, parent_folder_id, s3_key, tags:file_tags!inner(tag:tags(id, name, color))";
+    fileSelect = "id, name, mime_type, size, created_at, updated_at, is_starred, parent_folder_id, s3_key, thumbnail_key, tags:file_tags!inner(tag:tags(id, name, color))";
   }
 
   let fileQuery = supabase
@@ -159,8 +159,8 @@ export async function getStarredItems(options?: { tagId?: string }) {
     : "id, name, created_at, updated_at, is_starred, tags:folder_tags(tag:tags(id, name, color))";
   
   const fileSelect = options?.tagId
-    ? "id, name, mime_type, size, created_at, updated_at, is_starred, s3_key, tags:file_tags!inner(tag:tags(id, name, color))"
-    : "id, name, mime_type, size, created_at, updated_at, is_starred, s3_key, tags:file_tags(tag:tags(id, name, color))";
+    ? "id, name, mime_type, size, created_at, updated_at, is_starred, s3_key, thumbnail_key, tags:file_tags!inner(tag:tags(id, name, color))"
+    : "id, name, mime_type, size, created_at, updated_at, is_starred, s3_key, thumbnail_key, tags:file_tags(tag:tags(id, name, color))";
 
   let folderQuery = supabase
     .from("folders")
@@ -211,13 +211,13 @@ export async function getTrashedItems() {
       .order("trashed_at", { ascending: false }),
     supabase
       .from("files")
-      .select("id, name, mime_type, size, trashed_at, s3_key")
+      .select("id, name, mime_type, size, trashed_at, s3_key, thumbnail_key")
       .eq("owner_id", userId)
       .eq("is_trashed", true)
       .order("trashed_at", { ascending: false }),
     supabase
       .from("file_versions")
-      .select("id, file_id, name, mime_type, size, trashed_at, s3_key, version_number")
+      .select("id, file_id, name, mime_type, size, trashed_at, s3_key, thumbnail_key, version_number")
       .eq("is_trashed", true)
       .order("trashed_at", { ascending: false }),
   ]);
@@ -343,8 +343,8 @@ export async function getRecentFiles(options?: { tagId?: string }) {
   if (!userId) throw new Error("Unauthorized");
 
   const select = options?.tagId
-    ? "id, name, mime_type, size, created_at, updated_at, is_starred, s3_key, parent_folder_id, tags:file_tags!inner(tag:tags(id, name, color))"
-    : "id, name, mime_type, size, created_at, updated_at, is_starred, s3_key, parent_folder_id, tags:file_tags(tag:tags(id, name, color))";
+    ? "id, name, mime_type, size, created_at, updated_at, is_starred, s3_key, thumbnail_key, parent_folder_id, tags:file_tags!inner(tag:tags(id, name, color))"
+    : "id, name, mime_type, size, created_at, updated_at, is_starred, s3_key, thumbnail_key, parent_folder_id, tags:file_tags(tag:tags(id, name, color))";
 
   let query = supabase
     .from("files")

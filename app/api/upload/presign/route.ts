@@ -30,7 +30,7 @@ export async function POST(req: Request) {
     return Response.json({ error: "User not found" }, { status: 404 });
   }
 
-  const { name, mimeType, size, parentFolderId, fileId: originalFileId } = await req.json();
+  const { name, mimeType, size, parentFolderId, fileId: originalFileId, withThumbnail } = await req.json();
 
   if (!name || !mimeType || !size) {
     return Response.json({ error: "Missing required fields" }, { status: 400 });
@@ -83,5 +83,26 @@ export async function POST(req: Request) {
 
   const presignedUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
 
-  return Response.json({ presignedUrl, fileId, s3Key, originalFileId });
+  let thumbnailPresignedUrl = null;
+  let thumbnailKey = null;
+
+  if (withThumbnail) {
+    thumbnailKey = `thumbnails/${fileId}.webp`;
+    const thumbCommand = new PutObjectCommand({
+      Bucket: BUCKET,
+      Key: thumbnailKey,
+      ContentType: "image/webp",
+      CacheControl: "public, max-age=31536000, immutable",
+    });
+    thumbnailPresignedUrl = await getSignedUrl(s3, thumbCommand, { expiresIn: 300 });
+  }
+
+  return Response.json({ 
+    presignedUrl, 
+    fileId, 
+    s3Key, 
+    originalFileId,
+    thumbnailPresignedUrl,
+    thumbnailKey
+  });
 }

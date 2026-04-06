@@ -16,7 +16,7 @@ export async function POST(req: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { fileId, originalFileId } = await req.json();
+  const { fileId, originalFileId, thumbnailKey } = await req.json();
   if (!fileId) {
     return Response.json({ error: "Missing fileId" }, { status: 400 });
   }
@@ -97,6 +97,7 @@ export async function POST(req: Request) {
         s3_key:        newFile.s3_key,
         size:          newFile.size,
         mime_type:     newFile.mime_type,
+        thumbnail_key: thumbnailKey || newFile.thumbnail_key,
         upload_status: "complete",
         updated_at:    new Date().toISOString(),
       })
@@ -115,7 +116,10 @@ export async function POST(req: Request) {
   // 2. Normal upload: Just mark as complete
   const { data: file, error } = await supabase
     .from("files")
-    .update({ upload_status: "complete" })
+    .update({ 
+      upload_status: "complete",
+      thumbnail_key: thumbnailKey
+    })
     .eq("id", fileId)
     .eq("owner_id", user.id)
     .in("upload_status", ["pending", "uploading"])

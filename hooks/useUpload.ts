@@ -1,6 +1,7 @@
 import { useUploadStore } from "@/store/uploadStore"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { generateClientThumbnail } from "@/lib/client-thumbnail"
 
 interface UploadOptions {
   parentFolderId?: string
@@ -27,7 +28,10 @@ export function useUpload(options: UploadOptions = {}) {
     })
 
     try {
-      // ── Step 1: Get presigned URL ──
+      // ── Step 1: Generate Thumbnail Client-Side ──
+      const thumbnailBlob = await generateClientThumbnail(file);
+
+      // ── Step 2: Get presigned URL ──
       const presignRes = await fetch("/api/upload/presign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -37,6 +41,7 @@ export function useUpload(options: UploadOptions = {}) {
           size: file.size,
           parentFolderId: options.parentFolderId,
           fileId: fileIdForVersioning, // 🔥 NEW: Pass original fileId for versioning
+          withThumbnail: !!thumbnailBlob
         }),
       })
 
@@ -45,23 +50,39 @@ export function useUpload(options: UploadOptions = {}) {
         throw new Error(error ?? "Failed to get upload URL")
       }
 
-      const { presignedUrl, fileId } = await presignRes.json()
+      const { 
+        presignedUrl, 
+        fileId, 
+        thumbnailPresignedUrl, 
+        thumbnailKey 
+      } = await presignRes.json()
 
       // 🔥 Save fileId for cancel support
       updateUpload(tempId, { fileId })
 
-      // ── Step 2: Upload to S3 ──
-      await uploadToS3(presignedUrl, file, tempId, (progress) => {
-        updateUpload(tempId, { progress })
-      })
+      // ── Step 3: Upload to S3 (Parallel) ──
+      const uploadPromises: Promise<any>[] = [
+        uploadToS3(presignedUrl, file, `${tempId}-file`, (progress) => {
+          updateUpload(tempId, { progress })
+        })
+      ];
 
-      // ── Step 3: Mark complete ──
+      if (thumbnailPresignedUrl && thumbnailBlob) {
+        uploadPromises.push(
+          uploadToS3(thumbnailPresignedUrl, thumbnailBlob as any, `${tempId}-thumb`, () => {})
+        );
+      }
+
+      await Promise.all(uploadPromises);
+
+      // ── Step 4: Mark complete ──
       const completeRes = await fetch("/api/upload/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           fileId,
           originalFileId: fileIdForVersioning, // 🔥 NEW: Pass original fileId for versioning
+          thumbnailKey
         }),
       })
 

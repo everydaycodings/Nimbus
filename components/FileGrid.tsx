@@ -59,6 +59,7 @@ interface FileItem {
   tags?: { tag: Tag }[];
   signed_url?: string | null;
   download_url?: string | null;
+  thumbnail_url?: string | null;
 }
 
 interface FolderItem {
@@ -197,6 +198,7 @@ function ListRow({
     s3_key?: string;
     signed_url?: string | null;
     download_url?: string | null;
+    thumbnail_url?: string | null;
     tags?: { tag: Tag }[];
     onEdit?: () => void;
   };
@@ -243,10 +245,12 @@ function ListRow({
           onDoubleClick={() => type === "folder" && handleMainClick(onFolderOpen)}
           onMouseEnter={prefetchFolder}
         >
-          <div className="flex-shrink-0 w-8 h-8 flex items-center justify-center">
+          <div className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg overflow-hidden">
             {type === "folder"
               ? <FolderSimple size={22} weight="fill" style={{ color: TEAL }} />
-              : <FileIcon mimeType={meta?.mimeType ?? ""} size={22} />
+              : meta?.thumbnail_url 
+                ? <img src={meta.thumbnail_url} alt={name} className="w-full h-full object-cover" />
+                : <FileIcon mimeType={meta?.mimeType ?? ""} size={22} />
             }
           </div>
           <div className="flex-1 min-w-0">
@@ -366,6 +370,7 @@ function GridCard({
     s3_key?: string;
     signed_url?: string | null;
     download_url?: string | null;
+    thumbnail_url?: string | null;
     tags?: { tag: Tag }[];
     onEdit?: () => void;
   };
@@ -417,7 +422,14 @@ function GridCard({
         >
           {type === "folder"
             ? <FolderSimple size={52} weight="fill" style={{ color: TEAL }} />
-            : <FileIcon mimeType={meta?.mimeType ?? ""} size={48} />
+            : meta?.thumbnail_url 
+              ? <img 
+                  src={meta.thumbnail_url} 
+                  alt={name} 
+                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110" 
+                  loading="lazy"
+                />
+              : <FileIcon mimeType={meta?.mimeType ?? ""} size={48} />
           }
         </div>
 
@@ -593,7 +605,7 @@ export function FileGrid({
           {files.length > 0 && (
             <div>
               <p className="px-3 py-1 text-xs text-muted-foreground/60 font-medium">Files</p>
-                {files.map((f: any) => <ListRow key={f.id} id={f.id} name={f.name} type={f.type || "file"} isStarred={f.is_starred} meta={{ mimeType: f.mime_type, size: f.size, date: f.created_at, updated_at: f.updated_at, s3_key: f.s3_key, signed_url: f.signed_url, download_url: f.download_url, tags: f.tags, onEdit: f.onEdit }} {...shared} />)}
+                {files.map((f: any) => <ListRow key={f.id} id={f.id} name={f.name} type={f.type || "file"} isStarred={f.is_starred} meta={{ mimeType: f.mime_type, size: f.size, date: f.created_at, updated_at: f.updated_at, s3_key: f.s3_key, signed_url: f.signed_url, download_url: f.download_url, thumbnail_url: f.thumbnail_url, tags: f.tags, onEdit: f.onEdit }} {...shared} />)}
             </div>
           )}
         </div>
@@ -614,7 +626,7 @@ export function FileGrid({
             <div>
               <p className="text-xs text-muted-foreground/60 font-medium mb-2">Files</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                {files.map((f: any) => <GridCard key={f.id} id={f.id} name={f.name} type={f.type || "file"} isStarred={f.is_starred} meta={{ mimeType: f.mime_type, size: f.size, date: f.created_at, updated_at: f.updated_at, s3_key: f.s3_key, signed_url: f.signed_url, download_url: f.download_url, tags: f.tags, onEdit: f.onEdit }} {...shared} />)}
+                {files.map((f: any) => <GridCard key={f.id} id={f.id} name={f.name} type={f.type || "file"} isStarred={f.is_starred} meta={{ mimeType: f.mime_type, size: f.size, date: f.created_at, updated_at: f.updated_at, s3_key: f.s3_key, signed_url: f.signed_url, download_url: f.download_url, thumbnail_url: f.thumbnail_url, tags: f.tags, onEdit: f.onEdit }} {...shared} />)}
               </div>
             </div>
           )}
