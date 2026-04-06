@@ -65,8 +65,9 @@ export async function createFolderZipStream(folderId: string, folderName: string
   let filesProcessed = 0;
 
   const stream = new PassThrough({ highWaterMark: 1024 * 1024 * 4 }); // 4MB buffer for smoother streaming
-  // 🔥 Optimization: Level 1 compression (Fastest) instead of Level 9
-  const archive = archiver("zip", { zlib: { level: 1 } });
+  // 🔥 Optimization: Use store: true (Level 0) to prevent thread pool exhaustion and CPU spikes.
+  // Most files (images, videos, pdfs) are already compressed anyway.
+  const archive = archiver("zip", { store: true });
 
   archive.on("error", (err) => {
     console.error("[archiver error]", err);
@@ -165,6 +166,11 @@ export async function createFolderZipStream(folderId: string, folderName: string
       console.error("[zip stream error]", err);
       archive.abort();
       stream.destroy(err as any);
+    } finally {
+      // 🧹 Cleanup Realtime channel to prevent WebSocket memory leaks
+      if (channel) {
+        supabase.removeChannel(channel).catch(console.error);
+      }
     }
   })();
 

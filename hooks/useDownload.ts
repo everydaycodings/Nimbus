@@ -92,17 +92,19 @@ export function useDownload() {
               if (status === "SUBSCRIBED" && !triggered) {
                 triggered = true;
                 
-                // Once subscribed, trigger the stream via hidden iframe
+                // Once subscribed, trigger the stream via native anchor link
                 const streamUrl = `/api/download?folderId=${id}&downloadId=${serverDownloadId}`;
-                const iframe = document.createElement("iframe");
-                iframe.style.display = "none";
-                iframe.src = streamUrl;
-                document.body.appendChild(iframe);
+                const a = document.createElement("a");
+                a.style.display = "none";
+                a.href = streamUrl;
+                a.download = folderName + ".zip";
+                document.body.appendChild(a);
+                a.click();
                 
-                // Remove the iframe after a short delay
+                // Remove the anchor after a short delay
                 setTimeout(() => {
-                  if (document.body.contains(iframe)) {
-                    document.body.removeChild(iframe);
+                  if (document.body.contains(a)) {
+                    document.body.removeChild(a);
                   }
                 }, 5000);
               }
@@ -113,21 +115,23 @@ export function useDownload() {
       }
 
       if (url) {
-        // We use a hidden iframe or direct location change for attachment URLs.
-        const iframe = document.createElement("iframe");
-        iframe.style.display = "none";
-        iframe.src = url;
-        document.body.appendChild(iframe);
+        // We use an anchor tag for file downloads.
+        const a = document.createElement("a");
+        a.style.display = "none";
+        a.href = url;
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
         
         if (type === "file" || type === "version") {
           updateZipping(downloadId, { status: "complete", progress: 100 });
           setTimeout(() => removeZipping(downloadId), 5000);
         }
 
-        // Remove the iframe after a short delay
+        // Remove the anchor after a short delay
         setTimeout(() => {
-          if (document.body.contains(iframe)) {
-            document.body.removeChild(iframe);
+          if (document.body.contains(a)) {
+            document.body.removeChild(a);
           }
         }, 3000);
       }
