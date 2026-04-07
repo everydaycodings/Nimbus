@@ -65,6 +65,14 @@ function fmtTime(s: number) {
 // VIDEO PLAYER
 // ═══════════════════════════════════════════════════════════════
 export function VideoPlayer({ src, fileName }: { src: string; fileName: string }) {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 640);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
   const videoRef = useRef<HTMLVideoElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -124,15 +132,25 @@ export function VideoPlayer({ src, fileName }: { src: string; fileName: string }
     updateSeek(e.clientX);
   };
 
+  const onProgressTouchStart = (e: React.TouchEvent) => {
+    setIsDragging(true);
+    updateSeek(e.touches[0].clientX);
+  };
+
   useEffect(() => {
     if (!isDragging) return;
     const handleMouseMove = (e: MouseEvent) => updateSeek(e.clientX);
-    const handleMouseUp = () => setIsDragging(false);
+    const handleTouchMove = (e: TouchEvent) => { e.preventDefault(); updateSeek(e.touches[0].clientX); };
+    const handleEnd = () => setIsDragging(false);
     window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
+    window.addEventListener("mouseup", handleEnd);
+    window.addEventListener("touchmove", handleTouchMove, { passive: false });
+    window.addEventListener("touchend", handleEnd);
     return () => {
       window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("mouseup", handleEnd);
+      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", handleEnd);
     };
   }, [isDragging, updateSeek]);
 
@@ -229,11 +247,12 @@ export function VideoPlayer({ src, fileName }: { src: string; fileName: string }
   return (
     <div
       ref={containerRef}
-      className="relative w-full max-w-5xl bg-black rounded-2xl overflow-hidden group shadow-2xl flex flex-col items-center justify-center select-none"
+      className="relative w-full max-w-5xl bg-black sm:rounded-2xl overflow-hidden group shadow-2xl flex flex-col items-center justify-center select-none"
       onMouseMove={resetHideTimer}
+      onTouchStart={resetHideTimer}
       onMouseLeave={() => playing && !isDragging && setShowCtrls(false)}
       onDoubleClick={toggleFullscreen}
-      style={{ aspectRatio: "16/9" }}
+      style={{ aspectRatio: isMobile ? "auto" : "16/9", maxHeight: isMobile ? "70vh" : undefined }}
     >
       <video
         ref={videoRef}
@@ -294,7 +313,7 @@ export function VideoPlayer({ src, fileName }: { src: string; fileName: string }
       {/* Controls bar */}
       <div
         className={cn(
-          "absolute bottom-0 left-0 right-0 transition-all duration-300 px-6 pb-6 pt-12",
+          "absolute bottom-0 left-0 right-0 transition-all duration-300 px-3 pb-3 pt-10 sm:px-6 sm:pb-6 sm:pt-12",
           showCtrls || !playing || isDragging ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"
         )}
         style={{
@@ -304,8 +323,9 @@ export function VideoPlayer({ src, fileName }: { src: string; fileName: string }
         {/* Progress bar */}
         <div
           ref={progressRef}
-          className="relative h-1.5 rounded-full bg-white/20 cursor-pointer mb-4 group/bar overflow-visible"
+          className="relative h-1.5 sm:h-1.5 rounded-full bg-white/20 cursor-pointer mb-3 sm:mb-4 group/bar overflow-visible touch-none"
           onMouseDown={onProgressMouseDown}
+          onTouchStart={onProgressTouchStart}
         >
           {/* Buffered */}
           <div
@@ -317,42 +337,46 @@ export function VideoPlayer({ src, fileName }: { src: string; fileName: string }
             className="absolute h-full rounded-full"
             style={{ width: `${pct}%`, backgroundColor: TEAL }}
           />
-          {/* Virtual "hit area" for easier scrubbing */}
-          <div className="absolute -inset-y-3 left-0 right-0" />
+          {/* Virtual "hit area" for easier scrubbing — larger on mobile */}
+          <div className="absolute -inset-y-4 sm:-inset-y-3 left-0 right-0" />
           
-          {/* Thumb */}
+          {/* Thumb — always visible on mobile for discoverability */}
           <div
             className={cn(
               "absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-white shadow-xl border-2 transition-transform",
-              isDragging ? "scale-125 select-none" : "scale-100 group-hover/bar:scale-125 opacity-0 group-hover/bar:opacity-100"
+              isDragging ? "scale-125 select-none" : isMobile ? "scale-100" : "scale-100 group-hover/bar:scale-125 opacity-0 group-hover/bar:opacity-100"
             )}
             style={{ left: `${pct}%`, transform: "translate(-50%, -50%)", borderColor: TEAL }}
           />
         </div>
 
         {/* Controls row */}
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <button onClick={() => skip(-10)} className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-all" title="Back 10s">
-              <SkipBack size={20} weight="fill" />
+        <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
+          <div className="flex items-center gap-1 sm:gap-2">
+            <button onClick={() => skip(-10)} className="p-1.5 sm:p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-all" title="Back 10s">
+              <SkipBack size={isMobile ? 16 : 20} weight="fill" />
             </button>
 
-            <button onClick={togglePlay} className="p-2 text-white hover:scale-110 transition-transform bg-white/10 hover:bg-white/20 rounded-full" title={playing ? "Pause" : "Play"}>
-              {playing ? <Pause size={24} weight="fill" /> : <Play size={24} weight="fill" />}
+            <button onClick={togglePlay} className="p-1.5 sm:p-2 text-white hover:scale-110 transition-transform bg-white/10 hover:bg-white/20 rounded-full" title={playing ? "Pause" : "Play"}>
+              {playing ? <Pause size={isMobile ? 20 : 24} weight="fill" /> : <Play size={isMobile ? 20 : 24} weight="fill" />}
             </button>
 
-            <button onClick={() => skip(10)} className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-all" title="Forward 10s">
-              <SkipForward size={20} weight="fill" />
+            <button onClick={() => skip(10)} className="p-1.5 sm:p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-all" title="Forward 10s">
+              <SkipForward size={isMobile ? 16 : 20} weight="fill" />
             </button>
           </div>
 
-          <span className="text-white text-sm font-medium tabular-nums min-w-[100px]">
+          <span className="text-white text-xs sm:text-sm font-medium tabular-nums">
             {fmtTime(current)} <span className="text-white/40 mx-0.5">/</span> {fmtTime(duration)}
           </span>
 
           <div className="flex-1" />
 
-          <div className="flex items-center gap-1 bg-white/5 rounded-2xl px-2 py-1">
+          {/* Volume — mute only on mobile, slider on desktop */}
+          <button onClick={toggleMute} className="p-1.5 sm:p-2 text-white/70 hover:text-white transition-colors sm:hidden" title="Mute">
+            {muted || volume === 0 ? <SpeakerSlash size={18} /> : <SpeakerHigh size={18} />}
+          </button>
+          <div className="hidden sm:flex items-center gap-1 bg-white/5 rounded-2xl px-2 py-1">
             <button onClick={toggleMute} className="p-2 text-white/70 hover:text-white transition-colors">
               {muted || volume === 0 ? <SpeakerSlash size={20} /> : <SpeakerHigh size={20} />}
             </button>
@@ -369,14 +393,14 @@ export function VideoPlayer({ src, fileName }: { src: string; fileName: string }
 
           <button
             onClick={cycleSpeed}
-            className="px-3 py-1 text-white/70 hover:text-white hover:bg-white/10 rounded-xl text-xs font-bold transition-all border border-white/10"
+            className="px-2 py-0.5 sm:px-3 sm:py-1 text-white/70 hover:text-white hover:bg-white/10 rounded-xl text-[10px] sm:text-xs font-bold transition-all border border-white/10"
             title="Playback Speed"
           >
             {playbackRate}x
           </button>
 
-          <button onClick={toggleFullscreen} className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-all" title="Fullscreen (f)">
-            {fullscreen ? <ArrowsIn size={22} /> : <ArrowsOut size={22} />}
+          <button onClick={toggleFullscreen} className="p-1.5 sm:p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-all" title="Fullscreen (f)">
+            {fullscreen ? <ArrowsIn size={isMobile ? 18 : 22} /> : <ArrowsOut size={isMobile ? 18 : 22} />}
           </button>
         </div>
       </div>
@@ -420,15 +444,25 @@ export function AudioPlayer({ src, fileName }: { src: string; fileName: string }
     updateSeek(e.clientX);
   };
 
+  const onProgressTouchStart = (e: React.TouchEvent) => {
+    setIsDragging(true);
+    updateSeek(e.touches[0].clientX);
+  };
+
   useEffect(() => {
     if (!isDragging) return;
     const handleMouseMove = (e: MouseEvent) => updateSeek(e.clientX);
-    const handleMouseUp = () => setIsDragging(false);
+    const handleTouchMove = (e: TouchEvent) => { e.preventDefault(); updateSeek(e.touches[0].clientX); };
+    const handleEnd = () => setIsDragging(false);
     window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
+    window.addEventListener("mouseup", handleEnd);
+    window.addEventListener("touchmove", handleTouchMove, { passive: false });
+    window.addEventListener("touchend", handleEnd);
     return () => {
       window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("mouseup", handleEnd);
+      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", handleEnd);
     };
   }, [isDragging, updateSeek]);
 
@@ -496,14 +530,15 @@ export function AudioPlayer({ src, fileName }: { src: string; fileName: string }
       {/* Progress */}
       <div
         ref={progressRef}
-        className="relative h-1.5 rounded-full bg-muted cursor-pointer mb-2 group overflow-visible"
+        className="relative h-1.5 rounded-full bg-muted cursor-pointer mb-2 group overflow-visible touch-none"
         onMouseDown={onProgressMouseDown}
+        onTouchStart={onProgressTouchStart}
       >
         <div
           className="absolute h-full rounded-full transition-all"
           style={{ width: `${pct}%`, backgroundColor: TEAL }}
         />
-        <div className="absolute -inset-y-3 left-0 right-0" />
+        <div className="absolute -inset-y-4 sm:-inset-y-3 left-0 right-0" />
         <div
           className={cn(
             "absolute top-1/2 w-4 h-4 rounded-full bg-white shadow-xl border-2 transition-transform",
@@ -670,27 +705,27 @@ export function FilePreviewDialog({ fileId, fileName, mimeType, signedUrl, downl
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black/90 backdrop-blur-md">
       {/* ── Top bar ── */}
-      <div className="flex items-center justify-between px-5 py-3 bg-background/80 backdrop-blur-sm border-b border-border flex-shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
+      <div className="flex items-center justify-between px-3 py-2 sm:px-5 sm:py-3 bg-background/80 backdrop-blur-sm border-b border-border flex-shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           {/* File type chip */}
-          <span className="flex-shrink-0 px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wider text-white" style={{ backgroundColor: TEAL }}>
+          <span className="flex-shrink-0 px-1.5 sm:px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wider text-white" style={{ backgroundColor: TEAL }}>
             {fileName.split(".").pop()}
           </span>
-          <p className="text-sm font-medium text-foreground truncate">{fileName}</p>
+          <p className="text-xs sm:text-sm font-medium text-foreground truncate">{fileName}</p>
         </div>
 
-        <div className="flex items-center gap-2 flex-shrink-0 ml-4">
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0 ml-2 sm:ml-4">
           <button
             onClick={() => download(fileId, fileName, "file", downloadUrl)}
             disabled={isDownloading}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium text-white transition-all",
+              "flex items-center gap-1.5 p-2 sm:px-3 sm:py-1.5 rounded-xl text-sm font-medium text-white transition-all",
               isDownloading ? "opacity-50 cursor-not-allowed" : "hover:opacity-90"
             )}
             style={{ backgroundColor: TEAL }}
           >
             <DownloadSimple size={15} weight="bold" />
-            {isDownloading ? "Downloading..." : "Download"}
+            <span className="hidden sm:inline">{isDownloading ? "Downloading..." : "Download"}</span>
           </button>
           <button
             onClick={onClose}
@@ -702,7 +737,7 @@ export function FilePreviewDialog({ fileId, fileName, mimeType, signedUrl, downl
       </div>
 
       {/* ── Preview area ── */}
-      <div className="flex-1 flex items-center justify-center p-6 overflow-hidden min-h-0">
+      <div className="flex-1 flex items-center justify-center p-2 sm:p-6 overflow-hidden min-h-0">
         {loading ? (
           <div className="flex flex-col items-center gap-3">
             <div className="w-12 h-12 rounded-xl bg-muted animate-pulse" />
