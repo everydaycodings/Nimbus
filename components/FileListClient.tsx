@@ -1,7 +1,8 @@
 // components/FileListClient.tsx
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useTransition, useRef } from "react";
+import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { FolderPlus, CloudArrowUp } from "@phosphor-icons/react";
 import { FileGrid } from "@/components/FileGrid";
@@ -21,6 +22,22 @@ const TEAL = "#2da07a";
 
 export function FileListClient({ initialData }: { initialData?: any }) {
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const toastIdRef = useRef<string | number | null>(null);
+
+  useEffect(() => {
+    if (isPending) {
+      if (!toastIdRef.current) {
+        toastIdRef.current = toast.loading("Opening folder...");
+      }
+    } else {
+      if (toastIdRef.current) {
+        toast.dismiss(toastIdRef.current);
+        toastIdRef.current = null;
+      }
+    }
+  }, [isPending]);
+
   const [currentFolder, setCurrentFolder] = useState<string | null>(null);
   const [breadcrumbs, setBreadcrumbs] = useState<{ id: string; name: string }[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -198,7 +215,9 @@ export function FileListClient({ initialData }: { initialData?: any }) {
     const pathIds = newPath.map((c) => c.id).join(",");
     const pathNames = newPath.map((c) => encodeURIComponent(c.name)).join(",");
 
-    router.push(`/dashboard/files?path=${pathIds}&names=${pathNames}`);
+    startTransition(() => {
+      router.push(`/dashboard/files?path=${pathIds}&names=${pathNames}`);
+    });
   };
 
   const navigateToBreadcrumb = (index: number) => {
@@ -207,11 +226,15 @@ export function FileListClient({ initialData }: { initialData?: any }) {
     const pathIds = newCrumbs.map((c) => c.id).join(",");
     const pathNames = newCrumbs.map((c) => encodeURIComponent(c.name)).join(",");
 
-    router.push(`/dashboard/files?path=${pathIds}&names=${pathNames}`);
+    startTransition(() => {
+      router.push(`/dashboard/files?path=${pathIds}&names=${pathNames}`);
+    });
   };
 
   const navigateToRoot = () => {
-    router.push("/dashboard/files");
+    startTransition(() => {
+      router.push("/dashboard/files");
+    });
   };
 
   return (
