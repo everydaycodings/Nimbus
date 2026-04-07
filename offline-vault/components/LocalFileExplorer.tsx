@@ -1,7 +1,8 @@
 // offline-vault/components/LocalFileExplorer.tsx
 "use client";
 
-import { useState, useRef, useMemo, useEffect } from "react";
+import { useState, useRef, useMemo, useEffect, useTransition } from "react";
+import { toast } from "sonner";
 import {
   FileArrowDown,
   Trash,
@@ -114,6 +115,27 @@ export default function LocalFileExplorer() {
   } = useOfflineVault();
 
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const toastIdRef = useRef<string | number | null>(null);
+
+  useEffect(() => {
+    if (isPending) {
+      if (!toastIdRef.current) {
+        toastIdRef.current = toast.loading("Opening folder...");
+      }
+    } else {
+      if (toastIdRef.current) {
+        toast.dismiss(toastIdRef.current);
+        toastIdRef.current = null;
+      }
+    }
+  }, [isPending]);
+
+  const navigateToFolder = (id: string | null) => {
+    startTransition(() => {
+      setCurrentFolderId(id);
+    });
+  };
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [previewing, setPreviewing] = useState<{
     objectUrl: string | null;
@@ -241,7 +263,7 @@ export default function LocalFileExplorer() {
       </div>
 
       {/* ── Breadcrumbs ── */}
-      <Breadcrumbs currentFolderId={currentFolderId} setCurrentFolderId={setCurrentFolderId} />
+      <Breadcrumbs currentFolderId={currentFolderId} setCurrentFolderId={navigateToFolder} />
 
       <div className="flex flex-col gap-4 mb-4">
         {/* Row 1: Filters */}
@@ -315,7 +337,7 @@ export default function LocalFileExplorer() {
                       <div
                         key={folder.id}
                         className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-accent transition-colors cursor-pointer select-none"
-                        onDoubleClick={() => setCurrentFolderId(folder.id)}
+                        onDoubleClick={() => navigateToFolder(folder.id)}
                       >
                         <FolderSimple size={18} weight="fill" style={{ color: TEAL }} />
                         <div className="flex-1 min-w-0">
@@ -397,7 +419,7 @@ export default function LocalFileExplorer() {
                 {filteredFolders.map((folder) => (
                   <div
                     key={folder.id}
-                    onDoubleClick={() => setCurrentFolderId(folder.id)}
+                    onDoubleClick={() => navigateToFolder(folder.id)}
                     className="group cursor-pointer rounded-2xl border border-border bg-card hover:shadow-md hover:border-[#2da07a]/30 transition-all select-none overflow-hidden"
                   >
                     <div

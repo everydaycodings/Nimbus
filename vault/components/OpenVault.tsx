@@ -358,6 +358,22 @@ export function OpenVault({
   onRefreshVaults: () => void;
 }) {
   const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([]);
+  const [isPending, startTransition] = useTransition();
+  const toastIdRef = useRef<string | number | null>(null);
+
+  useEffect(() => {
+    if (isPending) {
+      if (!toastIdRef.current) {
+        toastIdRef.current = toast.loading("Opening folder...");
+      }
+    } else {
+      if (toastIdRef.current) {
+        toast.dismiss(toastIdRef.current);
+        toastIdRef.current = null;
+      }
+    }
+  }, [isPending]);
+
   const [isDragging, setIsDragging] = useState(false);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [showCreateFolder, setShowCreateFolder] = useState(false);
@@ -519,20 +535,26 @@ export function OpenVault({
   });
 
   // ── Navigation ───────────────────────────────────────────────
-  const openFolder = async (folder: VaultFolder) => {
-    setBreadcrumbs((prev) => [...prev, { id: folder.id, name: folder.name }]);
-    setCurrentFolderId(folder.id);
+  const openFolder = (folder: VaultFolder) => {
+    startTransition(() => {
+      setBreadcrumbs((prev) => [...prev, { id: folder.id, name: folder.name }]);
+      setCurrentFolderId(folder.id);
+    });
   };
 
   const navigateToRoot = () => {
-    setBreadcrumbs([]);
-    setCurrentFolderId(null);
+    startTransition(() => {
+      setBreadcrumbs([]);
+      setCurrentFolderId(null);
+    });
   };
 
   const navigateToBreadcrumb = (index: number) => {
     const crumb = breadcrumbs[index];
-    setBreadcrumbs((prev) => prev.slice(0, index + 1));
-    setCurrentFolderId(crumb.id);
+    startTransition(() => {
+      setBreadcrumbs((prev) => prev.slice(0, index + 1));
+      setCurrentFolderId(crumb.id);
+    });
   };
 
   // ── Actions ──────────────────────────────────────────────────
