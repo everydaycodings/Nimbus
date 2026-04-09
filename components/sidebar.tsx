@@ -172,6 +172,21 @@ export function Sidebar({ storageLimit }: SidebarProps) {
         ]}
       />
 
+      {/* ── Demo Info ── */}
+      {open && (
+        <div className="mt-auto px-3 mb-4">
+          <div className="rounded-xl p-3 bg-accent/30 border border-border/50">
+            <div className="flex items-center gap-2 mb-1.5 text-foreground/80">
+              <Info size={16} weight="fill" style={{ color: TEAL }} />
+              <span className="text-[11px] font-bold uppercase tracking-wider">Demo Instance</span>
+            </div>
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              This is a demo version. You can clone the project and run it on your own system to create a fully private and secure storage drive.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ── Collapse Button ── */}
       <button
         onClick={() => setOpen(!open)}
@@ -304,6 +319,19 @@ export function MobileSidebar({ storageLimit }: SidebarProps) {
             { label: "Other", size: stats?.other ?? 0, color: "#ef4444" },
           ]}
         />
+
+        {/* Demo Info */}
+        <div className="mt-auto px-3 mb-6">
+          <div className="rounded-xl p-3 bg-accent/30 border border-border/50">
+            <div className="flex items-center gap-2 mb-1.5 text-foreground/80">
+              <Info size={16} weight="fill" style={{ color: TEAL }} />
+              <span className="text-[11px] font-bold uppercase tracking-wider">Demo Instance</span>
+            </div>
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              This is a test deployment. You can clone this project to your own infrastructure for a fully private and encrypted storage drive.
+            </p>
+          </div>
+        </div>
       </SheetContent>
     </Sheet>
   );
