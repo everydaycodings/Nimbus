@@ -17,6 +17,7 @@ import {
   ShareNetworkIcon,
   CloudIcon,
   Info,
+  X,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { UploadZone } from "@/components/UploadZone";
@@ -59,8 +60,19 @@ interface SidebarProps {
 
 export function Sidebar({ storageLimit }: SidebarProps) {
   const [open, setOpen] = useState(true);
+  const [showDemoNotice, setShowDemoNotice] = useState(true);
   const pathname = usePathname();
   const router = useRouter();
+
+  useEffect(() => {
+    const isDismissed = localStorage.getItem("nimbus_demo_dismissed");
+    if (isDismissed) setShowDemoNotice(false);
+  }, []);
+
+  const dismissNotice = () => {
+    setShowDemoNotice(false);
+    localStorage.setItem("nimbus_demo_dismissed", "true");
+  };
 
   const { data: stats, isLoading } = useStorageStatsQuery();
 
@@ -173,9 +185,15 @@ export function Sidebar({ storageLimit }: SidebarProps) {
       />
 
       {/* ── Demo Info ── */}
-      {open && (
+      {open && showDemoNotice && (
         <div className="mt-auto px-3 mb-4">
-          <div className="rounded-xl p-3 bg-accent/30 border border-border/50">
+          <div className="group/demo relative rounded-xl p-3 bg-accent/30 border border-border/50">
+            <button 
+              onClick={dismissNotice}
+              className="absolute top-2 right-2 p-1 rounded-md hover:bg-accent/50 text-muted-foreground/0 group-hover/demo:text-muted-foreground transition-all duration-200"
+            >
+              <X size={12} weight="bold" />
+            </button>
             <div className="flex items-center gap-2 mb-1.5 text-foreground/80">
               <Info size={16} weight="fill" style={{ color: TEAL }} />
               <span className="text-[11px] font-bold uppercase tracking-wider">Demo Instance</span>
@@ -221,8 +239,19 @@ export function Sidebar({ storageLimit }: SidebarProps) {
 // ═══════════════════════════════════════════════════════════════
 export function MobileSidebar({ storageLimit }: SidebarProps) {
   const { isOpen, close } = useMobileSidebar();
+  const [showDemoNotice, setShowDemoNotice] = useState(true);
   const pathname = usePathname();
   const router = useRouter();
+
+  useEffect(() => {
+    const isDismissed = localStorage.getItem("nimbus_demo_dismissed");
+    if (isDismissed) setShowDemoNotice(false);
+  }, []);
+
+  const dismissNotice = () => {
+    setShowDemoNotice(false);
+    localStorage.setItem("nimbus_demo_dismissed", "true");
+  };
 
   const { data: stats } = useStorageStatsQuery();
   const used = (stats?.image ?? 0) + (stats?.video ?? 0) + (stats?.document ?? 0) + (stats?.other ?? 0);
@@ -321,17 +350,25 @@ export function MobileSidebar({ storageLimit }: SidebarProps) {
         />
 
         {/* Demo Info */}
-        <div className="mt-auto px-3 mb-6">
-          <div className="rounded-xl p-3 bg-accent/30 border border-border/50">
-            <div className="flex items-center gap-2 mb-1.5 text-foreground/80">
-              <Info size={16} weight="fill" style={{ color: TEAL }} />
-              <span className="text-[11px] font-bold uppercase tracking-wider">Demo Instance</span>
+        {showDemoNotice && (
+          <div className="mt-auto px-3 mb-6">
+            <div className="group/demo relative rounded-xl p-3 bg-accent/30 border border-border/50">
+              <button 
+                onClick={dismissNotice}
+                className="absolute top-2 right-2 p-1 rounded-md hover:bg-accent/50 text-muted-foreground/50 hover:text-foreground transition-all duration-200"
+              >
+                <X size={12} weight="bold" />
+              </button>
+              <div className="flex items-center gap-2 mb-1.5 text-foreground/80">
+                <Info size={16} weight="fill" style={{ color: TEAL }} />
+                <span className="text-[11px] font-bold uppercase tracking-wider">Demo Instance</span>
+              </div>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                This is a test deployment. You can clone this project to your own infrastructure for a fully private and encrypted storage drive.
+              </p>
             </div>
-            <p className="text-[11px] leading-relaxed text-muted-foreground">
-              This is a test deployment. You can clone this project to your own infrastructure for a fully private and encrypted storage drive.
-            </p>
           </div>
-        </div>
+        )}
       </SheetContent>
     </Sheet>
   );
