@@ -152,14 +152,19 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
     if (!email.trim()) return;
     startTransition(async () => {
       try {
-        await shareWithUser(resourceId, resourceType, email.trim(), role);
+        const result = await shareWithUser(resourceId, resourceType, email.trim(), role);
+        if (!result.success) {
+          toast.error(result.error || "Failed to share");
+          return;
+        }
+
         toast.success(`Shared with ${email.trim()}`);
         setEmail("");
         const updated = await getSharedUsers(resourceId, resourceType);
         setSharedUsers(normalizeSharedUsers(updated));
         queryClient.invalidateQueries({ queryKey: queryKeys.sharing() });
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to share");
+        toast.error("An unexpected error occurred");
       }
     });
   };
@@ -167,12 +172,17 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
   const handleRemoveUser = (targetUserId: string) => {
     startTransition(async () => {
       try {
-        await removePermission(resourceId, resourceType, targetUserId);
+        const result = await removePermission(resourceId, resourceType, targetUserId);
+        if (!result.success) {
+          toast.error(result.error || "Failed to remove user");
+          return;
+        }
+
         toast.success("User removed from share list");
         setSharedUsers((prev) => prev.filter((u) => u.user_id !== targetUserId));
         queryClient.invalidateQueries({ queryKey: queryKeys.sharing() });
       } catch(err) {
-        toast.error("Failed to remove user");
+        toast.error("An unexpected error occurred");
       }
     });
   };
@@ -189,7 +199,7 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
 
         const password = passwordProtect && linkPassword.trim() ? linkPassword.trim() : undefined;
 
-        const link = await createShareLink(
+        const result = await createShareLink(
           resourceId,
           resourceType,
           linkRole,
@@ -200,22 +210,36 @@ export function ShareDialog({ resourceId, resourceName, resourceType, onClose }:
           canDownload,
           gracePeriodMs
         );
-        setShareLinks((prev) => [link, ...prev]);
+
+        if (!result.success || !result.data) {
+          toast.error(result.error || "Failed to create link");
+          return;
+        }
+
+        setShareLinks((prev) => [result.data!, ...prev]);
         // Reset password fields after creation
         setPasswordProtect(false);
         setLinkPassword("");
         queryClient.invalidateQueries({ queryKey: queryKeys.sharing() });
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to create link");
+        toast.error("An unexpected error occurred");
       }
     });
   };
 
   const handleDeleteLink = (linkId: string) => {
     startTransition(async () => {
-      await deleteShareLink(linkId);
-      setShareLinks((prev) => prev.filter((l) => l.id !== linkId));
-      queryClient.invalidateQueries({ queryKey: queryKeys.sharing() });
+      try {
+        const result = await deleteShareLink(linkId);
+        if (!result.success) {
+          toast.error(result.error || "Failed to delete link");
+          return;
+        }
+        setShareLinks((prev) => prev.filter((l) => l.id !== linkId));
+        queryClient.invalidateQueries({ queryKey: queryKeys.sharing() });
+      } catch (err) {
+        toast.error("An unexpected error occurred");
+      }
     });
   };
 

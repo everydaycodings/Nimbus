@@ -28,52 +28,62 @@ export async function shareWithUser(
   email:        string,
   role:         "viewer" | "editor"
 ) {
-  const supabaseServer = await createSupabaseClient();
-  const authUserResponse = await supabaseServer.auth.getUser();
-  const authUser = authUserResponse.data.user;
-  const userId = authUser?.id;
-  if (!userId) throw new Error("Unauthorized");
+  try {
+    const supabaseServer = await createSupabaseClient();
+    const authUserResponse = await supabaseServer.auth.getUser();
+    const authUser = authUserResponse.data.user;
+    const userId = authUser?.id;
+    if (!userId) return { success: false, error: "Unauthorized" };
 
-  const owner = await getUser(userId);
-  if (!owner) throw new Error("User not found");
+    const owner = await getUser(userId);
+    if (!owner) return { success: false, error: "User not found" };
 
-  // Verify the resource belongs to this user
-  const table = resourceType === "file" ? "files" : "folders";
-  const { data: resource } = await supabase
-    .from(table)
-    .select("id")
-    .eq("id", resourceId)
-    .eq("owner_id", owner.id)
-    .single();
+    // Verify the resource belongs to this user
+    const table = resourceType === "file" ? "files" : "folders";
+    const { data: resource } = await supabase
+      .from(table)
+      .select("id")
+      .eq("id", resourceId)
+      .eq("owner_id", owner.id)
+      .single();
 
-  if (!resource) throw new Error("Resource not found or access denied");
+    if (!resource) return { success: false, error: "Resource not found or access denied" };
 
-  // Find the target user by email
-  const { data: target } = await supabase
-    .from("users")
-    .select("id, email")
-    .eq("email", email.toLowerCase().trim())
-    .single();
+    // Find the target user by email
+    const { data: target, error: targetError } = await supabase
+      .from("users")
+      .select("id, email")
+      .eq("email", email.toLowerCase().trim())
+      .single();
 
-  if (!target) throw new Error("No Nimbus account found with that email address");
-  if (target.id === owner.id) throw new Error("You cannot share with yourself");
+    if (targetError || !target) {
+      return { success: false, error: "No Nimbus account found with that email address" };
+    }
 
-  // Upsert permission — update role if already shared
-  const { error } = await supabase
-    .from("permissions")
-    .upsert(
-      {
-        resource_id:   resourceId,
-        resource_type: resourceType,
-        user_id:       target.id,
-        role,
-      },
-      { onConflict: "resource_id,resource_type,user_id" }
-    );
+    if (target.id === owner.id) {
+      return { success: false, error: "You cannot share with yourself" };
+    }
 
-  if (error) throw new Error(error.message);
+    // Upsert permission — update role if already shared
+    const { error: upsertError } = await supabase
+      .from("permissions")
+      .upsert(
+        {
+          resource_id:   resourceId,
+          resource_type: resourceType,
+          user_id:       target.id,
+          role,
+        },
+        { onConflict: "resource_id,resource_type,user_id" }
+      );
 
-  return { email: target.email, role };
+    if (upsertError) return { success: false, error: upsertError.message };
+
+    return { success: true, data: { email: target.email, role } };
+  } catch (err: any) {
+    console.error("Error in shareWithUser:", err);
+    return { success: false, error: "An unexpected error occurred" };
+  }
 }
 
 // ── Remove a user's permission ────────────────────────────────
@@ -82,33 +92,39 @@ export async function removePermission(
   resourceType: "file" | "folder",
   targetUserId: string
 ) {
-  const supabaseServer = await createSupabaseClient();
-  const authUserResponse = await supabaseServer.auth.getUser();
-  const authUser = authUserResponse.data.user;
-  const userId = authUser?.id;
-  if (!userId) throw new Error("Unauthorized");
+  try {
+    const supabaseServer = await createSupabaseClient();
+    const authUserResponse = await supabaseServer.auth.getUser();
+    const authUser = authUserResponse.data.user;
+    const userId = authUser?.id;
+    if (!userId) return { success: false, error: "Unauthorized" };
 
-  const owner = await getUser(userId);
-  if (!owner) throw new Error("User not found");
+    const owner = await getUser(userId);
+    if (!owner) return { success: false, error: "User not found" };
 
-  const table = resourceType === "file" ? "files" : "folders";
-  const { data: resource } = await supabase
-    .from(table)
-    .select("id")
-    .eq("id", resourceId)
-    .eq("owner_id", owner.id)
-    .single();
+    const table = resourceType === "file" ? "files" : "folders";
+    const { data: resource } = await supabase
+      .from(table)
+      .select("id")
+      .eq("id", resourceId)
+      .eq("owner_id", owner.id)
+      .single();
 
-  if (!resource) throw new Error("Resource not found or access denied");
+    if (!resource) return { success: false, error: "Resource not found or access denied" };
 
-  const { error } = await supabase
-    .from("permissions")
-    .delete()
-    .eq("resource_id", resourceId)
-    .eq("resource_type", resourceType)
-    .eq("user_id", targetUserId);
+    const { error } = await supabase
+      .from("permissions")
+      .delete()
+      .eq("resource_id", resourceId)
+      .eq("resource_type", resourceType)
+      .eq("user_id", targetUserId);
 
-  if (error) throw new Error(error.message);
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err: any) {
+    console.error("Error in removePermission:", err);
+    return { success: false, error: "An unexpected error occurred" };
+  }
 }
 
 // ── Update a user's role ──────────────────────────────────────
@@ -118,23 +134,29 @@ export async function updatePermissionRole(
   targetUserId: string,
   role:         "viewer" | "editor"
 ) {
-  const supabaseServer = await createSupabaseClient();
-  const authUserResponse = await supabaseServer.auth.getUser();
-  const authUser = authUserResponse.data.user;
-  const userId = authUser?.id;
-  if (!userId) throw new Error("Unauthorized");
+  try {
+    const supabaseServer = await createSupabaseClient();
+    const authUserResponse = await supabaseServer.auth.getUser();
+    const authUser = authUserResponse.data.user;
+    const userId = authUser?.id;
+    if (!userId) return { success: false, error: "Unauthorized" };
 
-  const owner = await getUser(userId);
-  if (!owner) throw new Error("User not found");
+    const owner = await getUser(userId);
+    if (!owner) return { success: false, error: "User not found" };
 
-  const { error } = await supabase
-    .from("permissions")
-    .update({ role })
-    .eq("resource_id", resourceId)
-    .eq("resource_type", resourceType)
-    .eq("user_id", targetUserId);
+    const { error } = await supabase
+      .from("permissions")
+      .update({ role })
+      .eq("resource_id", resourceId)
+      .eq("resource_type", resourceType)
+      .eq("user_id", targetUserId);
 
-  if (error) throw new Error(error.message);
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err: any) {
+    console.error("Error in updatePermissionRole:", err);
+    return { success: false, error: "An unexpected error occurred" };
+  }
 }
 
 // ── Get all people a resource is shared with ─────────────────
@@ -173,58 +195,66 @@ export async function createShareLink(
   canDownload:   boolean = false,
   gracePeriodMs: number = 600000 // 10 minutes default
 ) {
-  const supabaseServer = await createSupabaseClient();
-  const authUserResponse = await supabaseServer.auth.getUser();
-  const authUser = authUserResponse.data.user;
-  const userId = authUser?.id;
-  if (!userId) throw new Error("Unauthorized");
+  try {
+    const supabaseServer = await createSupabaseClient();
+    const authUserResponse = await supabaseServer.auth.getUser();
+    const authUser = authUserResponse.data.user;
+    const userId = authUser?.id;
+    if (!userId) return { success: false, error: "Unauthorized" };
 
-  const owner = await getUser(userId);
-  if (!owner) throw new Error("User not found");
+    const owner = await getUser(userId);
+    if (!owner) return { success: false, error: "User not found" };
 
-  const table = resourceType === "file" ? "files" : "folders";
-  const { data: resource } = await supabase
-    .from(table)
-    .select("id")
-    .eq("id", resourceId)
-    .eq("owner_id", owner.id)
-    .single();
+    const table = resourceType === "file" ? "files" : "folders";
+    const { data: resource } = await supabase
+      .from(table)
+      .select("id")
+      .eq("id", resourceId)
+      .eq("owner_id", owner.id)
+      .single();
 
-  if (!resource) throw new Error("Resource not found or access denied");
+    if (!resource) return { success: false, error: "Resource not found or access denied" };
 
-  const expiresAt = expiresInDays
-    ? new Date(Date.now() + expiresInDays * 86400000).toISOString()
-    : null;
+    const expiresAt = expiresInDays
+      ? new Date(Date.now() + expiresInDays * 86400000).toISOString()
+      : null;
 
-  const passwordHash = password && password.trim()
-    ? await bcrypt.hash(password.trim(), 10)
-    : null;
+    const passwordHash = password && password.trim()
+      ? await bcrypt.hash(password.trim(), 10)
+      : null;
 
-  const { data, error } = await supabase
-    .from("share_links")
-    .insert({
-      resource_id:          resourceId,
-      resource_type:        resourceType,
-      owner_id:             owner.id,
-      role,
-      expires_at:           expiresAt,
-      password_hash:        passwordHash,
-      max_views:            (maxViews && maxViews > 0) ? maxViews : null,
-      self_destruct_target: selfDestructTarget,
-      can_download:         canDownload,
-      grace_period_ms:      gracePeriodMs,
-    })
-    .select()
-    .single();
+    const { data, error } = await supabase
+      .from("share_links")
+      .insert({
+        resource_id:          resourceId,
+        resource_type:        resourceType,
+        owner_id:             owner.id,
+        role,
+        expires_at:           expiresAt,
+        password_hash:        passwordHash,
+        max_views:            (maxViews && maxViews > 0) ? maxViews : null,
+        self_destruct_target: selfDestructTarget,
+        can_download:         canDownload,
+        grace_period_ms:      gracePeriodMs,
+      })
+      .select()
+      .single();
 
-  if (error) throw new Error(error.message);
+    if (error) return { success: false, error: error.message };
 
-  // Return a safe version — never expose the hash to the client
-  return {
-    ...data,
-    is_password_protected: !!data.password_hash,
-    password_hash: undefined,
-  };
+    // Return a safe version — never expose the hash to the client
+    return {
+      success: true,
+      data: {
+        ...data,
+        is_password_protected: !!data.password_hash,
+        password_hash: undefined,
+      }
+    };
+  } catch (err: any) {
+    console.error("Error in createShareLink:", err);
+    return { success: false, error: "An unexpected error occurred" };
+  }
 }
 
 // ── Get existing share links for a resource ───────────────────
@@ -261,22 +291,28 @@ export async function getShareLinks(
 
 // ── Delete a share link ───────────────────────────────────────
 export async function deleteShareLink(linkId: string) {
-  const supabaseServer = await createSupabaseClient();
-  const authUserResponse = await supabaseServer.auth.getUser();
-  const authUser = authUserResponse.data.user;
-  const userId = authUser?.id;
-  if (!userId) throw new Error("Unauthorized");
+  try {
+    const supabaseServer = await createSupabaseClient();
+    const authUserResponse = await supabaseServer.auth.getUser();
+    const authUser = authUserResponse.data.user;
+    const userId = authUser?.id;
+    if (!userId) return { success: false, error: "Unauthorized" };
 
-  const owner = await getUser(userId);
-  if (!owner) throw new Error("User not found");
+    const owner = await getUser(userId);
+    if (!owner) return { success: false, error: "User not found" };
 
-  const { error } = await supabase
-    .from("share_links")
-    .delete()
-    .eq("id", linkId)
-    .eq("owner_id", owner.id);
+    const { error } = await supabase
+      .from("share_links")
+      .delete()
+      .eq("id", linkId)
+      .eq("owner_id", owner.id);
 
-  if (error) throw new Error(error.message);
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err: any) {
+    console.error("Error in deleteShareLink:", err);
+    return { success: false, error: "An unexpected error occurred" };
+  }
 }
 
 // ── Record a view check (Bot safe - doesn't increment yet) ───
