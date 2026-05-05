@@ -26,7 +26,6 @@ export default async function FilesPage(props: {
   })();
 
   const queryOptions = {
-    page: Number(searchParams?.page || 1),
     query: searchParams?.query ? String(searchParams.query) : undefined,
     type: searchParams?.type ? String(searchParams.type) : undefined,
     sortBy: searchParams?.sortBy ? String(searchParams.sortBy) : undefined,

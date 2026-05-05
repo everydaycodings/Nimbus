@@ -15,9 +15,10 @@ import { ActionsDropdown } from "@/components/UploadDropdown";
 import { NoteEditorDialog } from "@/components/NoteEditorDialog";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FileFilters } from "@/components/FileFilters";
-import { useFilesQuery } from "@/hooks/queries/useFilesQuery";
+import { useInfiniteFilesQuery } from "@/hooks/queries/useInfiniteFilesQuery";
 import { DuplicateUploadDialog } from "@/components/DuplicateUploadDialog";
 import { checkFilesExist } from "@/actions/files";
+import { InfiniteScrollTrigger } from "@/components/InfiniteScrollTrigger";
 
 const TEAL = "#2da07a";
 
@@ -55,10 +56,18 @@ export default function HomePage() {
     tagId,
   };
 
-  const { data, isLoading: loading, refetch: refresh } = useFilesQuery(null, queryOptions);
+  const {
+    data,
+    isLoading: loading,
+    refetch: refresh,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteFilesQuery(null, queryOptions);
 
-  const files = (data?.files ?? []) as any[];
-  const folders = (data?.folders ?? []) as any[];
+  const pages = data?.pages ?? [];
+  const files = pages.flatMap((page) => (page?.files ?? []) as any[]);
+  const folders = (((pages[0] as any)?.folders ?? []) as any[]);
 
   const { upload, uploadMany, cancelUpload } = useUpload({
     parentFolderId: undefined,
@@ -130,6 +139,12 @@ export default function HomePage() {
     ...f,
     onEdit: () => handleEditNote(f),
   }));
+
+  const loadMore = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
   // ── Drag and drop ─────────────────────────────────────────
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
@@ -241,14 +256,21 @@ export default function HomePage() {
           </div>
         </div>
       ) : (
-        <FileGrid
-          files={enhancedFiles}
-          folders={folders}
-          onFolderOpen={(id) => {
-            router.push(`/dashboard/files?folder=${id}`);
-          }}
-          onRefresh={refresh}
-        />
+        <>
+          <FileGrid
+            files={enhancedFiles}
+            folders={folders}
+            onFolderOpen={(id) => {
+              router.push(`/dashboard/files?folder=${id}`);
+            }}
+            onRefresh={refresh}
+          />
+          <InfiniteScrollTrigger
+            hasMore={!!hasNextPage}
+            isLoading={isFetchingNextPage}
+            onLoadMore={loadMore}
+          />
+        </>
       )}
 
       {/* ── Dialogs ── */}

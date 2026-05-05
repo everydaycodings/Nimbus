@@ -6,6 +6,12 @@ import { getRecentFiles } from "@/actions/files";
 import { queryKeys } from "@/lib/query-keys";
 
 interface RecentQueryOptions {
+  page?: number;
+  type?: string;
+  sortBy?: string;
+  sortOrder?: string;
+  minSize?: number;
+  maxSize?: number;
   tagId?: string;
 }
 

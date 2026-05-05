@@ -14,9 +14,10 @@ import { FileFilters } from "./FileFilters";
 import { NoteEditorDialog } from "./NoteEditorDialog";
 import { useSearchParams } from "next/navigation";
 import { useEffect } from "react";
-import { useFilesQuery } from "@/hooks/queries/useFilesQuery";
+import { useInfiniteFilesQuery } from "@/hooks/queries/useInfiniteFilesQuery";
 import { DuplicateUploadDialog } from "./DuplicateUploadDialog";
 import { checkFilesExist } from "@/actions/files";
+import { InfiniteScrollTrigger } from "@/components/InfiniteScrollTrigger";
 
 const TEAL = "#2da07a";
 
@@ -62,7 +63,6 @@ export function FileListClient({ initialData }: { initialData?: any }) {
   const sortOrder = searchParams.get("sortOrder");
   const minSize = searchParams.get("minSize") ? Number(searchParams.get("minSize")) : undefined;
   const maxSize = searchParams.get("maxSize") ? Number(searchParams.get("maxSize")) : undefined;
-  const page = Number(searchParams.get("page") || 1);
   const tagId = searchParams.get("tagId") || undefined;
 
   // Parse path/names from URL for breadcrumbs
@@ -102,7 +102,6 @@ export function FileListClient({ initialData }: { initialData?: any }) {
   }, [pathParam, namesParam, folderParam, folderNameParam]);
 
   const queryOptions = {
-    page,
     query: query || undefined,
     type: type || undefined,
     sortBy: sortBy || undefined,
@@ -112,10 +111,23 @@ export function FileListClient({ initialData }: { initialData?: any }) {
     tagId,
   };
 
-  const { data, refetch: refresh } = useFilesQuery(activeFolderId, queryOptions, initialData);
+  const {
+    data,
+    refetch: refresh,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteFilesQuery(activeFolderId, queryOptions, initialData);
 
-  const files = (data?.files ?? []) as any[];
-  const folders = (query && !tagId) ? [] : ((data?.folders ?? []) as any[]);
+  const pages = data?.pages ?? [];
+  const files = pages.flatMap((page) => (page?.files ?? []) as any[]);
+  const folders = (query && !tagId) ? [] : (((pages[0] as any)?.folders ?? []) as any[]);
+
+  const loadMore = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
   const { upload, uploadMany } = useUpload({
     parentFolderId: currentFolder ?? undefined,
@@ -340,6 +352,12 @@ export function FileListClient({ initialData }: { initialData?: any }) {
         folders={folders}
         onFolderOpen={openFolder}
         onRefresh={refresh}
+      />
+
+      <InfiniteScrollTrigger
+        hasMore={!!hasNextPage}
+        isLoading={isFetchingNextPage}
+        onLoadMore={loadMore}
       />
     </div>
   );

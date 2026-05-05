@@ -59,6 +59,7 @@ export function FileFilters({ className = "mb-6" }: { className?: string }) {
 
   const updateParams = (updates: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParams.toString());
+    params.delete("page");
     Object.entries(updates).forEach(([key, value]) => {
       if (value === null || value === "all" || (key === "sortOrder" && value === "desc" && currentSortBy === "created_at")) {
         params.delete(key);

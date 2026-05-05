@@ -87,7 +87,7 @@ export async function getFiles(
 
   let fileQuery = supabase
     .from("files")
-    .select(fileSelect)
+    .select(fileSelect, { count: "exact" })
     .eq("owner_id", userId)
     .eq("is_trashed", false)
     .eq("upload_status", "complete");
@@ -139,11 +139,18 @@ export async function getFiles(
 
   // ── SIGN FILES FOR INSTANT ACCESS ───────────
   const signedFiles = await signFiles((filesResult.data as any[]) ?? []);
+  const totalFiles = filesResult.count ?? signedFiles.length;
 
   return {
     folders: foldersResult.data ?? [],
     files: signedFiles,
     user: userResult,
+    pagination: {
+      page,
+      pageSize: PAGE_SIZE,
+      totalFiles,
+      totalPages: Math.max(1, Math.ceil(totalFiles / PAGE_SIZE)),
+    },
   };
 }
 
@@ -335,12 +342,25 @@ export async function renameItem(
   if (error) throw new Error(error.message);
 }
 
-// ── Fetch 20 most recently uploaded files ─────────────────────
-export async function getRecentFiles(options?: { tagId?: string }) {
+// ── Fetch recently uploaded files ─────────────────────────────
+export async function getRecentFiles(options?: {
+  page?: number;
+  type?: string;
+  sortBy?: string;
+  sortOrder?: string;
+  minSize?: number;
+  maxSize?: number;
+  tagId?: string;
+}) {
   const supabaseServer = await createSupabaseClient();
   const { data: { user: authUser } } = await supabaseServer.auth.getUser();
   const userId = authUser?.id;
   if (!userId) throw new Error("Unauthorized");
+
+  const page = options?.page ?? 1;
+  const PAGE_SIZE = 20;
+  const from = (page - 1) * PAGE_SIZE;
+  const to = from + PAGE_SIZE - 1;
 
   const select = options?.tagId
     ? "id, name, mime_type, size, created_at, updated_at, is_starred, s3_key, thumbnail_key, parent_folder_id, tags:file_tags!inner(tag:tags(id, name, color))"
@@ -348,7 +368,7 @@ export async function getRecentFiles(options?: { tagId?: string }) {
 
   let query = supabase
     .from("files")
-    .select(select)
+    .select(select, { count: "exact" })
     .eq("owner_id", userId)
     .eq("is_trashed", false)
     .eq("upload_status", "complete");
@@ -357,14 +377,43 @@ export async function getRecentFiles(options?: { tagId?: string }) {
     query = query.eq("file_tags.tag_id", options.tagId);
   }
 
-  const { data, error } = await query
-    .order("created_at", { ascending: false })
-    .limit(20);
+  if (options?.type && options.type !== "all") {
+    if (options.type === "image") query = query.ilike("mime_type", "image/%");
+    else if (options.type === "video") query = query.ilike("mime_type", "video/%");
+    else if (options.type === "audio") query = query.ilike("mime_type", "audio/%");
+    else if (options.type === "document") {
+      query = query.in("mime_type", [
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "text/plain",
+      ]);
+    }
+  }
+
+  if (options?.minSize !== undefined) query = query.gte("size", options.minSize);
+  if (options?.maxSize !== undefined) query = query.lte("size", options.maxSize);
+
+  const sortBy = options?.sortBy || "created_at";
+  const sortOrder = options?.sortOrder === "asc" ? { ascending: true } : { ascending: false };
+
+  const { data, error, count } = await query
+    .order(sortBy, sortOrder)
+    .range(from, to);
 
   if (error) throw new Error(error.message);
   const signedFiles = await signFiles((data as any[]) ?? []);
+  const totalFiles = count ?? signedFiles.length;
 
-  return signedFiles;
+  return {
+    files: signedFiles,
+    pagination: {
+      page,
+      pageSize: PAGE_SIZE,
+      totalFiles,
+      totalPages: Math.max(1, Math.ceil(totalFiles / PAGE_SIZE)),
+    },
+  };
 }
 // ── Fetch aggregate storage statistics (RPC) ──────────────────
 export async function getStorageStats() {
