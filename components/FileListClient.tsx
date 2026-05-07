@@ -1,10 +1,10 @@
 // components/FileListClient.tsx
 "use client";
 
-import { useState, useCallback, useTransition, useRef } from "react";
+import { useState, useCallback, useTransition, useRef, useMemo, type ComponentProps } from "react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { FolderPlus, CloudArrowUp } from "@phosphor-icons/react";
+import { CloudArrowUp } from "@phosphor-icons/react";
 import { FileGrid } from "@/components/FileGrid";
 import { useUpload } from "@/hooks/useUpload";
 import { cn } from "@/lib/utils";
@@ -19,9 +19,21 @@ import { DuplicateUploadDialog } from "./DuplicateUploadDialog";
 import { checkFilesExist } from "@/actions/files";
 import { InfiniteScrollTrigger } from "@/components/InfiniteScrollTrigger";
 
-const TEAL = "#2da07a";
+type FileGridProps = ComponentProps<typeof FileGrid>;
+type FileItem = FileGridProps["files"][number] & { onEdit?: () => void };
+type FolderItem = FileGridProps["folders"][number];
+type FilesData = {
+  files?: FileItem[];
+  folders?: FolderItem[];
+  pagination?: {
+    page: number;
+    pageSize: number;
+    totalFiles: number;
+    totalPages: number;
+  };
+};
 
-export function FileListClient({ initialData }: { initialData?: any }) {
+export function FileListClient({ initialData }: { initialData?: unknown }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const toastIdRef = useRef<string | number | null>(null);
@@ -39,8 +51,6 @@ export function FileListClient({ initialData }: { initialData?: any }) {
     }
   }, [isPending]);
 
-  const [currentFolder, setCurrentFolder] = useState<string | null>(null);
-  const [breadcrumbs, setBreadcrumbs] = useState<{ id: string; name: string }[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [noteEditor, setNoteEditor] = useState<{
@@ -82,23 +92,20 @@ export function FileListClient({ initialData }: { initialData?: any }) {
     return null;
   })();
 
-  // Update breadcrumbs when URL changes
-  useEffect(() => {
+  const breadcrumbs = useMemo(() => {
     if (pathParam && namesParam) {
       const ids = pathParam.split(",");
       const decodedNames = namesParam.split(",").map(decodeURIComponent);
-      const crumbs = ids.map((id, i) => ({ id, name: decodedNames[i] }));
-      setBreadcrumbs(crumbs);
-      setCurrentFolder(ids[ids.length - 1]);
-    } else if (folderParam) {
-      setCurrentFolder(folderParam);
-      if (folderNameParam) {
-        setBreadcrumbs([{ id: folderParam, name: decodeURIComponent(folderNameParam) }]);
-      }
-    } else {
-      setCurrentFolder(null);
-      setBreadcrumbs([]);
+      return ids.map((id, i) => ({ id, name: decodedNames[i] }));
     }
+
+    if (folderParam) {
+      if (folderNameParam) {
+        return [{ id: folderParam, name: decodeURIComponent(folderNameParam) }];
+      }
+    }
+
+    return [];
   }, [pathParam, namesParam, folderParam, folderNameParam]);
 
   const queryOptions = {
@@ -119,9 +126,9 @@ export function FileListClient({ initialData }: { initialData?: any }) {
     isFetchingNextPage,
   } = useInfiniteFilesQuery(activeFolderId, queryOptions, initialData);
 
-  const pages = data?.pages ?? [];
-  const files = pages.flatMap((page) => (page?.files ?? []) as any[]);
-  const folders = (query && !tagId) ? [] : (((pages[0] as any)?.folders ?? []) as any[]);
+  const pages = (data?.pages ?? []) as FilesData[];
+  const files = pages.flatMap((page) => page.files ?? []);
+  const folders = (query && !tagId) ? [] : (pages[0]?.folders ?? []);
 
   const loadMore = useCallback(() => {
     if (hasNextPage && !isFetchingNextPage) {
@@ -130,8 +137,7 @@ export function FileListClient({ initialData }: { initialData?: any }) {
   }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
   const { upload, uploadMany } = useUpload({
-    parentFolderId: currentFolder ?? undefined,
-    onSuccess: () => refresh(),
+    parentFolderId: activeFolderId ?? undefined,
   });
 
   const handleUploadFiles = useCallback(async (incomingFiles: FileList | File[]) => {
@@ -185,10 +191,16 @@ export function FileListClient({ initialData }: { initialData?: any }) {
     setIsDragging(true);
   };
 
-  const handleDragLeave = () => setIsDragging(false);
+  const handleDragLeave = (e: React.DragEvent) => {
+    const nextTarget = e.relatedTarget;
+    if (!(nextTarget instanceof Node) || !e.currentTarget.contains(nextTarget)) {
+      setIsDragging(false);
+    }
+  };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsDragging(false);
     if (e.dataTransfer.files.length > 0) {
       handleUploadFiles(e.dataTransfer.files);
@@ -196,12 +208,13 @@ export function FileListClient({ initialData }: { initialData?: any }) {
   };
 
   // ── Note Editing ──────────────────────────────────────────
-  const handleEditNote = async (file: any) => {
+  const handleEditNote = async (file: FileItem) => {
     try {
       // If we have a signedUrl, we can fetch the content
       let content = "";
-      if (file.signed_url || file.download_url) {
-        const res = await fetch(file.signed_url || file.download_url);
+      const fileUrl = file.signed_url ?? file.download_url;
+      if (fileUrl) {
+        const res = await fetch(fileUrl);
         if (res.ok) content = await res.text();
       }
       setNoteEditor({
@@ -252,7 +265,7 @@ export function FileListClient({ initialData }: { initialData?: any }) {
   return (
     <div
       className={cn(
-        "flex flex-col h-full p-4 md:p-6 transition-all duration-150",
+        "relative flex h-full flex-col p-4 transition-all duration-150 md:p-6",
         isDragging && "bg-[#2da07a]/5 ring-2 ring-inset ring-[#2da07a]/30 rounded-xl"
       )}
       onDragOver={handleDragOver}
@@ -298,7 +311,7 @@ export function FileListClient({ initialData }: { initialData?: any }) {
             onUpload={handleUploadFiles}
             setShowCreateFolder={setShowCreateFolder}
             refresh={refresh}
-            parentFolderId={currentFolder}
+            parentFolderId={activeFolderId}
             onNewNote={() => setNoteEditor({ open: true })}
           />
         </div>
@@ -319,7 +332,7 @@ export function FileListClient({ initialData }: { initialData?: any }) {
 
       {showCreateFolder && (
         <CreateFolderDialog
-          parentFolderId={currentFolder}
+          parentFolderId={activeFolderId}
           onSuccess={refresh}
           onClose={() => setShowCreateFolder(false)}
         />
@@ -330,7 +343,7 @@ export function FileListClient({ initialData }: { initialData?: any }) {
           id={noteEditor.id}
           name={noteEditor.name}
           initialContent={noteEditor.content}
-          parentFolderId={currentFolder}
+          parentFolderId={activeFolderId}
           onSuccess={refresh}
           onClose={() => setNoteEditor({ open: false })}
         />
@@ -338,7 +351,7 @@ export function FileListClient({ initialData }: { initialData?: any }) {
 
       {/* ── Drag overlay hint ── */}
       {isDragging && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
           <div className="flex flex-col items-center gap-2">
             <CloudArrowUp size={40} style={{ color: "#2da07a" }} weight="duotone" />
             <p className="text-sm font-medium" style={{ color: "#2da07a" }}>Drop files to upload</p>

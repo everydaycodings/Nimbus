@@ -11,6 +11,18 @@ interface UploadOptions {
 
 // 🔥 Store active XHRs for cancel support
 const xhrMap = new Map<string, XMLHttpRequest>()
+let fileQueryInvalidationTimer: ReturnType<typeof setTimeout> | null = null
+
+function scheduleFileQueryInvalidation() {
+  if (fileQueryInvalidationTimer) {
+    clearTimeout(fileQueryInvalidationTimer)
+  }
+
+  fileQueryInvalidationTimer = setTimeout(() => {
+    fileQueryInvalidationTimer = null
+    getQueryClient().invalidateQueries({ queryKey: queryKeys.all })
+  }, 400)
+}
 
 export function useUpload(options: UploadOptions = {}) {
   const { addUpload, updateUpload, removeUpload, uploads } = useUploadStore()
@@ -61,7 +73,7 @@ export function useUpload(options: UploadOptions = {}) {
       updateUpload(tempId, { fileId })
 
       // ── Step 3: Upload to S3 (Parallel) ──
-      const uploadPromises: Promise<any>[] = [
+      const uploadPromises: Promise<void>[] = [
         uploadToS3(presignedUrl, file, `${tempId}-file`, (progress) => {
           updateUpload(tempId, { progress })
         })
@@ -69,7 +81,7 @@ export function useUpload(options: UploadOptions = {}) {
 
       if (thumbnailPresignedUrl && thumbnailBlob) {
         uploadPromises.push(
-          uploadToS3(thumbnailPresignedUrl, thumbnailBlob as any, `${tempId}-thumb`, () => {})
+          uploadToS3(thumbnailPresignedUrl, thumbnailBlob, `${tempId}-thumb`, () => {})
         );
       }
 
@@ -96,8 +108,9 @@ export function useUpload(options: UploadOptions = {}) {
         status: "complete",
       })
 
-      // Invalidate all file queries so lists refresh automatically
-      getQueryClient().invalidateQueries({ queryKey: queryKeys.all })
+      // Batch list refreshes so multi-file uploads do not refetch every
+      // loaded infinite-query page once per completed file.
+      scheduleFileQueryInvalidation()
 
       options.onSuccess?.(fileId)
 
@@ -167,7 +180,7 @@ export function useUpload(options: UploadOptions = {}) {
 // ── Upload helper ──
 function uploadToS3(
   presignedUrl: string,
-  file: File,
+  file: Blob,
   id: string,
   onProgress: (progress: number) => void
 ): Promise<void> {
