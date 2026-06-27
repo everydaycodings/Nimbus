@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { queryKeys } from "@/lib/query-keys";
@@ -90,5 +90,7 @@ export function useVaultItemsQuery(vaultId: string, folderId: string | null) {
       return { folders, files };
     },
     enabled: !!vaultId,
+    // Keep the previous folder visible while the next loads (smooth nav).
+    placeholderData: keepPreviousData,
   });
 }

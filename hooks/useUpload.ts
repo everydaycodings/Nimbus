@@ -1,7 +1,7 @@
 import { useUploadStore } from "@/store/uploadStore"
 import { getQueryClient } from "@/lib/query-client"
-import { queryKeys } from "@/lib/query-keys"
 import { generateClientThumbnail } from "@/lib/client-thumbnail"
+import { performUpload, MULTIPART_THRESHOLD } from "@/lib/upload/performUpload"
 
 interface UploadOptions {
   parentFolderId?: string
@@ -9,19 +9,49 @@ interface UploadOptions {
   onError?: (error: string) => void
 }
 
-// 🔥 Store active XHRs for cancel support
-const xhrMap = new Map<string, XMLHttpRequest>()
-let fileQueryInvalidationTimer: ReturnType<typeof setTimeout> | null = null
+// Per-upload state keyed by the UI tempId, so cancel/cleanup can reach the
+// AbortController and the S3 identifiers regardless of which path is running.
+const abortControllers = new Map<string, AbortController>()
+const uploadMeta = new Map<string, { fileId?: string; uploadId?: string }>()
 
-function scheduleFileQueryInvalidation() {
+let fileQueryInvalidationTimer: ReturnType<typeof setTimeout> | null = null
+const pendingInvalidationFolders = new Set<string | null>()
+
+// Debounced + targeted: only refresh the folder(s) that received uploads, the
+// recent list, and storage stats — not every cached folder/starred/trash view.
+function scheduleFileQueryInvalidation(parentFolderId: string | null) {
+  pendingInvalidationFolders.add(parentFolderId)
+
   if (fileQueryInvalidationTimer) {
     clearTimeout(fileQueryInvalidationTimer)
   }
 
   fileQueryInvalidationTimer = setTimeout(() => {
     fileQueryInvalidationTimer = null
-    getQueryClient().invalidateQueries({ queryKey: queryKeys.all })
+    const qc = getQueryClient()
+    const folders = [...pendingInvalidationFolders]
+    pendingInvalidationFolders.clear()
+
+    for (const folderId of folders) {
+      // Prefix match → covers every filter/sort variant of that folder's list.
+      qc.invalidateQueries({ queryKey: ["files", "list", folderId] })
+    }
+    qc.invalidateQueries({ queryKey: ["files", "recent"] })
+    qc.invalidateQueries({ queryKey: ["storage-stats"] })
   }, 400)
+}
+
+// Best-effort cleanup of an orphaned upload (S3 object/parts + pending DB row).
+async function cleanupOrphan(fileId: string, uploadId?: string) {
+  try {
+    await fetch("/api/upload/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fileId, uploadId }),
+    })
+  } catch (e) {
+    console.error("Cleanup API failed", e)
+  }
 }
 
 export function useUpload(options: UploadOptions = {}) {
@@ -29,94 +59,47 @@ export function useUpload(options: UploadOptions = {}) {
 
   const upload = async (file: File, fileIdForVersioning?: string) => {
     const tempId = crypto.randomUUID()
+    const controller = new AbortController()
+    const meta: { fileId?: string; uploadId?: string } = {}
+    abortControllers.set(tempId, controller)
+    uploadMeta.set(tempId, meta)
 
-    // ✅ Add to global store
     addUpload({
       id: tempId,
       name: file.name,
       progress: 0,
       status: "uploading",
-      fileId: null, // 🔥 important
+      fileId: null,
+      size: file.size,
+      parentFolderId: options.parentFolderId ?? null,
+      source: "drive",
+      kind: file.size > MULTIPART_THRESHOLD ? "multipart" : "file",
     })
 
     try {
-      // ── Step 1: Generate Thumbnail Client-Side ──
-      const thumbnailBlob = await generateClientThumbnail(file);
+      const thumbnailBlob = await generateClientThumbnail(file)
 
-      // ── Step 2: Get presigned URL ──
-      const presignRes = await fetch("/api/upload/presign", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: file.name,
-          mimeType: file.type || "application/octet-stream",
-          size: file.size,
-          parentFolderId: options.parentFolderId,
-          fileId: fileIdForVersioning, // 🔥 NEW: Pass original fileId for versioning
-          withThumbnail: !!thumbnailBlob
-        }),
+      const { fileId } = await performUpload({
+        file,
+        parentFolderId: options.parentFolderId,
+        fileIdForVersioning,
+        thumbnailBlob,
+        signal: controller.signal,
+        onProgress: (progress) => updateUpload(tempId, { progress }),
+        onMeta: (m) => {
+          meta.fileId = m.fileId
+          meta.uploadId = m.uploadId
+          updateUpload(tempId, { fileId: m.fileId })
+        },
       })
 
-      if (!presignRes.ok) {
-        const { error } = await presignRes.json()
-        throw new Error(error ?? "Failed to get upload URL")
-      }
-
-      const { 
-        presignedUrl, 
-        fileId, 
-        thumbnailPresignedUrl, 
-        thumbnailKey 
-      } = await presignRes.json()
-
-      // 🔥 Save fileId for cancel support
-      updateUpload(tempId, { fileId })
-
-      // ── Step 3: Upload to S3 (Parallel) ──
-      const uploadPromises: Promise<void>[] = [
-        uploadToS3(presignedUrl, file, `${tempId}-file`, (progress) => {
-          updateUpload(tempId, { progress })
-        })
-      ];
-
-      if (thumbnailPresignedUrl && thumbnailBlob) {
-        uploadPromises.push(
-          uploadToS3(thumbnailPresignedUrl, thumbnailBlob, `${tempId}-thumb`, () => {})
-        );
-      }
-
-      await Promise.all(uploadPromises);
-
-      // ── Step 4: Mark complete ──
-      const completeRes = await fetch("/api/upload/complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          fileId,
-          originalFileId: fileIdForVersioning, // 🔥 NEW: Pass original fileId for versioning
-          thumbnailKey
-        }),
-      })
-
-      if (!completeRes.ok) {
-        const { error } = await completeRes.json()
-        throw new Error(error ?? "Failed to finalize upload")
-      }
-
-      updateUpload(tempId, {
-        progress: 100,
-        status: "complete",
-      })
-
-      // Batch list refreshes so multi-file uploads do not refetch every
-      // loaded infinite-query page once per completed file.
-      scheduleFileQueryInvalidation()
-
+      updateUpload(tempId, { progress: 100, status: "complete" })
+      scheduleFileQueryInvalidation(options.parentFolderId ?? null)
       options.onSuccess?.(fileId)
 
-      setTimeout(() => {
-        removeUpload(tempId)
-      }, 3000)
+      abortControllers.delete(tempId)
+      uploadMeta.delete(tempId)
+      setTimeout(() => removeUpload(tempId), 3000)
     } catch (err) {
       const message =
         typeof err === "string"
@@ -125,15 +108,23 @@ export function useUpload(options: UploadOptions = {}) {
             ? err.message
             : JSON.stringify(err) || "Upload failed"
 
+      const cancelled = message === "Upload cancelled"
+
       updateUpload(tempId, {
-        status: message === "Upload cancelled" ? "cancelled" : "error",
-        error: message, // 🔥 ADD THIS
+        status: cancelled ? "cancelled" : "error",
+        error: message,
       })
 
+      // On a terminal (non-cancel) failure, clean up the orphaned S3
+      // object/parts and the pending DB row (which also frees quota).
+      if (!cancelled && meta.fileId) {
+        cleanupOrphan(meta.fileId, meta.uploadId)
+      }
+
       options.onError?.(message)
-      setTimeout(() => {
-        removeUpload(tempId)
-      }, 3000)
+      abortControllers.delete(tempId)
+      uploadMeta.delete(tempId)
+      setTimeout(() => removeUpload(tempId), 3000)
     }
   }
 
@@ -143,83 +134,23 @@ export function useUpload(options: UploadOptions = {}) {
 
   // ❌ Cancel upload
   const cancelUpload = async (id: string) => {
-    const xhr = xhrMap.get(id)
-
-    if (xhr) {
-      xhr.abort()
-      xhrMap.delete(id)
+    const controller = abortControllers.get(id)
+    if (controller) {
+      controller.abort()
+      abortControllers.delete(id)
     }
 
-    // 🔥 Get fileId from store
-    const uploadItem = uploads.find((u) => u.id === id)
+    const meta = uploadMeta.get(id)
+    const fileId = meta?.fileId ?? uploads.find((u) => u.id === id)?.fileId
 
-    if (uploadItem?.fileId) {
-      try {
-        await fetch("/api/upload/cancel", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ fileId: uploadItem.fileId }),
-        })
-      } catch (e) {
-        console.error("Cancel API failed", e)
-      }
+    if (fileId) {
+      await cleanupOrphan(fileId, meta?.uploadId ?? undefined)
     }
 
+    uploadMeta.delete(id)
     updateUpload(id, { status: "cancelled" })
-
-    setTimeout(() => {
-      removeUpload(id)
-    }, 3000)
+    setTimeout(() => removeUpload(id), 3000)
   }
 
   return { upload, uploadMany, cancelUpload }
-}
-
-// ── Upload helper ──
-function uploadToS3(
-  presignedUrl: string,
-  file: Blob,
-  id: string,
-  onProgress: (progress: number) => void
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest()
-
-    xhrMap.set(id, xhr)
-
-    xhr.upload.addEventListener("progress", (e) => {
-      if (e.lengthComputable) {
-        onProgress(Math.round((e.loaded / e.total) * 100))
-      }
-    })
-
-    xhr.addEventListener("load", () => {
-      xhrMap.delete(id)
-
-      if (xhr.status >= 200 && xhr.status < 300) {
-        resolve()
-      } else {
-        reject(new Error(`S3 upload failed (${xhr.status})`))
-      }
-    })
-
-    xhr.addEventListener("error", () => {
-      xhrMap.delete(id)
-      reject(new Error("Network error"))
-    })
-
-    xhr.addEventListener("abort", () => {
-      xhrMap.delete(id)
-      reject(new Error("Upload cancelled"))
-    })
-
-    xhr.open("PUT", presignedUrl)
-    xhr.setRequestHeader(
-      "Content-Type",
-      file.type || "application/octet-stream"
-    )
-    xhr.send(file)
-  })
 }

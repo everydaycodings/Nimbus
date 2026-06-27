@@ -5,17 +5,40 @@ import * as pdfjsLib from "pdfjs-dist"
 // This reduces bundle size significantly.
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
 
+// Thumbnail generation is best-effort and must never hang or fail an upload.
+// A corrupt/odd video can leave onseeked unfired forever, so we cap each
+// attempt and fall back to "no thumbnail".
+const THUMBNAIL_TIMEOUT_MS = 10_000
+
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (value: T) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(value)
+    }
+    const timer = setTimeout(() => finish(fallback), ms)
+    promise.then(finish).catch(() => finish(fallback))
+  })
+}
+
 export async function generateClientThumbnail(
   file: File
 ): Promise<Blob | null> {
+  let generator: Promise<Blob | null>
   if (file.type.startsWith("image/")) {
-    return generateImageThumbnail(file)
+    generator = generateImageThumbnail(file)
   } else if (file.type.startsWith("video/")) {
-    return generateVideoThumbnail(file)
+    generator = generateVideoThumbnail(file)
   } else if (file.type === "application/pdf") {
-    return generatePdfThumbnail(file)
+    generator = generatePdfThumbnail(file)
+  } else {
+    return null
   }
-  return null
+
+  return withTimeout(generator, THUMBNAIL_TIMEOUT_MS, null)
 }
 
 async function generateImageThumbnail(file: File): Promise<Blob | null> {

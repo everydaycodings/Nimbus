@@ -3,6 +3,7 @@
 
 import { Trash, Warning } from "@phosphor-icons/react";
 import { FileGrid } from "@/components/FileGrid";
+import { FileGridSkeleton, FolderLoadError } from "@/components/FileGridStates";
 import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import { useTrashedQuery } from "@/hooks/queries/useTrashedQuery";
@@ -13,7 +14,7 @@ export default function TrashPage() {
   const [showConfirm, setShowConfirm] = useState(false);
   const router = useRouter();
 
-  const { data, isLoading: loading, refetch: refresh } = useTrashedQuery();
+  const { data, isLoading: loading, isError, refetch: refresh } = useTrashedQuery();
   const emptyTrashMutation = useEmptyTrashMutation();
 
   const files = (data?.files ?? []) as any[];
@@ -56,11 +57,9 @@ export default function TrashPage() {
       )}
 
       {loading ? (
-        <div className="flex flex-col gap-2">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-10 rounded-xl bg-muted animate-pulse" />
-          ))}
-        </div>
+        <FileGridSkeleton />
+      ) : isError ? (
+        <FolderLoadError onRetry={() => refresh()} />
       ) : isEmpty ? (
         <div className="flex flex-col items-center justify-center h-64 text-center">
           <Trash size={48} weight="duotone" className="text-muted-foreground/40 mb-3" />
@@ -77,7 +76,7 @@ export default function TrashPage() {
           onRefresh={refresh}
           onFolderOpen={(id, name) => {
             router.push(
-              `/files?path=${id}&names=${encodeURIComponent(name)}`
+              `/dashboard/files?path=${id}&names=${encodeURIComponent(name)}`
             );
           }}
         />

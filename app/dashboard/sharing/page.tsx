@@ -12,6 +12,7 @@ import {
 } from "@phosphor-icons/react";
 import { useSearchParams } from "next/navigation";
 import { FileFilters } from "@/components/FileFilters";
+import { FolderLoadError } from "@/components/FileGridStates";
 import {
   getSharedFileDownloadUrl,
 } from "@/actions/sharing.dashboard";
@@ -581,7 +582,7 @@ export default function SharingPage() {
   const maxSize = searchParams.get("maxSize") ? Number(searchParams.get("maxSize")) : undefined;
   const tagId = searchParams.get("tagId") || undefined;
 
-  const { data, isLoading: loading, refetch: load } = useSharingQuery();
+  const { data, isLoading: loading, isError, refetch: load } = useSharingQuery();
   
   const links = (data?.mine?.links ?? []) as unknown as SharedLink[];
   const people = (data?.mine?.people ?? []) as SharedPerson[];
@@ -729,6 +730,12 @@ export default function SharingPage() {
         <div className={GRID}>
           {[...Array(6)].map((_, i) => <div key={i} className="h-44 rounded-2xl bg-muted animate-pulse" />)}
         </div>
+      ) : isError ? (
+        <FolderLoadError
+          onRetry={() => load()}
+          title="Couldn't load your shares"
+          description="Something went wrong loading your shared items."
+        />
       ) : (
         <>
           {/* ── My shared items ── */}

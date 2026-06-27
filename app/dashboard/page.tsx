@@ -260,8 +260,10 @@ export default function HomePage() {
           <FileGrid
             files={enhancedFiles}
             folders={folders}
-            onFolderOpen={(id) => {
-              router.push(`/dashboard/files?folder=${id}`);
+            onFolderOpen={(id, name) => {
+              router.push(
+                `/dashboard/files?path=${id}&names=${encodeURIComponent(name)}`
+              );
             }}
             onRefresh={refresh}
           />

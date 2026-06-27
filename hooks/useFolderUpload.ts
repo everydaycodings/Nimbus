@@ -5,9 +5,7 @@ import { useUploadStore } from "@/store/uploadStore";
 import { createFolderForUpload } from "@/actions/uploadFolder";
 import { generateClientThumbnail } from "@/lib/client-thumbnail";
 import { getQueryClient } from "@/lib/query-client";
-import { queryKeys } from "@/lib/query-keys";
-
-const xhrMap = new Map<string, XMLHttpRequest>();
+import { performUpload, MULTIPART_THRESHOLD } from "@/lib/upload/performUpload";
 
 interface FolderUploadOptions {
   parentFolderId?: string | null;
@@ -21,30 +19,6 @@ export function useFolderUpload(options: FolderUploadOptions = {}) {
   // Build a folder path → supabase folder id map as we go
   const folderIdCache = new Map<string, string>();
 
-  // Ensure all ancestor folders exist and return the leaf folder id
-  async function ensureFolderPath(
-    pathParts: string[],       // e.g. ["photos", "2024", "summer"]
-    rootParentId: string | null
-  ): Promise<string> {
-    let currentParentId = rootParentId ?? null;
-    let cacheKey        = "";
-
-    for (const part of pathParts) {
-      cacheKey = cacheKey ? `${cacheKey}/${part}` : part;
-
-      if (folderIdCache.has(cacheKey)) {
-        currentParentId = folderIdCache.get(cacheKey)!;
-        continue;
-      }
-
-      const folderId = await createFolderForUpload(part, currentParentId);
-      folderIdCache.set(cacheKey, folderId);
-      currentParentId = folderId;
-    }
-
-    return currentParentId!;
-  }
-
   async function uploadFile(
     file: File,
     parentFolderId: string | null
@@ -57,75 +31,35 @@ export function useFolderUpload(options: FolderUploadOptions = {}) {
       progress: 0,
       status:   "uploading",
       fileId:   null,
+      size:     file.size,
+      parentFolderId,
+      source:   "drive",
+      kind:     file.size > MULTIPART_THRESHOLD ? "multipart" : "file",
     });
 
     try {
-      // ── Step 1: Generate Thumbnail Client-Side ──
       const thumbnailBlob = await generateClientThumbnail(file);
 
-      // ── Step 2: Get presigned URL ──
-      const presignRes = await fetch("/api/upload/presign", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name:           file.name,
-          mimeType:       file.type || "application/octet-stream",
-          size:           file.size,
-          parentFolderId: parentFolderId,
-          withThumbnail:  !!thumbnailBlob
-        }),
+      // Shared upload core → large files in folders now use multipart + retry.
+      await performUpload({
+        file,
+        parentFolderId,
+        thumbnailBlob,
+        onProgress: (progress) => updateUpload(tempId, { progress }),
+        onMeta: (m) => updateUpload(tempId, { fileId: m.fileId }),
       });
-
-      if (!presignRes.ok) {
-        const body = await presignRes.json().catch(() => ({}));
-        throw new Error(body.error ?? `Presign failed: ${presignRes.status}`);
-      }
-
-      const { 
-        presignedUrl, 
-        fileId, 
-        thumbnailPresignedUrl, 
-        thumbnailKey 
-      } = await presignRes.json();
-      updateUpload(tempId, { fileId });
-
-      // ── Step 3: Upload to S3 (Parallel) ──
-      const uploadPromises: Promise<any>[] = [
-        uploadToS3(presignedUrl, file, `${tempId}-file`, (progress) => {
-          updateUpload(tempId, { progress });
-        })
-      ];
-
-      if (thumbnailPresignedUrl && thumbnailBlob) {
-        uploadPromises.push(
-          uploadToS3(thumbnailPresignedUrl, thumbnailBlob as any, `${tempId}-thumb`, () => {})
-        );
-      }
-
-      await Promise.all(uploadPromises);
-
-      // ── Step 4: Mark complete ──
-      const completeRes = await fetch("/api/upload/complete", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          fileId,
-          thumbnailKey
-        }),
-      });
-
-      if (!completeRes.ok) throw new Error("Failed to finalize upload");
 
       updateUpload(tempId, { progress: 100, status: "complete" });
-
       setTimeout(() => removeUpload(tempId), 2000);
-
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Upload failed";
-      updateUpload(tempId, { status: "error" });
+      updateUpload(tempId, { status: "error", error: msg });
       options.onError?.(msg);
     }
   }
+
+  const dirKeyOf = (file: File) =>
+    file.webkitRelativePath.split("/").slice(0, -1).join("/");
 
   async function uploadFolder(fileList: FileList) {
     // fileList from webkitdirectory contains files with relative paths
@@ -135,83 +69,76 @@ export function useFolderUpload(options: FolderUploadOptions = {}) {
 
     const rootParentId = options.parentFolderId ?? null;
 
-    // Upload files sequentially per folder to avoid race conditions
-    // on folder creation, then upload files in parallel within each folder
-    const byFolder = new Map<string, File[]>();
-
+    // 1. Collect every unique directory path (including ancestors).
+    const allDirs = new Set<string>();
     for (const file of files) {
-      const parts     = file.webkitRelativePath.split("/");
-      const dirParts  = parts.slice(0, -1); // everything except filename
-      const dirKey    = dirParts.join("/");
-      if (!byFolder.has(dirKey)) byFolder.set(dirKey, []);
-      byFolder.get(dirKey)!.push(file);
+      const parts = dirKeyOf(file).split("/").filter(Boolean);
+      let acc = "";
+      for (const p of parts) {
+        acc = acc ? `${acc}/${p}` : p;
+        allDirs.add(acc);
+      }
     }
 
-    // Process folders in order (parents before children)
-    const sortedFolders = [...byFolder.keys()].sort();
+    // 2. Create folders level by level (shallow first). Within a depth level
+    //    all parents already exist, so siblings are created concurrently —
+    //    much faster than the old per-file sequential creation, and still
+    //    race-free (each path is unique).
+    const byDepth = new Map<number, string[]>();
+    for (const dir of allDirs) {
+      const depth = dir.split("/").length;
+      if (!byDepth.has(depth)) byDepth.set(depth, []);
+      byDepth.get(depth)!.push(dir);
+    }
 
-    for (const dirKey of sortedFolders) {
-      const dirFiles  = byFolder.get(dirKey)!;
-      const pathParts = dirKey.split("/").filter(Boolean);
-
-      // Create folder hierarchy and get the leaf folder id
-      const folderId = pathParts.length > 0
-        ? await ensureFolderPath(pathParts, rootParentId)
-        : rootParentId;
-
-      // Upload all files in this folder in parallel
-      await Promise.allSettled(
-        dirFiles.map((file) => uploadFile(file, folderId))
+    for (const depth of [...byDepth.keys()].sort((a, b) => a - b)) {
+      await Promise.all(
+        byDepth.get(depth)!.map(async (dirPath) => {
+          const parts = dirPath.split("/");
+          const name = parts[parts.length - 1];
+          const parentPath = parts.slice(0, -1).join("/");
+          const parentId = parentPath ? folderIdCache.get(parentPath)! : rootParentId;
+          const id = await createFolderForUpload(name, parentId);
+          folderIdCache.set(dirPath, id);
+        })
       );
     }
 
-    getQueryClient().invalidateQueries({ queryKey: queryKeys.all });
+    // 3. Upload all files with bounded concurrency (each uploadFile handles its
+    //    own errors and reflects them per-item in the upload toast).
+    const tasks = files.map((file) => {
+      const dirKey = dirKeyOf(file);
+      const folderId = dirKey ? folderIdCache.get(dirKey)! : rootParentId;
+      return () => uploadFile(file, folderId);
+    });
+
+    await runWithConcurrency(tasks, 4);
+
+    // New files/folders appear across many parent lists; refresh folder lists +
+    // recent + storage, but not unaffected starred/trash/version views.
+    const qc = getQueryClient();
+    qc.invalidateQueries({ queryKey: ["files", "list"] });
+    qc.invalidateQueries({ queryKey: ["files", "recent"] });
+    qc.invalidateQueries({ queryKey: ["storage-stats"] });
     options.onSuccess?.();
   }
 
   return { uploadFolder };
 }
-// ── Upload helper ──
-function uploadToS3(
-  presignedUrl: string,
-  file: File | Blob,
-  id: string,
-  onProgress: (progress: number) => void
+
+// Run async tasks with a bounded number running at once.
+async function runWithConcurrency(
+  tasks: Array<() => Promise<void>>,
+  limit: number
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhrMap.set(id, xhr);
-
-    xhr.upload.addEventListener("progress", (e) => {
-      if (e.lengthComputable) {
-        onProgress(Math.round((e.loaded / e.total) * 100));
-      }
-    });
-
-    xhr.addEventListener("load", () => {
-      xhrMap.delete(id);
-      if (xhr.status >= 200 && xhr.status < 300) {
-        resolve();
-      } else {
-        reject(new Error(`S3 upload failed (${xhr.status})`));
-      }
-    });
-
-    xhr.addEventListener("error", () => {
-      xhrMap.delete(id);
-      reject(new Error("Network error"));
-    });
-
-    xhr.addEventListener("abort", () => {
-      xhrMap.delete(id);
-      reject(new Error("Upload cancelled"));
-    });
-
-    xhr.open("PUT", presignedUrl);
-    xhr.setRequestHeader(
-      "Content-Type",
-      file.type || "application/octet-stream"
-    );
-    xhr.send(file);
-  });
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < tasks.length) {
+      const i = cursor++;
+      await tasks[i]();
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(limit, tasks.length) }, () => worker())
+  );
 }

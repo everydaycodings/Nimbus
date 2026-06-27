@@ -1,8 +1,7 @@
 // offline-vault/components/LocalFileExplorer.tsx
 "use client";
 
-import { useState, useRef, useMemo, useEffect, useTransition } from "react";
-import { toast } from "sonner";
+import { useState, useRef, useMemo, useEffect } from "react";
 import {
   FileArrowDown,
   Trash,
@@ -16,9 +15,12 @@ import {
   FolderPlus,
   Eye,
   CaretRight,
+  House,
 } from "@phosphor-icons/react";
 import { useOfflineVault } from "../hooks/useOfflineVault";
-import Breadcrumbs from "./Breadcrumbs";
+import { useFolderPath } from "@/hooks/useFolderPath";
+import { useFileDrop } from "@/hooks/useFileDrop";
+import { FolderBreadcrumbs } from "@/components/FolderBreadcrumbs";
 import { ShieldCheck as ShieldCheckIcon } from "@phosphor-icons/react";
 import { useSearchParams } from "next/navigation";
 import { FileFilters } from "@/components/FileFilters";
@@ -114,28 +116,8 @@ export default function LocalFileExplorer() {
     isLoading 
   } = useOfflineVault();
 
-  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
-  const toastIdRef = useRef<string | number | null>(null);
-
-  useEffect(() => {
-    if (isPending) {
-      if (!toastIdRef.current) {
-        toastIdRef.current = toast.loading("Opening folder...");
-      }
-    } else {
-      if (toastIdRef.current) {
-        toast.dismiss(toastIdRef.current);
-        toastIdRef.current = null;
-      }
-    }
-  }, [isPending]);
-
-  const navigateToFolder = (id: string | null) => {
-    startTransition(() => {
-      setCurrentFolderId(id);
-    });
-  };
+  const { breadcrumbs, currentFolderId, openFolder, navigateToBreadcrumb, navigateToRoot } =
+    useFolderPath();
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [previewing, setPreviewing] = useState<{
     objectUrl: string | null;
@@ -203,6 +185,8 @@ export default function LocalFileExplorer() {
     Array.from(fileList).forEach(file => uploadFile(file, currentFolderId));
   };
 
+  const { isDragging, dragHandlers } = useFileDrop(handleUploadMany);
+
   const handlePreview = async (file: any) => {
     setLoadingPreview(file.id);
     setPreviewing({ objectUrl: null, fileName: file.name, mimeType: file.contentType || "", fileId: file.id });
@@ -230,7 +214,17 @@ export default function LocalFileExplorer() {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="relative flex flex-col h-full" {...dragHandlers}>
+      {/* ── Drop overlay hint ── */}
+      {isDragging && (
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl ring-2 ring-inset" style={{ backgroundColor: `${TEAL}0d`, borderColor: TEAL }}>
+          <div className="flex flex-col items-center gap-2">
+            <FileArrowDown size={40} weight="duotone" style={{ color: TEAL }} />
+            <p className="text-sm font-medium" style={{ color: TEAL }}>Drop files to add to your local vault</p>
+          </div>
+        </div>
+      )}
+
       {/* ── Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 flex-shrink-0 gap-3">
         <div className="flex items-center gap-2 min-w-0">
@@ -263,7 +257,19 @@ export default function LocalFileExplorer() {
       </div>
 
       {/* ── Breadcrumbs ── */}
-      <Breadcrumbs currentFolderId={currentFolderId} setCurrentFolderId={navigateToFolder} />
+      <FolderBreadcrumbs
+        className="mb-4 flex-shrink-0"
+        separator="caret"
+        breadcrumbs={breadcrumbs}
+        rootLabel={
+          <>
+            <House size={13} />
+            <span>Vault</span>
+          </>
+        }
+        onRoot={navigateToRoot}
+        onCrumb={navigateToBreadcrumb}
+      />
 
       <div className="flex flex-col gap-4 mb-4">
         {/* Row 1: Filters */}
@@ -337,7 +343,7 @@ export default function LocalFileExplorer() {
                       <div
                         key={folder.id}
                         className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-accent transition-colors cursor-pointer select-none"
-                        onDoubleClick={() => navigateToFolder(folder.id)}
+                        onDoubleClick={() => openFolder(folder.id, folder.name)}
                       >
                         <FolderSimple size={18} weight="fill" style={{ color: TEAL }} />
                         <div className="flex-1 min-w-0">
@@ -419,7 +425,7 @@ export default function LocalFileExplorer() {
                 {filteredFolders.map((folder) => (
                   <div
                     key={folder.id}
-                    onDoubleClick={() => navigateToFolder(folder.id)}
+                    onDoubleClick={() => openFolder(folder.id, folder.name)}
                     className="group cursor-pointer rounded-2xl border border-border bg-card hover:shadow-md hover:border-[#2da07a]/30 transition-all select-none overflow-hidden"
                   >
                     <div

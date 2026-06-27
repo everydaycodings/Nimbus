@@ -13,6 +13,7 @@ type Meta = {
 
 export function UploadToast() {
   const uploads = useUploadStore((s) => s.uploads);
+  const removeUpload = useUploadStore((s) => s.removeUpload);
   const { cancelUpload } = useUpload();
 
   const speedCache = useRef<Record<string, number>>({});
@@ -168,10 +169,18 @@ export function UploadToast() {
                       {f.progress}%
                     </span>
 
-                    {f.status === "uploading" && (
+                    {f.status === "uploading" ? (
                       <button
                         onClick={() => cancelUpload(f.id)}
                         className="p-1 rounded-md hover:bg-muted transition"
+                      >
+                        <X size={12} />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => removeUpload(f.id)}
+                        className="p-1 rounded-md hover:bg-muted transition"
+                        aria-label="Dismiss"
                       >
                         <X size={12} />
                       </button>

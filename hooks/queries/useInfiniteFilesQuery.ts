@@ -1,6 +1,6 @@
 "use client";
 
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, keepPreviousData } from "@tanstack/react-query";
 import { getFiles } from "@/actions/files";
 import { queryKeys } from "@/lib/query-keys";
 
@@ -34,5 +34,8 @@ export function useInfiniteFilesQuery(
           pageParams: [1],
         }
       : undefined,
+    // Keep the previous folder's contents visible while the next folder loads
+    // so navigation doesn't flash an empty grid.
+    placeholderData: keepPreviousData,
   });
 }

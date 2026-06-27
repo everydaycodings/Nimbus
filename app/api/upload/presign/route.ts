@@ -32,8 +32,12 @@ export async function POST(req: Request) {
 
   const { name, mimeType, size, parentFolderId, fileId: originalFileId, withThumbnail } = await req.json();
 
-  if (!name || !mimeType || !size) {
+  if (typeof name !== "string" || !name || typeof mimeType !== "string" || !mimeType) {
     return Response.json({ error: "Missing required fields" }, { status: 400 });
+  }
+
+  if (typeof size !== "number" || !Number.isFinite(size) || size <= 0) {
+    return Response.json({ error: "Invalid file size" }, { status: 400 });
   }
 
   // If originalFileId is provided, verify ownership
@@ -81,7 +85,7 @@ export async function POST(req: Request) {
     ContentType: mimeType,
   });
 
-  const presignedUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
+  const presignedUrl = await getSignedUrl(s3, command, { expiresIn: 900 });
 
   let thumbnailPresignedUrl = null;
   let thumbnailKey = null;
@@ -94,7 +98,7 @@ export async function POST(req: Request) {
       ContentType: "image/webp",
       CacheControl: "public, max-age=31536000, immutable",
     });
-    thumbnailPresignedUrl = await getSignedUrl(s3, thumbCommand, { expiresIn: 300 });
+    thumbnailPresignedUrl = await getSignedUrl(s3, thumbCommand, { expiresIn: 900 });
   }
 
   return Response.json({ 

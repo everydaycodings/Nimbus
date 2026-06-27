@@ -1,17 +1,20 @@
 // vault/components/OpenVault.tsx
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useTransition } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   LockKeyOpen, LockSimple, Trash, File,
   Image, FilePdf, FileVideo, MusicNote,
   CloudArrowUp, DownloadSimple, ShieldCheck,
-  Eye, FolderSimple, FolderPlus, CaretRight,
+  Eye, FolderSimple, FolderPlus,
   X, House, DotsThreeVertical, PencilSimple,
   Funnel,
 } from "@phosphor-icons/react";
 import { useSearchParams } from "next/navigation";
 import { FileFilters } from "@/components/FileFilters";
+import { useFolderPath } from "@/hooks/useFolderPath";
+import { FolderBreadcrumbs } from "@/components/FolderBreadcrumbs";
+import { useFileDrop } from "@/hooks/useFileDrop";
 import {
   getVaultFolders,
   getVaultFilesInFolder,
@@ -87,11 +90,6 @@ interface Vault {
   salt: string;
   verification_token: string;
   is_fragmented: boolean;
-}
-
-interface Breadcrumb {
-  id: string;
-  name: string;
 }
 
 interface VaultPreviewState {
@@ -357,25 +355,14 @@ export function OpenVault({
   onLock: () => void;
   onRefreshVaults: () => void;
 }) {
-  const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([]);
-  const [isPending, startTransition] = useTransition();
-  const toastIdRef = useRef<string | number | null>(null);
+  const {
+    breadcrumbs,
+    currentFolderId,
+    openFolder: openFolderPath,
+    navigateToBreadcrumb,
+    navigateToRoot,
+  } = useFolderPath();
 
-  useEffect(() => {
-    if (isPending) {
-      if (!toastIdRef.current) {
-        toastIdRef.current = toast.loading("Opening folder...");
-      }
-    } else {
-      if (toastIdRef.current) {
-        toast.dismiss(toastIdRef.current);
-        toastIdRef.current = null;
-      }
-    }
-  }, [isPending]);
-
-  const [isDragging, setIsDragging] = useState(false);
-  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [previewing, setPreviewing] = useState<VaultPreviewState | null>(null);
   const [loadingPreview, setLoadingPreview] = useState<string | null>(null);
@@ -453,44 +440,8 @@ export function OpenVault({
   });
   const { download, downloadFolder, preview, getThumbnail, decrypting, clearPreviewCache } = useVaultDownload(cryptoKey);
 
-  // ── Drag and Drop ───────────────────────────────────────────
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = () => setIsDragging(false);
-
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-
-    const items = Array.from(e.dataTransfer.items || []);
-    if (items.length === 0) return;
-
-    // Check for directories
-    const hasDirectories = items.some(item => {
-      const entry = item.webkitGetAsEntry();
-      return entry && entry.isDirectory;
-    });
-
-    if (hasDirectories) {
-        // If folders are dropped, we use a trick: 
-        // Chrome's e.dataTransfer.files doesn't have webkitRelativePath.
-        // However, the folder upload input *does*.
-        // For simplicity, we'll inform the user or just upload files.
-        // But let's try to be smart if possible.
-        // Actually, Nimbus's useVaultFolderUpload expects a FileList from a webkitdirectory input.
-        // We'll just handle regular files for now to match FileListClient behavior.
-        if (e.dataTransfer.files.length > 0) {
-            uploadMany(e.dataTransfer.files);
-        }
-    } else {
-        if (e.dataTransfer.files.length > 0) {
-            uploadMany(e.dataTransfer.files);
-        }
-    }
-  };
+  // ── Drag and Drop (reliable: depth-counted, folder-aware) ──
+  const { isDragging, dragHandlers } = useFileDrop((files) => uploadMany(files));
 
 
 
@@ -535,27 +486,7 @@ export function OpenVault({
   });
 
   // ── Navigation ───────────────────────────────────────────────
-  const openFolder = (folder: VaultFolder) => {
-    startTransition(() => {
-      setBreadcrumbs((prev) => [...prev, { id: folder.id, name: folder.name }]);
-      setCurrentFolderId(folder.id);
-    });
-  };
-
-  const navigateToRoot = () => {
-    startTransition(() => {
-      setBreadcrumbs([]);
-      setCurrentFolderId(null);
-    });
-  };
-
-  const navigateToBreadcrumb = (index: number) => {
-    const crumb = breadcrumbs[index];
-    startTransition(() => {
-      setBreadcrumbs((prev) => prev.slice(0, index + 1));
-      setCurrentFolderId(crumb.id);
-    });
-  };
+  const openFolder = (folder: VaultFolder) => openFolderPath(folder.id, folder.name);
 
   // ── Actions ──────────────────────────────────────────────────
   const handleDeleteFile = (fileId: string) => {
@@ -671,9 +602,7 @@ export function OpenVault({
             "flex flex-col h-full relative transition-all duration-300",
             isDragging && "bg-[#2da07a]/[0.02]"
         )}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
+        {...dragHandlers}
     >
       {/* ── Drag overlay hint ── */}
       {isDragging && (
@@ -725,33 +654,19 @@ export function OpenVault({
       </div>
 
       {/* ── Breadcrumbs ── */}
-      {(breadcrumbs.length > 0 || true) && (
-        <div className="flex items-center gap-1 text-sm mb-4 flex-shrink-0 overflow-x-auto scrollbar-hide whitespace-nowrap">
-          <button
-            onClick={navigateToRoot}
-            className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
-          >
+      <FolderBreadcrumbs
+        className="mb-4 flex-shrink-0"
+        separator="caret"
+        breadcrumbs={breadcrumbs}
+        rootLabel={
+          <>
             <House size={13} />
             <span>Vault</span>
-          </button>
-          {breadcrumbs.map((crumb, i) => (
-            <span key={crumb.id} className="flex items-center gap-1">
-              <CaretRight size={11} className="text-muted-foreground" />
-              <button
-                onClick={() => navigateToBreadcrumb(i)}
-                className={cn(
-                  "transition-colors",
-                  i === breadcrumbs.length - 1
-                    ? "text-foreground font-medium"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {crumb.name}
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
+          </>
+        }
+        onRoot={navigateToRoot}
+        onCrumb={navigateToBreadcrumb}
+      />
 
       <div className="flex flex-col gap-4 mb-4">
         {/* Row 1: Filters */}

@@ -1,9 +1,7 @@
 // components/FileListClient.tsx
 "use client";
 
-import { useState, useCallback, useTransition, useRef, useMemo, type ComponentProps } from "react";
-import { toast } from "sonner";
-import { useRouter } from "next/navigation";
+import { useState, useCallback, type ComponentProps } from "react";
 import { CloudArrowUp } from "@phosphor-icons/react";
 import { FileGrid } from "@/components/FileGrid";
 import { useUpload } from "@/hooks/useUpload";
@@ -13,11 +11,14 @@ import { ActionsDropdown } from "./UploadDropdown";
 import { FileFilters } from "./FileFilters";
 import { NoteEditorDialog } from "./NoteEditorDialog";
 import { useSearchParams } from "next/navigation";
-import { useEffect } from "react";
 import { useInfiniteFilesQuery } from "@/hooks/queries/useInfiniteFilesQuery";
 import { DuplicateUploadDialog } from "./DuplicateUploadDialog";
 import { checkFilesExist } from "@/actions/files";
 import { InfiniteScrollTrigger } from "@/components/InfiniteScrollTrigger";
+import { useFolderPath } from "@/hooks/useFolderPath";
+import { useFileDrop } from "@/hooks/useFileDrop";
+import { FolderBreadcrumbs } from "@/components/FolderBreadcrumbs";
+import { FileGridSkeleton, FolderLoadError } from "@/components/FileGridStates";
 
 type FileGridProps = ComponentProps<typeof FileGrid>;
 type FileItem = FileGridProps["files"][number] & { onEdit?: () => void };
@@ -34,24 +35,14 @@ type FilesData = {
 };
 
 export function FileListClient({ initialData }: { initialData?: unknown }) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const toastIdRef = useRef<string | number | null>(null);
+  const {
+    breadcrumbs,
+    currentFolderId,
+    openFolder,
+    navigateToBreadcrumb,
+    navigateToRoot,
+  } = useFolderPath();
 
-  useEffect(() => {
-    if (isPending) {
-      if (!toastIdRef.current) {
-        toastIdRef.current = toast.loading("Opening folder...");
-      }
-    } else {
-      if (toastIdRef.current) {
-        toast.dismiss(toastIdRef.current);
-        toastIdRef.current = null;
-      }
-    }
-  }, [isPending]);
-
-  const [isDragging, setIsDragging] = useState(false);
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [noteEditor, setNoteEditor] = useState<{
     open: boolean;
@@ -75,38 +66,8 @@ export function FileListClient({ initialData }: { initialData?: unknown }) {
   const maxSize = searchParams.get("maxSize") ? Number(searchParams.get("maxSize")) : undefined;
   const tagId = searchParams.get("tagId") || undefined;
 
-  // Parse path/names from URL for breadcrumbs
-  const pathParam = searchParams.get("path");
-  const namesParam = searchParams.get("names");
-  const folderParam = searchParams.get("folder");
-  const folderNameParam = searchParams.get("name");
-
-  // Determine the active folder from URL
-  const activeFolderId = (() => {
-    if (pathParam && namesParam) {
-      const ids = pathParam.split(",");
-      return ids[ids.length - 1];
-    }
-    if (folderParam) return folderParam;
-    if (query) return null; // search mode
-    return null;
-  })();
-
-  const breadcrumbs = useMemo(() => {
-    if (pathParam && namesParam) {
-      const ids = pathParam.split(",");
-      const decodedNames = namesParam.split(",").map(decodeURIComponent);
-      return ids.map((id, i) => ({ id, name: decodedNames[i] }));
-    }
-
-    if (folderParam) {
-      if (folderNameParam) {
-        return [{ id: folderParam, name: decodeURIComponent(folderNameParam) }];
-      }
-    }
-
-    return [];
-  }, [pathParam, namesParam, folderParam, folderNameParam]);
+  // In search mode the query results render at the root (no active folder).
+  const activeFolderId = query ? null : currentFolderId;
 
   const queryOptions = {
     query: query || undefined,
@@ -124,7 +85,17 @@ export function FileListClient({ initialData }: { initialData?: unknown }) {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
+    isError,
+    isLoading,
+    isFetching,
+    isPlaceholderData,
   } = useInfiniteFilesQuery(activeFolderId, queryOptions, initialData);
+
+  // First-load skeleton vs. dimmed-while-switching: isLoading covers the very
+  // first fetch; isPlaceholderData means we're showing the previous folder
+  // while the next one loads.
+  const showSkeleton = isLoading && !data;
+  const isSwitching = isFetching && isPlaceholderData;
 
   const pages = (data?.pages ?? []) as FilesData[];
   const files = pages.flatMap((page) => page.files ?? []);
@@ -185,27 +156,8 @@ export function FileListClient({ initialData }: { initialData?: unknown }) {
     setDuplicateCheck({ open: false, duplicates: [], allFiles: [] });
   };
 
-  // ── Drag and drop ─────────────────────────────────────────
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    const nextTarget = e.relatedTarget;
-    if (!(nextTarget instanceof Node) || !e.currentTarget.contains(nextTarget)) {
-      setIsDragging(false);
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-    if (e.dataTransfer.files.length > 0) {
-      handleUploadFiles(e.dataTransfer.files);
-    }
-  };
+  // ── Drag and drop (reliable: depth-counted, folder-aware) ──
+  const { isDragging, dragHandlers } = useFileDrop(handleUploadFiles);
 
   // ── Note Editing ──────────────────────────────────────────
   const handleEditNote = async (file: FileItem) => {
@@ -233,76 +185,25 @@ export function FileListClient({ initialData }: { initialData?: unknown }) {
     onEdit: () => handleEditNote(f),
   }));
 
-  // ── Folder navigation ─────────────────────────────────────
-  const openFolder = (id: string, name: string) => {
-    const newPath = [...breadcrumbs, { id, name }];
-
-    const pathIds = newPath.map((c) => c.id).join(",");
-    const pathNames = newPath.map((c) => encodeURIComponent(c.name)).join(",");
-
-    startTransition(() => {
-      router.push(`/dashboard/files?path=${pathIds}&names=${pathNames}`);
-    });
-  };
-
-  const navigateToBreadcrumb = (index: number) => {
-    const newCrumbs = breadcrumbs.slice(0, index + 1);
-
-    const pathIds = newCrumbs.map((c) => c.id).join(",");
-    const pathNames = newCrumbs.map((c) => encodeURIComponent(c.name)).join(",");
-
-    startTransition(() => {
-      router.push(`/dashboard/files?path=${pathIds}&names=${pathNames}`);
-    });
-  };
-
-  const navigateToRoot = () => {
-    startTransition(() => {
-      router.push("/dashboard/files");
-    });
-  };
-
   return (
     <div
       className={cn(
         "relative flex h-full flex-col p-4 transition-all duration-150 md:p-6",
         isDragging && "bg-[#2da07a]/5 ring-2 ring-inset ring-[#2da07a]/30 rounded-xl"
       )}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+      {...dragHandlers}
     >
       {/* ── Header ── */}
       <div className="flex items-center justify-between mb-6">
 
         {/* Left: Breadcrumbs */}
         <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-1 text-sm overflow-x-auto scrollbar-hide whitespace-nowrap">
-            <button
-              onClick={navigateToRoot}
-              className="text-muted-foreground hover:text-foreground transition-colors"
-            >
-              My Files
-            </button>
-
-            {breadcrumbs.map((crumb, i) => (
-              <span key={crumb.id} className="flex items-center gap-1">
-                <span className="text-muted-foreground">/</span>
-
-                <button
-                  onClick={() => navigateToBreadcrumb(i)}
-                  className={cn(
-                    "transition-colors",
-                    i === breadcrumbs.length - 1
-                      ? "text-foreground font-medium"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {crumb.name}
-                </button>
-              </span>
-            ))}
-          </div>
+          <FolderBreadcrumbs
+            breadcrumbs={breadcrumbs}
+            rootLabel="My Files"
+            onRoot={navigateToRoot}
+            onCrumb={navigateToBreadcrumb}
+          />
         </div>
 
         {/* Right: Actions */}
@@ -360,18 +261,28 @@ export function FileListClient({ initialData }: { initialData?: unknown }) {
       )}
 
       {/* ── File grid ── */}
-      <FileGrid
-        files={enhancedFiles}
-        folders={folders}
-        onFolderOpen={openFolder}
-        onRefresh={refresh}
-      />
+      {showSkeleton ? (
+        <FileGridSkeleton />
+      ) : isError ? (
+        <FolderLoadError onRetry={() => refresh()} />
+      ) : (
+        <>
+          <div className={cn("transition-opacity", isSwitching && "opacity-50 pointer-events-none")}>
+            <FileGrid
+              files={enhancedFiles}
+              folders={folders}
+              onFolderOpen={openFolder}
+              onRefresh={refresh}
+            />
+          </div>
 
-      <InfiniteScrollTrigger
-        hasMore={!!hasNextPage}
-        isLoading={isFetchingNextPage}
-        onLoadMore={loadMore}
-      />
+          <InfiniteScrollTrigger
+            hasMore={!!hasNextPage}
+            isLoading={isFetchingNextPage}
+            onLoadMore={loadMore}
+          />
+        </>
+      )}
     </div>
   );
 }

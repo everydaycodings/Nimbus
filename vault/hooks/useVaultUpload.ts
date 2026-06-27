@@ -16,6 +16,7 @@ import {
 } from "@/vault/actions/vault.actions"
 import { useUploadStore } from "@/store/uploadStore"
 import { generateClientThumbnail } from "@/lib/client-thumbnail"
+import { uploadToS3 } from "@/lib/upload/uploadToS3"
 
 export interface VaultUploadItem {
   id: string
@@ -95,21 +96,15 @@ export function useVaultUpload(vaultId: string, key: CryptoKey, options: VaultUp
 
             updateUpload(tempId, { status: "uploading" });
 
-            // Simple sequential upload for fragments to keep it reliable
-            await new Promise<void>((resolve, reject) => {
-                const xhr = new XMLHttpRequest();
-                xhr.upload.addEventListener("progress", (e) => {
-                    if (e.lengthComputable) {
-                        const baseProgress = (i / chunkCount) * 100;
-                        const chunkProgress = (e.loaded / e.total) * (100 / chunkCount);
-                        updateUpload(tempId, { progress: Math.round(baseProgress + chunkProgress) });
-                    }
-                });
-                xhr.addEventListener("load", () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Fragment ${i} failed`)));
-                xhr.addEventListener("error", () => reject(new Error("Fragment network error")));
-                xhr.open("PUT", chunkInfo.presignedUrl);
-                xhr.setRequestHeader("Content-Type", "application/octet-stream");
-                xhr.send(encryptedChunk.buffer as ArrayBuffer);
+            // Upload the encrypted fragment with retry/backoff. Blob preserves
+            // the view's byteOffset/length (safer than the raw .buffer).
+            await uploadToS3(chunkInfo.presignedUrl, new Blob([encryptedChunk.buffer as ArrayBuffer]), {
+                onProgress: (pct) => {
+                    const baseProgress = (i / chunkCount) * 100;
+                    updateUpload(tempId, {
+                        progress: Math.round(baseProgress + pct / chunkCount),
+                    });
+                },
             });
 
             uploadedChunks.push({
@@ -161,37 +156,17 @@ export function useVaultUpload(vaultId: string, key: CryptoKey, options: VaultUp
         if (thumbnailBlob && thumbnail) {
             thumbKey = thumbnail.s3Key;
             const encryptedThumb = await encryptBuffer(await thumbnailBlob.arrayBuffer(), key);
-            
-            thumbUploadPromise = fetch(thumbnail.presignedUrl, {
-                method: "PUT",
-                body: encryptedThumb as any,
-                headers: { "Content-Type": "application/octet-stream" },
-            });
+
+            // Best-effort — a failed thumbnail must not fail the file.
+            thumbUploadPromise = uploadToS3(
+                thumbnail.presignedUrl,
+                new Blob([encryptedThumb.buffer as ArrayBuffer])
+            ).catch(() => null);
         }
 
-        // Step 4: Upload main file to S3 with progress
-        await new Promise<void>((resolve, reject) => {
-            const xhr = new XMLHttpRequest()
-
-            xhr.upload.addEventListener("progress", (e) => {
-            if (e.lengthComputable) {
-                updateUpload(tempId, {
-                progress: Math.round((e.loaded / e.total) * 100),
-                })
-            }
-            })
-
-            xhr.addEventListener("load", () =>
-            xhr.status >= 200 && xhr.status < 300
-                ? resolve()
-                : reject(new Error(`Upload failed (${xhr.status} ${xhr.statusText})`))
-            )
-            xhr.addEventListener("error", () => reject(new Error("Network error")))
-            xhr.addEventListener("abort", () => reject(new Error("Cancelled")))
-
-            xhr.open("PUT", presignedUrl)
-            xhr.setRequestHeader("Content-Type", "application/octet-stream")
-            xhr.send(encryptedBlob)
+        // Step 4: Upload encrypted main file to S3 with retry + progress
+        await uploadToS3(presignedUrl, encryptedBlob, {
+            onProgress: (progress) => updateUpload(tempId, { progress }),
         })
 
         // Step 5: Save metadata in Supabase
