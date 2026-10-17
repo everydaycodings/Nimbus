@@ -9,6 +9,9 @@ import { db } from "@/lib/db"
 import { user, type Status } from "@/lib/db/schema"
 import { cn } from "@/lib/utils"
 import { requireAdmin } from "@/lib/session"
+import { formatBytes } from "@/lib/file-rules"
+import { usedByOwner } from "@/lib/quota"
+import { getSettings } from "@/lib/signup"
 import { setRole, setStatus } from "./actions"
 import { MemberMenu } from "./member-menu"
 
@@ -26,6 +29,11 @@ const ROLE_LABEL = { owner: "Owner", admin: "Admin", member: "Member" }
 
 const joined = new Intl.DateTimeFormat("en", { dateStyle: "medium" })
 
+const storageLabel = (used: number, quota: number | null) =>
+  quota === null
+    ? `${formatBytes(used)} used`
+    : `${formatBytes(used)} of ${formatBytes(quota)}`
+
 export default async function MembersPage({
   searchParams,
 }: {
@@ -35,11 +43,16 @@ export default async function MembersPage({
   const { tab } = await searchParams
   const current = TABS.find((t) => t.status === tab) ?? TABS[0]
 
+  const settings = await getSettings()
   const people = await db
     .select()
     .from(user)
     .where(eq(user.status, current.status))
     .orderBy(desc(user.createdAt))
+  const used =
+    current.status === "active"
+      ? await usedByOwner(people.map((p) => p.id))
+      : null
 
   return (
     <div className="flex flex-col gap-6">
@@ -91,6 +104,16 @@ export default async function MembersPage({
                     {p.email}
                   </p>
                 </div>
+                {used && (
+                  <p className="text-sm text-muted-foreground tabular-nums">
+                    {storageLabel(
+                      used.get(p.id) ?? 0,
+                      p.role === "owner"
+                        ? null
+                        : (p.quotaBytes ?? settings.defaultQuotaBytes)
+                    )}
+                  </p>
+                )}
                 <div className="flex items-center gap-3 text-sm text-muted-foreground">
                   <Badge variant="outline">
                     {ROLE_LABEL[p.role as keyof typeof ROLE_LABEL]}
@@ -137,6 +160,8 @@ export default async function MembersPage({
                         id={p.id}
                         name={p.name}
                         twoFactor={Boolean(p.twoFactorEnabled)}
+                        quota={p.quotaBytes}
+                        fallback={settings.defaultQuotaBytes}
                       />
                     )}
                   </div>

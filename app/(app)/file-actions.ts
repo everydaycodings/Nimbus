@@ -26,6 +26,7 @@ import {
 import { getPath, UUID } from "@/lib/files"
 import { requireMember } from "@/lib/session"
 import { restoreNode, trashNodes } from "@/lib/tree"
+import { deleteNodes } from "@/lib/uploads"
 
 type Result = { error?: string }
 
@@ -189,17 +190,15 @@ export async function restoreItems(rawIds: string[]): Promise<Result> {
 
 export async function deleteForever(rawIds: string[]) {
   const me = await requireMember()
-  await db
-    .delete(nodes)
-    .where(and(owned(me.id, cleanIds(rawIds)), isNotNull(nodes.trashedAt)))
+  const ids = cleanIds(rawIds)
+  if (ids.length)
+    await deleteNodes(and(owned(me.id, ids), isNotNull(nodes.trashedAt)))
   refresh()
 }
 
 export async function emptyTrash() {
   const me = await requireMember()
-  await db
-    .delete(nodes)
-    .where(and(eq(nodes.ownerId, me.id), isNotNull(nodes.trashedAt)))
+  await deleteNodes(and(eq(nodes.ownerId, me.id), isNotNull(nodes.trashedAt)))
   refresh()
 }
 

@@ -21,16 +21,19 @@ import { redirect } from "next/navigation"
 import { NavLink } from "@/components/nav-link"
 import { NAV_ITEM, NAV_LABEL, SIDEBAR_COOKIE } from "@/components/nav-styles"
 import { NavUser } from "@/components/nav-user"
+import { StorageMeter } from "@/components/storage-meter"
 import { PasswordForm } from "@/components/password-form"
 import { ResendVerification } from "@/components/resend-verification"
 import { SidebarShell } from "@/components/sidebar-shell"
 import { TwoFactorSetup } from "@/components/two-factor"
+import { NewMenu, UploadProvider } from "@/components/upload-provider"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { db } from "@/lib/db"
 import { user } from "@/lib/db/schema"
 import { emailEnabled } from "@/lib/email"
+import { getUsage } from "@/lib/quota"
 import { getSession, hasPassword, isAdmin } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
 import { signOut } from "./actions"
@@ -217,6 +220,7 @@ export default async function AppLayout({
         </span>
       </div>
       <nav className="flex flex-col gap-4" aria-label="Main">
+        <NewMenu />
         <div className="flex flex-col gap-0.5">
           <p
             className={`flex h-8 items-center px-2 text-xs font-medium whitespace-nowrap text-muted-foreground ${label}`}
@@ -255,7 +259,8 @@ export default async function AppLayout({
           </div>
         )}
       </nav>
-      <div className="mt-auto">
+      <div className="mt-auto flex flex-col gap-3">
+        <StorageMeter usage={await getUsage(me.id)} />
         <NavUser
           name={me.name}
           email={me.email}
@@ -267,8 +272,13 @@ export default async function AppLayout({
   )
 
   return (
-    <SidebarShell sidebar={sidebar} defaultCollapsed={collapsed}>
-      {children}
-    </SidebarShell>
+    <UploadProvider
+      tusUrl={process.env.TUS_URL ?? ""}
+      zipMode={process.env.VERCEL ? "client" : "server"}
+    >
+      <SidebarShell sidebar={sidebar} defaultCollapsed={collapsed}>
+        {children}
+      </SidebarShell>
+    </UploadProvider>
   )
 }

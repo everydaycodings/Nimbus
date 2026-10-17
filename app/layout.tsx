@@ -29,7 +29,8 @@ export default function RootLayout({
       lang="en"
       className={cn("dark antialiased", fontSans.variable, fontMono.variable)}
     >
-      <body>{children}</body>
+      {/* Extensions like Grammarly stamp attributes on body before React loads. */}
+      <body suppressHydrationWarning>{children}</body>
     </html>
   )
 }

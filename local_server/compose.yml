@@ -41,6 +41,9 @@ services:
       S3_BUCKET: ${S3_BUCKET:-nimbus}
     restart: "no"
 
+  # Hooks: pre-create checks the upload token, post-finish turns the upload into a
+  # file. With TUS_HOOK_SECRET set in the app, add it to the URL:
+  # TUS_HOOK_URL=http://host.docker.internal:3000/api/tus-hooks?secret=<TUS_HOOK_SECRET>
   tusd:
     image: tusproject/tusd:latest
     depends_on:

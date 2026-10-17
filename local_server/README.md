@@ -42,6 +42,15 @@ SMTP_PORT=1025
 tusd calls `http://host.docker.internal:3000/api/tus-hooks` on `pre-create` and `post-finish`,
 so `npm run dev` must be running for uploads to be accepted.
 
+To stop anything but tusd calling the hooks, set `TUS_HOOK_SECRET` in the app's env and put the
+same value in the hook URL (tusd can't add headers of its own), in `local_server/.env`:
+
+```sh
+TUS_HOOK_URL=http://host.docker.internal:3000/api/tus-hooks?secret=<TUS_HOOK_SECRET>
+```
+
+Without `TUS_HOOK_SECRET` the hook endpoint accepts any caller, which is fine for local dev only.
+
 ## Reset
 
 ```sh

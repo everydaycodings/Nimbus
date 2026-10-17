@@ -1,0 +1,64 @@
+// File rules with no UI imports, so server code can use them too. lib/file-types.ts
+// re-exports them next to the icons.
+
+export const DOC =
+  /\.(docx?|odt|rtf|txt|xlsx?|ods|csv|pptx?|odp|pages|numbers|key)$/i
+
+const UNITS = ["B", "KB", "MB", "GB", "TB"]
+
+export function formatBytes(n: number) {
+  let i = 0
+  while (n >= 1024 && i < UNITS.length - 1) {
+    n /= 1024
+    i++
+  }
+  return `${i ? n.toFixed(n < 10 ? 1 : 0) : n} ${UNITS[i]}`
+}
+
+const TEXT =
+  /\.(txt|log|ini|conf|cfg|env|properties|c|h|cc|cpp|hpp|cs|css|scss|less|go|html?|java|js|mjs|cjs|json|jsx|kt|lua|php|pl|py|r|rb|rs|scala|sh|bash|zsh|sql|swift|toml|ts|tsx|vue|svelte|xml|ya?ml|graphql|proto|tf|dart|gradle|bat|ps1|diff|patch)$|(^|\/)(dockerfile|makefile|readme|license)$/i
+
+export type PreviewKind =
+  | "image"
+  | "video"
+  | "audio"
+  | "pdf"
+  | "markdown"
+  | "csv"
+  | "text"
+  | "zip"
+  | "docx"
+  | "sheet"
+
+// Browsers label TypeScript as MPEG transport stream video.
+// ponytail: real .ts video recordings show as code; sniff the bytes if that matters.
+export const mimeOf = (mime: string | null, name: string) =>
+  /\.(ts|tsx|mts|cts)$/i.test(name) ? "text/typescript" : (mime ?? "")
+
+// Which viewer opens a file, or null when the browser can't show it.
+export function previewKind(
+  mime: string | null,
+  name: string
+): PreviewKind | null {
+  const m = mimeOf(mime, name)
+  if (m.startsWith("image/")) return "image"
+  if (m.startsWith("video/")) return "video"
+  if (m.startsWith("audio/")) return "audio"
+  if (m === "application/pdf" || /\.pdf$/i.test(name)) return "pdf"
+  if (/\.(md|markdown)$/i.test(name)) return "markdown"
+  if (/\.(csv|tsv)$/i.test(name)) return "csv"
+  if (/\.zip$/i.test(name)) return "zip"
+  if (/\.docx$/i.test(name)) return "docx"
+  if (/\.(xlsx|xlsm|xls|ods)$/i.test(name)) return "sheet"
+  if (
+    TEXT.test(name) ||
+    m.startsWith("text/") ||
+    /json|xml|javascript|yaml|toml/.test(m)
+  )
+    return "text"
+  return null
+}
+
+// Kinds the browser can draw a thumbnail of.
+export const thumbable = (k: PreviewKind | null) =>
+  k !== null && k !== "zip" && k !== "docx" && k !== "sheet"

@@ -66,6 +66,11 @@ export const nodes = pgTable(
     size: bigint("size", { mode: "number" }).notNull().default(0),
     mime: text("mime"),
     s3Key: text("s3_key"),
+    // The version a file shows and downloads. s3_key, size and mime mirror it.
+    currentVersionId: uuid("current_version_id").references(
+      (): AnyPgColumn => fileVersions.id,
+      { onDelete: "set null" }
+    ),
     starred: boolean("starred").notNull().default(false),
     trashedAt: timestamp("trashed_at", { withTimezone: true }),
     createdAt: createdAt(),
@@ -96,6 +101,41 @@ export const nodes = pgTable(
       sql`(${t.kind} = 'folder') = (${t.s3Key} is null)`
     ),
     check("nodes_name_not_blank", sql`length(trim(${t.name})) > 0`),
+  ]
+)
+
+// Every upload of a file. The newest row is the current version, which nodes
+// mirrors in s3_key/size/mime. Restore copies an old row to the top, so two rows
+// can share an s3_key; an object is deleted only once no row points at it.
+export const fileVersions = pgTable(
+  "file_versions",
+  {
+    id: id(),
+    nodeId: uuid("node_id")
+      .notNull()
+      .references(() => nodes.id, { onDelete: "cascade" }),
+    s3Key: text("s3_key").notNull(),
+    size: bigint("size", { mode: "number" }).notNull(),
+    mime: text("mime"),
+    // The tus upload id, so finishing the same upload twice is a no-op.
+    uploadId: text("upload_id").unique(),
+    uploadedBy: text("uploaded_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    // v1, v2, … per file. Stays put when other versions are deleted.
+    number: integer("number").notNull(),
+    note: text("note"),
+    // Kept forever: automatic pruning skips it.
+    keep: boolean("keep").notNull().default(false),
+    // Thumbnail at thumbs/<s3Key>.webp: null until tried, "" when the browser
+    // couldn't make one, otherwise a revision that changes when it's replaced.
+    thumb: text("thumb"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("file_versions_node_number_idx").on(t.nodeId, t.number),
+    index("file_versions_node_id_idx").on(t.nodeId),
+    index("file_versions_s3_key_idx").on(t.s3Key),
   ]
 )
 
@@ -213,6 +253,14 @@ export const settings = pgTable(
     resendApiKey: text("resend_api_key"),
     // Trashed items older than this are deleted for good. Null keeps them until emptied.
     trashRetentionDays: integer("trash_retention_days"),
+    // Uploads. Null means no limit.
+    maxUploadBytes: bigint("max_upload_bytes", { mode: "number" }),
+    // Storage each member gets unless they have their own. Null: unlimited.
+    defaultQuotaBytes: bigint("default_quota_bytes", { mode: "number" }),
+    // Lowercase, without the dot.
+    blockedExtensions: text("blocked_extensions").array().notNull().default([]),
+    versionKeepLast: integer("version_keep_last"),
+    versionMaxAgeDays: integer("version_max_age_days"),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

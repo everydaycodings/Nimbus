@@ -10,6 +10,10 @@ import {
   FolderIcon,
 } from "@phosphor-icons/react"
 
+import { DOC, mimeOf } from "@/lib/file-rules"
+
+export { DOC, formatBytes } from "@/lib/file-rules"
+
 // Icon and hue for each kind of file. Colors are the --file-* tokens in globals.css.
 const TYPES = {
   folder: {
@@ -65,7 +69,6 @@ const TYPES = {
 
 const CODE =
   /\.(c|cpp|cs|css|go|h|html|java|js|json|jsx|kt|md|php|py|rb|rs|sh|sql|swift|toml|ts|tsx|xml|ya?ml)$/i
-const DOC = /\.(docx?|odt|rtf|txt|xlsx?|ods|csv|pptx?|odp|pages|numbers|key)$/i
 const ARCHIVE = /\.(zip|tar|gz|tgz|bz2|xz|7z|rar)$/i
 
 export function fileType(
@@ -74,7 +77,7 @@ export function fileType(
   name: string
 ) {
   if (kind === "folder") return TYPES.folder
-  const m = mime ?? ""
+  const m = mimeOf(mime, name)
   if (m.startsWith("image/")) return TYPES.image
   if (m.startsWith("video/")) return TYPES.video
   if (m.startsWith("audio/")) return TYPES.audio
@@ -93,15 +96,4 @@ export const TAG_DOT = {
   blue: "bg-tag-blue",
   purple: "bg-tag-purple",
   gray: "bg-tag-gray",
-}
-
-const UNITS = ["B", "KB", "MB", "GB", "TB"]
-
-export function formatBytes(n: number) {
-  let i = 0
-  while (n >= 1024 && i < UNITS.length - 1) {
-    n /= 1024
-    i++
-  }
-  return `${i ? n.toFixed(n < 10 ? 1 : 0) : n} ${UNITS[i]}`
 }

@@ -83,9 +83,17 @@ async function plant(t: Tree, parentId: string | null) {
     const at = ago()
     if (Array.isArray(v)) {
       const [mime, size, starred = false] = v
-      await sql`
+      const [row] = await sql`
         insert into nodes (owner_id, parent_id, kind, name, size, mime, s3_key, starred, created_at, updated_at)
-        values (${me.id}, ${parentId}, 'file', ${name}, ${size}, ${mime}, ${"seed/" + crypto.randomUUID()}, ${starred}, ${at}, ${at})`
+        values (${me.id}, ${parentId}, 'file', ${name}, ${size}, ${mime}, ${"seed/" + crypto.randomUUID()}, ${starred}, ${at}, ${at})
+        returning id, s3_key`
+      await sql`
+        with v as (
+          insert into file_versions (node_id, number, s3_key, size, mime, uploaded_by, created_at)
+          values (${row.id}, 1, ${row.s3_key}, ${size}, ${mime}, ${me.id}, ${at})
+          returning id
+        )
+        update nodes set current_version_id = (select id from v) where id = ${row.id}`
     } else {
       const [row] = await sql`
         insert into nodes (owner_id, parent_id, kind, name, starred, created_at, updated_at)

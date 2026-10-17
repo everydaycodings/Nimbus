@@ -81,13 +81,31 @@ password accounts must set it up. Google and GitHub sign-ins rely on the provide
 - `npm run db:seed [email]` fills an account with sample folders and byte-less files for development
 - Left for later: renaming, recoloring and deleting tags; remembering sort per view
 
-## Phase 5: Uploads
-- tusd resumable uploads into S3 (pre-create auth hook, post-finish writes the node)
-- Single files, many files, whole folders (drag and drop or picker)
-- Uploading a file with the same name as an existing one in that folder adds a new version
-  instead of failing; versions are listed in Details and can be restored
-- Deleting forever, emptying the trash and the retention purge also delete the S3 objects
-  (they only remove rows today)
+## Phase 5: Uploads, versions, downloads, storage ✓ done
+- tusd resumable uploads into S3, 3 at a time. The app signs an upload token (user + target
+  folder, 24h); tusd's pre-create hook checks it, the size limit, blocked types and the quota.
+  Finishing is idempotent and runs from both the post-finish hook and the browser.
+- Upload from the sidebar **New** menu (files or a folder), by dropping onto the page, a folder
+  tile or a breadcrumb, or by pasting with Ctrl+V. A corner panel shows progress and ETA, with
+  pause/resume per file and for all, cancel and retry. It hides itself ~5 s after everything
+  succeeds. Uploads cut off by a closed tab resume when the same files are picked again.
+- Same names ask each time: files get New version / Keep both / Skip, folders Merge / Keep
+  both / Skip, with Apply to all.
+- **Versions:** each file points at its current version, so any version (older or newer) can be
+  made current and switched back. Versions are numbered, can carry a note, be kept forever
+  (pruning skips them), be saved as a separate file, downloaded or deleted. A Versions dialog
+  lists them all; Details shows the latest three. Admins can cap versions by count or age.
+- **Downloads:** single files redirect to a presigned URL; folders and selections stream as a
+  store-only ZIP64 from the server (flat memory, fine for 70 GB+). On Vercel the browser builds
+  the zip and streams it to disk instead.
+- Deleting forever, emptying the trash and the retention purge delete the S3 objects too,
+  except ones another version still uses.
+- **Storage:** a sidebar meter (used of quota, split into images, videos, docs, other and
+  versions & trash). Admins set a default quota and per-member limits; the owner is unlimited.
+  Usage counts every stored byte, including older versions and the trash.
+- Admin settings: largest file, blocked file types, version limits, storage per member.
+- Left for later: an orphan sweep for S3 deletes that fail (they're only logged), reserving quota
+  for uploads in flight.
 
 ## Phase 6: Sharing, previews, search
 - Share with users (viewer/editor) and public links with expiry. Opening shared folders and
@@ -104,4 +122,4 @@ password accounts must set it up. Google and GitHub sign-ins rely on the provide
 - Server stores only ciphertext and the wrapped key; no previews, thumbnails or content search for vault files
 
 ## Phase 8: Ship
-- Production Dockerfile and compose, Vercel guide, backups, storage quotas
+- Production Dockerfile and compose, Vercel guide, backups

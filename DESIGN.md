@@ -85,6 +85,45 @@ name, in menus and on the Tags filter.
   replace the leading icon on hover and everywhere in selection mode.
 - Action results (moved, trashed with Undo, errors) show inline in the notice slot, never as toasts.
 - Details is a right-hand sheet (Base UI Dialog sliding from the right) with a `dl` of facts.
+- Destructive menu actions (Move to trash, Delete forever, Delete version) are `text-destructive`
+  everywhere they appear: ⋯ menu, right-click menu and selection bar.
+- Sizes use `tabular-nums` in the sans face, not mono, so "9 B" doesn't split from its unit.
+
+## Uploads, versions, storage
+- The sidebar opens with a primary **New** button (menu: New folder, File upload, Folder upload).
+- Uploads show in a Drive-style panel pinned bottom-right (`components/upload-panel.tsx`): a
+  header with "Uploading N of M · ETA" and pause/resume all, rows with a thin teal progress bar.
+  It collapses, and clears itself ~5 s after everything succeeds unless hovered or focused.
+- Dropping OS files shows a full-area dashed teal overlay naming the destination folder.
+- Same-name conflicts ask in a dialog, one at a time, with an Apply to all checkbox.
+- The Versions dialog (`components/versions-dialog.tsx`, `max-w-xl`) lists rows of version
+  number, date, Current badge, a pin when kept forever, size · uploader and the note. Make current
+  and Download are inline; the rest sit in a per-row ⋯ menu.
+- The storage meter sits above the account menu in the sidebar footer: "Storage" and used / quota,
+  a 6px bar split by file-type hues (`--file-image`, `--file-video`, `--file-doc`,
+  `--file-archive` for Other) plus a hatched segment for versions & trash, and a dot legend.
+  The total turns `text-destructive` at 90%.
+- Base UI positioners share the dialogs' `z-50` layer (one rule in `globals.css`), so menus
+  opened inside dialogs land on top.
+
+## Thumbnails and previews
+- Grid file cards fill their 4:3 well with a thumbnail (`components/thumb.tsx`), cover-cropped;
+  pages and code anchor to the top. Thumbnails are 480px WebP drawn in the browser; text ones
+  use shiki's `github-dark-default` colors.
+- Opening a file shows the previewer (`components/previewer.tsx`): a full-screen `black/95`
+  overlay, a 56px top bar (close, type icon, name, `vN` chip for older versions, "3 of 12",
+  download, details, ⋯) and round outline prev/next buttons at the sides.
+- Code, text and Markdown sit in a bordered `bg-background` panel with a 44px toolbar
+  (Preview/Source segmented toggle, line count, Wrap, Copy); code has muted line numbers.
+  CSV and spreadsheets are sticky-header tables with row numbers; sheets switch by a
+  segmented tab strip below.
+- Video uses Nimbus's own player (`components/video-player.tsx`): fitted to the video's shape
+  on a black `rounded-xl` stage, a centered frosted play button while paused, and a bottom
+  scrim holding a teal seek bar (buffered in white/35, hover time readout), play, volume,
+  time, speed menu, picture-in-picture and fullscreen. Controls fade after 2.5 s of playback.
+- Owners change a thumbnail from the ⋯ menu ("Change thumbnail…" picks an image, "Reset
+  thumbnail" goes back to automatic) or with the player's "Use this frame" button. Thumbnail
+  URLs carry a revision (`?r=`), so they cache forever and change when replaced.
 
 ## Shape and density
 - Radius base `--radius: 0.625rem` (10px). Cards and containers `rounded-xl`, controls `rounded-md`.

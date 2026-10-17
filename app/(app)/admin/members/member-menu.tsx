@@ -2,7 +2,12 @@
 
 import { Dialog } from "@base-ui/react/dialog"
 import { Menu } from "@base-ui/react/menu"
-import { DotsThreeIcon, KeyIcon, ShieldSlashIcon } from "@phosphor-icons/react"
+import {
+  DotsThreeIcon,
+  HardDrivesIcon,
+  KeyIcon,
+  ShieldSlashIcon,
+} from "@phosphor-icons/react"
 import { useState, useTransition } from "react"
 
 import { CopyButton } from "@/components/copy-button"
@@ -15,17 +20,28 @@ import {
 import { SubmitButton } from "@/components/submit-button"
 import { FormError } from "@/components/two-factor"
 import { Button } from "@/components/ui/button"
-import { resetTwoFactor, setTemporaryPassword } from "./actions"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { formatBytes } from "@/lib/file-types"
+import { resetTwoFactor, setMemberQuota, setTemporaryPassword } from "./actions"
+
+const GB = 2 ** 30
 
 export function MemberMenu({
   id,
   name,
   twoFactor,
+  quota,
+  fallback,
 }: {
   id: string
   name: string
   twoFactor: boolean
+  // Their own storage limit, and the instance default it falls back to.
+  quota: number | null
+  fallback: number | null
 }) {
+  const [quotaOpen, setQuotaOpen] = useState(false)
   // `kind` outlives `open` so the dialog's text doesn't change while it animates out.
   const [kind, setKind] = useState<"password" | "2fa">("password")
   const [open, setOpen] = useState(false)
@@ -75,6 +91,16 @@ export function MemberMenu({
               <Menu.Item className={MENU_ITEM} onClick={() => show("password")}>
                 <KeyIcon />
                 Set temporary password
+              </Menu.Item>
+              <Menu.Item
+                className={MENU_ITEM}
+                onClick={() => {
+                  setError(null)
+                  setQuotaOpen(true)
+                }}
+              >
+                <HardDrivesIcon />
+                Storage limit…
               </Menu.Item>
               {twoFactor && (
                 <Menu.Item className={MENU_ITEM} onClick={() => show("2fa")}>
@@ -141,6 +167,70 @@ export function MemberMenu({
                 </>
               )}
             </div>
+          </Dialog.Popup>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      <Dialog.Root
+        open={quotaOpen}
+        onOpenChange={(o) => !o && !pending && setQuotaOpen(false)}
+      >
+        <Dialog.Portal>
+          <Dialog.Backdrop className={DIALOG_BACKDROP} />
+          <Dialog.Popup className={DIALOG_POPUP}>
+            <div className="grid gap-1.5">
+              <Dialog.Title className="text-base font-semibold">
+                Storage limit for {name}
+              </Dialog.Title>
+              <Dialog.Description className="text-sm text-muted-foreground">
+                Counts their files, older versions and trash. Leave it blank to
+                use the default
+                {fallback === null
+                  ? " (unlimited)."
+                  : ` (${formatBytes(fallback)}).`}
+              </Dialog.Description>
+            </div>
+            <form
+              className="flex flex-col gap-4"
+              onSubmit={(e) => {
+                e.preventDefault()
+                const raw = String(
+                  new FormData(e.currentTarget).get("gb") ?? ""
+                ).trim()
+                setError(null)
+                start(async () => {
+                  const res = await setMemberQuota(
+                    id,
+                    raw ? Number(raw) * GB : null
+                  )
+                  if ("error" in res && res.error) return setError(res.error)
+                  setQuotaOpen(false)
+                })
+              }}
+            >
+              <div className="grid gap-2">
+                <Label htmlFor={`quota-${id}`}>Storage in GB</Label>
+                <Input
+                  id={`quota-${id}`}
+                  name="gb"
+                  type="number"
+                  min={0.01}
+                  step="any"
+                  defaultValue={quota === null ? "" : +(quota / GB).toFixed(2)}
+                  placeholder="Use the default"
+                />
+              </div>
+              <FormError>{error}</FormError>
+              <div className="flex justify-end gap-2">
+                <Dialog.Close
+                  disabled={pending}
+                  render={<Button variant="outline" />}
+                >
+                  Cancel
+                </Dialog.Close>
+                <SubmitButton pending={pending}>Save</SubmitButton>
+              </div>
+            </form>
           </Dialog.Popup>
         </Dialog.Portal>
       </Dialog.Root>

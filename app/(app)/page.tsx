@@ -23,7 +23,7 @@ export default async function MyFilesPage() {
       items={items}
       empty={{
         title: "No files yet",
-        body: "Make a folder to start organizing (Shift+N). Uploading files arrives in the next update of Nimbus.",
+        body: "Drop files here, paste with Ctrl+V, or use New to upload files and folders.",
       }}
       tags={tags}
       {...prefs}

@@ -5,6 +5,7 @@ import {
   and,
   desc,
   eq,
+  exists,
   gt,
   isNotNull,
   isNull,
@@ -17,6 +18,7 @@ import { redirect } from "next/navigation"
 import { DENSITY_COOKIE, LAYOUT_COOKIE } from "@/components/nav-styles"
 import { db } from "@/lib/db"
 import {
+  fileVersions,
   nodes,
   settings,
   shares,
@@ -25,6 +27,7 @@ import {
   type TagColor,
 } from "@/lib/db/schema"
 import { getSession } from "@/lib/session"
+import { deleteNodes } from "@/lib/uploads"
 
 // What the browser gets for each file or folder. Dates are ISO strings so they
 // cross the server/client boundary.
@@ -40,6 +43,11 @@ export type Item = {
   // Ids of the viewer's own tags on it.
   tags: string[]
   owner?: string
+  // Current version of a file; thumbnails and previews are per version.
+  version: string | null
+  // Its thumbnail's revision: null until the browser tries, "" when it couldn't
+  // make one.
+  thumb: string | null
 }
 
 export type Tag = { id: string; name: string; color: TagColor }
@@ -86,6 +94,9 @@ const cols = (viewer: string) => ({
   tags: sql<string[]>`array(
     select nt.tag_id from node_tags nt join tags t on t.id = nt.tag_id
     where nt.node_id = "nodes".id and t.owner_id = ${viewer})`,
+  version: nodes.currentVersionId,
+  thumb: sql<string | null>`(
+    select thumb from file_versions where id = "nodes".current_version_id)`,
 })
 
 type Row = Omit<Item, "updatedAt" | "trashedAt"> & {
@@ -214,15 +225,12 @@ export async function getTrashRetention() {
 
 // Deletes trash older than the admin's retention for everyone. Runs when a file
 // page loads, so there's no scheduler to deploy.
-// ponytail: rows only; Phase 5 must delete the S3 objects too (queue the keys first).
 export async function purgeExpiredTrash() {
   const days = await getTrashRetention()
   if (!days) return
-  await db
-    .delete(nodes)
-    .where(
-      sql`${nodes.trashedAt} < now() - make_interval(days => ${days}::int)`
-    )
+  await deleteNodes(
+    sql`${nodes.trashedAt} < now() - make_interval(days => ${days}::int)`
+  )
 }
 
 export async function listTags(ownerId: string): Promise<Tag[]> {
@@ -231,4 +239,49 @@ export async function listTags(ownerId: string): Promise<Tag[]> {
     .from(tags)
     .where(eq(tags.ownerId, ownerId))
     .orderBy(sql`lower(${tags.name})`)
+}
+
+// A file the user can open: theirs or shared with them, at its current version
+// or, for the owner only, an older one.
+export async function openableFile(
+  userId: string,
+  id: string,
+  v?: string | null
+) {
+  if (!UUID.test(id) || (v && !UUID.test(v))) return null
+  const [row] = await db
+    .select({
+      name: nodes.name,
+      ownerId: nodes.ownerId,
+      versionId: nodes.currentVersionId,
+      key: nodes.s3Key,
+      mime: nodes.mime,
+    })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.id, id),
+        eq(nodes.kind, "file"),
+        or(
+          eq(nodes.ownerId, userId),
+          exists(
+            db
+              .select()
+              .from(shares)
+              .where(
+                and(eq(shares.nodeId, nodes.id), eq(shares.granteeId, userId))
+              )
+          )
+        )
+      )
+    )
+  if (!row?.key) return null
+  const mine = row.ownerId === userId
+  if (!v || v === row.versionId) return { ...row, key: row.key, mine }
+  if (!mine) return null
+  const [ver] = await db
+    .select({ key: fileVersions.s3Key, mime: fileVersions.mime })
+    .from(fileVersions)
+    .where(and(eq(fileVersions.id, v), eq(fileVersions.nodeId, id)))
+  return ver ? { ...row, ...ver, versionId: v, mine } : null
 }

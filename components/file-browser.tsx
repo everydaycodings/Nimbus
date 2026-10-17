@@ -10,6 +10,7 @@ import {
   ArrowUpIcon,
   CalendarBlankIcon,
   HardDrivesIcon,
+  ImageSquareIcon,
   ShapesIcon,
   CaretDownIcon,
   InfoIcon,
@@ -20,7 +21,9 @@ import {
   CheckCircleIcon,
   CheckIcon,
   CheckSquareIcon,
+  ClockCounterClockwiseIcon,
   DotsThreeIcon,
+  DownloadSimpleIcon,
   FolderOpenIcon,
   FolderSimplePlusIcon,
   ListBulletsIcon,
@@ -30,6 +33,7 @@ import {
   StarIcon,
   TagIcon,
   TrashIcon,
+  UploadSimpleIcon,
   WarningCircleIcon,
   XIcon,
   type Icon,
@@ -50,7 +54,11 @@ import {
   tagItems,
   trashItems,
 } from "@/app/(app)/file-actions"
+import type { Version } from "@/app/(app)/upload-actions"
 import { DetailsSheet } from "@/components/details-sheet"
+import { Previewer, type Shown } from "@/components/previewer"
+import { Thumb } from "@/components/thumb"
+import { VersionsDialog } from "@/components/versions-dialog"
 import { MoveDialog, type Place } from "@/components/move-dialog"
 import { DENSITY_COOKIE, LAYOUT_COOKIE } from "@/components/nav-styles"
 import {
@@ -60,11 +68,18 @@ import {
   MENU_POPUP,
 } from "@/components/overlay-styles"
 import { SubmitButton } from "@/components/submit-button"
+import {
+  pastedFiles,
+  readDrop,
+  takeNewFolderRequest,
+  useUploads,
+} from "@/components/upload-provider"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import type { TagColor } from "@/lib/db/schema"
 import { TAG_DOT, fileType, formatBytes } from "@/lib/file-types"
 import type { Item, Tag } from "@/lib/files"
+import { resetThumb, thumbFromFrame, thumbFromImage } from "@/lib/thumbs"
 import { cn } from "@/lib/utils"
 
 export type View = "folder" | "recent" | "starred" | "shared" | "trash"
@@ -159,6 +174,7 @@ export function FileBrowser({
   compact: boolean
 }) {
   const router = useRouter()
+  const { upload, download } = useUploads()
   const [layout, setLayout] = useState(initialLayout)
   const [compact, setCompact] = useState(initialCompact)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -180,8 +196,18 @@ export function FileBrowser({
   } | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [dropId, setDropId] = useState<string | null>(null)
+  // OS files dragged over the page (folder view), for the drop overlay.
+  const [osDrag, setOsDrag] = useState(false)
   const [detailsId, setDetailsId] = useState<string | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
+  const [versionsId, setVersionsId] = useState<string | null>(null)
+  const [versionsOpen, setVersionsOpen] = useState(false)
+  // The previewed file, and the older version shown instead, if any.
+  const [preview, setPreview] = useState<{
+    id: string
+    version?: Shown["version"]
+  } | null>(null)
+  const [previewOpen, setPreviewOpen] = useState(false)
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>(
     view === "recent" || view === "trash"
       ? { key: "date", desc: true }
@@ -199,6 +225,9 @@ export function FileBrowser({
   const [pending, start] = useTransition()
   const dragging = useRef<string[]>([])
   const chip = useRef<HTMLDivElement>(null)
+  // "Change thumbnail…": the picker and the file it's for.
+  const thumbInput = useRef<HTMLInputElement>(null)
+  const thumbFor = useRef<Item | null>(null)
 
   const canEdit = view !== "trash" && view !== "shared"
   const dateOf = (i: Item) => (view === "trash" ? i.trashedAt! : i.updatedAt)
@@ -231,10 +260,12 @@ export function FileBrowser({
     })
   const filtered = Boolean(typeFilter || since || sizeFilter || tagFilter)
   const detailsItem = all.find((i) => i.id === detailsId) ?? null
+  const previewItem = all.find((i) => i.id === preview?.id) ?? null
   const tagById = new Map(tags.map((t) => [t.id, t]))
   const sel = items.filter((i) => selected.has(i.id))
   const folders = items.filter((i) => i.kind === "folder")
   const files = items.filter((i) => i.kind === "file")
+  const previewIndex = files.findIndex((f) => f.id === preview?.id)
   const tabStop =
     focusId && items.some((i) => i.id === focusId) ? focusId : items[0]?.id
   const here: Place[] = [ROOT, ...path]
@@ -283,10 +314,26 @@ export function FileBrowser({
     setSelecting(true)
   }
 
-  // Folders open in place. Files show their details until previews arrive (Phase 6).
+  // Folders open in place; files open in the previewer.
   function open(item: Item) {
-    if (item.kind === "file") showDetails(item)
+    if (item.kind === "file") showPreview(item.id)
     else if (canEdit) router.push(`/folders/${item.id}`)
+  }
+
+  function showPreview(id: string, version?: Shown["version"]) {
+    setPreview({ id, version })
+    setPreviewOpen(true)
+  }
+
+  // The current version previews like the file itself, with arrows.
+  function previewVersion(id: string, v: Version) {
+    showPreview(id, v.current ? undefined : v)
+  }
+
+  // Older versions have no neighbours to step to.
+  function previewAt(step: number) {
+    const next = preview?.version ? undefined : files[previewIndex + step]
+    return next && previewIndex >= 0 ? () => showPreview(next.id) : undefined
   }
 
   function newFolder() {
@@ -361,6 +408,32 @@ export function FileBrowser({
 
   function moveTo(ids: string[], to: Place, what: string) {
     run(() => moveItems(ids, to.id), { text: `Moved ${what} to ${to.name}.` })
+  }
+
+  // Thumbnail changes save straight to S3, then the page refreshes to show them.
+  function thumbTask(item: Item, task: () => Promise<unknown>, verb: string) {
+    run(
+      async () => {
+        try {
+          await task()
+          router.refresh()
+        } catch (e) {
+          return { error: (e as Error).message }
+        }
+      },
+      { text: `${verb} the thumbnail of “${item.name}”.` }
+    )
+  }
+
+  function pickThumb(item: Item) {
+    thumbFor.current = item
+    thumbInput.current!.value = ""
+    thumbInput.current!.click()
+  }
+
+  function showVersions(item: Item) {
+    setVersionsId(item.id)
+    setVersionsOpen(true)
   }
 
   function showDetails(item: Item) {
@@ -484,6 +557,11 @@ export function FileBrowser({
         menuOnly: true,
         run: () => open(one),
       },
+      {
+        label: "Download",
+        icon: DownloadSimpleIcon,
+        run: () => download(t),
+      },
       one && {
         label: "Rename",
         icon: PencilSimpleIcon,
@@ -492,6 +570,26 @@ export function FileBrowser({
       },
       { label: "Move", icon: ArrowBendUpRightIcon, run: () => move(t) },
       info,
+      one?.kind === "file" && {
+        label: "Versions…",
+        icon: ClockCounterClockwiseIcon,
+        menuOnly: true,
+        run: () => showVersions(one),
+      },
+      one?.kind === "file" && {
+        label: "Change thumbnail…",
+        icon: ImageSquareIcon,
+        menuOnly: true,
+        run: () => pickThumb(one),
+      },
+      one?.thumb
+        ? {
+            label: "Reset thumbnail",
+            icon: ArrowCounterClockwiseIcon,
+            menuOnly: true,
+            run: () => thumbTask(one, () => resetThumb(one), "Reset"),
+          }
+        : null,
       {
         label: starred ? "Remove from starred" : "Add to starred",
         short: starred ? "Unstar" : "Star",
@@ -504,6 +602,7 @@ export function FileBrowser({
         short: "Trash",
         icon: TrashIcon,
         kbd: "Del",
+        danger: true,
         sep: true,
         run: () => trash(t),
       },
@@ -588,6 +687,26 @@ export function FileBrowser({
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
   }, [view])
+
+  // Sidebar New › New folder from another view lands here, then opens the dialog.
+  useEffect(() => {
+    if (view === "folder" && takeNewFolderRequest())
+      document.getElementById("new-folder")?.click()
+  }, [view])
+
+  // Ctrl/Cmd+V with files on the clipboard uploads them here.
+  useEffect(() => {
+    if (view !== "folder") return
+    function onPaste(e: ClipboardEvent) {
+      if (busyTarget(e.target)) return
+      const files = pastedFiles(e)
+      if (!files.length) return
+      e.preventDefault()
+      upload(files, folderId)
+    }
+    window.addEventListener("paste", onPaste)
+    return () => window.removeEventListener("paste", onPaste)
+  }, [view, folderId, upload])
 
   // Nearest item in the next or previous visual row, for arrow keys in the grid.
   function vertical(cur: number, dir: 1 | -1) {
@@ -719,13 +838,26 @@ export function FileBrowser({
     }
   }
 
-  // Folders and breadcrumbs take drops of items dragged from this page.
+  const osFiles = (e: React.DragEvent) =>
+    view === "folder" &&
+    e.dataTransfer.types.includes("Files") &&
+    !e.dataTransfer.types.includes(DRAG)
+
+  // Folders and breadcrumbs take drops of items dragged from this page, and in
+  // the folder view, files dragged in from the OS (uploaded into that folder).
   function dropTarget(to: Place) {
     const key = to.id ?? "root"
     if (!canEdit) return {}
     return {
       "data-drop": dropId === key || undefined,
       onDragOver(e: React.DragEvent) {
+        if (osFiles(e)) {
+          e.preventDefault()
+          e.dataTransfer.dropEffect = "copy"
+          setOsDrag(true)
+          setDropId(key)
+          return
+        }
         if (
           !e.dataTransfer.types.includes(DRAG) ||
           (to.id && dragging.current.includes(to.id))
@@ -741,6 +873,12 @@ export function FileBrowser({
       onDrop(e: React.DragEvent) {
         e.preventDefault()
         setDropId(null)
+        if (osFiles(e)) {
+          e.stopPropagation()
+          setOsDrag(false)
+          readDrop(e.dataTransfer).then((files) => upload(files, to.id))
+          return
+        }
         const ids: string[] = JSON.parse(e.dataTransfer.getData(DRAG) || "[]")
         if (!ids.length || (to.id && ids.includes(to.id))) return
         moveTo(ids, to, label(items.filter((i) => ids.includes(i.id))))
@@ -852,12 +990,13 @@ export function FileBrowser({
         className="truncate text-xs text-muted-foreground tabular-nums"
       >
         {when(dateOf(item))} ·{" "}
-        <span className="font-mono">{formatBytes(item.size)}</span>
+        <span className="tabular-nums">{formatBytes(item.size)}</span>
       </span>
     )
   }
 
-  function itemMenu(item: Item) {
+  // `shown` keeps the trigger visible, as in the previewer's top bar.
+  function itemMenu(item: Item, shown = false) {
     if (!actions([item]).length) return null
     return (
       <Menu.Root
@@ -868,11 +1007,15 @@ export function FileBrowser({
             <Button
               variant="ghost"
               size="icon-sm"
-              tabIndex={-1}
+              tabIndex={shown ? undefined : -1}
               aria-label={`More for ${item.name}`}
               onClick={(e) => e.stopPropagation()}
               onDoubleClick={(e) => e.stopPropagation()}
-              className="shrink-0 opacity-0 group-hover:opacity-100 group-aria-selected:opacity-100 data-popup-open:opacity-100 pointer-coarse:opacity-100"
+              className={cn(
+                "shrink-0",
+                !shown &&
+                  "opacity-0 group-hover:opacity-100 group-aria-selected:opacity-100 data-popup-open:opacity-100 pointer-coarse:opacity-100"
+              )}
             />
           }
         >
@@ -950,12 +1093,16 @@ export function FileBrowser({
                     {name(f)}
                     {itemMenu(f)}
                   </div>
-                  <div className="mx-1.5 mb-1.5 grid aspect-[4/3] place-items-center rounded-lg bg-muted/40">
+                  <Thumb
+                    item={f}
+                    make={canEdit}
+                    className="mx-1.5 mb-1.5 grid aspect-[4/3] place-items-center rounded-lg bg-muted/40"
+                  >
                     <t.icon
                       weight="light"
                       className={cn("size-12 opacity-80", t.color)}
                     />
-                  </div>
+                  </Thumb>
                   <span className="flex px-3 pb-2">{meta(f)}</span>
                 </div>
               )
@@ -1037,7 +1184,7 @@ export function FileBrowser({
             >
               {second.cell(i)}
             </span>
-            <span className="font-mono text-xs text-muted-foreground max-sm:hidden">
+            <span className="text-xs text-muted-foreground tabular-nums max-sm:hidden">
               {formatBytes(i.size)}
             </span>
             {itemMenu(i) ?? <span />}
@@ -1055,11 +1202,35 @@ export function FileBrowser({
     .join(" · ")
 
   const crumbs = here.length > 4 ? [here[0], null, ...here.slice(-2)] : here
+  const dropName =
+    dropId === "root"
+      ? ROOT.name
+      : (dropId &&
+          (
+            items.find((i) => i.id === dropId) ??
+            path.find((p) => p.id === dropId)
+          )?.name) ||
+        here[here.length - 1].name
 
   return (
     <div
       data-density={compact ? "compact" : undefined}
-      className="flex flex-col gap-4"
+      className="relative flex min-h-[calc(100svh-10rem)] flex-col gap-4"
+      onDragOver={(e) => {
+        if (!osFiles(e)) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = "copy"
+        setOsDrag(true)
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setOsDrag(false)
+      }}
+      onDrop={(e) => {
+        if (!osFiles(e)) return
+        e.preventDefault()
+        setOsDrag(false)
+        readDrop(e.dataTransfer).then((files) => upload(files, folderId))
+      }}
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <div className="min-w-0 flex-1">
@@ -1469,6 +1640,18 @@ export function FileBrowser({
         </ContextMenu.Portal>
       </ContextMenu.Root>
 
+      {osDrag && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -inset-2 z-20 rounded-xl border-2 border-dashed border-brand/70 bg-brand/5"
+        >
+          <p className="fixed bottom-8 left-1/2 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-lg">
+            <UploadSimpleIcon className="size-4 shrink-0" />
+            <span className="truncate">Drop to upload to {dropName}</span>
+          </p>
+        </div>
+      )}
+
       <div
         ref={chip}
         aria-hidden
@@ -1497,10 +1680,60 @@ export function FileBrowser({
         open={detailsOpen}
         onClose={() => setDetailsOpen(false)}
         tags={view === "trash" ? null : tags}
+        editable={canEdit}
+        onAllVersions={() => detailsItem && showVersions(detailsItem)}
+        onPreviewVersion={(v) =>
+          detailsItem && previewVersion(detailsItem.id, v)
+        }
         onTag={(tagId, on) =>
           detailsItem && run(() => tagItems([detailsItem.id], tagId, on))
         }
         onNewTag={() => detailsItem && newTag([detailsItem.id])}
+      />
+
+      <input
+        ref={thumbInput}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          const item = thumbFor.current
+          if (file && item)
+            thumbTask(item, () => thumbFromImage(item, file), "Changed")
+        }}
+      />
+
+      <VersionsDialog
+        item={all.find((i) => i.id === versionsId) ?? null}
+        open={versionsOpen}
+        editable={canEdit}
+        onClose={() => setVersionsOpen(false)}
+        onPreview={(v) => versionsId && previewVersion(versionsId, v)}
+      />
+
+      <Previewer
+        shown={previewItem && { item: previewItem, version: preview?.version }}
+        // A file trashed or moved away from the previewer closes it.
+        open={previewOpen && Boolean(previewItem)}
+        onClose={() => setPreviewOpen(false)}
+        onPrev={previewAt(-1)}
+        onNext={previewAt(1)}
+        position={
+          previewIndex >= 0 && files.length > 1
+            ? `${previewIndex + 1} of ${files.length}`
+            : undefined
+        }
+        onDetails={previewItem ? () => showDetails(previewItem) : undefined}
+        menu={previewItem && itemMenu(previewItem, true)}
+        onUseFrame={
+          canEdit
+            ? async (item, video) => {
+                await thumbFromFrame(item, video)
+                router.refresh()
+              }
+            : undefined
+        }
       />
 
       <TagDialog

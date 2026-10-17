@@ -21,13 +21,18 @@ import { invites, type SignupMode } from "@/lib/db/schema"
 import { hasPassword, requireAdmin } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
 import {
+  addBlockedExtension,
   addTrustedDomain,
   createInvite,
+  removeBlockedExtension,
   removeTrustedDomain,
   revokeInvite,
   setRequire2fa,
   setSignupMode,
   setTrashRetention,
+  setDefaultQuota,
+  setUploadLimit,
+  setVersionRetention,
 } from "./actions"
 
 const MODES: { mode: SignupMode; label: string; hint: string }[] = [
@@ -64,6 +69,16 @@ async function origin() {
   return `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`
 }
 
+const UNIT_BYTES = { MB: 2 ** 20, GB: 2 ** 30, TB: 2 ** 40 }
+type Unit = keyof typeof UNIT_BYTES
+
+// A byte limit as a number-and-unit form field: the bigger unit once it's at least one of them.
+function sizeField(bytes: number | null, small: Unit, big: Unit) {
+  if (bytes === null) return { value: "", unit: big }
+  const unit = bytes < UNIT_BYTES[big] ? small : big
+  return { value: String(+(bytes / UNIT_BYTES[unit]).toFixed(2)), unit }
+}
+
 function inviteState(i: typeof invites.$inferSelect) {
   if (i.expiresAt && i.expiresAt < new Date()) return "Expired"
   if (i.maxUses !== null && i.uses >= i.maxUses) return "Used up"
@@ -74,8 +89,19 @@ export default async function SettingsPage() {
   const me = await requireAdmin()
   // Mirrors setRequire2fa: you can't require what you don't use yourself.
   const needsOwn2fa = !me.twoFactorEnabled && (await hasPassword(me.id))
-  const { signupMode, trustedDomains, require2fa, trashRetentionDays } =
-    await getSettings()
+  const {
+    signupMode,
+    trustedDomains,
+    require2fa,
+    trashRetentionDays,
+    maxUploadBytes,
+    blockedExtensions,
+    versionKeepLast,
+    versionMaxAgeDays,
+    defaultQuotaBytes,
+  } = await getSettings()
+  const quota = sizeField(defaultQuotaBytes, "GB", "TB")
+  const size = sizeField(maxUploadBytes, "MB", "GB")
   const links = await db.select().from(invites).orderBy(desc(invites.createdAt))
   const base = await origin()
 
@@ -314,10 +340,188 @@ export default async function SettingsPage() {
       </Card>
       <Card>
         <CardHeader>
+          <CardTitle className="text-base">Storage</CardTitle>
+          <CardDescription>
+            How much each member can store, counting older versions and the
+            trash. Set a different amount for someone from the ⋯ menu on
+            Members.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form
+            action={setDefaultQuota}
+            className="grid items-end gap-3 sm:grid-cols-[1fr_auto_auto]"
+          >
+            <div className="grid gap-2">
+              <Label htmlFor="quota">Storage per member</Label>
+              <Input
+                id="quota"
+                name="quota"
+                type="number"
+                min={0.01}
+                step="any"
+                defaultValue={quota.value}
+                placeholder="Unlimited"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="quotaUnit" className="sr-only">
+                Unit
+              </Label>
+              <select
+                id="quotaUnit"
+                name="unit"
+                defaultValue={quota.unit}
+                className={SELECT}
+              >
+                <option value="GB">GB</option>
+                <option value="TB">TB</option>
+              </select>
+            </div>
+            <SubmitButton>Save</SubmitButton>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Uploads</CardTitle>
+          <CardDescription>
+            Checked before any bytes move, so a refused file never takes up
+            space.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-6">
+          <form
+            action={setUploadLimit}
+            className="grid items-end gap-3 sm:grid-cols-[1fr_auto_auto]"
+          >
+            <div className="grid gap-2">
+              <Label htmlFor="maxSize">Largest file</Label>
+              <Input
+                id="maxSize"
+                name="maxSize"
+                type="number"
+                min={0.01}
+                step="any"
+                defaultValue={size.value}
+                placeholder="No limit"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="unit" className="sr-only">
+                Unit
+              </Label>
+              <select
+                id="unit"
+                name="unit"
+                defaultValue={size.unit}
+                className={SELECT}
+              >
+                <option value="MB">MB</option>
+                <option value="GB">GB</option>
+              </select>
+            </div>
+            <SubmitButton>Save</SubmitButton>
+          </form>
+
+          <div className="flex flex-col gap-4">
+            <form action={addBlockedExtension} className="grid gap-2">
+              <Label htmlFor="ext">Blocked file types</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="ext"
+                  name="ext"
+                  placeholder="exe"
+                  required
+                  pattern="\*?\.?[A-Za-z0-9_\-]{1,20}"
+                  title="An extension like exe or .exe"
+                  className="max-w-xs"
+                />
+                <SubmitButton variant="outline">Block type</SubmitButton>
+              </div>
+            </form>
+            {blockedExtensions.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Every file type can be uploaded.
+              </p>
+            ) : (
+              <ul className="flex flex-wrap gap-2">
+                {blockedExtensions.map((ext) => (
+                  <li
+                    key={ext}
+                    className="flex h-8 items-center gap-1 rounded-md border pr-1 pl-3 font-mono text-sm"
+                  >
+                    .{ext}
+                    <form action={removeBlockedExtension.bind(null, ext)}>
+                      <Button
+                        type="submit"
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label={`Unblock .${ext}`}
+                      >
+                        <XIcon />
+                      </Button>
+                    </form>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Versions</CardTitle>
+          <CardDescription>
+            Uploading a file with the same name keeps the old one as a version.
+            The current version is never removed. Leave a field blank to keep
+            versions without that limit.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form
+            action={setVersionRetention}
+            className="grid items-end gap-3 sm:grid-cols-[1fr_1fr_auto]"
+          >
+            <div className="grid gap-2">
+              <Label htmlFor="keepLast">Keep the newest</Label>
+              <Input
+                id="keepLast"
+                name="keepLast"
+                type="number"
+                min={1}
+                step={1}
+                defaultValue={versionKeepLast ?? ""}
+                placeholder="All versions"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="maxAgeDays">
+                Delete versions older than (days)
+              </Label>
+              <Input
+                id="maxAgeDays"
+                name="maxAgeDays"
+                type="number"
+                min={1}
+                step={1}
+                defaultValue={versionMaxAgeDays ?? ""}
+                placeholder="Never"
+              />
+            </div>
+            <SubmitButton>Save</SubmitButton>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle className="text-base">Trash</CardTitle>
           <CardDescription>
-            Applies to everyone&apos;s trash. Members can always restore,
-            delete forever or empty the trash themselves.
+            Applies to everyone&apos;s trash. Members can always restore, delete
+            forever or empty the trash themselves.
           </CardDescription>
         </CardHeader>
         <CardContent>

@@ -40,7 +40,7 @@ export default async function FolderPage({ params }: Props) {
       items={items}
       empty={{
         title: "This folder is empty",
-        body: "Make a folder inside it (Shift+N), or drag things here from another folder.",
+        body: "Drop files here to upload them, make a folder (Shift+N), or drag things in from another folder.",
       }}
       tags={tags}
       {...prefs}

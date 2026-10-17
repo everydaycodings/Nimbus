@@ -8,6 +8,7 @@ import {
   timestamp,
   boolean,
   integer,
+  bigint,
   index,
   check,
   uniqueIndex,
@@ -33,6 +34,8 @@ export const user = pgTable(
     twoFactorEnabled: boolean("two_factor_enabled").default(false),
     // Set when an admin picks a password for someone; they must change it to continue.
     passwordTemporary: boolean("password_temporary").default(false).notNull(),
+    // Storage limit for this account; null falls back to settings.default_quota_bytes.
+    quotaBytes: bigint("quota_bytes", { mode: "number" }),
   },
   (table) => [
     check(

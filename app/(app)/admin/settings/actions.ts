@@ -89,3 +89,72 @@ export async function revokeInvite(id: string) {
   await db.delete(invites).where(eq(invites.id, id))
   revalidatePath("/admin/settings")
 }
+
+// Blank means unlimited; anything else must be a positive whole number.
+function limit(form: FormData, field: string) {
+  const raw = String(form.get(field) ?? "").trim()
+  const n = Number(raw)
+  return raw && Number.isFinite(n) && n > 0 ? n : null
+}
+
+const UNITS: Record<string, number> = { MB: 2 ** 20, GB: 2 ** 30, TB: 2 ** 40 }
+
+export async function setUploadLimit(form: FormData) {
+  await requireAdmin()
+  const n = limit(form, "maxSize")
+  const unit = UNITS[String(form.get("unit"))] ?? UNITS.GB
+  await db.update(settings).set({
+    maxUploadBytes: n === null ? null : Math.round(n * unit),
+    updatedAt: new Date(),
+  })
+  revalidatePath("/admin/settings")
+}
+
+export async function setDefaultQuota(form: FormData) {
+  await requireAdmin()
+  const n = limit(form, "quota")
+  const unit = UNITS[String(form.get("unit"))] ?? UNITS.GB
+  await db.update(settings).set({
+    defaultQuotaBytes: n === null ? null : Math.round(n * unit),
+    updatedAt: new Date(),
+  })
+  revalidatePath("/", "layout")
+}
+
+export async function addBlockedExtension(form: FormData) {
+  await requireAdmin()
+  const ext = String(form.get("ext") ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^\*?\./, "")
+  if (!/^[a-z0-9_-]{1,20}$/.test(ext)) return
+  await db
+    .update(settings)
+    .set({
+      blockedExtensions: sql`array_append(${settings.blockedExtensions}, ${ext})`,
+      updatedAt: new Date(),
+    })
+    .where(sql`not (${ext} = any(${settings.blockedExtensions}))`)
+  revalidatePath("/admin/settings")
+}
+
+export async function removeBlockedExtension(ext: string) {
+  await requireAdmin()
+  await db.update(settings).set({
+    blockedExtensions: sql`array_remove(${settings.blockedExtensions}, ${ext})`,
+    updatedAt: new Date(),
+  })
+  revalidatePath("/admin/settings")
+}
+
+export async function setVersionRetention(form: FormData) {
+  await requireAdmin()
+  const keep = limit(form, "keepLast")
+  const days = limit(form, "maxAgeDays")
+  await db.update(settings).set({
+    versionKeepLast: keep && Math.floor(keep),
+    versionMaxAgeDays: days && Math.floor(days),
+    updatedAt: new Date(),
+  })
+  revalidatePath("/admin/settings")
+}

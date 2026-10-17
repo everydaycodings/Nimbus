@@ -71,6 +71,20 @@ async function recoverable(targetId: string) {
   return target
 }
 
+// Null goes back to the instance default from /admin/settings.
+export async function setMemberQuota(targetId: string, bytes: number | null) {
+  const target = await recoverable(targetId)
+  if (!target) return { error: "You can't change storage for this person." }
+  if (bytes !== null && !(Number.isFinite(bytes) && bytes > 0))
+    return { error: "Enter an amount above zero, or leave it blank." }
+  await db
+    .update(user)
+    .set({ quotaBytes: bytes === null ? null : Math.round(bytes) })
+    .where(eq(user.id, target.id))
+  revalidatePath("/admin/members")
+  return { ok: true }
+}
+
 // For a member who lost their phone and their backup codes.
 export async function resetTwoFactor(targetId: string) {
   const target = await recoverable(targetId)

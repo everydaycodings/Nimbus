@@ -6,8 +6,15 @@ import { PlusIcon, StarIcon, XIcon } from "@phosphor-icons/react"
 import { useEffect, useState } from "react"
 
 import { getDetails, type Details } from "@/app/(app)/file-actions"
+import type { Version } from "@/app/(app)/upload-actions"
 import { MENU_ITEM, MENU_POPUP } from "@/components/overlay-styles"
+import { Thumb } from "@/components/thumb"
 import { Button } from "@/components/ui/button"
+import {
+  VersionList,
+  useVersions,
+  versionSummary,
+} from "@/components/versions-dialog"
 import { TAG_DOT, fileType, formatBytes } from "@/lib/file-types"
 import type { Item, Tag } from "@/lib/files"
 
@@ -27,10 +34,18 @@ export function DetailsSheet({
   tags,
   onTag,
   onNewTag,
+  editable = false,
+  onAllVersions,
+  onPreviewVersion,
 }: {
   item: Item | null
   open: boolean
   onClose: () => void
+  // Restore and delete versions; off where the viewer can't edit (shared).
+  editable?: boolean
+  // Opens the full Versions dialog.
+  onAllVersions?: () => void
+  onPreviewVersion?: (v: Version) => void
   // The viewer's tags, or null where tags can't be edited (the trash).
   tags: Tag[] | null
   onTag: (tagId: string, on: boolean) => void
@@ -63,7 +78,7 @@ export function DetailsSheet({
     item.kind === "file"
       ? [
           "Size",
-          <span key="s" className="font-mono text-xs">
+          <span key="s" className="tabular-nums">
             {formatBytes(item.size)}{" "}
             <span className="text-muted-foreground">
               ({item.size.toLocaleString()} bytes)
@@ -180,12 +195,16 @@ export function DetailsSheet({
             </Dialog.Close>
           </div>
           <div className="flex flex-col gap-6 overflow-y-auto p-4">
-            <div className="grid aspect-[4/3] place-items-center rounded-xl border bg-muted/40">
+            <Thumb
+              item={item}
+              make={editable}
+              className="grid aspect-[4/3] place-items-center rounded-xl border bg-muted/40"
+            >
               <t.icon
                 weight={item.kind === "folder" ? "fill" : "light"}
                 className={`size-16 ${t.color}`}
               />
-            </div>
+            </Thumb>
             <div className="flex items-start gap-2">
               <h2 className="min-w-0 flex-1 text-base font-semibold break-words">
                 {item.name}
@@ -220,9 +239,62 @@ export function DetailsSheet({
                   ))}
               </dl>
             )}
+            {open && item.kind === "file" && details !== null && tags && (
+              <Versions
+                item={item}
+                editable={editable}
+                onAll={onAllVersions}
+                onPreview={onPreviewVersion}
+              />
+            )}
           </div>
         </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
+  )
+}
+
+// The latest few versions; the full list lives in the Versions dialog.
+function Versions({
+  item,
+  editable,
+  onAll,
+  onPreview,
+}: {
+  item: Item
+  editable: boolean
+  onAll?: () => void
+  onPreview?: (v: Version) => void
+}) {
+  const versions = useVersions(item)
+  const n = versions.list?.length ?? 0
+  return (
+    <section aria-labelledby="versions-heading" className="flex flex-col gap-2">
+      <h3 id="versions-heading" className="text-sm font-medium">
+        Versions
+      </h3>
+      <VersionList
+        item={item}
+        versions={versions}
+        editable={editable}
+        limit={3}
+        onPreview={onPreview}
+      />
+      {versionSummary(versions) && (
+        <p className="text-xs text-muted-foreground">
+          {versionSummary(versions)}
+        </p>
+      )}
+      {onAll && n > 3 && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="self-start"
+          onClick={onAll}
+        >
+          See all versions
+        </Button>
+      )}
+    </section>
   )
 }

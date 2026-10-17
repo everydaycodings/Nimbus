@@ -42,6 +42,18 @@ export async function requireMember() {
   return session.user
 }
 
+// requireMember() for route handlers, which answer 401 instead of redirecting.
+export async function memberOrNull() {
+  const session = await getSession()
+  if (
+    !session ||
+    session.user.status !== "active" ||
+    session.user.passwordTemporary
+  )
+    return null
+  return session.user
+}
+
 // Two-factor and password changes only apply to accounts that sign in with a password.
 export async function hasPassword(userId: string) {
   const [row] = await db

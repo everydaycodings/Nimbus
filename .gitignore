@@ -38,3 +38,6 @@ pnpm-debug.log*
 *.tsbuildinfo
 next-env.d.ts
 !.env.example
+
+# Playwright MCP session output
+/.playwright-mcp/
