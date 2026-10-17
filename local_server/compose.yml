@@ -1,0 +1,73 @@
+name: nimbus-dev
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-nimbus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nimbus}
+      POSTGRES_DB: ${POSTGRES_DB:-nimbus}
+    ports: ["${POSTGRES_PORT:-5432}:5432"]
+    volumes: [postgres:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nimbus}"]
+      interval: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-nimbus}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-nimbus-secret}
+      MINIO_API_CORS_ALLOW_ORIGIN: ${APP_ORIGIN:-http://localhost:3000}
+    ports: ["${S3_PORT:-9100}:9000", "${S3_CONSOLE_PORT:-9101}:9001"]
+    volumes: [minio:/data]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      retries: 10
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio: { condition: service_healthy }
+    entrypoint: >
+      sh -c "mc alias set local http://minio:9000 $${S3_ACCESS_KEY} $${S3_SECRET_KEY} &&
+             mc mb --ignore-existing local/$${S3_BUCKET}"
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-nimbus}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-nimbus-secret}
+      S3_BUCKET: ${S3_BUCKET:-nimbus}
+    restart: "no"
+
+  tusd:
+    image: tusproject/tusd:latest
+    depends_on:
+      minio-init: { condition: service_completed_successfully }
+    command: >
+      -host 0.0.0.0 -port 1080 -base-path /files/
+      -s3-bucket ${S3_BUCKET:-nimbus} -s3-endpoint http://minio:9000
+      -hooks-http ${TUS_HOOK_URL:-http://host.docker.internal:3000/api/tus-hooks}
+      -hooks-enabled-events pre-create,post-finish
+      -cors-allow-origin ${APP_ORIGIN:-http://localhost:3000}
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-nimbus}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-nimbus-secret}
+      AWS_REGION: us-east-1
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    ports: ["${TUS_PORT:-1080}:1080"]
+
+  redis:
+    image: redis:7-alpine
+    ports: ["${REDIS_PORT:-6380}:6379"]
+    volumes: [redis:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  postgres:
+  minio:
+  redis:

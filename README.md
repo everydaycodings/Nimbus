@@ -1,21 +1,33 @@
-# Next.js template
+# Nimbus
 
-This is a Next.js template with shadcn/ui.
+Open-source, self-hosted file storage you own. See [PRODUCT.md](PRODUCT.md) for what it is,
+[ROADMAP.md](ROADMAP.md) for what's built, and [DESIGN.md](DESIGN.md) for the design system.
 
-## Adding components
-
-To add components to your app, run the following command:
+## Run it locally
 
 ```bash
-npx shadcn@latest add button
+cd local_server && docker compose up -d && cd ..   # Postgres, MinIO, tusd, Redis
+cp .env.example .env.local                          # then set BETTER_AUTH_SECRET
+npm install
+npm run db:migrate
+npm run dev
 ```
 
-This will place the ui components in the `components` directory.
+Open http://localhost:3000. The first account you create becomes the owner of the instance.
+Everyone who signs up after that waits for an admin to approve them under **Members**.
 
-## Using components
+### Google and GitHub sign-in (optional)
 
-To use the components in your app, import them as follows:
+Set `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` or `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET` in
+`.env.local`. Use these callback URLs when creating the OAuth apps:
 
-```tsx
-import { Button } from "@/components/ui/button";
-```
+- Google: `http://localhost:3000/api/auth/callback/google`
+- GitHub: `http://localhost:3000/api/auth/callback/github`
+
+A provider's button only appears once both of its keys are set.
+
+## Database
+
+- `npm run db:generate` creates a migration after changing `lib/db/schema.ts`
+- `npm run db:migrate` applies migrations
+- `npm run db:studio` opens Drizzle Studio

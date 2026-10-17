@@ -5,8 +5,19 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-    --font-heading: var(--font-mono);
+    --font-heading: var(--font-sans);
+    --font-sans: var(--font-sans);
     --font-mono: var(--font-mono);
+    --color-file-folder: var(--file-folder);
+    --color-file-image: var(--file-image);
+    --color-file-video: var(--file-video);
+    --color-file-doc: var(--file-doc);
+    --color-file-pdf: var(--file-pdf);
+    --color-file-audio: var(--file-audio);
+    --color-file-code: var(--file-code);
+    --color-file-archive: var(--file-archive);
+    --spacing-row: var(--row);
+    --spacing-gap-ui: var(--gap-ui);
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -21,6 +32,7 @@
     --color-chart-2: var(--chart-2);
     --color-chart-1: var(--chart-1);
     --color-ring: var(--ring);
+    --color-brand: var(--brand);
     --color-input: var(--input);
     --color-border: var(--border);
     --color-destructive: var(--destructive);
@@ -47,42 +59,11 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Nimbus is dark only. Stock shadcn neutral palette: white primary, hairline
+   borders, no hue on chrome. Teal (--brand) is the logo and focus ring only;
+   rich hues are reserved for file types. */
 :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
-}
-
-.dark {
+    color-scheme: dark;
     --background: oklch(0.145 0 0);
     --foreground: oklch(0.985 0 0);
     --card: oklch(0.205 0 0);
@@ -100,20 +81,41 @@
     --destructive: oklch(0.704 0.191 22.216);
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
+    --ring: #5fd0bb;
+    --brand: #5fd0bb;
+    --chart-1: #6ea8ff;
+    --chart-2: #5fd0bb;
+    --chart-3: #f2c063;
+    --chart-4: #b08cff;
+    --chart-5: #f27fb2;
+    --radius: 0.625rem;
     --sidebar: oklch(0.205 0 0);
     --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.985 0 0);
+    --sidebar-primary-foreground: oklch(0.205 0 0);
     --sidebar-accent: oklch(0.269 0 0);
     --sidebar-accent-foreground: oklch(0.985 0 0);
     --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+    --sidebar-ring: #5fd0bb;
+
+    /* File-type hues */
+    --file-folder: #f2c063;
+    --file-image: #f27fb2;
+    --file-video: #b08cff;
+    --file-doc: #6ea8ff;
+    --file-pdf: #ff6f6f;
+    --file-audio: #4fd1a5;
+    --file-code: #ff9f66;
+    --file-archive: #b5b5b5;
+
+    /* Density: rows and gaps shrink when the user picks compact */
+    --row: 2rem;
+    --gap-ui: 0.75rem;
+}
+
+[data-density="compact"] {
+    --row: 1.75rem;
+    --gap-ui: 0.5rem;
 }
 
 @layer base {
@@ -124,6 +126,13 @@
     @apply bg-background text-foreground;
     }
   html {
-    @apply font-mono;
+    @apply font-sans;
+    }
+  ::selection {
+    background: color-mix(in srgb, var(--brand) 35%, transparent);
+    }
+  body {
+    caret-color: var(--brand);
+    scrollbar-color: var(--muted) transparent;
     }
 }
