@@ -107,15 +107,63 @@ password accounts must set it up. Google and GitHub sign-ins rely on the provide
 - Left for later: an orphan sweep for S3 deletes that fail (they're only logged), reserving quota
   for uploads in flight.
 
-## Phase 6: Sharing, previews, search
-- Share with users (viewer/editor) and public links with expiry. Opening shared folders and
-  starring shared items arrive here (Shared with me lists items read-only until then).
-- Previews for image, video, PDF, audio, code and text: double-clicking a file opens its preview
-  (it opens Details until then)
-- Thumbnail previews generated after upload for images, video (a poster frame) and PDFs (first
-  page), shown on grid tiles and in the Details panel in place of the file-type icon
-- Recent ranks by when a file was last opened, not just modified
-- Search by name, then content
+## Phase 6a: Thumbnails and previews ✓ done (Collabora pending)
+- Thumbnails are drawn in the browser as 480px WebP: images, a video frame ~1 s in, PDF page 1,
+  the first lines of code/text in shiki colors, and MP3/M4A cover art. They're made at upload,
+  or lazily when an owner's tile scrolls into view (2 at a time). Stored at
+  `thumbs/<s3Key>.webp`; `file_versions.thumb` is null (not tried), "" (none possible) or a
+  revision that busts the cache.
+- Owners can change a thumbnail (⋯ → Change thumbnail…, or "Use this frame" in the video
+  player) and reset it to automatic.
+- Opening a file (double-click or Enter) shows a full-screen previewer: ← / → step through the
+  folder, plus download, details and the ⋯ menu. Viewers: image zoom/pan, Nimbus's own video
+  player, audio with cover art, PDF in the browser's viewer, code with shiki (line numbers, wrap,
+  copy), Markdown rendered and sanitized with a source toggle, CSV and xlsx tables, docx, and zip
+  listings via range requests. Older versions open in it from the Versions list.
+- Grid tile size is the user's choice (small / medium / large), remembered in a cookie.
+- **Still to do in 6a:**
+  - Optional Collabora/OnlyOffice: when an admin sets its URL, office files open through minimal
+    WOPI endpoints (`CheckFileInfo`, `GetFile`).
+  - Document that S3 buckets other than the dev MinIO need a CORS rule allowing GET (and
+    exposing `Content-Range`) from the app's origin, since previews fetch presigned URLs directly.
+- Left for later: Space opens the previewer (it still toggles selection), storage-meter
+  categories using `mimeOf` (a `.ts` file counts as video there).
+
+## Phase 6b: Sharing (next)
+- Schema: `shares` gains `name`, `password_hash`, `allow_download`, `allow_upload`,
+  `allow_reshare`, `grantee_email` (invites for non-members). New `notifications` table
+  (`user_id, kind, node_id, actor_id, read_at`). `nodes.shortcut_target_id` for "Add shortcut
+  to My files". Settings: `public_links_enabled`, `max_link_days`, `require_link_password`.
+- `lib/access.ts` `roleFor(userId, nodeId)` walks ancestors with a recursive CTE and returns
+  owner / editor / viewer / null. Every file action, the tus pre-create hook, downloads,
+  previews and thumbnails go through it. Editors can upload, rename, move within and trash;
+  what they add belongs to the folder owner.
+- Share dialog: member autocomplete or an email invite (when sign-up mode allows), viewer or
+  editor, reshare toggle (on by default), and many named public links each with expiry,
+  password, download on/off and upload on/off (file drop).
+- Public page `/s/[token]`: Nimbus mark, no sidebar; the file preview or a folder grid reusing
+  the previewer; password prompt first when needed; an upload zone for file-drop links.
+- Notifications: email (when configured), an unseen badge on Shared with me and a header bell.
+  Events: shared with you, access changed or removed, a file-drop upload landed, edits in your
+  shared folders, new sign-up requests for admins.
+- Admin: toggles for public links, max link expiry and required passwords; `/admin/links`
+  lists every public link with Revoke.
+- Opening shared folders and starring shared items unlock here.
+- Verify: share between two accounts as viewer and editor, permission refusals, link password,
+  expiry and file drop, emails in Mailpit, the bell.
+
+## Phase 6c: Search and recent
+- Name search: a `pg_trgm` GIN index on `lower(name)`.
+- Content search: a `node_content(node_id, tsv, source)` table with a GIN index. After upload
+  the browser extracts text (text/code/markdown, PDF text via pdf.js, OCR via tesseract.js for
+  images) without blocking the upload. Optional `scripts/indexer.ts` compose profile
+  (tesseract + pdftotext) indexes anything with `content_indexed_at` null.
+- UI: a header search field with an instant dropdown; Enter opens `/search?q=` with the
+  browser's filters and sort; a Ctrl+K palette (shadcn Command).
+- Recent: `node_opens(user_id, node_id, opened_at)` upserted on preview, download, upload and
+  edit; Recent sorts by it.
+- Verify: find files by name, by text inside a PDF and in an OCR'd image; Recent reorders after
+  a preview.
 
 ## Phase 7: Vault
 - Client-side encrypted folders behind a separate passphrase (WebCrypto)

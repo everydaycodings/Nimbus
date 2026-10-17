@@ -140,6 +140,15 @@
     --tile: 9rem;
 }
 
+/* Grid tile size, chosen by the user; medium keeps the density's width */
+[data-tiles="small"] {
+    --tile: 8rem;
+}
+
+[data-tiles="large"] {
+    --tile: 13rem;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

@@ -24,11 +24,15 @@ import {
   ClockCounterClockwiseIcon,
   DotsThreeIcon,
   DownloadSimpleIcon,
+  EyeIcon,
   FolderOpenIcon,
   FolderSimplePlusIcon,
+  GridFourIcon,
+  GridNineIcon,
   ListBulletsIcon,
   PencilSimpleIcon,
   PlusIcon,
+  SquareIcon,
   SquaresFourIcon,
   StarIcon,
   TagIcon,
@@ -60,7 +64,11 @@ import { Previewer, type Shown } from "@/components/previewer"
 import { Thumb } from "@/components/thumb"
 import { VersionsDialog } from "@/components/versions-dialog"
 import { MoveDialog, type Place } from "@/components/move-dialog"
-import { DENSITY_COOKIE, LAYOUT_COOKIE } from "@/components/nav-styles"
+import {
+  DENSITY_COOKIE,
+  LAYOUT_COOKIE,
+  TILES_COOKIE,
+} from "@/components/nav-styles"
 import {
   DIALOG_BACKDROP,
   DIALOG_POPUP,
@@ -84,6 +92,7 @@ import { cn } from "@/lib/utils"
 
 export type View = "folder" | "recent" | "starred" | "shared" | "trash"
 type Layout = "grid" | "list"
+type Tiles = "small" | "medium" | "large"
 type Act = {
   label: string
   short?: string
@@ -91,7 +100,8 @@ type Act = {
   kbd?: string
   danger?: boolean
   menuOnly?: boolean
-  sep?: boolean
+  // Menus put a separator between groups; tags close group 1.
+  group?: number
   run: () => void
 }
 type SortKey = "name" | "date" | "size"
@@ -159,6 +169,7 @@ export function FileBrowser({
   tags,
   layout: initialLayout,
   compact: initialCompact,
+  tiles: initialTiles,
 }: {
   view: View
   items: Item[]
@@ -172,11 +183,13 @@ export function FileBrowser({
   tags: Tag[]
   layout: Layout
   compact: boolean
+  tiles: Tiles
 }) {
   const router = useRouter()
   const { upload, download } = useUploads()
   const [layout, setLayout] = useState(initialLayout)
   const [compact, setCompact] = useState(initialCompact)
+  const [tiles, setTiles] = useState(initialTiles)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [anchor, setAnchor] = useState<string | null>(null)
   // Selection mode: checkboxes show and clicks toggle. Otherwise a click just
@@ -540,6 +553,7 @@ export function FileBrowser({
           icon: TrashIcon,
           kbd: "Del",
           danger: true,
+          group: 1,
           run: () =>
             askDelete(
               t.map((i) => i.id),
@@ -550,9 +564,9 @@ export function FileBrowser({
     const one = t.length === 1 ? t[0] : null
     const starred = t.every((i) => i.starred)
     const list: (Act | false | null)[] = [
-      one?.kind === "folder" && {
-        label: "Open",
-        icon: FolderOpenIcon,
+      one && {
+        label: one.kind === "folder" ? "Open" : "Preview",
+        icon: one.kind === "folder" ? FolderOpenIcon : EyeIcon,
         kbd: "Enter",
         menuOnly: true,
         run: () => open(one),
@@ -566,20 +580,36 @@ export function FileBrowser({
         label: "Rename",
         icon: PencilSimpleIcon,
         kbd: "F2",
+        group: 1,
         run: () => rename(one),
       },
-      { label: "Move", icon: ArrowBendUpRightIcon, run: () => move(t) },
-      info,
+      {
+        label: "Move",
+        icon: ArrowBendUpRightIcon,
+        group: 1,
+        run: () => move(t),
+      },
+      {
+        label: starred ? "Remove from starred" : "Add to starred",
+        short: starred ? "Unstar" : "Star",
+        icon: StarIcon,
+        kbd: "S",
+        group: 1,
+        run: () => star(t),
+      },
+      info && { ...info, group: 2 },
       one?.kind === "file" && {
         label: "Versions…",
         icon: ClockCounterClockwiseIcon,
         menuOnly: true,
+        group: 2,
         run: () => showVersions(one),
       },
       one?.kind === "file" && {
         label: "Change thumbnail…",
         icon: ImageSquareIcon,
         menuOnly: true,
+        group: 2,
         run: () => pickThumb(one),
       },
       one?.thumb
@@ -587,23 +617,17 @@ export function FileBrowser({
             label: "Reset thumbnail",
             icon: ArrowCounterClockwiseIcon,
             menuOnly: true,
+            group: 2,
             run: () => thumbTask(one, () => resetThumb(one), "Reset"),
           }
         : null,
-      {
-        label: starred ? "Remove from starred" : "Add to starred",
-        short: starred ? "Unstar" : "Star",
-        icon: StarIcon,
-        kbd: "S",
-        run: () => star(t),
-      },
       {
         label: "Move to trash",
         short: "Trash",
         icon: TrashIcon,
         kbd: "Del",
         danger: true,
-        sep: true,
+        group: 3,
         run: () => trash(t),
       },
     ]
@@ -642,14 +666,15 @@ export function FileBrowser({
           </Menu.Item>
         </>
       )
-    // Tags sit just above the trash item, or last when there's no trash item.
-    const hasSep = acts.some((a) => a.sep)
+    const group = (i: number) => acts[i]?.group ?? 0
     return (
       <>
-        {acts.map((a) => (
+        {acts.map((a, i) => (
           <Fragment key={a.label}>
-            {a.sep && tagSubmenu(t)}
-            {a.sep && <Menu.Separator className="-mx-1 my-1 h-px bg-border" />}
+            {i > 0 && group(i - 1) === 1 && group(i) !== 1 && tagSubmenu(t)}
+            {i > 0 && group(i - 1) !== group(i) && (
+              <Menu.Separator className="-mx-1 my-1 h-px bg-border" />
+            )}
             <Menu.Item
               className={cn(
                 MENU_ITEM,
@@ -663,7 +688,7 @@ export function FileBrowser({
             </Menu.Item>
           </Fragment>
         ))}
-        {!hasSep && tagSubmenu(t)}
+        {group(acts.length - 1) === 1 && tagSubmenu(t)}
       </>
     )
   }
@@ -1215,6 +1240,7 @@ export function FileBrowser({
   return (
     <div
       data-density={compact ? "compact" : undefined}
+      data-tiles={tiles}
       className="relative flex min-h-[calc(100svh-10rem)] flex-col gap-4"
       onDragOver={(e) => {
         if (!osFiles(e)) return
@@ -1318,6 +1344,21 @@ export function FileBrowser({
               { value: "grid", label: "Grid", icon: SquaresFourIcon },
             ]}
           />
+          {layout === "grid" && (
+            <Segmented
+              label="Tile size"
+              value={tiles}
+              onChange={(v) => {
+                setTiles(v)
+                savePref(TILES_COOKIE, v)
+              }}
+              options={[
+                { value: "small", label: "Small tiles", icon: GridNineIcon },
+                { value: "medium", label: "Medium tiles", icon: GridFourIcon },
+                { value: "large", label: "Large tiles", icon: SquareIcon },
+              ]}
+            />
+          )}
           <Segmented
             label="Density"
             value={compact ? "compact" : "comfortable"}

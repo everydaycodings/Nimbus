@@ -70,8 +70,8 @@ name, in menus and on the Tags filter.
 ## File browser
 `components/file-browser.tsx` drives every file view (My files, folders, Recent, Starred, Shared, Trash).
 - Header: page title, or a breadcrumb at title size whose ancestors are links and drop targets.
-  Actions on the right: New folder (primary), Select, then segmented Layout (list/grid) and
-  Density controls.
+  Actions on the right: New folder (primary), Select, then segmented Layout (list/grid),
+  Tile size (small/medium/large, grid only) and Density controls.
 - Below it, one row: filter pills (Type, Modified, Size, Tags) and a summary on the left, the
   action notice and the Sort pill on the right. In selection mode the pills give way to the
   selection bar (count, Select all, ghost action buttons).
@@ -133,6 +133,7 @@ name, in menus and on the Tags filter.
 - Density is a user setting: `data-density="compact"` on a container shrinks `--row`
   (32px → 28px), `--gap-ui` (12px → 8px), `--file-row` (44px → 36px) and `--tile`
   (11rem → 9rem, the grid's minimum tile width). Use `h-row`, `gap-gap-ui`, `h-file-row`.
+  `data-tiles="small|large"` overrides `--tile` with 8rem / 13rem; medium keeps the density's.
 
 ## Icon
 A plain Mist teal cloud on a dark rounded tile (`app/icon.png`, `app/apple-icon.png`,

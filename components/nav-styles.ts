@@ -9,3 +9,4 @@ export const SIDEBAR_COOKIE = "sidebar_collapsed"
 // File browser view preferences, remembered the same way.
 export const LAYOUT_COOKIE = "files_layout"
 export const DENSITY_COOKIE = "files_density"
+export const TILES_COOKIE = "files_tiles"

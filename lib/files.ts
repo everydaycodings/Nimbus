@@ -15,7 +15,11 @@ import {
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 
-import { DENSITY_COOKIE, LAYOUT_COOKIE } from "@/components/nav-styles"
+import {
+  DENSITY_COOKIE,
+  LAYOUT_COOKIE,
+  TILES_COOKIE,
+} from "@/components/nav-styles"
 import { db } from "@/lib/db"
 import {
   fileVersions,
@@ -65,6 +69,10 @@ export async function viewPrefs() {
   return {
     layout: c.get(LAYOUT_COOKIE)?.value === "list" ? "list" : "grid",
     compact: c.get(DENSITY_COOKIE)?.value === "compact",
+    tiles:
+      (["small", "large"] as const).find(
+        (t) => t === c.get(TILES_COOKIE)?.value
+      ) ?? "medium",
   } as const
 }
 
