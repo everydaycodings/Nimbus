@@ -121,6 +121,9 @@ export const shares = pgTable(
 export const SIGNUP_MODES = ["approval", "invite", "open", "closed"] as const
 export type SignupMode = (typeof SIGNUP_MODES)[number]
 
+export const EMAIL_TRANSPORTS = ["none", "smtp", "resend"] as const
+export type EmailTransport = (typeof EMAIL_TRANSPORTS)[number]
+
 // One row of instance-wide settings. The boolean key pins it to a single row.
 export const settings = pgTable(
   "settings",
@@ -131,6 +134,20 @@ export const settings = pgTable(
       .notNull()
       .default("approval"),
     trustedDomains: text("trusted_domains").array().notNull().default([]),
+    // Password accounts must turn on two-factor before they can use the app.
+    require2fa: boolean("require_2fa").notNull().default(false),
+    // Email, used when no EMAIL_TRANSPORT is set in env. Secrets are sealed by lib/crypto.
+    emailTransport: text("email_transport")
+      .$type<EmailTransport>()
+      .notNull()
+      .default("none"),
+    emailFrom: text("email_from"),
+    smtpHost: text("smtp_host"),
+    smtpPort: integer("smtp_port"),
+    smtpSecure: boolean("smtp_secure").notNull().default(false),
+    smtpUser: text("smtp_user"),
+    smtpPassword: text("smtp_password"),
+    resendApiKey: text("resend_api_key"),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -140,6 +157,10 @@ export const settings = pgTable(
     check(
       "settings_signup_mode_check",
       sql`${t.signupMode} in ('approval', 'invite', 'open', 'closed')`
+    ),
+    check(
+      "settings_email_transport_check",
+      sql`${t.emailTransport} in ('none', 'smtp', 'resend')`
     ),
   ]
 )
@@ -159,7 +180,10 @@ export const invites = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
-    check("invites_max_uses_positive", sql`${t.maxUses} is null or ${t.maxUses} > 0`),
+    check(
+      "invites_max_uses_positive",
+      sql`${t.maxUses} is null or ${t.maxUses} > 0`
+    ),
   ]
 )
 

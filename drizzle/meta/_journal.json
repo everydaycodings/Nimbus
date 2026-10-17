@@ -15,6 +15,13 @@
       "when": 1792263829462,
       "tag": "0001_spooky_ricochet",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792265012886,
+      "tag": "0002_email_and_2fa",
+      "breakpoints": true
     }
   ]
 }

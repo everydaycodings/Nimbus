@@ -15,6 +15,8 @@ docker compose up -d
 | MinIO console | 9101 | http://localhost:9101 (`nimbus` / `nimbus-secret`) |
 | tusd     | 1080 | resumable uploads at `/files/`, stores into the bucket |
 | Redis    | 6380 | reserved for rate limiting and caching |
+| Mailpit SMTP | 1025 | no auth, no TLS; catches every email |
+| Mailpit inbox | 8025 | http://localhost:8025 |
 
 Ports clash with something else? Override `*_PORT` in `.env`.
 
@@ -30,6 +32,11 @@ S3_SECRET_KEY=nimbus-secret
 S3_FORCE_PATH_STYLE=true
 TUS_URL=http://localhost:1080/files/
 REDIS_URL=redis://localhost:6380
+# Optional: send through Mailpit. Leave EMAIL_TRANSPORT unset to configure email in /admin/email.
+EMAIL_TRANSPORT=smtp
+EMAIL_FROM=Nimbus <nimbus@localhost>
+SMTP_HOST=localhost
+SMTP_PORT=1025
 ```
 
 tusd calls `http://host.docker.internal:3000/api/tus-hooks` on `pre-create` and `post-finish`,

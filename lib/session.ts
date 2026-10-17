@@ -4,8 +4,11 @@ import { headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { cache } from "react"
 
+import { and, eq } from "drizzle-orm"
+
 import { auth } from "@/lib/auth"
-import type { Role, Status } from "@/lib/db/schema"
+import { db } from "@/lib/db"
+import { account, type Role, type Status } from "@/lib/db/schema"
 
 export const getSession = cache(async () => {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -27,4 +30,15 @@ export async function requireAdmin() {
   if (session.user.status !== "active" || !isAdmin(session.user.role))
     redirect("/")
   return session.user
+}
+
+// Two-factor and password changes only apply to accounts that sign in with a password.
+export async function hasPassword(userId: string) {
+  const [row] = await db
+    .select({ id: account.id })
+    .from(account)
+    .where(
+      and(eq(account.userId, userId), eq(account.providerId, "credential"))
+    )
+  return Boolean(row)
 }

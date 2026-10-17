@@ -46,9 +46,18 @@ archive `#b5b5b5`. These hues never appear on chrome.
   it closes on navigation. Page padding steps `p-4` / `sm:p-6` / `lg:p-10`.
 - Account menu (`components/nav-user.tsx`): avatar, name, email; opens upward with an outline role `Badge` and Sign out.
 - Admin lives under `/admin/*` (one sidebar link, active for every admin page). Its layout holds the
-  "Admin" title and underline section tabs (Members, Settings); sections are `Card`s with `text-base` titles.
+  "Admin" title and underline section tabs (Members, Settings, Email); sections are `Card`s with `text-base` titles.
 - Choices among a few options use bordered radio cards (`has-checked:border-ring/60 bg-input/30`); selects are native `<select>` styled like `Input`.
-- Auth and status screens are a centered `Card` (`components/ui/card.tsx`).
+- Auth and status screens are a centered `Card` (`components/ui/card.tsx`). Gate screens (`StatusScreen` in
+  `app/(app)/layout.tsx`) hold their own way forward (a form or setup flow) above Sign out; `wide` for flows like two-factor.
+- Every server-action submit is a `SubmitButton` (spinner and disabled while pending). Results show inline next to
+  the button: a teal check plus muted text for success, `text-destructive` for errors. No toasts.
+- A page-level status strip (icon tile + one bold line + one muted line in a `rounded-xl border bg-card` row) opens
+  settings pages whose state matters more than their form, like `/admin/email`.
+- Modals (Base UI Dialog, `bg-popover`, black/60 backdrop) only for destructive or show-once results: reset
+  two-factor, temporary passwords. Row overflow actions live behind a ghost `DotsThree` menu.
+- Secrets: never echoed back. Stored ones show a dot placeholder and "Leave blank to keep it."; one-time values
+  (backup codes, temporary passwords) sit in a mono `bg-input/20` box with Copy.
 - Lists are bordered `rounded-xl bg-card` containers with `divide-y` rows; roles use outline `Badge`.
 - Tabs are the shadcn segmented style (`bg-muted p-[3px]`, active item `bg-input/30 border-input`).
 

@@ -27,7 +27,12 @@ Rejected accounts are kept, not deleted, so an admin can approve them later.
 only appears when its keys are set in env. Accounts with the same email link across methods only
 when the existing account's email is verified (Better Auth's default), so pre-registering
 someone else's email with a password can't hijack their Google or GitHub sign-in. Password accounts
-become linkable once email verification exists (Phase 3).
+become linkable once their email is confirmed.
+
+**Gates** (full-screen, in this order, in `app/(app)/layout.tsx`): a temporary password must be
+replaced; an unconfirmed email must be confirmed, but only while email works, only for members, and
+not for accounts with two-factor on; pending and rejected screens; and when admins require two-factor,
+password accounts must set it up. Google and GitHub sign-ins rely on the provider's own two-factor.
 
 ## Phase 1: Auth, admin basics, home shell ✓ done
 - Better Auth with Drizzle on Postgres: email/password, Google, GitHub
@@ -44,13 +49,18 @@ become linkable once email verification exists (Phase 3).
 - Auto-approve list of trusted email domains (only for verified emails)
 - Settings are stored in the database and editable from `/admin/settings`
 
-## Phase 3: Email ← next
-- Admin picks the email transport: **none**, **SMTP** or **Resend**
-- With email: password reset, email verification, "you were approved" and "new request" notices
-- Without email: an admin can set a temporary password for a member
-- Email verification, which makes password accounts linkable
+## Phase 3: Email and two-factor ✓ done
+- Email transport **none**, **SMTP** or **Resend**, set in env (`EMAIL_TRANSPORT` and friends; the
+  admin page turns read-only) or in `/admin/email`, where the SMTP password and Resend key are sealed
+  with AES-256-GCM under a key derived from `BETTER_AUTH_SECRET`. Rotating that secret means
+  re-entering them; the page says so.
+- With email: password reset, email confirmation, "you were approved" and "new request" notices,
+  and a test send. A confirmed email on a trusted domain skips approval.
+- Two-factor (TOTP plus 10 backup codes) at `/account`, which works without email. Admins can
+  reset a member's two-factor and require it for every password account.
+- Without email: an admin sets a temporary password, which the member must replace on next sign-in.
 
-## Phase 4: File browser
+## Phase 4: File browser ← next
 - My files, Recent, Starred, Shared with me, Trash
 - Grid and list views, folders, rename, move, trash and restore, density toggle
 

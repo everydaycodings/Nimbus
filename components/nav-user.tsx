@@ -1,14 +1,24 @@
 "use client"
 
 import { Menu } from "@base-ui/react/menu"
-import { CaretUpDownIcon, SignOutIcon } from "@phosphor-icons/react"
+import {
+  CaretUpDownIcon,
+  SignOutIcon,
+  UserCircleIcon,
+} from "@phosphor-icons/react"
+import Link from "next/link"
 
 import { signOut } from "@/app/(app)/actions"
 import { useSidebar } from "@/components/sidebar-shell"
 import { Badge } from "@/components/ui/badge"
 import { UserAvatar } from "@/components/user-avatar"
 
-type Props = { name: string; email: string; image?: string | null; role: string }
+type Props = {
+  name: string
+  email: string
+  image?: string | null
+  role: string
+}
 
 function Identity({ name, email, image }: Omit<Props, "role">) {
   return (
@@ -22,14 +32,17 @@ function Identity({ name, email, image }: Omit<Props, "role">) {
   )
 }
 
-// Account section in the sidebar footer: who you are, your role, sign out.
+const ITEM =
+  "flex h-8 cursor-default items-center gap-2 rounded-md px-2 text-sm outline-none select-none data-highlighted:bg-accent [&_svg]:size-4 [&_svg]:text-muted-foreground"
+
+// Account section in the sidebar footer: who you are, your role, account, sign out.
 export function NavUser({ role, ...user }: Props) {
   const { collapsed } = useSidebar()
   return (
     <Menu.Root>
       <Menu.Trigger
         aria-label={collapsed ? `Account: ${user.name}` : undefined}
-        className="flex w-full items-center gap-2 rounded-md p-2 outline-none group-data-[collapsed=true]/sidebar:p-0 [&>span:not(:first-child)]:group-data-[collapsed=true]/sidebar:hidden [&>svg]:group-data-[collapsed=true]/sidebar:hidden transition-colors hover:bg-sidebar-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 data-popup-open:bg-sidebar-accent"
+        className="flex w-full items-center gap-2 rounded-md p-2 transition-colors outline-none group-data-[collapsed=true]/sidebar:p-0 hover:bg-sidebar-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 data-popup-open:bg-sidebar-accent [&>span:not(:first-child)]:group-data-[collapsed=true]/sidebar:hidden [&>svg]:group-data-[collapsed=true]/sidebar:hidden"
       >
         <Identity {...user} />
         <CaretUpDownIcon className="size-4 shrink-0 text-muted-foreground" />
@@ -40,16 +53,17 @@ export function NavUser({ role, ...user }: Props) {
           align={collapsed ? "end" : "start"}
           sideOffset={collapsed ? 12 : 6}
         >
-          <Menu.Popup className="w-60 origin-(--transform-origin) rounded-lg border bg-popover p-1 text-popover-foreground shadow-md outline-none transition-[opacity,scale] duration-100 data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
+          <Menu.Popup className="w-60 origin-(--transform-origin) rounded-lg border bg-popover p-1 text-popover-foreground shadow-md transition-[opacity,scale] duration-100 outline-none data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
             <div className="flex items-center gap-2 px-1 py-1.5">
               <Identity {...user} />
               <Badge variant="outline">{role}</Badge>
             </div>
             <Menu.Separator className="-mx-1 my-1 h-px bg-border" />
-            <Menu.Item
-              onClick={() => signOut()}
-              className="flex h-8 cursor-default items-center gap-2 rounded-md px-2 text-sm outline-none select-none data-highlighted:bg-accent [&_svg]:size-4 [&_svg]:text-muted-foreground"
-            >
+            <Menu.Item render={<Link href="/account" />} className={ITEM}>
+              <UserCircleIcon />
+              Account and security
+            </Menu.Item>
+            <Menu.Item onClick={() => signOut()} className={ITEM}>
               <SignOutIcon />
               Sign out
             </Menu.Item>

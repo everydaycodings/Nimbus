@@ -1,11 +1,13 @@
 import { betterAuth } from "better-auth"
-import { APIError } from "better-auth/api"
+import { APIError, createAuthMiddleware } from "better-auth/api"
 import { drizzleAdapter } from "better-auth/adapters/drizzle"
 import { nextCookies } from "better-auth/next-js"
-import { count } from "drizzle-orm"
+import { twoFactor } from "better-auth/plugins"
+import { and, count, eq, inArray } from "drizzle-orm"
 
 import { db } from "./db"
 import * as schema from "./db/schema"
+import { appUrl, message, sendInBackground } from "./email"
 import {
   INVITE_COOKIE,
   claimInvite,
@@ -30,7 +32,62 @@ export const enabledProviders = {
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, { provider: "pg", schema }),
-  emailAndPassword: { enabled: true, minPasswordLength: 10 },
+  emailAndPassword: {
+    enabled: true,
+    minPasswordLength: 10,
+    revokeSessionsOnPasswordReset: true,
+    // Every auth email goes out in the background and is skipped when email isn't
+    // set up; the sign-in page hides "Forgot password?" in that case.
+    sendResetPassword: async ({ user, url }) =>
+      sendInBackground(
+        message({
+          to: user.email,
+          subject: "Reset your Nimbus password",
+          lines: [
+            `Someone asked to reset the password for ${user.email}. If it was you, choose a new one below. The link works for one hour.`,
+          ],
+          action: { label: "Choose a new password", url },
+          footer:
+            "Didn't ask for this? Ignore this email; your password stays the same.",
+        })
+      ),
+  },
+  // Verification is enforced in the app layout, not here, because it only applies
+  // while email is set up and only to accounts without two-factor.
+  emailVerification: {
+    sendOnSignUp: true,
+    autoSignInAfterVerification: true,
+    sendVerificationEmail: async ({ user, url }) =>
+      sendInBackground(
+        message({
+          to: user.email,
+          subject: "Confirm your email for Nimbus",
+          lines: [
+            `Confirm that ${user.email} is your address to finish setting up your Nimbus account. The link works for one hour.`,
+          ],
+          action: { label: "Confirm email", url },
+          footer: "Didn't create an account? Ignore this email.",
+        })
+      ),
+    // A newly verified email on a trusted domain skips the approval queue.
+    afterEmailVerification: async (verified) => {
+      const { signupMode, trustedDomains } = await getSettings()
+      if (
+        signupMode === "closed" ||
+        !isTrustedEmail(verified.email, trustedDomains)
+      )
+        return
+      await db
+        .update(schema.user)
+        .set({ status: "active" })
+        .where(
+          and(
+            eq(schema.user.id, verified.id),
+            eq(schema.user.status, "pending")
+          )
+        )
+    },
+  },
   socialProviders: {
     ...(google && { google }),
     ...(github && { github }),
@@ -39,6 +96,11 @@ export const auth = betterAuth({
     additionalFields: {
       role: { type: "string", defaultValue: "member", input: false },
       status: { type: "string", defaultValue: "pending", input: false },
+      passwordTemporary: {
+        type: "boolean",
+        defaultValue: false,
+        input: false,
+      },
     },
   },
   databaseHooks: {
@@ -82,10 +144,49 @@ export const auth = betterAuth({
             },
           }
         },
+        // Tell the admins someone is waiting.
+        after: async (created) => {
+          if ((created as { status?: string }).status !== "pending") return
+          const admins = await db
+            .select({ email: schema.user.email })
+            .from(schema.user)
+            .where(
+              and(
+                inArray(schema.user.role, ["owner", "admin"]),
+                eq(schema.user.status, "active")
+              )
+            )
+          for (const { email } of admins)
+            sendInBackground(
+              message({
+                to: email,
+                subject: `${created.name} wants to join your Nimbus`,
+                lines: [
+                  `${created.name} (${created.email}) created an account and is waiting for approval.`,
+                ],
+                action: {
+                  label: "Review request",
+                  url: appUrl("/admin/members?tab=pending"),
+                },
+              })
+            )
+        },
       },
     },
   },
-  plugins: [nextCookies()],
+  hooks: {
+    // The UI hides "Turn off" when an admin requires two-factor; this covers direct calls.
+    before: createAuthMiddleware(async (ctx) => {
+      if (
+        ctx.path === "/two-factor/disable" &&
+        (await getSettings()).require2fa
+      )
+        throw new APIError("FORBIDDEN", {
+          message: "Your admin requires two-factor on this Nimbus.",
+        })
+    }),
+  },
+  plugins: [twoFactor({ issuer: "Nimbus" }), nextCookies()],
 })
 
 export type Session = typeof auth.$Infer.Session

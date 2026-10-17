@@ -2,9 +2,12 @@ import {
   ClockIcon,
   CloudIcon,
   FolderIcon,
+  EnvelopeSimpleIcon,
   HourglassIcon,
+  KeyIcon,
   LockIcon,
   ShieldCheckIcon,
+  ShieldIcon,
   SignOutIcon,
   StarIcon,
   TrashIcon,
@@ -18,13 +21,18 @@ import { redirect } from "next/navigation"
 import { NavLink } from "@/components/nav-link"
 import { NAV_ITEM, NAV_LABEL, SIDEBAR_COOKIE } from "@/components/nav-styles"
 import { NavUser } from "@/components/nav-user"
+import { PasswordForm } from "@/components/password-form"
+import { ResendVerification } from "@/components/resend-verification"
 import { SidebarShell } from "@/components/sidebar-shell"
+import { TwoFactorSetup } from "@/components/two-factor"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { db } from "@/lib/db"
 import { user } from "@/lib/db/schema"
-import { getSession, isAdmin } from "@/lib/session"
+import { emailEnabled } from "@/lib/email"
+import { getSession, hasPassword, isAdmin } from "@/lib/session"
+import { getSettings } from "@/lib/signup"
 import { signOut } from "./actions"
 
 const ROLE_LABEL = { owner: "Owner", admin: "Admin", member: "Member" }
@@ -53,14 +61,16 @@ function StatusScreen({
   icon: Icon,
   title,
   children,
+  wide,
 }: {
   icon: typeof HourglassIcon
   title: string
   children: React.ReactNode
+  wide?: boolean
 }) {
   return (
     <main className="flex min-h-svh items-center justify-center px-4 py-12">
-      <Card className="w-full max-w-md">
+      <Card className={`w-full ${wide ? "max-w-lg" : "max-w-md"}`}>
         <CardHeader className="gap-4">
           <span className="grid size-10 place-items-center rounded-lg bg-muted">
             <Icon className="size-5 text-muted-foreground" />
@@ -86,6 +96,61 @@ export default async function AppLayout({
   const session = await getSession()
   if (!session) redirect("/sign-in")
   const me = session.user
+  const admin = isAdmin(me.role)
+
+  // Gates, in order: a temporary password, an unconfirmed email, approval, then
+  // the admin's two-factor rule. Each one is a full screen with a way forward.
+  if (me.passwordTemporary)
+    return (
+      <StatusScreen icon={KeyIcon} title="Choose your own password">
+        <p>
+          An admin set a temporary password for{" "}
+          <span className="text-foreground">{me.email}</span>. Replace it with
+          one only you know to continue.
+        </p>
+        <div className="pt-2 text-foreground">
+          <PasswordForm
+            currentLabel="Temporary password"
+            submitLabel="Save password"
+          />
+        </div>
+      </StatusScreen>
+    )
+
+  // Email confirmation only applies while email works, and two-factor replaces it.
+  // Admins skip it so a broken email setup can't lock out the people who fix it.
+  const [password, settings] = await Promise.all([
+    hasPassword(me.id),
+    getSettings(),
+  ])
+  if (
+    !me.emailVerified &&
+    !me.twoFactorEnabled &&
+    !admin &&
+    (await emailEnabled())
+  )
+    return (
+      <StatusScreen icon={EnvelopeSimpleIcon} title="Confirm your email" wide>
+        <p>
+          We sent a link to <span className="text-foreground">{me.email}</span>.
+          Open it to finish setting up your account.
+        </p>
+        <div className="flex flex-col gap-5 pt-2">
+          <ResendVerification variant="default" label="Send the link again" />
+          {password && (
+            <div className="flex flex-col gap-3 border-t pt-5">
+              <p>
+                Prefer an authenticator app? Set up two-factor instead and skip
+                the email.
+              </p>
+              <div className="text-foreground">
+                <TwoFactorSetup startVariant="outline" />
+              </div>
+            </div>
+          )}
+        </div>
+      </StatusScreen>
+    )
 
   if (me.status === "pending")
     return (
@@ -110,7 +175,24 @@ export default async function AppLayout({
       </StatusScreen>
     )
 
-  const admin = isAdmin(me.role)
+  if (settings.require2fa && password && !me.twoFactorEnabled)
+    return (
+      <StatusScreen
+        icon={ShieldIcon}
+        title="Set up two-factor to continue"
+        wide
+      >
+        <p>
+          Your admin requires two-factor authentication on this Nimbus. After
+          your password, you&apos;ll also enter a code from an authenticator app
+          on your phone.
+        </p>
+        <div className="pt-2 text-foreground">
+          <TwoFactorSetup autoStart />
+        </div>
+      </StatusScreen>
+    )
+
   const pending = admin
     ? (
         await db
@@ -120,8 +202,7 @@ export default async function AppLayout({
       )[0].n
     : 0
 
-  const collapsed =
-    (await cookies()).get(SIDEBAR_COOKIE)?.value === "1"
+  const collapsed = (await cookies()).get(SIDEBAR_COOKIE)?.value === "1"
   const label =
     "transition-opacity group-data-[collapsed=true]/sidebar:opacity-0"
 
@@ -131,7 +212,9 @@ export default async function AppLayout({
         <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-sidebar-accent">
           <CloudIcon weight="fill" className="size-5 text-brand" />
         </span>
-        <span className={`grid text-sm leading-tight whitespace-nowrap ${label}`}>
+        <span
+          className={`grid text-sm leading-tight whitespace-nowrap ${label}`}
+        >
           <span className="font-semibold">Nimbus</span>
           <span className="text-xs text-muted-foreground">Self-hosted</span>
         </span>

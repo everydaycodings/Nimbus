@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 
+import { SubmitButton } from "@/components/submit-button"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -42,16 +43,20 @@ export function AuthForm({
     const form = new FormData(e.currentTarget)
     const email = String(form.get("email"))
     const password = String(form.get("password"))
-    const { error } = signUp
+    const { data, error } = signUp
       ? await authClient.signUp.email({
           name: String(form.get("name")),
           email,
           password,
         })
       : await authClient.signIn.email({ email, password })
-    setBusy(false)
-    if (error)
+    if (error) {
+      setBusy(false)
       return setError(error.message ?? "Something went wrong. Try again.")
+    }
+    // Two-factor accounts get a session only after the second step.
+    if (data && "twoFactorRedirect" in data && data.twoFactorRedirect)
+      return router.push("/two-factor")
     router.push("/")
     router.refresh()
   }
@@ -119,7 +124,17 @@ export function AuthForm({
           />
         </div>
         <div className="flex flex-col gap-2">
-          <Label htmlFor="password">Password</Label>
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor="password">Password</Label>
+            {!signUp && (
+              <Link
+                href="/forgot-password"
+                className="text-sm text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:text-foreground focus-visible:underline"
+              >
+                Forgot password?
+              </Link>
+            )}
+          </div>
           <Input
             id="password"
             name="password"
@@ -140,9 +155,9 @@ export function AuthForm({
             {error}
           </p>
         )}
-        <Button type="submit" className="w-full" disabled={busy}>
+        <SubmitButton className="w-full" pending={busy}>
           {signUp ? "Create account" : "Sign in"}
-        </Button>
+        </SubmitButton>
       </form>
 
       {allowSignUp && (

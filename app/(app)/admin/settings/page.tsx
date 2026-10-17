@@ -1,8 +1,10 @@
 import { XIcon } from "@phosphor-icons/react/dist/ssr"
+import Link from "next/link"
 import { desc } from "drizzle-orm"
 import { headers } from "next/headers"
 
 import { CopyButton } from "@/components/copy-button"
+import { SubmitButton } from "@/components/submit-button"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -16,13 +18,14 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { db } from "@/lib/db"
 import { invites, type SignupMode } from "@/lib/db/schema"
-import { requireAdmin } from "@/lib/session"
+import { hasPassword, requireAdmin } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
 import {
   addTrustedDomain,
   createInvite,
   removeTrustedDomain,
   revokeInvite,
+  setRequire2fa,
   setSignupMode,
 } from "./actions"
 
@@ -67,14 +70,15 @@ function inviteState(i: typeof invites.$inferSelect) {
 }
 
 export default async function SettingsPage() {
-  await requireAdmin()
-  const { signupMode, trustedDomains } = await getSettings()
+  const me = await requireAdmin()
+  // Mirrors setRequire2fa: you can't require what you don't use yourself.
+  const needsOwn2fa = !me.twoFactorEnabled && (await hasPassword(me.id))
+  const { signupMode, trustedDomains, require2fa } = await getSettings()
   const links = await db.select().from(invites).orderBy(desc(invites.createdAt))
   const base = await origin()
 
   return (
     <div className="flex flex-col gap-6">
-
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Sign-ups</CardTitle>
@@ -108,9 +112,7 @@ export default async function SettingsPage() {
                 </label>
               ))}
             </fieldset>
-            <Button type="submit" className="self-end">
-              Save
-            </Button>
+            <SubmitButton className="self-end">Save</SubmitButton>
           </form>
         </CardContent>
       </Card>
@@ -153,7 +155,7 @@ export default async function SettingsPage() {
                 placeholder="Unlimited"
               />
             </div>
-            <Button type="submit">Create link</Button>
+            <SubmitButton>Create link</SubmitButton>
           </form>
 
           {links.length === 0 ? (
@@ -191,9 +193,9 @@ export default async function SettingsPage() {
                     <div className="flex gap-2">
                       {!state && <CopyButton value={url} />}
                       <form action={revokeInvite.bind(null, i.id)}>
-                        <Button type="submit" variant="destructive" size="sm">
+                        <SubmitButton variant="destructive" size="sm">
                           {state ? "Delete" : "Revoke"}
-                        </Button>
+                        </SubmitButton>
                       </form>
                     </div>
                   </li>
@@ -209,8 +211,8 @@ export default async function SettingsPage() {
           <CardTitle className="text-base">Trusted domains</CardTitle>
           <CardDescription>
             People who sign in with Google or GitHub using an email at these
-            domains skip approval. Email-and-password sign-ups don&apos;t
-            count, because those emails aren&apos;t verified.
+            domains skip approval. Email-and-password sign-ups don&apos;t count,
+            because those emails aren&apos;t verified.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -227,9 +229,7 @@ export default async function SettingsPage() {
               title="A domain like example.com"
               className="max-w-xs"
             />
-            <Button type="submit" variant="outline">
-              Add domain
-            </Button>
+            <SubmitButton variant="outline">Add domain</SubmitButton>
           </form>
           {trustedDomains.length === 0 ? (
             <p className="text-sm text-muted-foreground">
@@ -257,6 +257,57 @@ export default async function SettingsPage() {
               ))}
             </ul>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Two-factor</CardTitle>
+          <CardDescription>
+            Two-factor protects password sign-ins with a code from an
+            authenticator app. It works without email. Google and GitHub
+            sign-ins rely on the provider&apos;s own two-factor instead.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={setRequire2fa} className="flex flex-col gap-4">
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors hover:bg-input/20 has-checked:border-ring/60 has-checked:bg-input/30 has-focus-visible:ring-[3px] has-focus-visible:ring-ring/50 has-disabled:cursor-not-allowed has-disabled:opacity-60 has-disabled:hover:bg-transparent">
+              <input
+                type="checkbox"
+                name="require2fa"
+                defaultChecked={require2fa}
+                disabled={needsOwn2fa && !require2fa}
+                className="mt-0.5 size-4 shrink-0 accent-primary outline-none"
+              />
+              <span className="grid gap-1">
+                <span className="text-sm font-medium">
+                  Require two-factor for password accounts
+                </span>
+                <span className="text-sm text-muted-foreground">
+                  Anyone without it, admins included, has to set it up the next
+                  time they open Nimbus. Nobody can turn it off while this is
+                  on.
+                </span>
+              </span>
+            </label>
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              {needsOwn2fa && !require2fa && (
+                <p className="mr-auto text-sm text-muted-foreground">
+                  Turn on two-factor for{" "}
+                  <Link
+                    href="/account"
+                    className="text-foreground underline underline-offset-4"
+                  >
+                    your own account
+                  </Link>{" "}
+                  first.
+                </p>
+              )}
+              <SubmitButton disabled={needsOwn2fa && !require2fa}>
+                Save
+              </SubmitButton>
+            </div>
+          </form>
         </CardContent>
       </Card>
     </div>

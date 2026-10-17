@@ -11,7 +11,7 @@ import {
   settings,
   type SignupMode,
 } from "@/lib/db/schema"
-import { requireAdmin } from "@/lib/session"
+import { hasPassword, requireAdmin } from "@/lib/session"
 
 const DOMAIN = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/
 const DAY = 24 * 60 * 60 * 1000
@@ -22,6 +22,15 @@ export async function setSignupMode(form: FormData) {
   if (!SIGNUP_MODES.includes(mode)) return
   await db.update(settings).set({ signupMode: mode, updatedAt: new Date() })
   revalidatePath("/admin/settings")
+}
+
+// The admin turning it on must already use two-factor, so they don't lock themselves behind the setup screen.
+export async function setRequire2fa(form: FormData) {
+  const actor = await requireAdmin()
+  const on = form.get("require2fa") === "on"
+  if (on && !actor.twoFactorEnabled && (await hasPassword(actor.id))) return
+  await db.update(settings).set({ require2fa: on, updatedAt: new Date() })
+  revalidatePath("/", "layout")
 }
 
 export async function addTrustedDomain(form: FormData) {

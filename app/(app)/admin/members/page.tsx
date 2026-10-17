@@ -1,14 +1,16 @@
+import { ShieldCheckIcon } from "@phosphor-icons/react/dist/ssr"
 import { desc, eq } from "drizzle-orm"
 import Link from "next/link"
 
+import { SubmitButton } from "@/components/submit-button"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { UserAvatar } from "@/components/user-avatar"
 import { db } from "@/lib/db"
 import { user, type Status } from "@/lib/db/schema"
 import { cn } from "@/lib/utils"
 import { requireAdmin } from "@/lib/session"
 import { setRole, setStatus } from "./actions"
+import { MemberMenu } from "./member-menu"
 
 const TABS: { status: Status; label: string; empty: string }[] = [
   {
@@ -41,7 +43,6 @@ export default async function MembersPage({
 
   return (
     <div className="flex flex-col gap-6">
-
       <nav
         aria-label="Member status"
         className="inline-flex h-9 w-fit items-center rounded-lg bg-muted p-[3px]"
@@ -52,7 +53,7 @@ export default async function MembersPage({
             href={`/admin/members?tab=${t.status}`}
             aria-current={t.status === current.status ? "page" : undefined}
             className={cn(
-              "flex h-full items-center rounded-md border border-transparent px-3 text-sm font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50",
+              "flex h-full items-center rounded-md border border-transparent px-3 text-sm font-medium text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50",
               "aria-[current=page]:border-input aria-[current=page]:bg-input/30 aria-[current=page]:text-foreground aria-[current=page]:shadow-sm"
             )}
           >
@@ -70,6 +71,9 @@ export default async function MembersPage({
           {people.map((p) => {
             const self = p.id === me.id
             const locked = p.role === "owner" || self
+            // Mirrors recoverable() in actions.ts.
+            const recoverable =
+              !locked && (p.role !== "admin" || me.role === "owner")
             return (
               <li
                 key={p.id}
@@ -91,24 +95,28 @@ export default async function MembersPage({
                   <Badge variant="outline">
                     {ROLE_LABEL[p.role as keyof typeof ROLE_LABEL]}
                   </Badge>
+                  {p.twoFactorEnabled && (
+                    <Badge variant="outline" title="Two-factor is on">
+                      <ShieldCheckIcon weight="fill" className="text-brand" />
+                      2FA
+                    </Badge>
+                  )}
                   <span className="tabular-nums">
                     Joined {joined.format(p.createdAt)}
                   </span>
                 </div>
                 {!locked && (
-                  <div className="flex gap-2">
+                  <div className="flex items-center gap-2">
                     {p.status !== "active" && (
                       <form action={setStatus.bind(null, p.id, "active")}>
-                        <Button type="submit" size="sm">
-                          Approve
-                        </Button>
+                        <SubmitButton size="sm">Approve</SubmitButton>
                       </form>
                     )}
                     {p.status !== "rejected" && (
                       <form action={setStatus.bind(null, p.id, "rejected")}>
-                        <Button type="submit" size="sm" variant="destructive">
+                        <SubmitButton size="sm" variant="destructive">
                           {p.status === "pending" ? "Decline" : "Remove access"}
-                        </Button>
+                        </SubmitButton>
                       </form>
                     )}
                     {me.role === "owner" && p.status === "active" && (
@@ -119,10 +127,17 @@ export default async function MembersPage({
                           p.role === "admin" ? "member" : "admin"
                         )}
                       >
-                        <Button type="submit" size="sm" variant="outline">
+                        <SubmitButton size="sm" variant="outline">
                           {p.role === "admin" ? "Make member" : "Make admin"}
-                        </Button>
+                        </SubmitButton>
                       </form>
+                    )}
+                    {recoverable && p.status === "active" && (
+                      <MemberMenu
+                        id={p.id}
+                        name={p.name}
+                        twoFactor={Boolean(p.twoFactorEnabled)}
+                      />
                     )}
                   </div>
                 )}
