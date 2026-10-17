@@ -16,8 +16,17 @@
     --color-file-audio: var(--file-audio);
     --color-file-code: var(--file-code);
     --color-file-archive: var(--file-archive);
+    --color-tag-red: var(--tag-red);
+    --color-tag-orange: var(--tag-orange);
+    --color-tag-yellow: var(--tag-yellow);
+    --color-tag-green: var(--tag-green);
+    --color-tag-blue: var(--tag-blue);
+    --color-tag-purple: var(--tag-purple);
+    --color-tag-gray: var(--tag-gray);
     --spacing-row: var(--row);
     --spacing-gap-ui: var(--gap-ui);
+    --spacing-file-row: var(--file-row);
+    --spacing-tile: var(--tile);
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -108,14 +117,27 @@
     --file-code: #ff9f66;
     --file-archive: #b5b5b5;
 
+    /* Tag colors: user-chosen labels, shown as small dots */
+    --tag-red: #ff6b6b;
+    --tag-orange: #ffa94d;
+    --tag-yellow: #ffd43b;
+    --tag-green: #69db7c;
+    --tag-blue: #4dabf7;
+    --tag-purple: #b197fc;
+    --tag-gray: #adb5bd;
+
     /* Density: rows and gaps shrink when the user picks compact */
     --row: 2rem;
     --gap-ui: 0.75rem;
+    --file-row: 2.75rem;
+    --tile: 11rem;
 }
 
 [data-density="compact"] {
     --row: 1.75rem;
     --gap-ui: 0.5rem;
+    --file-row: 2.25rem;
+    --tile: 9rem;
 }
 
 @layer base {

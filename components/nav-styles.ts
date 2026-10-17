@@ -5,3 +5,7 @@ export const NAV_LABEL = "flex-1 truncate group-data-[collapsed=true]/sidebar:sr
 
 // Remembers the desktop rail state so the server renders the right width.
 export const SIDEBAR_COOKIE = "sidebar_collapsed"
+
+// File browser view preferences, remembered the same way.
+export const LAYOUT_COOKIE = "files_layout"
+export const DENSITY_COOKIE = "files_density"

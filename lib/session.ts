@@ -32,6 +32,16 @@ export async function requireAdmin() {
   return session.user
 }
 
+// Guard for file actions, which skip the layout's gates: signed in, approved,
+// and not still on a temporary password.
+export async function requireMember() {
+  const session = await getSession()
+  if (!session) redirect("/sign-in")
+  if (session.user.status !== "active" || session.user.passwordTemporary)
+    redirect("/")
+  return session.user
+}
+
 // Two-factor and password changes only apply to accounts that sign in with a password.
 export async function hasPassword(userId: string) {
   const [row] = await db

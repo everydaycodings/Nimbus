@@ -27,6 +27,7 @@ import {
   revokeInvite,
   setRequire2fa,
   setSignupMode,
+  setTrashRetention,
 } from "./actions"
 
 const MODES: { mode: SignupMode; label: string; hint: string }[] = [
@@ -73,7 +74,8 @@ export default async function SettingsPage() {
   const me = await requireAdmin()
   // Mirrors setRequire2fa: you can't require what you don't use yourself.
   const needsOwn2fa = !me.twoFactorEnabled && (await hasPassword(me.id))
-  const { signupMode, trustedDomains, require2fa } = await getSettings()
+  const { signupMode, trustedDomains, require2fa, trashRetentionDays } =
+    await getSettings()
   const links = await db.select().from(invites).orderBy(desc(invites.createdAt))
   const base = await origin()
 
@@ -307,6 +309,37 @@ export default async function SettingsPage() {
                 Save
               </SubmitButton>
             </div>
+          </form>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Trash</CardTitle>
+          <CardDescription>
+            Applies to everyone&apos;s trash. Members can always restore,
+            delete forever or empty the trash themselves.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form
+            action={setTrashRetention}
+            className="grid items-end gap-3 sm:grid-cols-[1fr_auto]"
+          >
+            <div className="grid gap-2">
+              <Label htmlFor="retention">Delete trashed items for good</Label>
+              <select
+                id="retention"
+                name="retention"
+                defaultValue={String(trashRetentionDays ?? 0)}
+                className={SELECT}
+              >
+                <option value="0">Never, keep them until emptied</option>
+                <option value="7">After 7 days</option>
+                <option value="30">After 30 days</option>
+                <option value="90">After 90 days</option>
+              </select>
+            </div>
+            <SubmitButton>Save</SubmitButton>
           </form>
         </CardContent>
       </Card>

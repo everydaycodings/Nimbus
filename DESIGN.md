@@ -30,6 +30,10 @@ File types use their own hues via `--file-*` (`text-file-image`, `bg-file-folder
 image `#f27fb2`, video `#b08cff`, doc `#6ea8ff`, pdf `#ff6f6f`, audio `#4fd1a5`, code `#ff9f66`,
 archive `#b5b5b5`. These hues never appear on chrome.
 
+Tags are user-chosen labels with their own `--tag-*` hues (red, orange, yellow, green, blue,
+purple, gray; `TAG_DOT` in `lib/file-types.ts`), shown only as small dots: after an item's
+name, in menus and on the Tags filter.
+
 ## Type
 - **Geist** (`font-sans`) for everything; UI text is `text-sm`, page titles `text-2xl font-semibold tracking-tight`.
 - **Geist Mono** (`font-mono`) only for data: file sizes, counts, paths, hashes, code previews.
@@ -54,12 +58,33 @@ archive `#b5b5b5`. These hues never appear on chrome.
   the button: a teal check plus muted text for success, `text-destructive` for errors. No toasts.
 - A page-level status strip (icon tile + one bold line + one muted line in a `rounded-xl border bg-card` row) opens
   settings pages whose state matters more than their form, like `/admin/email`.
-- Modals (Base UI Dialog, `bg-popover`, black/60 backdrop) only for destructive or show-once results: reset
-  two-factor, temporary passwords. Row overflow actions live behind a ghost `DotsThree` menu.
+- Modals (Base UI Dialog, `bg-popover`, black/60 backdrop; classes in `components/overlay-styles.ts`)
+  for destructive or show-once results (reset two-factor, temporary passwords, delete forever) and
+  for short focused entry: new folder, rename, new tag, the move folder picker. Row overflow
+  actions live behind a ghost `DotsThree` menu.
 - Secrets: never echoed back. Stored ones show a dot placeholder and "Leave blank to keep it."; one-time values
   (backup codes, temporary passwords) sit in a mono `bg-input/20` box with Copy.
 - Lists are bordered `rounded-xl bg-card` containers with `divide-y` rows; roles use outline `Badge`.
 - Tabs are the shadcn segmented style (`bg-muted p-[3px]`, active item `bg-input/30 border-input`).
+
+## File browser
+`components/file-browser.tsx` drives every file view (My files, folders, Recent, Starred, Shared, Trash).
+- Header: page title, or a breadcrumb at title size whose ancestors are links and drop targets.
+  Actions on the right: New folder (primary), Select, then segmented Layout (list/grid) and
+  Density controls.
+- Below it, one row: filter pills (Type, Modified, Size, Tags) and a summary on the left, the
+  action notice and the Sort pill on the right. In selection mode the pills give way to the
+  selection bar (count, Select all, ghost action buttons).
+- Pills are `rounded-full` with a leading icon. A filter that is on shows its value and icon,
+  an `border-brand/40 bg-brand/10` tint and an inline × to clear it. Menu options carry
+  file-type icons, tag dots or size bars.
+- Grid: "Folders" then "Files" sections. Folder tiles are one row (icon, name, date · size);
+  file cards add a `bg-muted/40` 4:3 preview well (the type icon until thumbnails exist) and a
+  date · size line. List: `bg-card` table with sortable column headers.
+- A click highlights one item (teal border and 8% teal wash); double-click opens. Checkboxes
+  replace the leading icon on hover and everywhere in selection mode.
+- Action results (moved, trashed with Undo, errors) show inline in the notice slot, never as toasts.
+- Details is a right-hand sheet (Base UI Dialog sliding from the right) with a `dl` of facts.
 
 ## Shape and density
 - Radius base `--radius: 0.625rem` (10px). Cards and containers `rounded-xl`, controls `rounded-md`.
@@ -67,7 +92,8 @@ archive `#b5b5b5`. These hues never appear on chrome.
 - Tiles are outlined (`border-border`, transparent fill) rather than filled; selected tiles get a teal
   border with an 8% teal wash.
 - Density is a user setting: `data-density="compact"` on a container shrinks `--row`
-  (32px → 28px) and `--gap-ui` (12px → 8px). Use `h-row` / `gap-gap-ui`.
+  (32px → 28px), `--gap-ui` (12px → 8px), `--file-row` (44px → 36px) and `--tile`
+  (11rem → 9rem, the grid's minimum tile width). Use `h-row`, `gap-gap-ui`, `h-file-row`.
 
 ## Icon
 A plain Mist teal cloud on a dark rounded tile (`app/icon.png`, `app/apple-icon.png`,

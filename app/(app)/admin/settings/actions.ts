@@ -33,6 +33,18 @@ export async function setRequire2fa(form: FormData) {
   revalidatePath("/", "layout")
 }
 
+const RETENTION = [7, 30, 90]
+
+export async function setTrashRetention(form: FormData) {
+  await requireAdmin()
+  const days = Number(form.get("retention"))
+  await db.update(settings).set({
+    trashRetentionDays: RETENTION.includes(days) ? days : null,
+    updatedAt: new Date(),
+  })
+  revalidatePath("/admin/settings")
+}
+
 export async function addTrustedDomain(form: FormData) {
   await requireAdmin()
   const domain = String(form.get("domain") ?? "")

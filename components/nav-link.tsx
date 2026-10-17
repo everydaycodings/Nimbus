@@ -12,9 +12,12 @@ export function NavLink({
   href,
   icon,
   label,
+  match,
   children,
 }: {
   href: string
+  // Another path prefix this link owns, like /folders for My files.
+  match?: string
   icon: React.ReactNode
   label: string
   children?: React.ReactNode
@@ -22,7 +25,10 @@ export function NavLink({
   const path = usePathname()
   const { collapsed } = useSidebar()
   // Sections own their sub-pages: /admin stays active on /admin/settings.
-  const active = path === href || path.startsWith(`${href}/`)
+  const active =
+    path === href ||
+    path.startsWith(`${href}/`) ||
+    Boolean(match && path.startsWith(match))
 
   return (
     <Tooltip.Root disabled={!collapsed}>

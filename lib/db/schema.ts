@@ -7,8 +7,10 @@ import {
   integer,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core"
@@ -43,6 +45,9 @@ export const vaults = pgTable(
 export const nodeKind = pgEnum("node_kind", ["file", "folder"])
 
 // Files and folders share one tree. parent_id null means the owner's root.
+// Trashing stamps trashed_at on a node and every untrashed descendant with one
+// timestamp, so "not trashed" is a plain column check and restore can undo exactly
+// that trash. Names are unique per folder, ignoring case, among untrashed nodes.
 export const nodes = pgTable(
   "nodes",
   {
@@ -78,11 +83,69 @@ export const nodes = pgTable(
     index("nodes_owner_trashed_idx")
       .on(t.ownerId)
       .where(sql`${t.trashedAt} is not null`),
+    uniqueIndex("nodes_unique_name_idx")
+      .on(
+        t.ownerId,
+        sql`coalesce(${t.parentId}, '00000000-0000-0000-0000-000000000000')`,
+        sql`lower(${t.name})`
+      )
+      .where(sql`${t.trashedAt} is null`),
+    index("nodes_owner_updated_idx").on(t.ownerId, t.updatedAt),
     check(
       "nodes_file_has_key",
       sql`(${t.kind} = 'folder') = (${t.s3Key} is null)`
     ),
     check("nodes_name_not_blank", sql`length(trim(${t.name})) > 0`),
+  ]
+)
+
+export const TAG_COLORS = [
+  "red",
+  "orange",
+  "yellow",
+  "green",
+  "blue",
+  "purple",
+  "gray",
+] as const
+export type TagColor = (typeof TAG_COLORS)[number]
+
+// Personal colored labels, like Finder tags. Only their owner sees them, on their
+// own files and on files shared with them.
+export const tags = pgTable(
+  "tags",
+  {
+    id: id(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    color: text("color").$type<TagColor>().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("tags_owner_name_idx").on(t.ownerId, sql`lower(${t.name})`),
+    check("tags_name_not_blank", sql`length(trim(${t.name})) > 0`),
+    check(
+      "tags_color_check",
+      sql`${t.color} in ('red', 'orange', 'yellow', 'green', 'blue', 'purple', 'gray')`
+    ),
+  ]
+)
+
+export const nodeTags = pgTable(
+  "node_tags",
+  {
+    nodeId: uuid("node_id")
+      .notNull()
+      .references(() => nodes.id, { onDelete: "cascade" }),
+    tagId: uuid("tag_id")
+      .notNull()
+      .references(() => tags.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.nodeId, t.tagId] }),
+    index("node_tags_tag_id_idx").on(t.tagId),
   ]
 )
 
@@ -148,6 +211,8 @@ export const settings = pgTable(
     smtpUser: text("smtp_user"),
     smtpPassword: text("smtp_password"),
     resendApiKey: text("resend_api_key"),
+    // Trashed items older than this are deleted for good. Null keeps them until emptied.
+    trashRetentionDays: integer("trash_retention_days"),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -161,6 +226,10 @@ export const settings = pgTable(
     check(
       "settings_email_transport_check",
       sql`${t.emailTransport} in ('none', 'smtp', 'resend')`
+    ),
+    check(
+      "settings_trash_retention_positive",
+      sql`${t.trashRetentionDays} is null or ${t.trashRetentionDays} > 0`
     ),
   ]
 )

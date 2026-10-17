@@ -37,13 +37,10 @@ import { signOut } from "./actions"
 
 const ROLE_LABEL = { owner: "Owner", admin: "Admin", member: "Member" }
 
-// Sections that arrive with the file browser (Phase 4).
-const UPCOMING = [
-  { label: "Recent", icon: ClockIcon },
-  { label: "Starred", icon: StarIcon },
-  { label: "Shared with me", icon: UsersIcon },
-  { label: "Vault", icon: LockIcon },
-  { label: "Trash", icon: TrashIcon },
+const FILE_LINKS = [
+  { href: "/recent", label: "Recent", icon: ClockIcon },
+  { href: "/starred", label: "Starred", icon: StarIcon },
+  { href: "/shared", label: "Shared with me", icon: UsersIcon },
 ]
 
 function SignOutButton() {
@@ -226,18 +223,24 @@ export default async function AppLayout({
           >
             Files
           </p>
-          <NavLink href="/" icon={<FolderIcon />} label="My files" />
-          {UPCOMING.map(({ label: name, icon: Icon }) => (
-            <span
-              key={name}
-              aria-disabled
-              title={`${name}: coming with the file browser`}
-              className={`${NAV_ITEM} cursor-default text-sidebar-foreground/40`}
-            >
-              <Icon />
-              <span className={NAV_LABEL}>{name}</span>
-            </span>
+          <NavLink
+            href="/"
+            match="/folders"
+            icon={<FolderIcon />}
+            label="My files"
+          />
+          {FILE_LINKS.map(({ href, label: name, icon: Icon }) => (
+            <NavLink key={href} href={href} icon={<Icon />} label={name} />
           ))}
+          <span
+            aria-disabled
+            title="Vault: coming in a later update"
+            className={`${NAV_ITEM} cursor-default text-sidebar-foreground/40`}
+          >
+            <LockIcon />
+            <span className={NAV_LABEL}>Vault</span>
+          </span>
+          <NavLink href="/trash" icon={<TrashIcon />} label="Trash" />
         </div>
         {admin && (
           <div className="flex flex-col gap-0.5">

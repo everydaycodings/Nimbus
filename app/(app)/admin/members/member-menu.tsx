@@ -6,13 +6,16 @@ import { DotsThreeIcon, KeyIcon, ShieldSlashIcon } from "@phosphor-icons/react"
 import { useState, useTransition } from "react"
 
 import { CopyButton } from "@/components/copy-button"
+import {
+  DIALOG_BACKDROP,
+  DIALOG_POPUP,
+  MENU_ITEM,
+  MENU_POPUP,
+} from "@/components/overlay-styles"
 import { SubmitButton } from "@/components/submit-button"
 import { FormError } from "@/components/two-factor"
 import { Button } from "@/components/ui/button"
 import { resetTwoFactor, setTemporaryPassword } from "./actions"
-
-const ITEM =
-  "flex h-8 cursor-default items-center gap-2 rounded-md px-2 text-sm outline-none select-none data-highlighted:bg-accent [&_svg]:size-4 [&_svg]:text-muted-foreground"
 
 export function MemberMenu({
   id,
@@ -68,13 +71,13 @@ export function MemberMenu({
         </Menu.Trigger>
         <Menu.Portal>
           <Menu.Positioner side="bottom" align="end" sideOffset={4}>
-            <Menu.Popup className="w-56 origin-(--transform-origin) rounded-lg border bg-popover p-1 text-popover-foreground shadow-md transition-[opacity,scale] duration-100 outline-none data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
-              <Menu.Item className={ITEM} onClick={() => show("password")}>
+            <Menu.Popup className={`w-56 ${MENU_POPUP}`}>
+              <Menu.Item className={MENU_ITEM} onClick={() => show("password")}>
                 <KeyIcon />
                 Set temporary password
               </Menu.Item>
               {twoFactor && (
-                <Menu.Item className={ITEM} onClick={() => show("2fa")}>
+                <Menu.Item className={MENU_ITEM} onClick={() => show("2fa")}>
                   <ShieldSlashIcon />
                   Reset two-factor
                 </Menu.Item>
@@ -86,8 +89,8 @@ export function MemberMenu({
 
       <Dialog.Root open={open} onOpenChange={(o) => !o && !pending && close()}>
         <Dialog.Portal>
-          <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/60 transition-opacity duration-150 data-ending-style:opacity-0 data-starting-style:opacity-0" />
-          <Dialog.Popup className="fixed top-1/2 left-1/2 z-50 flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 flex-col gap-4 rounded-xl border bg-popover p-6 text-popover-foreground shadow-lg transition-[opacity,scale] duration-150 outline-none data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
+          <Dialog.Backdrop className={DIALOG_BACKDROP} />
+          <Dialog.Popup className={DIALOG_POPUP}>
             <div className="grid gap-1.5">
               <Dialog.Title className="text-base font-semibold">
                 {kind === "2fa"

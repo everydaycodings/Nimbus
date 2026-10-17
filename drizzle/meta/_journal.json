@@ -22,6 +22,20 @@
       "when": 1792265012886,
       "tag": "0002_email_and_2fa",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792266364472,
+      "tag": "0003_file_browser",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792267484912,
+      "tag": "0004_tags",
+      "breakpoints": true
     }
   ]
 }

@@ -60,22 +60,48 @@ password accounts must set it up. Google and GitHub sign-ins rely on the provide
   reset a member's two-factor and require it for every password account.
 - Without email: an admin sets a temporary password, which the member must replace on next sign-in.
 
-## Phase 4: File browser ← next
-- My files, Recent, Starred, Shared with me, Trash
-- Grid and list views, folders, rename, move, trash and restore, density toggle
+## Phase 4: File browser ✓ done
+- My files (`/`, `/folders/[id]` with breadcrumbs), Recent, Starred, Shared with me, Trash
+- Grid (default) and list views, comfortable/compact density, both remembered in cookies
+- A click highlights one item and a double-click opens it. **Select** (or the hover checkbox,
+  Ctrl/Shift-click, Ctrl+A) turns on selection mode with a bar of bulk actions.
+- New folder and rename in a dialog; move through a folder-picker dialog or by dragging onto a
+  folder or breadcrumb; star; details side panel (type, size or folder contents, location,
+  owner, dates, sharing, tags)
+- Actions live in the ⋯ menu, the right-click menu and keyboard shortcuts (Enter, F2, Del, S, I,
+  Shift+N, arrows, Space, Ctrl+A, Esc)
+- Names are unique per folder, ignoring case (a partial unique index on untrashed nodes)
+- Trash: a folder's contents go and come back with it; an item whose folder is still trashed
+  restores to My files; Undo right after trashing; Delete forever and Empty trash. Admins can
+  auto-delete trash after 7, 30 or 90 days (`/admin/settings`), purged when a file page loads.
+- Folder sizes are the total of everything inside them
+- Filters (type, modified, size, tags) and sort (name, date, size); folders always first
+- Personal colored tags (only their owner sees them): add from the Tags submenu, the selection
+  bar or Details
+- `npm run db:seed [email]` fills an account with sample folders and byte-less files for development
+- Left for later: renaming, recoloring and deleting tags; remembering sort per view
 
 ## Phase 5: Uploads
 - tusd resumable uploads into S3 (pre-create auth hook, post-finish writes the node)
 - Single files, many files, whole folders (drag and drop or picker)
+- Uploading a file with the same name as an existing one in that folder adds a new version
+  instead of failing; versions are listed in Details and can be restored
+- Deleting forever, emptying the trash and the retention purge also delete the S3 objects
+  (they only remove rows today)
 
 ## Phase 6: Sharing, previews, search
-- Share with users (viewer/editor) and public links with expiry
-- Previews for image, video, PDF, audio, code
+- Share with users (viewer/editor) and public links with expiry. Opening shared folders and
+  starring shared items arrive here (Shared with me lists items read-only until then).
+- Previews for image, video, PDF, audio, code and text: double-clicking a file opens its preview
+  (it opens Details until then)
+- Thumbnail previews generated after upload for images, video (a poster frame) and PDFs (first
+  page), shown on grid tiles and in the Details panel in place of the file-type icon
+- Recent ranks by when a file was last opened, not just modified
 - Search by name, then content
 
 ## Phase 7: Vault
 - Client-side encrypted folders behind a separate passphrase (WebCrypto)
-- Server stores only ciphertext and the wrapped key; no previews or content search for vault files
+- Server stores only ciphertext and the wrapped key; no previews, thumbnails or content search for vault files
 
 ## Phase 8: Ship
 - Production Dockerfile and compose, Vercel guide, backups, storage quotas
