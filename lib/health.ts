@@ -130,12 +130,12 @@ const PROBES: Record<Service, (s: Settings) => Promise<Found>> = {
     return { detail: `Collabora answered at ${new URL(url).host}.` }
   },
 
-  // `npm run indexer -- --watch` leaves a key that expires a few minutes after its last sweep.
+  // `npm run worker` leaves a key that expires a few minutes after its last sweep.
   async indexer() {
     const at = Number(await redis.get(INDEXER_KEY))
     if (!at)
       return off(
-        "Not running. It's optional: browsers read files as people open them."
+        "Not running. Start `npm run worker`; until then browsers read files as people open them."
       )
     return {
       detail: `Last sweep ${ago(new Date(at).toISOString(), Date.now())}.`,

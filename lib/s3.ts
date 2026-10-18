@@ -8,6 +8,7 @@ import {
 } from "@aws-sdk/client-s3"
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 
+import { enqueue } from "./redis"
 import { contentDisposition } from "./upload-rules"
 
 const env = process.env
@@ -89,25 +90,30 @@ export async function getText(key: string) {
   return r.Body!.transformToString()
 }
 
-// Deletes the objects, the `.info` files tusd keeps beside them and their thumbnails. Failures are
-// logged, not thrown: the rows are already gone and a leftover object only costs space.
+// Deletes the objects, the `.info` files tusd keeps beside them and their
+// thumbnails, in the worker (/api/jobs), retried until S3 takes it. The rows are
+// already gone, so with Redis away it's tried once from here.
 // ponytail: no sweep for orphans yet; list the bucket against file_versions if they pile up.
 export async function deleteKeys(keys: string[]) {
   const all = [...new Set(keys)].flatMap((k) => [k, `${k}.info`, thumbKey(k)])
   for (let i = 0; i < all.length; i += 1000) {
-    try {
-      const r = await s3.send(
-        new DeleteObjectsCommand({
-          Bucket: BUCKET,
-          Delete: {
-            Objects: all.slice(i, i + 1000).map((Key) => ({ Key })),
-            Quiet: true,
-          },
-        })
-      )
-      if (r.Errors?.length) console.error("S3 delete errors", r.Errors)
-    } catch (e) {
-      console.error("S3 delete failed", e)
-    }
+    const batch = all.slice(i, i + 1000)
+    await enqueue("delete-keys", { keys: batch }).catch(() =>
+      removeObjects(batch).catch((e) => console.error("S3 delete failed", e))
+    )
   }
+}
+
+// At most 1000 keys. Throws on any failure; deleting a missing key isn't one.
+export async function removeObjects(keys: string[]) {
+  const r = await s3.send(
+    new DeleteObjectsCommand({
+      Bucket: BUCKET,
+      Delete: { Objects: keys.map((Key) => ({ Key })), Quiet: true },
+    })
+  )
+  if (r.Errors?.length)
+    throw new Error(
+      `S3 kept ${r.Errors.length} objects: ${r.Errors[0].Code} ${r.Errors[0].Message}`
+    )
 }

@@ -14,7 +14,7 @@ docker compose up -d
 | MinIO S3 | 9100 | bucket `nimbus` is created by `minio-init` |
 | MinIO console | 9101 | http://localhost:9101 (`nimbus` / `nimbus-secret`) |
 | tusd     | 1080 | resumable uploads at `/files/`, stores into the bucket |
-| Redis    | 6380 | required: health-check schedule (`npm run worker`) |
+| Redis    | 6380 | required: background jobs and health checks (`npm run worker`) |
 | Mailpit SMTP | 1025 | no auth, no TLS; catches every email |
 | Mailpit inbox | 8025 | http://localhost:8025 |
 | Collabora | 9980 | optional, `--profile office` (see below) |
@@ -98,15 +98,15 @@ aws s3api put-bucket-cors --bucket <bucket> --cors-configuration \
 
 R2 takes the same array in the dashboard under the bucket's Settings > CORS policy.
 
-## Search indexer (optional)
+## Search indexer
 
 The browser reads text from files (PDFs, documents, sheets, and OCR for images) as they're
-uploaded or when their folder is opened. To index files no browser has read yet, for example
-everything uploaded before search existed:
+uploaded or when their folder is opened. `npm run worker` sweeps every minute for files no
+browser has read yet, for example everything uploaded before search existed. For one sweep
+without the worker:
 
 ```sh
-npm run indexer               # one sweep
-npm run indexer -- --watch    # keep sweeping every minute
+npm run indexer
 ```
 
 It uses `.env.local` for Postgres and S3, and the OCR languages from `/admin/settings`.

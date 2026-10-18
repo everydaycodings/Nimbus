@@ -195,8 +195,8 @@ password accounts must set it up. Google and GitHub sign-ins rely on the provide
     files when an owner or editor opens their folder. One file at a time, when the page is
     idle, and no OCR on devices reporting under 4 GB of memory.
   - OCR languages are an admin setting (`/admin/settings`, default `eng`).
-  - Optional worker: `npm run indexer` (one sweep) or `npm run indexer -- --watch` (every
-    minute) indexes whatever no browser has read yet.
+  - `npm run worker` sweeps every minute for whatever no browser has read yet;
+    `npm run indexer` does one sweep.
 - **UI**: the header search box (Ctrl+K anywhere) opens a palette.
   - Recent searches (stored in this browser) and app commands: new folder, uploads, go to a
     view or Admin, switch list/grid, collapse the sidebar.
@@ -274,6 +274,10 @@ password accounts must set it up. Google and GitHub sign-ins rely on the provide
 - A service is down after N failures in a row: admins get a bell notification and email (each
   picks channels per kind in Account) and a warning on Health in the admin sidebar. The page
   warns when scheduled checks stop. **Redis is now required** (`REDIS_URL`).
+- The worker also runs background jobs with retries (`/api/jobs`): notification and auth
+  emails, S3 deletes, tus uploads whose post-finish hook crashed, the hourly trash/link-event
+  purge and the indexer sweep. **The worker is now required**: without it emails wait in Redis,
+  deleted files stay in the bucket and trash isn't purged.
 
 ## Phase 8: Ship
 - Production Dockerfile and compose, Vercel guide, backups

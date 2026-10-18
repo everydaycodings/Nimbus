@@ -3,7 +3,6 @@ import {
   getTrashRetention,
   listTrash,
   pageUserId,
-  purgeExpiredTrash,
   viewPrefs,
   listTags,
 } from "@/lib/files"
@@ -12,7 +11,6 @@ export const metadata = { title: "Trash · Nimbus" }
 
 export default async function TrashPage() {
   const me = await pageUserId()
-  await purgeExpiredTrash()
   const [items, days, prefs, tags] = await Promise.all([
     listTrash(me),
     getTrashRetention(),

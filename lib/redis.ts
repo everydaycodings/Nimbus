@@ -1,4 +1,4 @@
-// Redis: required. Holds the health-check schedule (BullMQ) and heartbeats.
+// Redis: required. Holds the BullMQ queues (health checks, background jobs) and heartbeats.
 // No `@/` imports and no server-only, so scripts/worker.ts and the indexer share it.
 import { Queue } from "bullmq"
 import { Redis } from "ioredis"
@@ -14,6 +14,7 @@ if (!url)
 const globalForRedis = globalThis as unknown as {
   redis?: Redis
   healthQueue?: Queue
+  jobsQueue?: Queue
 }
 export const redis =
   globalForRedis.redis ??
@@ -28,17 +29,50 @@ export const workerConnection = () =>
 export const HEALTH_QUEUE = "health"
 export const HEARTBEAT_KEY = "health:heartbeat"
 export const INDEXER_KEY = "health:indexer"
+export const JOBS_QUEUE = "jobs"
 
 export const healthQueue =
   globalForRedis.healthQueue ?? new Queue(HEALTH_QUEUE, { connection: redis })
+export const jobsQueue =
+  globalForRedis.jobsQueue ?? new Queue(JOBS_QUEUE, { connection: redis })
 if (process.env.NODE_ENV !== "production")
-  Object.assign(globalForRedis, { redis, healthQueue })
+  Object.assign(globalForRedis, { redis, healthQueue, jobsQueue })
 
 // Runs the checks every `minutes`, or stops the schedule when null.
 export async function scheduleHealth(minutes: number | null) {
   if (minutes === null) await healthQueue.removeJobScheduler(HEALTH_QUEUE)
   else
-    await healthQueue.upsertJobScheduler(HEALTH_QUEUE, {
-      every: minutes * 60_000,
-    })
+    await healthQueue.upsertJobScheduler(
+      HEALTH_QUEUE,
+      { every: minutes * 60_000 },
+      { opts: { removeOnComplete: true, removeOnFail: 50 } }
+    )
+}
+
+export type JobName = "email" | "delete-keys" | "tus-finish"
+
+// Work the request shouldn't wait for, retried by `npm run worker` until it lands.
+// Failed jobs stay a week for a look; done ones go, since emails carry file names.
+export async function enqueue(name: JobName, data: object) {
+  await jobsQueue.add(name, data, {
+    attempts: 8,
+    backoff: { type: "exponential", delay: 30_000 },
+    removeOnComplete: true,
+    removeOnFail: { age: 7 * 24 * 3600 },
+  })
+}
+
+// Trash and old link events hourly; the indexer sweeps every minute.
+export async function scheduleJobs() {
+  const opts = { removeOnComplete: true, removeOnFail: 50 }
+  await jobsQueue.upsertJobScheduler(
+    "purge",
+    { every: 3600_000 },
+    { name: "purge", opts }
+  )
+  await jobsQueue.upsertJobScheduler(
+    "index",
+    { every: 60_000 },
+    { name: "index", opts }
+  )
 }

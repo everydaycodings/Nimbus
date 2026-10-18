@@ -435,8 +435,8 @@ export async function getTrashRetention() {
   return row?.days ?? null
 }
 
-// Deletes trash older than the admin's retention for everyone. Runs when a file
-// page loads, so there's no scheduler to deploy.
+// Deletes trash older than the admin's retention for everyone, and link events
+// older than 90 days. The worker runs it hourly (/api/jobs).
 export async function purgeExpiredTrash() {
   await db
     .delete(linkEvents)

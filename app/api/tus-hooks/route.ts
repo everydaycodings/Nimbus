@@ -3,6 +3,7 @@
 import { createHash, timingSafeEqual } from "node:crypto"
 
 import { formatBytes } from "@/lib/file-rules"
+import { enqueue } from "@/lib/redis"
 import { spaceLeft } from "@/lib/quota"
 import { readUploadToken, splitPath } from "@/lib/upload-rules"
 import {
@@ -88,14 +89,16 @@ export async function POST(req: Request) {
       })
   }
 
-  // tusd has already answered the client, so failures are only logged. The
-  // client's own finishUpload call is the other chance to land it.
+  // tusd has already answered the client and never calls again, so a crash
+  // (database away) goes to the worker to retry. The client's own finishUpload
+  // call is the other chance to land it.
   if (hook.Type === "post-finish") {
     try {
       const done = await finishTusUpload(upload.ID)
       if (done.error) console.error("post-finish", upload.ID, done.error)
     } catch (e) {
       console.error("post-finish", upload.ID, e)
+      await enqueue("tus-finish", { id: upload.ID }).catch(() => {})
     }
   }
 

@@ -35,7 +35,7 @@ export const PROBE_TEXT: Record<Service, string> = {
     "Signs in to the SMTP server, or checks the Resend API key. Sends nothing.",
   office:
     "Fetches Collabora's discovery file from the server set under Office documents.",
-  indexer: "Looks for a recent sweep from npm run indexer -- --watch.",
+  indexer: "Looks for a recent indexer sweep from npm run worker.",
   oauth:
     "Checks that each Google or GitHub sign-in has both its client ID and secret.",
 }

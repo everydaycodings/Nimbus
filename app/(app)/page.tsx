@@ -2,14 +2,12 @@ import { FileBrowser } from "@/components/file-browser"
 import {
   listFolder,
   pageUserId,
-  purgeExpiredTrash,
   viewPrefs,
   listTags,
 } from "@/lib/files"
 
 export default async function MyFilesPage() {
   const me = await pageUserId()
-  await purgeExpiredTrash()
   const [items, prefs, tags] = await Promise.all([
     listFolder(me, me, null),
     viewPrefs(),

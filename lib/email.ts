@@ -72,7 +72,12 @@ export async function emailEnabled() {
   return canSend(await getEmailConfig())
 }
 
-type Message = { to: string; subject: string; text: string; html: string }
+export type Message = {
+  to: string
+  subject: string
+  text: string
+  html: string
+}
 
 export async function sendWith(c: EmailConfig, m: Message) {
   if (!canSend(c)) throw new Error("Email isn't set up.")
@@ -106,11 +111,20 @@ export async function sendWith(c: EmailConfig, m: Message) {
 }
 
 // Auth emails must never fail the request that triggered them, and awaiting the
-// send would leak whether an address exists through response timing.
+// send would leak whether an address exists through response timing. The worker
+// sends it (/api/jobs) and retries while the mail server is away; with Redis
+// away, it goes out from here, once.
 export function sendInBackground(m: Message) {
-  void getEmailConfig()
-    .then((c) => (canSend(c) ? sendWith(c, m) : undefined))
+  void import("./redis")
+    .then(({ enqueue }) => enqueue("email", m))
+    .catch(() => sendNow(m))
     .catch((e) => console.error(`[email] "${m.subject}" to ${m.to}:`, e))
+}
+
+// Throws when sending fails, so the worker tries again.
+export async function sendNow(m: Message) {
+  const c = await getEmailConfig()
+  if (canSend(c)) await sendWith(c, m)
 }
 
 const esc = (s: string) =>

@@ -1,14 +1,13 @@
-// Optional: reads the text of files nobody has opened in a browser since they
-// were uploaded (by the API, before search existed, from a phone that skipped
-// OCR), so search finds them too. The browser does the same work lazily.
-// Run: npm run indexer          (one sweep)
-//      npm run indexer -- --watch  (sweep every minute)
+// Reads the text of files nobody has opened in a browser since they were
+// uploaded (by the API, before search existed, from a phone that skipped OCR),
+// so search finds them too. The browser does the same work lazily.
+// `npm run worker` sweeps every minute.
+// Run: npm run indexer   (one sweep)
 import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3"
 import postgres from "postgres"
 
 import { extractText, MAX_BODY, sourceOf, tooBig } from "../lib/extract.ts"
 import { previewKind } from "../lib/file-rules.ts"
-import { INDEXER_KEY, redis } from "../lib/redis.ts"
 
 const env = process.env
 const sql = postgres(env.DATABASE_URL!)
@@ -36,7 +35,7 @@ async function read(key: string, end: number) {
   return r.Body!.transformToByteArray()
 }
 
-async function sweep() {
+export async function sweep() {
   const [{ langs }] = await sql`select ocr_langs as langs from settings`
   const rows = await sql<
     {
@@ -92,14 +91,8 @@ async function sweep() {
   return done
 }
 
-if (process.argv.includes("--watch")) {
-  for (;;) {
-    await sweep()
-    // Admin → Health shows the indexer as running while this key lives.
-    await redis.set(INDEXER_KEY, Date.now(), "PX", 3 * 60_000).catch(() => {})
-    await new Promise((r) => setTimeout(r, 60_000))
-  }
-} else {
+// Run directly, not imported by the worker.
+if (process.argv[1]?.endsWith("indexer.ts")) {
   console.log(`Indexed ${await sweep()} files.`)
   await sql.end()
   process.exit(0)
