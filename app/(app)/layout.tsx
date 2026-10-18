@@ -44,7 +44,7 @@ const ROLE_LABEL = { owner: "Owner", admin: "Admin", member: "Member" }
 const FILE_LINKS = [
   { href: "/recent", label: "Recent", icon: ClockIcon },
   { href: "/starred", label: "Starred", icon: StarIcon },
-  { href: "/shared", label: "Shared with me", icon: UsersIcon },
+  { href: "/shared", label: "Shared files", icon: UsersIcon },
 ]
 
 function SignOutButton() {

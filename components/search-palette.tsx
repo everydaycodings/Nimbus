@@ -178,7 +178,7 @@ export function SearchPalette({ admin }: { admin: boolean }) {
     },
     {
       key: "go-shared",
-      label: "Go to Shared with me",
+      label: "Go to Shared files",
       icon: UsersIcon,
       run: go("/shared"),
     },

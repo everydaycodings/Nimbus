@@ -74,7 +74,7 @@ export default async function SignUpPage({
   const description = first
     ? "You're the first one here, so this account becomes the owner of this instance."
     : sharedTo
-      ? `Files were shared with ${sharedTo}. Create your account with that address and they'll be waiting in Shared with me.`
+      ? `Files were shared with ${sharedTo}. Create your account with that address and they'll be waiting in Shared files.`
       : invited
         ? "You were invited, so your account is ready as soon as you create it."
         : signupMode === "open"

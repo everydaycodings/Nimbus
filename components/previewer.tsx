@@ -157,7 +157,11 @@ export function Previewer({
                 )}
                 {!v && menu}
               </header>
-              <div className="relative flex min-h-0 flex-1 px-2 pb-2 sm:px-16 sm:pb-6">
+              <div
+                className="relative flex min-h-0 flex-1 px-2 pb-2 sm:px-16 sm:pb-6"
+                // No right-click "Save as" when a link turned downloads off.
+                onContextMenu={href ? undefined : (e) => e.preventDefault()}
+              >
                 <View
                   key={`${item.id}:${v?.id ?? item.version}`}
                   item={item}
@@ -314,7 +318,8 @@ export function View({
     case "pdf":
       return (
         <iframe
-          src={shownUrl}
+          // Hides the browser's PDF toolbar, and its download button.
+          src={href ? shownUrl : `${shownUrl}#toolbar=0`}
           title={item.name}
           className="size-full rounded-lg border bg-white"
         />
@@ -589,7 +594,7 @@ function ImageView({ url, item, href }: ViewProps) {
   )
 }
 
-function AudioView({ url, item }: ViewProps) {
+function AudioView({ url, item, href }: ViewProps) {
   const t = fileType("file", item.mime, item.name)
   return (
     <div className="m-auto flex w-full max-w-md flex-col items-center gap-6">
@@ -600,7 +605,13 @@ function AudioView({ url, item }: ViewProps) {
       >
         <t.icon weight="light" className={cn("size-20", t.color)} />
       </Thumb>
-      <audio src={url} controls autoPlay className="w-full" />
+      <audio
+        src={url}
+        controls
+        controlsList={href ? undefined : "nodownload"}
+        autoPlay
+        className="w-full"
+      />
     </div>
   )
 }

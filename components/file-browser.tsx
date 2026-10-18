@@ -103,7 +103,7 @@ import { resetThumb, thumbFromFrame, thumbFromImage } from "@/lib/thumbs"
 import { cn } from "@/lib/utils"
 
 export type View =
-  "folder" | "recent" | "starred" | "shared" | "trash" | "search"
+  "folder" | "recent" | "starred" | "shared" | "sharedByMe" | "trash" | "search"
 type Layout = "grid" | "list"
 type Tiles = "small" | "medium" | "large"
 type Act = {
@@ -123,7 +123,7 @@ type Notice = { text: string; error?: boolean; undo?: () => void }
 
 const DRAG = "application/x-nimbus-items"
 const ROOT: Place = { id: null, name: "My files" }
-const SHARED_ROOT: Place = { id: null, name: "Shared with me" }
+const SHARED_ROOT: Place = { id: null, name: "Shared files" }
 const DAY = 864e5
 const SINCE = [
   { label: "Today", from: () => new Date().setHours(0, 0, 0, 0) },
@@ -178,6 +178,7 @@ export function FileBrowser({
   items: all,
   title,
   description,
+  tabs,
   path = [],
   folderId = null,
   role = "owner",
@@ -191,6 +192,8 @@ export function FileBrowser({
   items: Item[]
   title: string
   description?: string
+  // Links under the title that switch between related lists.
+  tabs?: React.ReactNode
   // Folder view: the folders above this one and this one, root excluded.
   path?: { id: string; name: string }[]
   folderId?: string | null
@@ -1499,6 +1502,8 @@ export function FileBrowser({
           />
         </div>
       </div>
+
+      {tabs}
 
       {description && (
         <p className="-mt-2 text-sm text-muted-foreground">{description}</p>

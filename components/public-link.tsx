@@ -101,7 +101,11 @@ export function PublicFile({
           </Button>
         )}
       </div>
-      <div className="relative flex min-h-[70svh] flex-1">
+      <div
+        className="relative flex min-h-[70svh] flex-1"
+        // ponytail: deterrent only, anything shown on screen can be captured.
+        onContextMenu={href ? undefined : (e) => e.preventDefault()}
+      >
         <View item={item} href={href} link={token} />
       </div>
     </div>

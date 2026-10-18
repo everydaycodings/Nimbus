@@ -412,6 +412,22 @@ export async function listShared(userId: string) {
   return rows.map(({ shareRole, ...r }) => withRole(r, shareRole))
 }
 
+// The owner's items with a person share or a public link that still works.
+export async function listSharedByMe(ownerId: string) {
+  const rows = await db
+    .select(cols(ownerId))
+    .from(nodes)
+    .where(
+      and(
+        live(ownerId),
+        sql`exists (select 1 from shares where node_id = "nodes".id
+          and (expires_at is null or expires_at > now()))`
+      )
+    )
+    .orderBy(...foldersFirst)
+  return rows.map(toItem)
+}
+
 export async function getTrashRetention() {
   const [row] = await db
     .select({ days: settings.trashRetentionDays })
