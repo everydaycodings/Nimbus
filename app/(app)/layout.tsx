@@ -38,6 +38,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { db } from "@/lib/db"
 import { notifications, shares, user } from "@/lib/db/schema"
 import { emailEnabled } from "@/lib/email"
+import { healthAlarm } from "@/lib/health"
 import { getUsage } from "@/lib/quota"
 import { getSession, hasPassword, isAdmin } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
@@ -316,6 +317,7 @@ export default async function AppLayout({
           )[0].n
         }
         emailOff={!(await emailEnabled())}
+        healthAlarm={await healthAlarm()}
       />
       <div className="mt-auto">{navUser}</div>
     </div>

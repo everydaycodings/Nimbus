@@ -11,6 +11,7 @@ cp .env.example .env.local                          # then set BETTER_AUTH_SECRE
 npm install
 npm run db:migrate
 npm run dev
+npm run worker                                      # health checks, in a second terminal
 ```
 
 Open http://localhost:3000. The first account you create becomes the owner of the instance.

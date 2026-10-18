@@ -1,6 +1,7 @@
 // The bell and its emails. Every event lands in `notifications`; email goes out
-// unless the person turned that kind off in /account. Edits and file drops fold
-// into one unread row per folder per hour, and only the first of those emails.
+// and the bell keeps it unless the person turned that off for the kind in
+// /account. Edits and file drops fold into one unread row per folder per hour,
+// and only the first of those emails.
 import "server-only"
 
 import { and, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm"
@@ -17,6 +18,7 @@ import {
   type NotificationKind,
 } from "@/lib/db/schema"
 import { appUrl, message, sendInBackground } from "@/lib/email"
+import { SERVICE_LABEL, type Service } from "@/lib/health-rules"
 
 type Event = {
   nodeId?: string | null
@@ -58,7 +60,20 @@ export async function notify(
       data: e.data ?? null,
     })
     .returning({ id: notifications.id })
-  await email(userId, kind, row.id)
+  const [pref] = await db
+    .select({ email: notificationPrefs.email, bell: notificationPrefs.bell })
+    .from(notificationPrefs)
+    .where(
+      and(
+        eq(notificationPrefs.userId, userId),
+        eq(notificationPrefs.kind, kind)
+      )
+    )
+  if (!pref || pref.email) await email(userId, row.id)
+  // Bell off: the row was only there to word the email.
+  // ponytail: with nothing unread to fold into, edits and file drops then email every time.
+  if (pref && !pref.bell)
+    await db.delete(notifications).where(eq(notifications.id, row.id))
 }
 
 // An editor changed something in a folder shared with them: tell the owner,
@@ -73,17 +88,7 @@ export async function notifyEdit(actorId: string, nodeId: string) {
   if (n) await notify(n.ownerId, "edits", { nodeId: top.id, actorId })
 }
 
-async function email(userId: string, kind: NotificationKind, id: string) {
-  const [pref] = await db
-    .select({ email: notificationPrefs.email })
-    .from(notificationPrefs)
-    .where(
-      and(
-        eq(notificationPrefs.userId, userId),
-        eq(notificationPrefs.kind, kind)
-      )
-    )
-  if (pref && !pref.email) return
+async function email(userId: string, id: string) {
   const [n] = await describe(userId, [id])
   const [to] = await db
     .select({ email: user.email })
@@ -167,20 +172,23 @@ async function describe(userId: string, ids?: string[]) {
       edits: `${who} made ${plural(r.count, "change")} in ${item}`,
       transfer: `${who} wants to make you the owner of ${item}`,
       signup_request: `${d.who ?? who} asked to join Nimbus`,
+      service_health: `${SERVICE_LABEL[d.service as Service] ?? "A service"} ${d.state === "up" ? "is working again" : "is down"}`,
     }[r.kind]
     const seen = r.nodeId ? access.get(r.nodeId) : undefined
     const href =
       r.kind === "signup_request"
         ? "/admin/approvals"
-        : !seen
-          ? "/shared"
-          : r.kindOf === "folder"
-            ? `/folders/${r.nodeId}`
-            : r.parentId && seen.role === "owner"
-              ? `/folders/${r.parentId}`
-              : seen.role === "owner"
-                ? "/"
-                : "/shared"
+        : r.kind === "service_health"
+          ? `/admin/system/health#health-${d.service}`
+          : !seen
+            ? "/shared"
+            : r.kindOf === "folder"
+              ? `/folders/${r.nodeId}`
+              : r.parentId && seen.role === "owner"
+                ? `/folders/${r.parentId}`
+                : seen.role === "owner"
+                  ? "/"
+                  : "/shared"
     return {
       id: r.id,
       kind: r.kind,
@@ -204,11 +212,20 @@ export async function unreadCount(userId: string) {
   return row?.n ?? 0
 }
 
-export async function emailPrefs(userId: string) {
+// Where each kind of notification goes; both channels are on until turned off.
+export async function channelPrefs(userId: string) {
   const rows = await db
-    .select({ kind: notificationPrefs.kind, email: notificationPrefs.email })
+    .select({
+      kind: notificationPrefs.kind,
+      email: notificationPrefs.email,
+      bell: notificationPrefs.bell,
+    })
     .from(notificationPrefs)
     .where(eq(notificationPrefs.userId, userId))
-  const off = new Set(rows.filter((r) => !r.email).map((r) => r.kind))
-  return NOTIFICATION_KINDS.map((kind) => ({ kind, email: !off.has(kind) }))
+  const by = new Map(rows.map((r) => [r.kind, r]))
+  return NOTIFICATION_KINDS.map((kind) => ({
+    kind,
+    email: by.get(kind)?.email ?? true,
+    bell: by.get(kind)?.bell ?? true,
+  }))
 }

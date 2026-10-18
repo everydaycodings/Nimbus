@@ -8,6 +8,7 @@ import postgres from "postgres"
 
 import { extractText, MAX_BODY, sourceOf, tooBig } from "../lib/extract.ts"
 import { previewKind } from "../lib/file-rules.ts"
+import { INDEXER_KEY, redis } from "../lib/redis.ts"
 
 const env = process.env
 const sql = postgres(env.DATABASE_URL!)
@@ -94,6 +95,8 @@ async function sweep() {
 if (process.argv.includes("--watch")) {
   for (;;) {
     await sweep()
+    // Admin → Health shows the indexer as running while this key lives.
+    await redis.set(INDEXER_KEY, Date.now(), "PX", 3 * 60_000).catch(() => {})
     await new Promise((r) => setTimeout(r, 60_000))
   }
 } else {

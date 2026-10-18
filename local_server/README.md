@@ -14,7 +14,7 @@ docker compose up -d
 | MinIO S3 | 9100 | bucket `nimbus` is created by `minio-init` |
 | MinIO console | 9101 | http://localhost:9101 (`nimbus` / `nimbus-secret`) |
 | tusd     | 1080 | resumable uploads at `/files/`, stores into the bucket |
-| Redis    | 6380 | reserved for rate limiting and caching |
+| Redis    | 6380 | required: health-check schedule (`npm run worker`) |
 | Mailpit SMTP | 1025 | no auth, no TLS; catches every email |
 | Mailpit inbox | 8025 | http://localhost:8025 |
 | Collabora | 9980 | optional, `--profile office` (see below) |

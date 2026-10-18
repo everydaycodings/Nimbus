@@ -266,5 +266,14 @@ password accounts must set it up. Google and GitHub sign-ins rely on the provide
 - Left for later: encrypted thumbnails, vault versions, sharing a vault, paging very large
   vault trees, and resuming a vault move after a reload.
 
+## Health (Admin → System → Health)
+- Checks Postgres, file storage, Redis, tusd, email, Collabora, the indexer and OAuth config
+  with real probes (a write/read/delete in the bucket, an SMTP sign-in) and records latency.
+- `npm run worker` (BullMQ on Redis) runs them every 5 minutes by default; admins set the
+  interval, failures before alert, history, per-service on/off and slow thresholds.
+- A service is down after N failures in a row: admins get a bell notification and email (each
+  picks channels per kind in Account) and a warning on Health in the admin sidebar. The page
+  warns when scheduled checks stop. **Redis is now required** (`REDIS_URL`).
+
 ## Phase 8: Ship
 - Production Dockerfile and compose, Vercel guide, backups

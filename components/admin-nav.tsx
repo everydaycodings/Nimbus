@@ -17,10 +17,13 @@ export function AdminNav({
   pending,
   links,
   emailOff,
+  healthAlarm,
 }: {
   pending: number
   links: number
   emailOff: boolean
+  // A service is down, or scheduled checks stopped.
+  healthAlarm: boolean
 }) {
   const badge: Record<string, React.ReactNode> = {
     "/admin/approvals": pending > 0 && (
@@ -35,6 +38,15 @@ export function AdminNav({
         <span className="sr-only"> active</span>
       </Badge>
     ),
+    "/admin/system/health": healthAlarm && (
+      <span
+        title="Needs attention"
+        className="text-destructive group-data-[collapsed=true]/sidebar:absolute group-data-[collapsed=true]/sidebar:top-0.5 group-data-[collapsed=true]/sidebar:right-0.5 [&_svg]:size-3.5!"
+      >
+        <WarningIcon weight="fill" />
+        <span className="sr-only">Needs attention</span>
+      </span>
+    ),
     "/admin/system/email": emailOff && (
       <span
         title="Email is off"
@@ -48,7 +60,7 @@ export function AdminNav({
 
   return (
     <nav
-      className="-mx-2 flex min-h-0 flex-col gap-3 overflow-y-auto px-2 [scrollbar-width:thin]"
+      className="-mx-2 flex min-h-0 [scrollbar-width:thin] flex-col gap-3 overflow-y-auto px-2"
       aria-label="Admin"
     >
       <NavLink href="/" icon={<ArrowLeftIcon />} label="Back to Nimbus" />

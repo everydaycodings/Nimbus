@@ -25,6 +25,7 @@ Stock shadcn `neutral` dark values (oklch, no hue).
 | `--primary` | `oklch(0.922 0 0)` | Primary buttons (near-white, dark text) |
 | `--brand` / `--ring` | `#5fd0bb` Mist teal | Logo cloud, focus ring, selection, caret only |
 | `--destructive` | `oklch(0.704 0.191 22.216)` | Delete, errors |
+| `--success` / `--warning` | `oklch(0.77 0.16 150)` / `oklch(0.83 0.15 80)` | Service health only (Admin → Health): working / slow or failing; down uses `--destructive` |
 
 File types use their own hues via `--file-*` (`text-file-image`, `bg-file-folder/15`, …): folder `#f2c063`,
 image `#f27fb2`, video `#b08cff`, doc `#6ea8ff`, pdf `#ff6f6f`, audio `#4fd1a5`, code `#ff9f66`,

@@ -127,6 +127,13 @@
       "when": 1792345245799,
       "tag": "0017_password_policy",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792348186400,
+      "tag": "0018_health",
+      "breakpoints": true
     }
   ]
 }

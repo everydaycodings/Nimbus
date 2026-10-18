@@ -18,6 +18,7 @@ import {
 } from "drizzle-orm/pg-core"
 
 import { user } from "./auth-schema"
+import type { Outcome, Service } from "../health-rules"
 import type { PasswordPolicy } from "../password-policy"
 
 export * from "./auth-schema"
@@ -358,8 +359,14 @@ export const NOTIFICATION_KINDS = [
   "edits",
   "transfer",
   "signup_request",
+  "service_health",
 ] as const
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number]
+// Only admins get these, so only admins see their settings.
+export const ADMIN_KINDS: NotificationKind[] = [
+  "signup_request",
+  "service_health",
+]
 
 // The bell. Edits in a shared folder fold into one unread row per folder per
 // hour (`count` goes up) so a big upload is one notification, not hundreds.
@@ -400,6 +407,7 @@ export const notificationPrefs = pgTable(
       .references(() => user.id, { onDelete: "cascade" }),
     kind: text("kind").$type<NotificationKind>().notNull(),
     email: boolean("email").notNull(),
+    bell: boolean("bell").notNull().default(true),
   },
   (t) => [primaryKey({ columns: [t.userId, t.kind] })]
 )
@@ -475,6 +483,20 @@ export const settings = pgTable(
     // Rules for new passwords and vault passphrases. Null: the owner hasn't
     // chosen, so the industry-standard defaults apply (lib/password-policy).
     passwordPolicy: jsonb("password_policy").$type<PasswordPolicy>(),
+    // Health checks (Admin → Health). Null interval: no scheduled checks.
+    healthIntervalMin: integer("health_interval_min").default(5),
+    healthFailures: integer("health_failures").notNull().default(2),
+    healthRetentionDays: integer("health_retention_days").notNull().default(30),
+    healthDisabled: text("health_disabled")
+      .$type<Service>()
+      .array()
+      .notNull()
+      .default([]),
+    // Per-service overrides of DEFAULT_SLOW_MS in lib/health-rules.
+    healthSlowMs: jsonb("health_slow_ms")
+      .$type<Partial<Record<Service, number>>>()
+      .notNull()
+      .default({}),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -492,6 +514,10 @@ export const settings = pgTable(
     check(
       "settings_trash_retention_positive",
       sql`${t.trashRetentionDays} is null or ${t.trashRetentionDays} > 0`
+    ),
+    check(
+      "settings_health_positive",
+      sql`(${t.healthIntervalMin} is null or ${t.healthIntervalMin} > 0) and ${t.healthFailures} > 0 and ${t.healthRetentionDays} > 0`
     ),
   ]
 )
@@ -566,3 +592,29 @@ export const invites = pgTable(
 export type User = typeof user.$inferSelect
 export type Role = "owner" | "admin" | "member"
 export type Status = "pending" | "active" | "rejected"
+
+// One row per service per health check run. The latest row is the current
+// state; the run of rows before it decides degraded vs down (lib/health-rules).
+export const healthChecks = pgTable(
+  "health_checks",
+  {
+    id: id(),
+    service: text("service").$type<Service>().notNull(),
+    outcome: text("outcome").$type<Outcome>().notNull(),
+    // Null when nothing was timed (off, or checked without a request).
+    latencyMs: integer("latency_ms"),
+    // What was probed, or what went wrong.
+    detail: text("detail").notNull(),
+    checkedAt: timestamp("checked_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("health_checks_service_idx").on(t.service, t.checkedAt.desc()),
+    index("health_checks_checked_idx").on(t.checkedAt),
+    check(
+      "health_checks_outcome_check",
+      sql`${t.outcome} in ('ok', 'slow', 'fail', 'off')`
+    ),
+  ]
+)

@@ -16,6 +16,7 @@ import {
   type ToastPosition,
 } from "@/lib/db/schema"
 import { POLICY_MAX, POLICY_MIN } from "@/lib/password-policy"
+import { scheduleHealth } from "@/lib/redis"
 import { hasPassword, requireAdmin } from "@/lib/session"
 import { settingDefault, type SettingKey } from "@/lib/signup"
 
@@ -276,6 +277,11 @@ const RESETTABLE: SettingKey[] = [
   "officeUrl",
   "ocrLangs",
   "toastPosition",
+  "healthIntervalMin",
+  "healthFailures",
+  "healthRetentionDays",
+  "healthDisabled",
+  "healthSlowMs",
 ]
 
 export async function resetSetting(keys: SettingKey[]) {
@@ -287,6 +293,8 @@ export async function resetSetting(keys: SettingKey[]) {
   )
   if (!Object.keys(set).length) return
   await db.update(settings).set({ ...set, updatedAt: new Date() })
+  if ("healthIntervalMin" in set)
+    await scheduleHealth(set.healthIntervalMin as number | null)
   revalidatePath("/", "layout")
 }
 

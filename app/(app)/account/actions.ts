@@ -7,7 +7,12 @@ import { revalidatePath } from "next/cache"
 
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
-import { NOTIFICATION_KINDS, notificationPrefs, user } from "@/lib/db/schema"
+import {
+  ADMIN_KINDS,
+  NOTIFICATION_KINDS,
+  notificationPrefs,
+  user,
+} from "@/lib/db/schema"
 import { getSession, isAdmin } from "@/lib/session"
 
 export type FormState = { ok?: boolean; error?: string } | null
@@ -58,25 +63,26 @@ export async function resendVerification(): Promise<FormState> {
   return { ok: true }
 }
 
-// One checkbox per kind of notification; unchecked means no email for it.
-export async function setEmailPrefs(form: FormData) {
+// A bell and an email checkbox per kind of notification; unchecked turns that channel off.
+export async function setNotificationPrefs(form: FormData) {
   const session = await getSession()
   if (!session) return
-  // Members don't see the sign-up box; leave its setting alone for later.
+  // Members don't see the admin-only rows; leave those settings alone for later.
   const kinds = NOTIFICATION_KINDS.filter(
-    (k) => k !== "signup_request" || isAdmin(session.user.role)
+    (k) => !ADMIN_KINDS.includes(k) || isAdmin(session.user.role)
   )
   const rows = kinds.map((kind) => ({
     userId: session.user.id,
     kind,
-    email: form.get(kind) === "on",
+    email: form.get(`${kind}:email`) === "on",
+    bell: form.get(`${kind}:bell`) === "on",
   }))
   await db
     .insert(notificationPrefs)
     .values(rows)
     .onConflictDoUpdate({
       target: [notificationPrefs.userId, notificationPrefs.kind],
-      set: { email: sql`excluded.email` },
+      set: { email: sql`excluded.email`, bell: sql`excluded.bell` },
     })
   revalidatePath("/account")
 }

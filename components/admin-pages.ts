@@ -4,6 +4,7 @@ import {
   FileDocIcon,
   FingerprintIcon,
   GaugeIcon,
+  HeartbeatIcon,
   HardDrivesIcon,
   LinkSimpleIcon,
   LockIcon,
@@ -78,6 +79,7 @@ export const ADMIN_GROUPS: { title: string; pages: AdminPage[] }[] = [
   {
     title: "System",
     pages: [
+      { href: "/admin/system/health", label: "Health", icon: HeartbeatIcon },
       {
         href: "/admin/system/email",
         label: "Email",
@@ -105,6 +107,37 @@ export const ADMIN_SETTINGS: {
   href: string
   keywords: string
 }[] = [
+  {
+    id: "health-interval",
+    label: "Health check interval",
+    href: "/admin/system/health",
+    keywords: "status uptime monitoring schedule worker every minutes",
+  },
+  {
+    id: "health-failures",
+    label: "Health alert after",
+    href: "/admin/system/health",
+    keywords: "down failures alerts notify threshold",
+  },
+  {
+    id: "health-retention",
+    label: "Health history",
+    href: "/admin/system/health",
+    keywords: "uptime keep days retention",
+  },
+  {
+    id: "health-services",
+    label: "Services to check",
+    href: "/admin/system/health",
+    keywords:
+      "health postgres database storage s3 redis email tusd collabora oauth",
+  },
+  {
+    id: "health-slow",
+    label: "Slow service threshold",
+    href: "/admin/system/health",
+    keywords: "health latency milliseconds ms degraded",
+  },
   {
     id: "signup-mode",
     label: "Sign-up mode",

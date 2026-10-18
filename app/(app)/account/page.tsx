@@ -20,12 +20,12 @@ import {
 } from "@/components/ui/card"
 import { UserAvatar } from "@/components/user-avatar"
 import { db } from "@/lib/db"
-import { account, user } from "@/lib/db/schema"
+import { ADMIN_KINDS, account, user } from "@/lib/db/schema"
 import { emailEnabled } from "@/lib/email"
-import { emailPrefs } from "@/lib/notify"
+import { channelPrefs } from "@/lib/notify"
 import { getSession, isAdmin } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
-import { setEmailPrefs, setVaultLock } from "./actions"
+import { setNotificationPrefs, setVaultLock } from "./actions"
 
 const KIND_LABEL = {
   shared: "Something is shared with me",
@@ -35,6 +35,7 @@ const KIND_LABEL = {
   edits: "Editors change things in my shared folders (at most hourly)",
   transfer: "Someone offers me ownership of an item",
   signup_request: "Someone asks to join this Nimbus",
+  service_health: "A service goes down or comes back (Admin → Health)",
 } as const
 
 const PROVIDER = { google: "Google", github: "GitHub" } as Record<
@@ -53,7 +54,7 @@ export default async function AccountPage() {
       .where(eq(account.userId, me.id)),
     emailEnabled(),
     getSettings(),
-    emailPrefs(me.id),
+    channelPrefs(me.id),
     db
       .select({ minutes: user.vaultLockMinutes })
       .from(user)
@@ -161,36 +162,46 @@ export default async function AccountPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Email notifications</CardTitle>
+          <CardTitle className="text-base">Notifications</CardTitle>
           <CardDescription>
             {email
-              ? "Everything also shows under the bell. Pick what's worth an email."
-              : "This Nimbus can't send email yet, so these apply once an admin sets it up. Everything shows under the bell."}
+              ? "Choose where each kind reaches you: under the bell, by email, or both."
+              : "Choose where each kind reaches you. This Nimbus can't send email yet, so email choices apply once an admin sets it up."}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form action={setEmailPrefs} className="flex flex-col gap-4">
-            <fieldset className="flex flex-col gap-3">
-              <legend className="sr-only">Email me when</legend>
-              {prefs
-                .filter(
-                  (p) => p.kind !== "signup_request" || isAdmin(me.role)
-                )
-                .map((p) => (
-                  <label
-                    key={p.kind}
-                    className="flex cursor-pointer items-center gap-3 text-sm"
-                  >
-                    <input
-                      type="checkbox"
-                      name={p.kind}
-                      defaultChecked={p.email}
-                      className="size-4 accent-primary"
-                    />
-                    {KIND_LABEL[p.kind]}
-                  </label>
-                ))}
-            </fieldset>
+          <form action={setNotificationPrefs} className="flex flex-col gap-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-muted-foreground">
+                  <th className="pb-2 text-left font-medium">Tell me when</th>
+                  <th className="w-16 pb-2 font-medium">Bell</th>
+                  <th className="w-16 pb-2 font-medium">Email</th>
+                </tr>
+              </thead>
+              <tbody>
+                {prefs
+                  .filter(
+                    (p) => !ADMIN_KINDS.includes(p.kind) || isAdmin(me.role)
+                  )
+                  .map((p) => (
+                    <tr key={p.kind} className="border-t">
+                      <td className="py-2.5 pr-3">{KIND_LABEL[p.kind]}</td>
+                      {(["bell", "email"] as const).map((c) => (
+                        <td key={c} className="py-2.5 text-center">
+                          <input
+                            type="checkbox"
+                            name={`${p.kind}:${c}`}
+                            defaultChecked={p[c]}
+                            aria-label={`${KIND_LABEL[p.kind]}: ${c}`}
+                            className="size-4 cursor-pointer align-middle accent-primary"
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
             <SubmitButton className="self-start">Save</SubmitButton>
           </form>
         </CardContent>
@@ -205,7 +216,10 @@ export default async function AccountPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form action={setVaultLock} className="flex flex-wrap items-end gap-3">
+          <form
+            action={setVaultLock}
+            className="flex flex-wrap items-end gap-3"
+          >
             <label className="grid gap-2 text-sm font-medium">
               Lock after
               <select
