@@ -5,8 +5,8 @@ import {
   and,
   desc,
   eq,
-  exists,
   gt,
+  inArray,
   isNotNull,
   isNull,
   or,
@@ -23,13 +23,19 @@ import {
 import { db } from "@/lib/db"
 import {
   fileVersions,
+  linkEvents,
+  nodeOpens,
   nodes,
   settings,
   shares,
+  shortcuts,
+  stars,
   tags,
   user,
   type TagColor,
 } from "@/lib/db/schema"
+import { accessOne, accessTo, atLeast, type Access } from "@/lib/access"
+import { UUID } from "@/lib/file-rules"
 import { getSession } from "@/lib/session"
 import { deleteNodes } from "@/lib/uploads"
 
@@ -47,11 +53,21 @@ export type Item = {
   // Ids of the viewer's own tags on it.
   tags: string[]
   owner?: string
+  ownerImage?: string | null
   // Current version of a file; thumbnails and previews are per version.
   version: string | null
   // Its thumbnail's revision: null until the browser tries, "" when it couldn't
   // make one.
   thumb: string | null
+  // The viewer's access when the item isn't theirs.
+  role?: "editor" | "viewer"
+  // Shared with members or invited emails, and whether it has a public link.
+  sharedWithPeople: boolean
+  hasLink: boolean
+  // A shortcut in My files to something shared with the viewer.
+  shortcut?: boolean
+  // Its current version's text is in the search index (or had none to read).
+  indexed?: boolean
 }
 
 export type Tag = { id: string; name: string; color: TagColor }
@@ -76,8 +92,7 @@ export async function viewPrefs() {
   } as const
 }
 
-export const UUID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+export { UUID }
 
 const cols = (viewer: string) => ({
   id: nodes.id,
@@ -96,7 +111,8 @@ const cols = (viewer: string) => ({
       where n.trashed_at is not distinct from "nodes".trashed_at
     ) select coalesce(sum(size), 0) from d) end`.mapWith(Number),
   mime: nodes.mime,
-  starred: nodes.starred,
+  starred: sql<boolean>`exists (
+    select 1 from stars where node_id = "nodes".id and user_id = ${viewer})`,
   updatedAt: nodes.updatedAt,
   trashedAt: nodes.trashedAt,
   tags: sql<string[]>`array(
@@ -105,6 +121,13 @@ const cols = (viewer: string) => ({
   version: nodes.currentVersionId,
   thumb: sql<string | null>`(
     select thumb from file_versions where id = "nodes".current_version_id)`,
+  sharedWithPeople: sql<boolean>`exists (
+    select 1 from shares where node_id = "nodes".id and token is null)`,
+  hasLink: sql<boolean>`exists (
+    select 1 from shares where node_id = "nodes".id and token is not null)`,
+  indexed: sql<boolean>`exists (
+    select 1 from node_content
+    where node_id = "nodes".id and version_id = "nodes".current_version_id)`,
 })
 
 type Row = Omit<Item, "updatedAt" | "trashedAt"> & {
@@ -131,9 +154,20 @@ const foldersFirst = [
   sql`lower(${nodes.name})`,
 ]
 
-export async function listFolder(ownerId: string, parentId: string | null) {
+// Someone else's items carry the viewer's role on them.
+const withRole = (r: Row, role: Access): Item =>
+  role === "owner" ? toItem(r) : { ...toItem(r), role }
+
+// A folder's contents as `viewer` sees them; `ownerId` owns the whole folder.
+// The viewer's own root also lists their shortcuts.
+export async function listFolder(
+  viewer: string,
+  ownerId: string,
+  parentId: string | null,
+  role: Access = "owner"
+) {
   const rows = await db
-    .select(cols(ownerId))
+    .select(cols(viewer))
     .from(nodes)
     .where(
       and(
@@ -142,16 +176,35 @@ export async function listFolder(ownerId: string, parentId: string | null) {
       )
     )
     .orderBy(...foldersFirst)
-  return rows.map(toItem)
+  const items = rows.map((r) => withRole(r, role))
+  if (parentId || viewer !== ownerId) return items
+
+  const linked = await db
+    .select(cols(viewer))
+    .from(shortcuts)
+    .innerJoin(nodes, eq(nodes.id, shortcuts.nodeId))
+    .where(and(eq(shortcuts.userId, viewer), isNull(nodes.trashedAt)))
+  const access = await accessTo(
+    viewer,
+    linked.map((r) => r.id)
+  )
+  for (const r of linked) {
+    const a = access.get(r.id)
+    if (a) items.push({ ...withRole(r, a.role), shortcut: true })
+  }
+  return items
 }
 
-export async function getFolder(ownerId: string, id: string) {
+// A folder the viewer can open, with their role and its owner.
+export async function getFolder(viewer: string, id: string) {
   if (!UUID.test(id)) return null
+  const a = await accessOne(viewer, id)
+  if (!a || a.kind !== "folder" || a.trashed) return null
   const [row] = await db
     .select({ id: nodes.id, name: nodes.name })
     .from(nodes)
-    .where(and(live(ownerId), eq(nodes.id, id), eq(nodes.kind, "folder")))
-  return row ?? null
+    .where(eq(nodes.id, id))
+  return row ? { ...row, role: a.role, ownerId: a.ownerId } : null
 }
 
 // The folder and everything above it, root first.
@@ -167,25 +220,155 @@ export async function getPath(id: string) {
   return [...rows]
 }
 
-// ponytail: modification time stands in for "recently opened"; add an opened_at
-// column when previews (Phase 6) give files something to open.
-export async function listRecent(ownerId: string) {
-  const rows = await db
-    .select(cols(ownerId))
-    .from(nodes)
-    .where(live(ownerId))
-    .orderBy(desc(nodes.updatedAt))
-    .limit(50)
-  return rows.map(toItem)
+// Previews, downloads, uploads and renames count as opening something.
+export async function markOpened(userId: string, nodeId: string) {
+  await db
+    .insert(nodeOpens)
+    .values({ userId, nodeId })
+    .onConflictDoUpdate({
+      target: [nodeOpens.userId, nodeOpens.nodeId],
+      set: { openedAt: sql`now()` },
+    })
 }
 
-export async function listStarred(ownerId: string) {
+// What the viewer opened last, theirs or shared with them, newest first.
+export async function listRecent(viewer: string) {
   const rows = await db
-    .select(cols(ownerId))
+    .select(cols(viewer))
+    .from(nodeOpens)
+    .innerJoin(nodes, eq(nodes.id, nodeOpens.nodeId))
+    .where(
+      and(
+        eq(nodeOpens.userId, viewer),
+        isNull(nodes.trashedAt),
+        isNull(nodes.vaultId)
+      )
+    )
+    .orderBy(desc(nodeOpens.openedAt))
+    .limit(50)
+  return withAccess(viewer, rows)
+}
+
+// Rows the viewer can still see, with their role.
+async function withAccess(viewer: string, rows: Row[]) {
+  const access = await accessTo(
+    viewer,
+    rows.map((r) => r.id)
+  )
+  return rows.flatMap((r) => {
+    const a = access.get(r.id)
+    return a ? [withRole(r, a.role)] : []
+  })
+}
+
+export type Hit = Item & {
+  // The folder it's in, as the viewer knows it.
+  where: string
+  // Its name matched; otherwise only its text did.
+  byName: boolean
+  // Text around the match, with \u0001…\u0002 around the matched words.
+  snippet: string | null
+}
+
+// Names (substring or close spelling) and file text, across the viewer's own
+// files and everything shared with them. Trash and vaults stay out.
+// ponytail: word_similarity scans every visible name; switch to the %> operator
+// (which uses nodes_name_trgm_idx) if one account holds millions of items.
+export async function searchItems(
+  viewer: string,
+  raw: string,
+  limit = 50
+): Promise<Hit[]> {
+  const q = raw.trim().slice(0, 200)
+  if (!q) return []
+  const found = await db.execute<{
+    id: string
+    where: string | null
+    by_name: boolean
+    snippet: string | null
+  }>(sql`
+    with recursive shared as (
+      select n.id from nodes n
+      join shares s on s.node_id = n.id and s.grantee_id = ${viewer}
+      where n.trashed_at is null and n.vault_id is null
+      union
+      select c.id from nodes c join shared on c.parent_id = shared.id
+      where c.trashed_at is null
+    ), q as (
+      select websearch_to_tsquery('simple', ${q}) as tq, lower(replace(${q}, '"', '')) as s
+    ), scored as (
+      select n.id, n.owner_id, n.parent_id,
+        case
+          when strpos(lower(n.name), q.s) > 0 then 2 + similarity(q.s, lower(n.name))
+          when word_similarity(q.s, lower(n.name)) >= 0.4 then word_similarity(q.s, lower(n.name))
+        end as name_score,
+        case when c.tsv @@ q.tq then 0.4 + ts_rank(c.tsv, q.tq) end as text_score
+      from nodes n
+      cross join q
+      left join node_content c
+        on c.node_id = n.id and c.version_id = n.current_version_id
+      where n.trashed_at is null and n.vault_id is null
+        and (n.owner_id = ${viewer} or n.id in (select id from shared))
+    ), top as (
+      select * from scored
+      where name_score is not null or text_score is not null
+      order by greatest(name_score, text_score) desc
+      limit ${limit}
+    )
+    select top.id, top.name_score is not null as by_name,
+      case
+        when top.owner_id = ${viewer} then coalesce(p.name, 'My files')
+        when exists (select 1 from shares
+          where node_id = top.id and grantee_id = ${viewer}) then 'Shared with me'
+        else p.name
+      end as where,
+      case when top.text_score is not null then ts_headline('simple', c.body, q.tq,
+        'StartSel=' || chr(1) || ', StopSel=' || chr(2) || ', MaxFragments=1, MaxWords=18, MinWords=6')
+      end as snippet
+    from top
+    cross join q
+    left join nodes p on p.id = top.parent_id
+    left join node_content c on c.node_id = top.id
+    order by greatest(top.name_score, top.text_score) desc`)
+  if (!found.length) return []
+  const meta = new Map(found.map((f, i) => [f.id, { ...f, i }]))
+  const rows = await db
+    .select(cols(viewer))
     .from(nodes)
-    .where(and(live(ownerId), eq(nodes.starred, true)))
+    .where(
+      inArray(
+        nodes.id,
+        found.map((f) => f.id)
+      )
+    )
+  return (await withAccess(viewer, rows))
+    .sort((a, b) => meta.get(a.id)!.i - meta.get(b.id)!.i)
+    .map((item) => {
+      const m = meta.get(item.id)!
+      return {
+        ...item,
+        where: m.where ?? "",
+        byName: m.by_name,
+        snippet: m.snippet,
+      }
+    })
+}
+
+// Starred items the viewer can still see, theirs or shared with them.
+export async function listStarred(viewer: string) {
+  const rows = await db
+    .select(cols(viewer))
+    .from(stars)
+    .innerJoin(nodes, eq(nodes.id, stars.nodeId))
+    .where(
+      and(
+        eq(stars.userId, viewer),
+        isNull(nodes.trashedAt),
+        isNull(nodes.vaultId)
+      )
+    )
     .orderBy(...foldersFirst)
-  return rows.map(toItem)
+  return withAccess(viewer, rows)
 }
 
 // Only what was trashed directly: a folder's contents went with it and come back with it.
@@ -209,7 +392,12 @@ export async function listTrash(ownerId: string) {
 
 export async function listShared(userId: string) {
   const rows = await db
-    .select({ ...cols(userId), owner: user.name })
+    .select({
+      ...cols(userId),
+      owner: user.name,
+      ownerImage: user.image,
+      shareRole: shares.role,
+    })
     .from(shares)
     .innerJoin(nodes, eq(nodes.id, shares.nodeId))
     .innerJoin(user, eq(user.id, nodes.ownerId))
@@ -221,7 +409,7 @@ export async function listShared(userId: string) {
       )
     )
     .orderBy(desc(shares.createdAt))
-  return rows.map(toItem)
+  return rows.map(({ shareRole, ...r }) => withRole(r, shareRole))
 }
 
 export async function getTrashRetention() {
@@ -234,6 +422,9 @@ export async function getTrashRetention() {
 // Deletes trash older than the admin's retention for everyone. Runs when a file
 // page loads, so there's no scheduler to deploy.
 export async function purgeExpiredTrash() {
+  await db
+    .delete(linkEvents)
+    .where(sql`${linkEvents.at} < now() - interval '90 days'`)
   const days = await getTrashRetention()
   if (!days) return
   await deleteNodes(
@@ -250,13 +441,15 @@ export async function listTags(ownerId: string): Promise<Tag[]> {
 }
 
 // A file the user can open: theirs or shared with them, at its current version
-// or, for the owner only, an older one.
+// or, for its owner and editors, an older one. Only the owner opens trashed files.
 export async function openableFile(
   userId: string,
   id: string,
   v?: string | null
 ) {
   if (!UUID.test(id) || (v && !UUID.test(v))) return null
+  const a = await accessOne(userId, id)
+  if (!a || a.kind !== "file" || (a.trashed && a.role !== "owner")) return null
   const [row] = await db
     .select({
       name: nodes.name,
@@ -266,30 +459,25 @@ export async function openableFile(
       mime: nodes.mime,
     })
     .from(nodes)
-    .where(
-      and(
-        eq(nodes.id, id),
-        eq(nodes.kind, "file"),
-        or(
-          eq(nodes.ownerId, userId),
-          exists(
-            db
-              .select()
-              .from(shares)
-              .where(
-                and(eq(shares.nodeId, nodes.id), eq(shares.granteeId, userId))
-              )
-          )
-        )
-      )
-    )
+    .where(eq(nodes.id, id))
   if (!row?.key) return null
-  const mine = row.ownerId === userId
-  if (!v || v === row.versionId) return { ...row, key: row.key, mine }
-  if (!mine) return null
+  const mine = a.role === "owner"
+  if (!v || v === row.versionId)
+    return { ...row, key: row.key, mine, role: a.role }
+  if (!atLeast(a.role, "editor")) return null
   const [ver] = await db
     .select({ key: fileVersions.s3Key, mime: fileVersions.mime })
     .from(fileVersions)
     .where(and(eq(fileVersions.id, v), eq(fileVersions.nodeId, id)))
-  return ver ? { ...row, ...ver, versionId: v, mine } : null
+  return ver ? { ...row, ...ver, versionId: v, mine, role: a.role } : null
+}
+
+// One item as `viewer` would see it in a list. Callers check access.
+export async function getItem(viewer: string, id: string) {
+  if (!UUID.test(id)) return null
+  const [row] = await db
+    .select(cols(viewer))
+    .from(nodes)
+    .where(eq(nodes.id, id))
+  return row ? toItem(row) : null
 }

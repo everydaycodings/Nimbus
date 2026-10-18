@@ -107,7 +107,7 @@ password accounts must set it up. Google and GitHub sign-ins rely on the provide
 - Left for later: an orphan sweep for S3 deletes that fail (they're only logged), reserving quota
   for uploads in flight.
 
-## Phase 6a: Thumbnails and previews ✓ done (Collabora pending)
+## Phase 6a: Thumbnails and previews ✓ done
 - Thumbnails are drawn in the browser as 480px WebP: images, a video frame ~1 s in, PDF page 1,
   the first lines of code/text in shiki colors, and MP3/M4A cover art. They're made at upload,
   or lazily when an owner's tile scrolls into view (2 at a time). Stored at
@@ -121,49 +121,95 @@ password accounts must set it up. Google and GitHub sign-ins rely on the provide
   copy), Markdown rendered and sanitized with a source toggle, CSV and xlsx tables, docx, and zip
   listings via range requests. Older versions open in it from the Versions list.
 - Grid tile size is the user's choice (small / medium / large), remembered in a cookie.
-- **Still to do in 6a:**
-  - Optional Collabora/OnlyOffice: when an admin sets its URL, office files open through minimal
-    WOPI endpoints (`CheckFileInfo`, `GetFile`).
-  - Document that S3 buckets other than the dev MinIO need a CORS rule allowing GET (and
-    exposing `Content-Range`) from the app's origin, since previews fetch presigned URLs directly.
-- Left for later: Space opens the previewer (it still toggles selection), storage-meter
+- Optional Collabora Online, view only: when an admin sets its URL in `/admin/settings`, office
+  files (Word, Excel, PowerPoint, OpenDocument) open in it through two WOPI endpoints
+  (`CheckFileInfo`, `GetFile`) with a signed 10-hour token; access is rechecked on every call.
+  Blank URL or an unreachable server falls back to the built-in docx and sheet viewers.
+  `docker compose --profile office` runs CODE locally.
+- Upload errors say why (storage full, a storage error's reason, tusd unreachable) instead of a
+  generic "check your connection".
+- `local_server/README.md` documents the bucket CORS rule (GET, `Range`, exposing
+  `Content-Range`); a preview fetch blocked by CORS says to check it.
+- Left for later: Collabora editing (PutFile, locks), Collabora's dark theme and its CODE
+  welcome popup (CODE builds always show it once per browser), Space opens the previewer (it still toggles selection), storage-meter
   categories using `mimeOf` (a `.ts` file counts as video there).
 
-## Phase 6b: Sharing (next)
-- Schema: `shares` gains `name`, `password_hash`, `allow_download`, `allow_upload`,
-  `allow_reshare`, `grantee_email` (invites for non-members). New `notifications` table
-  (`user_id, kind, node_id, actor_id, read_at`). `nodes.shortcut_target_id` for "Add shortcut
-  to My files". Settings: `public_links_enabled`, `max_link_days`, `require_link_password`.
-- `lib/access.ts` `roleFor(userId, nodeId)` walks ancestors with a recursive CTE and returns
-  owner / editor / viewer / null. Every file action, the tus pre-create hook, downloads,
-  previews and thumbnails go through it. Editors can upload, rename, move within and trash;
-  what they add belongs to the folder owner.
-- Share dialog: member autocomplete or an email invite (when sign-up mode allows), viewer or
-  editor, reshare toggle (on by default), and many named public links each with expiry,
-  password, download on/off and upload on/off (file drop).
-- Public page `/s/[token]`: Nimbus mark, no sidebar; the file preview or a folder grid reusing
-  the previewer; password prompt first when needed; an upload zone for file-drop links.
-- Notifications: email (when configured), an unseen badge on Shared with me and a header bell.
-  Events: shared with you, access changed or removed, a file-drop upload landed, edits in your
-  shared folders, new sign-up requests for admins.
-- Admin: toggles for public links, max link expiry and required passwords; `/admin/links`
-  lists every public link with Revoke.
-- Opening shared folders and starring shared items unlock here.
-- Verify: share between two accounts as viewer and editor, permission refusals, link password,
-  expiry and file drop, emails in Mailpit, the bell.
+## Phase 6b: Sharing ✓ done
+- **Access** (`lib/access.ts`): a recursive walk up from each item gives owner, editor or viewer.
+  Shares are inherited and the highest role wins. Every file action, upload (planning, the tus
+  hook and finishing), download, zip, preview, thumbnail and WOPI call goes through it.
+  - Editors can upload, make folders, rename, trash (into the owner's trash, with Undo) and
+    manage versions and thumbnails.
+  - Editors can only move things between folders from the same owner, so nothing leaves a
+    shared folder by moving.
+  - What editors add belongs to the folder's owner and counts against the owner's storage.
+  - Member viewers can always preview and download.
+- **Share dialog** (⋯ → Share…, Shift+S): add members by name or email autocomplete, or invite
+  an email that has no account yet (needs email and a sign-up mode other than Closed).
+  - Viewer or Editor per person. People who get access through a parent folder are listed
+    with where it comes from.
+  - "Editors can share it too" applies to the item and everything inside it. Editors manage
+    only the shares and links they made.
+  - **Ownership transfer**: Offer ownership; the new owner accepts or declines from the bell.
+    Accepting checks their storage and moves the item, with everything in it, to their My
+    files. The old owner keeps edit access.
+- **Public links**: any number per item, each with a name, expiry (capped by the admin), password
+  (scrypt; changing it signs out everyone who unlocked it), download on/off, and for folders a
+  file drop with an optional size cap.
+  - Each link shows view and download counts plus an access log (time, event, IP, user agent;
+    90 days).
+  - `/s/<token>` has no sidebar: a password prompt first when needed, then the file inline or
+    a folder grid/list with breadcrumbs, a name filter, the previewer and zip downloads.
+  - File-drop links take uploads with an optional "your name"; contents stay hidden unless
+    the link also shows them.
+  - Wrong passwords are throttled (10 per IP per 15 minutes) and anonymous uploads limited
+    (200 per IP per hour), both counted from the access log.
+- **Notifications**: a header bell (polls on focus and every 60 s) and a Shared with me badge.
+  - Events: shared with you, access changed or removed, file drops, editors' changes in your
+    folders (one entry per folder per hour), ownership offers, sign-up requests for admins.
+  - Email per kind, chosen in `/account`.
+- **Email invites**: the emailed link (signed, 30 days) skips approval when that address signs
+  up, and the share is waiting in Shared with me. If they made an account meanwhile, clicking
+  the link binds the share to it.
+- Stars are per person (`stars`), so shared items can be starred. "Add shortcut to My files"
+  puts a shared item in your root. Tiles show a people glyph for member shares and a link glyph
+  for public links.
+- **Admin**: `/admin/settings` turns public links on or off, caps link expiry and can require
+  passwords. `/admin/links` lists every link (item, owner, counts, expiry) with Revoke; admins
+  can't open them.
+- Left for later: Collabora on public links, an in-browser zip for links on Vercel, removing
+  yourself from something shared with you, moving shortcuts out of the root, restricting a
+  subfolder below an inherited share.
 
-## Phase 6c: Search and recent
-- Name search: a `pg_trgm` GIN index on `lower(name)`.
-- Content search: a `node_content(node_id, tsv, source)` table with a GIN index. After upload
-  the browser extracts text (text/code/markdown, PDF text via pdf.js, OCR via tesseract.js for
-  images) without blocking the upload. Optional `scripts/indexer.ts` compose profile
-  (tesseract + pdftotext) indexes anything with `content_indexed_at` null.
-- UI: a header search field with an instant dropdown; Enter opens `/search?q=` with the
-  browser's filters and sort; a Ctrl+K palette (shadcn Command).
-- Recent: `node_opens(user_id, node_id, opened_at)` upserted on preview, download, upload and
-  edit; Recent sorts by it.
-- Verify: find files by name, by text inside a PDF and in an OCR'd image; Recent reorders after
-  a preview.
+## Phase 6c: Search and recent ✓ done
+- **Search** covers your files and everything shared with you, never trash or vaults.
+  - Names: substring or close spelling (`pg_trgm` word similarity ≥ 0.4, so "reprot" finds
+    report.pdf).
+  - Text inside files: `node_content` keeps the current version's text (up to 200k characters)
+    with a generated `tsvector` and a GIN index. Queries use `websearch_to_tsquery('simple')`,
+    so plain words and "quoted phrases" work. A new version makes the old text stale.
+- **Reading text** (`lib/extract.ts`, shared by the browser and Node): text, code and Markdown;
+  PDF via pdf.js; docx body, headers and footers; xlsx/ods/csv (5,000 rows per sheet); images up
+  to 20 MB via tesseract.js OCR, dropping low-confidence results.
+  - The browser reads a file right after uploading it, from the local copy, and catches up older
+    files when an owner or editor opens their folder. One file at a time, when the page is
+    idle, and no OCR on devices reporting under 4 GB of memory.
+  - OCR languages are an admin setting (`/admin/settings`, default `eng`).
+  - Optional worker: `npm run indexer` (one sweep) or `npm run indexer -- --watch` (every
+    minute) indexes whatever no browser has read yet.
+- **UI**: the header search box (Ctrl+K anywhere) opens a palette.
+  - Recent searches (stored in this browser) and app commands: new folder, uploads, go to a
+    view or Admin, switch list/grid, collapse the sidebar.
+  - As you type: up to 6 name matches with their folder, then text matches with the matching
+    words highlighted. Files open in the previewer right there; folders open.
+  - Enter on "See all results" opens `/search?q=` with the usual filters, sorted by relevance.
+- **Recent**: `node_opens` is updated on preview, download, upload and rename, for shared items
+  too; Recent lists the last 50 by when you opened them. Existing files start at their last
+  modified time.
+- Left for later: pptx and audio tags, search operators (type:, owner:), indexing older
+  versions, matching partly typed words inside files, serving Tesseract's language data
+  locally (it downloads from the jsDelivr CDN the first time), a compose service for the
+  indexer.
 
 ## Phase 7: Vault
 - Client-side encrypted folders behind a separate passphrase (WebCrypto)

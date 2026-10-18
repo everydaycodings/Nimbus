@@ -7,12 +7,15 @@ import { and, count, eq, inArray } from "drizzle-orm"
 
 import { db } from "./db"
 import * as schema from "./db/schema"
-import { appUrl, message, sendInBackground } from "./email"
+import { message, sendInBackground } from "./email"
 import {
   INVITE_COOKIE,
+  SHARE_INVITE_COOKIE,
+  bindShareInvites,
   claimInvite,
   getSettings,
   isTrustedEmail,
+  readShareInvite,
 } from "./signup"
 
 // A provider is offered only when both of its keys are set.
@@ -125,10 +128,15 @@ export const auth = betterAuth({
           const trusted =
             user.emailVerified && isTrustedEmail(user.email, trustedDomains)
           const token = ctx?.getCookie(INVITE_COOKIE)
+          // Someone shared files with this exact address and they opened the email.
+          const shareEmail = await readShareInvite(
+            ctx?.getCookie(SHARE_INVITE_COOKIE)
+          )
           const invited =
             !trusted &&
             signupMode !== "open" &&
-            Boolean(token && (await claimInvite(token)))
+            (shareEmail?.toLowerCase() === user.email.toLowerCase() ||
+              Boolean(token && (await claimInvite(token))))
 
           if (signupMode === "invite" && !trusted && !invited)
             throw new APIError("FORBIDDEN", {
@@ -144,11 +152,26 @@ export const auth = betterAuth({
             },
           }
         },
-        // Tell the admins someone is waiting.
-        after: async (created) => {
+        // Bind the shares they were invited to, and tell the admins if
+        // someone is waiting.
+        after: async (created, ctx) => {
+          const shareEmail = await readShareInvite(
+            ctx?.getCookie(SHARE_INVITE_COOKIE)
+          )
+          if (shareEmail?.toLowerCase() === created.email.toLowerCase()) {
+            const bound = await bindShareInvites(created.id, created.email)
+            // Dynamic: the Better Auth CLI can't load `@/` or server-only modules.
+            const { notify } = await import("./notify")
+            for (const b of bound)
+              await notify(created.id, "shared", {
+                nodeId: b.nodeId,
+                actorId: b.createdBy,
+                data: { role: b.role },
+              })
+          }
           if ((created as { status?: string }).status !== "pending") return
           const admins = await db
-            .select({ email: schema.user.email })
+            .select({ id: schema.user.id })
             .from(schema.user)
             .where(
               and(
@@ -156,20 +179,12 @@ export const auth = betterAuth({
                 eq(schema.user.status, "active")
               )
             )
-          for (const { email } of admins)
-            sendInBackground(
-              message({
-                to: email,
-                subject: `${created.name} wants to join your Nimbus`,
-                lines: [
-                  `${created.name} (${created.email}) created an account and is waiting for approval.`,
-                ],
-                action: {
-                  label: "Review request",
-                  url: appUrl("/admin/members?tab=pending"),
-                },
-              })
-            )
+          const { notify } = await import("./notify")
+          for (const { id } of admins)
+            await notify(id, "signup_request", {
+              actorId: created.id,
+              data: { who: `${created.name} (${created.email})` },
+            })
         },
       },
     },

@@ -14,7 +14,7 @@ import {
   UsersIcon,
   XCircleIcon,
 } from "@phosphor-icons/react/dist/ssr"
-import { count, eq } from "drizzle-orm"
+import { and, count, eq, isNull, sql } from "drizzle-orm"
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 
@@ -24,6 +24,8 @@ import { NavUser } from "@/components/nav-user"
 import { StorageMeter } from "@/components/storage-meter"
 import { PasswordForm } from "@/components/password-form"
 import { ResendVerification } from "@/components/resend-verification"
+import { NotificationBell, SharedBadge } from "@/components/notification-bell"
+import { SearchPalette } from "@/components/search-palette"
 import { SidebarShell } from "@/components/sidebar-shell"
 import { TwoFactorSetup } from "@/components/two-factor"
 import { NewMenu, UploadProvider } from "@/components/upload-provider"
@@ -31,7 +33,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { db } from "@/lib/db"
-import { user } from "@/lib/db/schema"
+import { notifications, user } from "@/lib/db/schema"
 import { emailEnabled } from "@/lib/email"
 import { getUsage } from "@/lib/quota"
 import { getSession, hasPassword, isAdmin } from "@/lib/session"
@@ -203,6 +205,13 @@ export default async function AppLayout({
     : 0
 
   const collapsed = (await cookies()).get(SIDEBAR_COOKIE)?.value === "1"
+  const [counts] = await db
+    .select({
+      unread: sql<number>`count(*)::int`,
+      shared: sql<number>`(count(*) filter (where ${notifications.kind} = 'shared'))::int`,
+    })
+    .from(notifications)
+    .where(and(eq(notifications.userId, me.id), isNull(notifications.readAt)))
   const label =
     "transition-opacity group-data-[collapsed=true]/sidebar:opacity-0"
 
@@ -234,7 +243,9 @@ export default async function AppLayout({
             label="My files"
           />
           {FILE_LINKS.map(({ href, label: name, icon: Icon }) => (
-            <NavLink key={href} href={href} icon={<Icon />} label={name} />
+            <NavLink key={href} href={href} icon={<Icon />} label={name}>
+              {href === "/shared" && <SharedBadge initial={counts} />}
+            </NavLink>
           ))}
           <span
             aria-disabled
@@ -276,7 +287,16 @@ export default async function AppLayout({
       tusUrl={process.env.TUS_URL ?? ""}
       zipMode={process.env.VERCEL ? "client" : "server"}
     >
-      <SidebarShell sidebar={sidebar} defaultCollapsed={collapsed}>
+      <SidebarShell
+        sidebar={sidebar}
+        defaultCollapsed={collapsed}
+        actions={
+          <>
+            <SearchPalette admin={admin} />
+            <NotificationBell initial={counts} />
+          </>
+        }
+      >
         {children}
       </SidebarShell>
     </UploadProvider>

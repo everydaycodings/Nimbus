@@ -11,7 +11,7 @@ export default async function MyFilesPage() {
   const me = await pageUserId()
   await purgeExpiredTrash()
   const [items, prefs, tags] = await Promise.all([
-    listFolder(me, null),
+    listFolder(me, me, null),
     viewPrefs(),
     listTags(me),
   ])

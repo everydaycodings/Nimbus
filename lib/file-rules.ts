@@ -59,6 +59,13 @@ export function previewKind(
   return null
 }
 
+export const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// Files Collabora opens when an admin has set it up.
+export const OFFICE_EXT =
+  /\.(docx?|dotx?|odt|ott|rtf|xlsx?|xlsm|ods|ots|pptx?|ppsx?|odp|otp|odg)$/i
+
 // Kinds the browser can draw a thumbnail of.
 export const thumbable = (k: PreviewKind | null) =>
   k !== null && k !== "zip" && k !== "docx" && k !== "sheet"

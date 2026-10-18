@@ -2,9 +2,9 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 
 import { FileBrowser } from "@/components/file-browser"
+import { visiblePath } from "@/lib/access"
 import {
   getFolder,
-  getPath,
   listFolder,
   pageUserId,
   viewPrefs,
@@ -24,8 +24,8 @@ export default async function FolderPage({ params }: Props) {
   const folder = await getFolder(me, id)
   if (!folder) notFound()
   const [items, path, prefs, tags] = await Promise.all([
-    listFolder(me, id),
-    getPath(id),
+    listFolder(me, folder.ownerId, id, folder.role),
+    visiblePath(me, id),
     viewPrefs(),
     listTags(me),
   ])
@@ -36,11 +36,15 @@ export default async function FolderPage({ params }: Props) {
       view="folder"
       folderId={id}
       path={path}
+      role={folder.role}
       title={folder.name}
       items={items}
       empty={{
         title: "This folder is empty",
-        body: "Drop files here to upload them, make a folder (Shift+N), or drag things in from another folder.",
+        body:
+          folder.role === "viewer"
+            ? "Nothing has been added here yet."
+            : "Drop files here to upload them, make a folder (Shift+N), or drag things in from another folder.",
       }}
       tags={tags}
       {...prefs}

@@ -33,6 +33,9 @@ import {
   setDefaultQuota,
   setUploadLimit,
   setVersionRetention,
+  setOcrLangs,
+  setOfficeUrl,
+  setLinkPolicy,
 } from "./actions"
 
 const MODES: { mode: SignupMode; label: string; hint: string }[] = [
@@ -99,6 +102,11 @@ export default async function SettingsPage() {
     versionKeepLast,
     versionMaxAgeDays,
     defaultQuotaBytes,
+    officeUrl,
+    ocrLangs,
+    publicLinksEnabled,
+    maxLinkDays,
+    requireLinkPassword,
   } = await getSettings()
   const quota = sizeField(defaultQuotaBytes, "GB", "TB")
   const size = sizeField(maxUploadBytes, "MB", "GB")
@@ -509,6 +517,126 @@ export default async function SettingsPage() {
                 step={1}
                 defaultValue={versionMaxAgeDays ?? ""}
                 placeholder="Never"
+              />
+            </div>
+            <SubmitButton>Save</SubmitButton>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Public links</CardTitle>
+          <CardDescription>
+            Links let anyone who has them open a file or folder without an
+            account. Every link is listed under Public links, where you can
+            revoke it.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={setLinkPolicy} className="flex flex-col gap-4">
+            <label className="flex cursor-pointer items-start gap-3 text-sm">
+              <input
+                type="checkbox"
+                name="enabled"
+                defaultChecked={publicLinksEnabled}
+                className="mt-0.5 size-4 accent-primary"
+              />
+              <span>
+                Allow public links
+                <span className="block text-muted-foreground">
+                  Off: no link opens, and members can&apos;t make new ones.
+                  Sharing with members still works.
+                </span>
+              </span>
+            </label>
+            <label className="flex cursor-pointer items-start gap-3 text-sm">
+              <input
+                type="checkbox"
+                name="requirePassword"
+                defaultChecked={requireLinkPassword}
+                className="mt-0.5 size-4 accent-primary"
+              />
+              <span>
+                Require a password on new links
+                <span className="block text-muted-foreground">
+                  Links made before this keep working as they are.
+                </span>
+              </span>
+            </label>
+            <div className="grid items-end gap-3 sm:grid-cols-[1fr_auto]">
+              <div className="grid gap-2">
+                <Label htmlFor="maxLinkDays">Links expire within (days)</Label>
+                <Input
+                  id="maxLinkDays"
+                  name="maxLinkDays"
+                  type="number"
+                  min={1}
+                  max={3650}
+                  step={1}
+                  defaultValue={maxLinkDays ?? ""}
+                  placeholder="No limit"
+                />
+              </div>
+              <SubmitButton>Save</SubmitButton>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Office documents</CardTitle>
+          <CardDescription>
+            With a Collabora Online server, Word, Excel, PowerPoint and
+            OpenDocument files open in it, read-only. Leave blank to use the
+            built-in viewers.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form
+            action={setOfficeUrl}
+            className="grid items-end gap-3 sm:grid-cols-[1fr_auto]"
+          >
+            <div className="grid gap-2">
+              <Label htmlFor="officeUrl">Collabora URL</Label>
+              <Input
+                id="officeUrl"
+                name="officeUrl"
+                type="url"
+                defaultValue={officeUrl ?? ""}
+                placeholder="https://office.example.com"
+              />
+            </div>
+            <SubmitButton>Save</SubmitButton>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Text in images</CardTitle>
+          <CardDescription>
+            Search reads the words in photos and screenshots up to 20 MB, in the
+            browser of whoever uploads or opens them. List the languages
+            they&apos;re written in as Tesseract codes, like eng, deu, fra or
+            chi_sim. Each extra language makes reading slower.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form
+            action={setOcrLangs}
+            className="grid items-end gap-3 sm:grid-cols-[1fr_auto]"
+          >
+            <div className="grid gap-2">
+              <Label htmlFor="ocrLangs">Languages</Label>
+              <Input
+                id="ocrLangs"
+                name="ocrLangs"
+                defaultValue={ocrLangs.split("+").join(", ")}
+                placeholder="eng"
+                autoComplete="off"
+                spellCheck={false}
               />
             </div>
             <SubmitButton>Save</SubmitButton>

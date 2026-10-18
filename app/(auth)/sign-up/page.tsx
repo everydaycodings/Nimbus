@@ -13,7 +13,13 @@ import {
 import { enabledProviders } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { user } from "@/lib/db/schema"
-import { INVITE_COOKIE, findInvite, getSettings } from "@/lib/signup"
+import {
+  INVITE_COOKIE,
+  SHARE_INVITE_COOKIE,
+  findInvite,
+  getSettings,
+  readShareInvite,
+} from "@/lib/signup"
 
 export default async function SignUpPage({
   searchParams,
@@ -23,15 +29,17 @@ export default async function SignUpPage({
   const [{ n }] = await db.select({ n: count() }).from(user)
   const first = n === 0
   const { signupMode } = await getSettings()
-  const token = (await cookies()).get(INVITE_COOKIE)?.value
-  const invited = Boolean(token && (await findInvite(token)))
+  const jar = await cookies()
+  const token = jar.get(INVITE_COOKIE)?.value
+  // Shared files waiting for this address skip approval too.
+  const sharedTo = await readShareInvite(jar.get(SHARE_INVITE_COOKIE)?.value)
+  const invited = Boolean(sharedTo || (token && (await findInvite(token))))
   const params = await searchParams
   const badInvite = params.invite === "invalid"
 
   // Without a form to show, explain why and point back to sign-in.
   const blocked =
-    !first &&
-    (signupMode === "closed" || (signupMode === "invite" && !invited))
+    !first && (signupMode === "closed" || (signupMode === "invite" && !invited))
   if (blocked)
     return (
       <Card>
@@ -65,11 +73,13 @@ export default async function SignUpPage({
 
   const description = first
     ? "You're the first one here, so this account becomes the owner of this instance."
-    : invited
-      ? "You were invited, so your account is ready as soon as you create it."
-      : signupMode === "open"
-        ? "Your account is ready as soon as you create it."
-        : "An admin of this Nimbus reviews new accounts before they can use it."
+    : sharedTo
+      ? `Files were shared with ${sharedTo}. Create your account with that address and they'll be waiting in Shared with me.`
+      : invited
+        ? "You were invited, so your account is ready as soon as you create it."
+        : signupMode === "open"
+          ? "Your account is ready as soon as you create it."
+          : "An admin of this Nimbus reviews new accounts before they can use it."
 
   return (
     <Card>

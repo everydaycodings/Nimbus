@@ -1,4 +1,4 @@
-import { openableFile } from "@/lib/files"
+import { markOpened, openableFile } from "@/lib/files"
 import { headSize, presignGet } from "@/lib/s3"
 import { memberOrNull } from "@/lib/session"
 
@@ -15,5 +15,6 @@ export async function GET(
   const v = new URL(req.url).searchParams.get("v")
   const file = await openableFile(me.id, id, v)
   if (!file || (await headSize(file.key)) === null) return notFound()
+  await markOpened(me.id, id)
   return Response.redirect(await presignGet(file.key, file.name), 302)
 }

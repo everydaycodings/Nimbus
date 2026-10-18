@@ -32,6 +32,7 @@ import { useSidebar } from "@/components/sidebar-shell"
 import { UploadPanel } from "@/components/upload-panel"
 import { Button } from "@/components/ui/button"
 import { clientZipDownload } from "@/lib/client-zip-download"
+import { ensureIndexed } from "@/lib/index-content"
 import { ensureThumb } from "@/lib/thumbs"
 import { cn } from "@/lib/utils"
 
@@ -164,10 +165,22 @@ function readStale(): Stale[] {
   return out
 }
 
+// Says why, in words: hook rejections come through as-is; tusd and storage
+// failures are reduced to their reason.
 function tusError(e: Error) {
-  const body = (e as DetailedError).originalResponse?.getBody()?.trim()
-  if (body && body.length < 200 && !body.includes("<")) return body
-  return "Upload failed. Check your connection and retry."
+  const res = (e as DetailedError).originalResponse
+  if (!res)
+    return "Couldn't reach the upload server. Check your connection and retry."
+  const status = res.getStatus()
+  const body = res.getBody()?.trim() ?? ""
+  if (/StorageFull|XMinioStorageFull|\b507\b/.test(body) || status === 507)
+    return "The storage server is out of disk space. Ask your admin to free some up."
+  if (body && body.length < 200 && !body.includes("<"))
+    return body.replace(/^ERR_[A-Z_]+:\s*/, "")
+  // "...api error NoSuchBucket: The specified bucket does not exist"
+  const api = /api error (\w+): ([^\n]+)/.exec(body)
+  if (api) return `Storage error: ${api[2].trim()} (${api[1]})`
+  return `The upload server failed (HTTP ${status}). Retry, or ask your admin to check its logs.`
 }
 
 type State = { jobs: Job[]; stale: Stale[] }
@@ -284,18 +297,19 @@ class Engine {
     } else {
       this.patch(id, { status: "done", sent: this.job(id)?.size ?? 0 })
       this.data.set(id, {})
-      // Drawn from the local copy while it's at hand; failures just leave the icon.
-      if (file && res.versionId)
-        ensureThumb(
-          {
-            id: res.nodeId,
-            version: res.versionId,
-            mime: file.type || null,
-            name: file.name,
-            size: file.size,
-          },
-          file
-        )
+      // Drawn and indexed from the local copy while it's at hand; failures just
+      // leave the icon, and the text gets read on a later visit.
+      if (file && res.versionId) {
+        const f = {
+          id: res.nodeId,
+          version: res.versionId,
+          mime: file.type || null,
+          name: file.name,
+          size: file.size,
+        }
+        ensureThumb(f, file)
+        ensureIndexed(f, file)
+      }
       // "v3 added": only worth a lookup when the upload asked for a version.
       if (d.meta?.onConflict === "version")
         listVersions(res.nodeId)
@@ -730,6 +744,17 @@ const NewMenuContext = createContext<{ pick: (k: "files" | "folder") => void }>(
 )
 
 // Sidebar "New": a primary button that shrinks to an icon with the rail.
+// The folder page's New folder dialog, or My files' when this page has none.
+export function startNewFolder(router: ReturnType<typeof useRouter>) {
+  const btn = document.getElementById("new-folder")
+  if (btn) return btn.click()
+  wantsNewFolder = true
+  router.push("/")
+}
+
+// File and folder upload pickers, into the folder being viewed.
+export const usePick = () => useContext(NewMenuContext).pick
+
 export function NewMenu() {
   const { pick } = useContext(NewMenuContext)
   const { collapsed } = useSidebar()
@@ -747,10 +772,7 @@ export function NewMenu() {
 
   function newFolder() {
     leaveDrawer()
-    const btn = document.getElementById("new-folder")
-    if (btn) return btn.click()
-    wantsNewFolder = true
-    router.push("/")
+    startNewFolder(router)
   }
 
   return (

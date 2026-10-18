@@ -17,15 +17,16 @@ import {
   WarningCircleIcon,
   XIcon,
 } from "@phosphor-icons/react"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 
-import { previewUrl } from "@/app/(app)/upload-actions"
+import { officeFrame, previewUrl } from "@/app/(app)/upload-actions"
+import { linkPreviewUrl } from "@/app/s/actions"
 import { Button } from "@/components/ui/button"
 import { Thumb } from "@/components/thumb"
 import { VideoPlayer } from "@/components/video-player"
 import { parseCsv } from "@/lib/csv"
 import { fileType, formatBytes } from "@/lib/file-types"
-import { previewKind } from "@/lib/file-rules"
+import { OFFICE_EXT, previewKind } from "@/lib/file-rules"
 import type { Item } from "@/lib/files"
 import { SHIKI_THEME, langOf, readRange } from "@/lib/thumbs"
 import { cn } from "@/lib/utils"
@@ -42,6 +43,9 @@ const HIGHLIGHT_MAX = 256 * 1024
 const OFFICE_MAX = 50 * 1024 ** 2
 const ROWS = 1000
 const OPEN_FAILED = "Couldn't open this file."
+// fetch() rejects with a TypeError when the bucket's CORS rule blocks it.
+const CORS_FAILED =
+  "Couldn't download the file. If this keeps happening, an admin should check the storage bucket's CORS rule."
 
 // Full-screen overlay for one file at a time. Arrows step through the folder.
 export function Previewer({
@@ -54,6 +58,7 @@ export function Previewer({
   onDetails,
   menu,
   onUseFrame,
+  link,
 }: {
   shown: Shown | null
   open: boolean
@@ -68,11 +73,13 @@ export function Previewer({
   menu?: React.ReactNode
   // Makes a paused video frame the file's thumbnail; only for its editors.
   onUseFrame?: (item: Item, video: HTMLVideoElement) => Promise<void>
+  // On a public link's page: its token, and whether it allows downloads.
+  link?: { token: string; download: boolean }
 }) {
   const item = shown?.item
   const v = shown?.version
   const t = item && fileType("file", item.mime, item.name)
-  const href = item && `/api/files/${item.id}/download${v ? `?v=${v.id}` : ""}`
+  const href = item && downloadHref(item, v, link)
 
   function onKeyDown(e: React.KeyboardEvent) {
     if (
@@ -116,17 +123,19 @@ export function Previewer({
                 <span className="ml-auto hidden shrink-0 text-xs text-muted-foreground tabular-nums sm:block">
                   {position}
                 </span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Download"
-                  title="Download"
-                  render={<a href={href!} />}
-                  nativeButton={false}
-                  className="max-sm:ml-auto"
-                >
-                  <DownloadSimpleIcon className="size-5" />
-                </Button>
+                {href && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Download"
+                    title="Download"
+                    render={<a href={href} />}
+                    nativeButton={false}
+                    className="max-sm:ml-auto"
+                  >
+                    <DownloadSimpleIcon className="size-5" />
+                  </Button>
+                )}
                 {onDetails && (
                   <Button
                     variant="ghost"
@@ -145,7 +154,8 @@ export function Previewer({
                   key={`${item.id}:${v?.id ?? item.version}`}
                   item={item}
                   version={v}
-                  href={href!}
+                  href={href ?? null}
+                  link={link?.token}
                   onUseFrame={
                     onUseFrame && !v
                       ? (video) => onUseFrame(item, video)
@@ -194,16 +204,30 @@ function Step({
   )
 }
 
+// Where the file downloads from, or null when a link turned downloads off.
+export function downloadHref(
+  item: Item,
+  v?: Shown["version"],
+  link?: { token: string; download: boolean }
+) {
+  if (link) return link.download ? `/s/${link.token}/download/${item.id}` : null
+  return `/api/files/${item.id}/download${v ? `?v=${v.id}` : ""}`
+}
+
 // Fetches a short-lived URL for the file, then hands it to its viewer.
-function View({
+// Exported for the public link page, which shows one file inline.
+export function View({
   item,
   version,
   href,
+  link,
   onUseFrame,
 }: {
   item: Item
   version?: Shown["version"]
-  href: string
+  href: string | null
+  // A public link's token: URLs come from the link, and Collabora is skipped.
+  link?: string
   onUseFrame?: (video: HTMLVideoElement) => Promise<void>
 }) {
   const mime = version ? version.mime : item.mime
@@ -211,19 +235,37 @@ function View({
   const kind = previewKind(mime, item.name)
   const [url, setUrl] = useState<string | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
+  // Collabora's viewer: undefined while asking, null when it's off.
+  const [frame, setFrame] = useState<
+    Awaited<ReturnType<typeof officeFrame>> | undefined
+  >(!link && OFFICE_EXT.test(item.name) ? undefined : null)
 
   useEffect(() => {
-    if (!kind) return
+    if (frame !== undefined) return
     let live = true
-    previewUrl(item.id, version?.id).then(
+    officeFrame(item.id, version?.id).then(
+      (f) => live && setFrame(f),
+      () => live && setFrame(null)
+    )
+    return () => {
+      live = false
+    }
+  }, [item.id, version?.id, frame])
+
+  useEffect(() => {
+    if (!kind || frame !== null) return
+    let live = true
+    ;(link ? linkPreviewUrl(link, item.id) : previewUrl(item.id, version?.id, true)).then(
       (u) => live && (u ? setUrl(u) : setFailed(OPEN_FAILED)),
       () => live && setFailed(OPEN_FAILED)
     )
     return () => {
       live = false
     }
-  }, [item.id, version?.id, kind])
+  }, [item.id, version?.id, kind, frame, link])
 
+  if (frame === undefined) return <Loading />
+  if (frame) return <OfficeView {...frame} title={item.name} />
   if (!kind) return <NoPreview item={item} href={href} />
   if (failed) return <NoPreview item={item} href={href} error={failed} />
   if (!url) return <Loading />
@@ -265,7 +307,47 @@ function View({
   }
 }
 
-type ViewProps = { url: string; item: Item; size: number; href: string }
+type ViewProps = {
+  url: string
+  item: Item
+  size: number
+  href: string | null
+}
+
+// WOPI hosts hand the token over in a form POST, not the URL.
+function OfficeView({
+  action,
+  token,
+  title,
+}: {
+  action: string
+  token: string
+  title: string
+}) {
+  const form = useRef<HTMLFormElement>(null)
+  const target = useId()
+  useEffect(() => form.current?.submit(), [])
+  return (
+    <>
+      <form
+        ref={form}
+        action={action}
+        method="post"
+        target={target}
+        className="hidden"
+      >
+        <input type="hidden" name="access_token" value={token} />
+        <input type="hidden" name="access_token_ttl" value="0" />
+      </form>
+      <iframe
+        name={target}
+        title={title}
+        allow="fullscreen; clipboard-read; clipboard-write"
+        className="size-full rounded-lg border bg-white"
+      />
+    </>
+  )
+}
 
 function Loading() {
   return (
@@ -282,7 +364,7 @@ function NoPreview({
   error,
 }: {
   item: Item
-  href: string
+  href: string | null
   error?: string
 }) {
   const t = fileType("file", item.mime, item.name)
@@ -298,13 +380,17 @@ function NoPreview({
           {error ?? "No preview for this kind of file"}
         </p>
         <p className="text-sm text-muted-foreground">
-          Download it to open it on your device.
+          {href
+            ? "Download it to open it on your device."
+            : "Downloads are turned off for this link."}
         </p>
       </div>
-      <Button render={<a href={href} />} nativeButton={false}>
-        <DownloadSimpleIcon />
-        Download · {formatBytes(item.size)}
-      </Button>
+      {href && (
+        <Button render={<a href={href} />} nativeButton={false}>
+          <DownloadSimpleIcon />
+          Download · {formatBytes(item.size)}
+        </Button>
+      )}
     </div>
   )
 }
@@ -319,7 +405,12 @@ function useLoad<T>(load: () => Promise<T>) {
     load().then(
       (value) => setState({ value }),
       (e: Error) =>
-        setState({ error: e.message || "Couldn't load the preview." })
+        setState({
+          error:
+            e instanceof TypeError
+              ? CORS_FAILED
+              : e.message || "Couldn't load the preview.",
+        })
     )
   }, [load])
   return state
@@ -331,7 +422,7 @@ function Failed({
   item,
 }: {
   error: string
-  href: string
+  href: string | null
   item: Item
 }) {
   return <NoPreview item={item} href={href} error={error} />

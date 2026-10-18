@@ -1,9 +1,29 @@
 import "server-only"
 
-import { and, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm"
+import {
+  and,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm"
 
 import { db } from "@/lib/db"
-import { fileVersions, nodes, settings, user } from "@/lib/db/schema"
+import { folderOwner } from "@/lib/access"
+import {
+  fileVersions,
+  linkEvents,
+  nodes,
+  settings,
+  shares,
+  user,
+} from "@/lib/db/schema"
+import { notify, notifyEdit } from "@/lib/notify"
 import { deleteKeys, getText, headSize } from "@/lib/s3"
 import {
   extOf,
@@ -11,6 +31,7 @@ import {
   readUploadToken,
   sizeLabel,
   splitPath,
+  type UploadToken,
 } from "@/lib/upload-rules"
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
@@ -203,12 +224,73 @@ export async function deleteNodes(where: SQL | undefined) {
 
 type Finished = { error?: string; nodeId?: string; versionId?: string }
 
+// A public link that still takes uploads, with what notifications need.
+export async function dropLink(shareId: string) {
+  const [row] = await db
+    .select({
+      id: shares.id,
+      nodeId: shares.nodeId,
+      name: shares.name,
+      cap: shares.uploadCapBytes,
+      createdBy: shares.createdBy,
+    })
+    .from(shares)
+    .innerJoin(settings, sql`true`)
+    .innerJoin(nodes, eq(nodes.id, shares.nodeId))
+    .where(
+      and(
+        eq(shares.id, shareId),
+        isNotNull(shares.token),
+        eq(shares.allowUpload, true),
+        eq(settings.publicLinksEnabled, true),
+        isNull(nodes.trashedAt),
+        or(isNull(shares.expiresAt), gt(shares.expiresAt, sql`now()`))
+      )
+    )
+  return row ?? null
+}
+
+// Bytes a file-drop link has taken in so far.
+export async function droppedBytes(shareId: string) {
+  const [row] = await db
+    .select({ n: sql<string>`coalesce(sum(${fileVersions.size}), 0)::text` })
+    .from(fileVersions)
+    .where(eq(fileVersions.viaShareId, shareId))
+  return Number(row?.n ?? 0)
+}
+
+// Whoever the token names may still add to its folder: the owner, an editor
+// who still is one, or a link that still takes uploads into that folder or
+// one inside it.
+export async function uploaderMayAdd(t: UploadToken) {
+  if (!(await isActiveUser(t.u)) || !(await isOpenFolder(t.u, t.p)))
+    return false
+  if (t.b) return (await folderOwner(t.b, t.p)) === t.u
+  if (t.s) {
+    const link = await dropLink(t.s)
+    return Boolean(link && t.p && (await isInside(t.p, link.nodeId)))
+  }
+  return true
+}
+
+// `id` is `root` or somewhere inside it.
+export async function isInside(id: string, root: string) {
+  const [row] = await db.execute<{ ok: boolean }>(sql`
+    with recursive up as (
+      select id, parent_id from nodes where id = ${id}
+      union all
+      select n.id, n.parent_id from nodes n join up on n.id = up.parent_id
+    )
+    select exists (select 1 from up where id = ${root}) as ok`)
+  return Boolean(row?.ok)
+}
+
 // Turns a finished tus upload into a node, or a version of an existing one.
 // Idempotent through file_versions.upload_id: the client and tusd's post-finish
 // hook both call it, and the second call gets the first one's node.
 export async function finishTusUpload(
   uploadId: string,
-  asUser?: string
+  by?: { user?: string; share?: string }
 ): Promise<Finished> {
   const key = uploadId.split("+")[0]
   if (!/^[\w.-]+$/.test(key)) return { error: "That isn't an upload." }
@@ -233,16 +315,28 @@ export async function finishTusUpload(
     return { error: "That upload has no details." }
   }
   const token = readUploadToken(meta.token)
-  if (!token || (asUser && token.u !== asUser))
+  if (
+    !token ||
+    (by?.user && (token.b ?? token.u) !== by.user) ||
+    (by?.share && token.s !== by.share)
+  )
     return { error: "That upload isn't yours." }
   const names = splitPath(meta.path)
   if (!names) return { error: "That upload has an invalid name." }
-  if (!(await isActiveUser(token.u)) || !(await isOpenFolder(token.u, token.p)))
+  if (!(await uploaderMayAdd(token)))
     return { error: "The folder for that upload is gone." }
 
   const name = names.pop()!
   const mime = meta.filetype || null
-  const version = { s3Key: key, size, mime, uploadId, uploadedBy: token.u }
+  const version = {
+    s3Key: key,
+    size,
+    mime,
+    uploadId,
+    uploadedBy: token.s ? null : (token.b ?? token.u),
+    viaShareId: token.s ?? null,
+    uploaderLabel: token.l?.slice(0, 80) || null,
+  }
 
   let result: Finished
   try {
@@ -303,13 +397,32 @@ export async function finishTusUpload(
     }
     throw e
   }
-  if (result.nodeId) await pruneVersions(result.nodeId)
+  if (result.nodeId) {
+    await pruneVersions(result.nodeId)
+    if (token.b) await notifyEdit(token.b, result.nodeId)
+    if (token.s) {
+      const link = await dropLink(token.s)
+      if (link) {
+        await db.insert(linkEvents).values({
+          shareId: link.id,
+          kind: "upload",
+          ip: token.i ?? null,
+          detail: [...names, name].join("/"),
+        })
+        await notify(token.u, "file_drop", {
+          nodeId: link.nodeId,
+          data: { uploader: token.l ?? "", link: link.name ?? "" },
+        })
+      }
+    }
+  }
   return result
 }
 
-// Everything under `ids` (the owner's, untrashed) as relative paths, for zips.
-// Same-named items picked from different folders get "name (1)".
-export async function zipTree(ownerId: string, ids: string[]) {
+// Everything under `ids` (untrashed) as relative paths, for zips. Callers
+// check access to `ids` first. Same-named items from different folders get
+// "name (1)".
+export async function zipTree(ids: string[]) {
   if (!ids.length) return null
   const rows = await db.execute<{
     id: string
@@ -324,8 +437,7 @@ export async function zipTree(ownerId: string, ids: string[]) {
     with recursive t as (
       select id, id as root, kind, name::text as path, s3_key, size, updated_at
       from nodes
-      where owner_id = ${ownerId} and id in ${ids}
-        and trashed_at is null and vault_id is null
+      where id in ${ids} and trashed_at is null and vault_id is null
       union all
       select n.id, t.root, n.kind, t.path || '/' || n.name, n.s3_key, n.size, n.updated_at
       from nodes n join t on n.parent_id = t.id

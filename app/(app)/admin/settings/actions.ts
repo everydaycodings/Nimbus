@@ -158,3 +158,49 @@ export async function setVersionRetention(form: FormData) {
   })
   revalidatePath("/admin/settings")
 }
+
+// Blank turns Collabora off. Only http(s), without a trailing slash.
+export async function setOfficeUrl(form: FormData) {
+  await requireAdmin()
+  const raw = String(form.get("officeUrl") ?? "")
+    .trim()
+    .replace(/\/+$/, "")
+  let url: string | null = null
+  if (raw) {
+    try {
+      const u = new URL(raw)
+      if (u.protocol !== "http:" && u.protocol !== "https:") return
+      url = u.origin + u.pathname.replace(/\/+$/, "")
+    } catch {
+      return
+    }
+  }
+  await db.update(settings).set({ officeUrl: url, updatedAt: new Date() })
+  revalidatePath("/admin/settings")
+}
+
+// Tesseract language codes, e.g. "eng" or "eng+deu+chi_sim".
+export async function setOcrLangs(form: FormData) {
+  await requireAdmin()
+  const langs = String(form.get("ocrLangs") ?? "")
+    .toLowerCase()
+    .split(/[\s,+]+/)
+    .filter((l) => /^[a-z]{3}(_[a-z]+)?$/.test(l))
+    .slice(0, 5)
+  await db
+    .update(settings)
+    .set({ ocrLangs: langs.join("+") || "eng", updatedAt: new Date() })
+  revalidatePath("/admin/settings")
+}
+
+export async function setLinkPolicy(form: FormData) {
+  await requireAdmin()
+  const days = limit(form, "maxLinkDays")
+  await db.update(settings).set({
+    publicLinksEnabled: form.get("enabled") === "on",
+    maxLinkDays: days && Math.min(Math.floor(days), 3650),
+    requireLinkPassword: form.get("requirePassword") === "on",
+    updatedAt: new Date(),
+  })
+  revalidatePath("/admin/settings")
+}

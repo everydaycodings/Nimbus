@@ -18,7 +18,7 @@ export default async function RecentPage() {
       items={items}
       empty={{
         title: "Nothing recent",
-        body: "Files and folders you add, rename or move show up here, newest first.",
+        body: "Files you open, download, upload or rename show up here, last opened first.",
       }}
       tags={tags}
       {...prefs}

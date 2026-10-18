@@ -17,6 +17,7 @@ docker compose up -d
 | Redis    | 6380 | reserved for rate limiting and caching |
 | Mailpit SMTP | 1025 | no auth, no TLS; catches every email |
 | Mailpit inbox | 8025 | http://localhost:8025 |
+| Collabora | 9980 | optional, `--profile office` (see below) |
 
 Ports clash with something else? Override `*_PORT` in `.env`.
 
@@ -50,6 +51,66 @@ TUS_HOOK_URL=http://host.docker.internal:3000/api/tus-hooks?secret=<TUS_HOOK_SEC
 ```
 
 Without `TUS_HOOK_SECRET` the hook endpoint accepts any caller, which is fine for local dev only.
+
+## Office viewer (optional)
+
+Collabora Online (CODE) opens Word, Excel, PowerPoint and OpenDocument files read-only:
+
+```sh
+docker compose --profile office up -d
+```
+
+Then set **Collabora URL** to `http://localhost:9980` in `/admin/settings`, and in `.env.local`:
+
+```sh
+# Where Collabora reaches the app. It runs in Docker, so not localhost.
+WOPI_BASE_URL=http://host.docker.internal:3000
+```
+
+The URL in admin settings must be reachable from the browser (it's loaded in an iframe) and from
+the app (it reads `/hosting/discovery`). `WOPI_BASE_URL` must match `aliasgroup1` in
+`compose.yml`; Collabora refuses WOPI hosts it doesn't know. Leave the setting blank and the
+built-in docx and spreadsheet viewers are used instead.
+
+## S3 CORS (any bucket other than this dev MinIO)
+
+Previews, thumbnails and zip listings fetch presigned URLs straight from the browser, so the
+bucket must allow `GET` from the app's origin and expose `Content-Range` (zip listings read
+byte ranges). The dev MinIO gets this from `MINIO_API_CORS_ALLOW_ORIGIN`. Without it, previews
+fail with "check the storage bucket's CORS rule". For AWS S3, Cloudflare R2 or Backblaze B2:
+
+```json
+[
+  {
+    "AllowedOrigins": ["https://nimbus.example.com"],
+    "AllowedMethods": ["GET", "HEAD"],
+    "AllowedHeaders": ["Range"],
+    "ExposeHeaders": ["Content-Range", "Content-Length", "ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+```sh
+aws s3api put-bucket-cors --bucket <bucket> --cors-configuration \
+  '{"CORSRules": <the array above>}'
+```
+
+R2 takes the same array in the dashboard under the bucket's Settings > CORS policy.
+
+## Search indexer (optional)
+
+The browser reads text from files (PDFs, documents, sheets, and OCR for images) as they're
+uploaded or when their folder is opened. To index files no browser has read yet, for example
+everything uploaded before search existed:
+
+```sh
+npm run indexer               # one sweep
+npm run indexer -- --watch    # keep sweeping every minute
+```
+
+It uses `.env.local` for Postgres and S3, and the OCR languages from `/admin/settings`.
+Tesseract downloads each language's data from the jsDelivr CDN the first time.
 
 ## Reset
 

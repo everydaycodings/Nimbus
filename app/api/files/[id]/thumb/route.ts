@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm"
 
+import { atLeast } from "@/lib/access"
 import { db } from "@/lib/db"
 import { fileVersions } from "@/lib/db/schema"
 import { openableFile } from "@/lib/files"
@@ -39,11 +40,11 @@ export async function GET(req: Request, ctx: Ctx) {
 
 const MAX = 512 * 1024
 
-// The browser posts a thumbnail it made or the owner picked, or an empty body
+// The browser posts a thumbnail it made or an editor picked, or an empty body
 // when it couldn't make one, so nobody tries again. Answers the new revision.
 export async function POST(req: Request, ctx: Ctx) {
   const file = await lookup(req, ctx)
-  if (!file?.mine) return notFound()
+  if (!file || !atLeast(file.role, "editor")) return notFound()
   const body = new Uint8Array(await req.arrayBuffer())
   if (body.length > MAX)
     return new Response("Thumbnail too big", { status: 413 })
@@ -62,7 +63,7 @@ export async function POST(req: Request, ctx: Ctx) {
 // Back to automatic: the next tile that shows it draws a fresh one.
 export async function DELETE(req: Request, ctx: Ctx) {
   const file = await lookup(req, ctx)
-  if (!file?.mine) return notFound()
+  if (!file || !atLeast(file.role, "editor")) return notFound()
   await deleteObject(thumbKey(file.key))
   await setThumb(file.key, null)
   return new Response(null, { status: 204 })

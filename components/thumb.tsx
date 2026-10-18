@@ -15,11 +15,14 @@ const TOP = new Set(["pdf", "text", "markdown", "csv"])
 export function Thumb({
   item,
   make,
+  link,
   className,
   children,
 }: {
   item: Item
   make: boolean
+  // On a public link's page, thumbnails come through the link.
+  link?: string
   className?: string
   children: React.ReactNode
 }) {
@@ -31,7 +34,12 @@ export function Thumb({
   const v = item.version
   const from = `${v}:${item.thumb}`
   const rev = item.thumb || (made?.from === from ? made.rev : null)
-  const src = v && rev ? `/api/files/${item.id}/thumb?v=${v}&r=${rev}` : null
+  const src =
+    v && rev
+      ? link
+        ? `/s/${link}/thumb/${item.id}?r=${rev}`
+        : `/api/files/${item.id}/thumb?v=${v}&r=${rev}`
+      : null
   const has = Boolean(src) && broken !== src
 
   useEffect(() => {

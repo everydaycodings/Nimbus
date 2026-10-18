@@ -6,11 +6,12 @@ import { formatBytes } from "@/lib/file-rules"
 import { spaceLeft } from "@/lib/quota"
 import { readUploadToken, splitPath } from "@/lib/upload-rules"
 import {
+  droppedBytes,
+  dropLink,
   finishTusUpload,
-  isActiveUser,
-  isOpenFolder,
   rejectReason,
   uploadLimits,
+  uploaderMayAdd,
 } from "@/lib/uploads"
 
 type Upload = {
@@ -40,15 +41,22 @@ async function whyNot(upload: Upload) {
   const names = splitPath(meta.path)
   if (!names) return "That name can't be used."
   if (upload.SizeIsDeferred) return "Uploads need a size up front."
-  if (!(await isActiveUser(token.u)) || !(await isOpenFolder(token.u, token.p)))
-    return "The folder for this upload is gone."
+  if (!(await uploaderMayAdd(token)))
+    return "The folder for this upload is gone, or you can no longer add to it."
   const reason = rejectReason(names.at(-1)!, upload.Size, await uploadLimits())
   if (reason) return reason
+  if (token.s) {
+    const link = await dropLink(token.s)
+    if (link?.cap != null && (await droppedBytes(token.s)) + upload.Size > link.cap)
+      return "This link has taken all the files it can."
+  }
   // ponytail: each upload is checked alone, so parallel uploads can overshoot
   // the quota by what's in flight; reserve space per upload if that matters.
   const left = await spaceLeft(token.u)
   if (left !== null && upload.Size > left)
-    return `Not enough space: ${formatBytes(left)} left in this account.`
+    return !token.b && !token.s
+      ? `Not enough space: ${formatBytes(left)} left in this account.`
+      : `Not enough space: the folder's owner has ${formatBytes(left)} left.`
   return null
 }
 

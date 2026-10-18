@@ -75,6 +75,18 @@ services:
     image: axllent/mailpit:latest
     ports: ["${MAILPIT_SMTP_PORT:-1025}:1025", "${MAILPIT_UI_PORT:-8025}:8025"]
 
+  # Optional office viewer: docker compose --profile office up -d, then set
+  # http://localhost:9980 in /admin/settings and WOPI_BASE_URL in .env.local.
+  collabora:
+    image: collabora/code:latest
+    profiles: [office]
+    environment:
+      aliasgroup1: ${WOPI_BASE_URL:-http://host.docker.internal:3000}
+      extra_params: --o:ssl.enable=false --o:ssl.termination=false
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    cap_add: [MKNOD]
+    ports: ["${COLLABORA_PORT:-9980}:9980"]
+
 volumes:
   postgres:
   minio:

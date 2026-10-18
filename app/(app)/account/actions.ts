@@ -1,14 +1,14 @@
 "use server"
 
 import { APIError } from "better-auth/api"
-import { eq } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
 
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
-import { user } from "@/lib/db/schema"
-import { getSession } from "@/lib/session"
+import { NOTIFICATION_KINDS, notificationPrefs, user } from "@/lib/db/schema"
+import { getSession, isAdmin } from "@/lib/session"
 
 export type FormState = { ok?: boolean; error?: string } | null
 
@@ -56,4 +56,27 @@ export async function resendVerification(): Promise<FormState> {
     body: { email: session.user.email, callbackURL: "/" },
   })
   return { ok: true }
+}
+
+// One checkbox per kind of notification; unchecked means no email for it.
+export async function setEmailPrefs(form: FormData) {
+  const session = await getSession()
+  if (!session) return
+  // Members don't see the sign-up box; leave its setting alone for later.
+  const kinds = NOTIFICATION_KINDS.filter(
+    (k) => k !== "signup_request" || isAdmin(session.user.role)
+  )
+  const rows = kinds.map((kind) => ({
+    userId: session.user.id,
+    kind,
+    email: form.get(kind) === "on",
+  }))
+  await db
+    .insert(notificationPrefs)
+    .values(rows)
+    .onConflictDoUpdate({
+      target: [notificationPrefs.userId, notificationPrefs.kind],
+      set: { email: sql`excluded.email` },
+    })
+  revalidatePath("/account")
 }

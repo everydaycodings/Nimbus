@@ -4,11 +4,9 @@ import {
   and,
   count,
   eq,
-  exists,
   inArray,
   isNotNull,
   isNull,
-  or,
   sql,
 } from "drizzle-orm"
 import { refresh } from "next/cache"
@@ -19,11 +17,21 @@ import {
   nodeTags,
   nodes,
   shares,
+  shortcuts,
+  stars,
   tags,
   user,
   type TagColor,
 } from "@/lib/db/schema"
-import { getPath, UUID } from "@/lib/files"
+import {
+  accessOne,
+  accessTo,
+  folderOwner,
+  ownerIfAll,
+  visiblePath,
+} from "@/lib/access"
+import { getFolder, getPath, markOpened, UUID } from "@/lib/files"
+import { notifyEdit } from "@/lib/notify"
 import { requireMember } from "@/lib/session"
 import { restoreNode, trashNodes } from "@/lib/tree"
 import { deleteNodes } from "@/lib/uploads"
@@ -56,21 +64,8 @@ function cleanIds(ids: string[]) {
 const owned = (ownerId: string, ids: string[]) =>
   and(eq(nodes.ownerId, ownerId), inArray(nodes.id, ids))
 
-// A folder the user can put things in: theirs, untrashed, outside any vault.
-async function isOpenFolder(ownerId: string, id: string) {
-  const [row] = await db
-    .select({ id: nodes.id })
-    .from(nodes)
-    .where(
-      and(
-        owned(ownerId, [id]),
-        eq(nodes.kind, "folder"),
-        isNull(nodes.trashedAt),
-        isNull(nodes.vaultId)
-      )
-    )
-  return Boolean(row)
-}
+const GONE = "That folder is gone. Refresh and try again."
+const NOT_ALLOWED = "You can't change that. Ask its owner for edit access."
 
 export async function createFolder(
   parentId: string | null,
@@ -79,19 +74,17 @@ export async function createFolder(
   const me = await requireMember()
   const clean = cleanName(raw)
   if ("error" in clean) return clean
-  if (
-    parentId &&
-    !(UUID.test(parentId) && (await isOpenFolder(me.id, parentId)))
-  )
-    return { error: "That folder is gone. Refresh and try again." }
+  const owner = await folderOwner(me.id, parentId)
+  if (!owner) return { error: GONE }
   try {
     await db
       .insert(nodes)
-      .values({ ownerId: me.id, parentId, kind: "folder", name: clean.name })
+      .values({ ownerId: owner, parentId, kind: "folder", name: clean.name })
   } catch (e) {
     if (isClash(e)) return { error: CLASH }
     throw e
   }
+  if (owner !== me.id) await notifyEdit(me.id, parentId!)
   refresh()
   return {}
 }
@@ -100,15 +93,20 @@ export async function renameItem(id: string, raw: string): Promise<Result> {
   const me = await requireMember()
   const clean = cleanName(raw)
   if ("error" in clean) return clean
+  const ids = cleanIds([id])
+  const owner = await ownerIfAll(me.id, ids, "editor")
+  if (!owner) return { error: NOT_ALLOWED }
   try {
     await db
       .update(nodes)
       .set({ name: clean.name, updatedAt: new Date() })
-      .where(and(owned(me.id, cleanIds([id])), isNull(nodes.trashedAt)))
+      .where(and(owned(owner, ids), isNull(nodes.trashedAt)))
   } catch (e) {
     if (isClash(e)) return { error: CLASH }
     throw e
   }
+  if (owner !== me.id) await notifyEdit(me.id, ids[0])
+  await markOpened(me.id, ids[0])
   refresh()
   return {}
 }
@@ -119,9 +117,20 @@ export async function moveItems(
 ): Promise<Result> {
   const me = await requireMember()
   const ids = cleanIds(rawIds)
+  // Things move only within one owner's tree, so nothing leaves a shared
+  // folder by moving: editors can only reach folders that owner shared.
+  const owner = await ownerIfAll(me.id, ids, "editor")
+  if (!owner) return { error: NOT_ALLOWED }
+  const target = await folderOwner(me.id, parentId)
+  if (!target) return { error: GONE }
+  if (target !== owner)
+    return {
+      error:
+        owner === me.id
+          ? "Your files can't go into a folder someone shared with you."
+          : "Shared items can only move between folders from the same owner.",
+    }
   if (parentId) {
-    if (!UUID.test(parentId) || !(await isOpenFolder(me.id, parentId)))
-      return { error: "That folder is gone. Refresh and try again." }
     // The target and its ancestors can't be among the things being moved.
     const up = await db.execute<{ id: string }>(sql`
       with recursive up as (
@@ -137,7 +146,7 @@ export async function moveItems(
     await db
       .update(nodes)
       .set({ parentId, updatedAt: new Date() })
-      .where(and(owned(me.id, ids), isNull(nodes.trashedAt)))
+      .where(and(owned(owner, ids), isNull(nodes.trashedAt)))
   } catch (e) {
     if (isClash(e))
       return {
@@ -145,32 +154,51 @@ export async function moveItems(
       }
     throw e
   }
+  if (owner !== me.id && parentId) await notifyEdit(me.id, parentId)
   refresh()
   return {}
 }
 
 export async function setStarred(rawIds: string[], starred: boolean) {
   const me = await requireMember()
-  await db
-    .update(nodes)
-    .set({ starred })
-    .where(and(owned(me.id, cleanIds(rawIds)), isNull(nodes.trashedAt)))
+  const ids = cleanIds(rawIds)
+  if (starred) {
+    const seen = [...(await accessTo(me.id, ids)).keys()]
+    if (seen.length)
+      await db
+        .insert(stars)
+        .values(seen.map((nodeId) => ({ userId: me.id, nodeId })))
+        .onConflictDoNothing()
+  } else if (ids.length)
+    await db
+      .delete(stars)
+      .where(and(eq(stars.userId, me.id), inArray(stars.nodeId, ids)))
   refresh()
 }
 
-export async function trashItems(rawIds: string[]) {
+// Editors' trash lands in the owner's trash.
+export async function trashItems(rawIds: string[]): Promise<Result> {
   const me = await requireMember()
-  await trashNodes(db, me.id, cleanIds(rawIds))
+  const ids = cleanIds(rawIds)
+  const owner = await ownerIfAll(me.id, ids, "editor")
+  if (!owner) return { error: NOT_ALLOWED }
+  await trashNodes(db, owner, ids)
+  if (owner !== me.id) await notifyEdit(me.id, ids[0])
   refresh()
+  return {}
 }
 
 // One transaction per item, so a name clash on one doesn't hold back the rest.
 export async function restoreItems(rawIds: string[]): Promise<Result> {
   const me = await requireMember()
+  const ids = cleanIds(rawIds)
+  // Editors can undo their own trashing.
+  const owner = await ownerIfAll(me.id, ids, "editor", { trashed: true })
+  if (!owner) return { error: NOT_ALLOWED }
   const failed: string[] = []
-  for (const id of cleanIds(rawIds)) {
+  for (const id of ids) {
     try {
-      await db.transaction((tx) => restoreNode(tx, me.id, id))
+      await db.transaction((tx) => restoreNode(tx, owner, id))
     } catch (e) {
       if (!isClash(e)) throw e
       const [row] = await db
@@ -202,16 +230,19 @@ export async function emptyTrash() {
   refresh()
 }
 
-// For the move dialog's folder picker.
+// For the move dialog's folder picker. Inside someone else's folder, its
+// owner's subfolders.
 export async function listFolders(parentId: string | null) {
   const me = await requireMember()
   if (parentId && !UUID.test(parentId)) return []
+  const owner = parentId ? (await getFolder(me.id, parentId))?.ownerId : me.id
+  if (!owner) return []
   return db
     .select({ id: nodes.id, name: nodes.name })
     .from(nodes)
     .where(
       and(
-        eq(nodes.ownerId, me.id),
+        eq(nodes.ownerId, owner),
         eq(nodes.kind, "folder"),
         isNull(nodes.trashedAt),
         isNull(nodes.vaultId),
@@ -237,24 +268,10 @@ export async function getDetails(id: string) {
     })
     .from(nodes)
     .innerJoin(user, eq(user.id, nodes.ownerId))
-    .where(
-      and(
-        eq(nodes.id, id),
-        or(
-          eq(nodes.ownerId, me.id),
-          exists(
-            db
-              .select()
-              .from(shares)
-              .where(
-                and(eq(shares.nodeId, nodes.id), eq(shares.granteeId, me.id))
-              )
-          )
-        )
-      )
-    )
-  if (!row) return null
-  const mine = row.ownerId === me.id
+    .where(eq(nodes.id, id))
+  const access = await accessOne(me.id, id)
+  if (!row || !access) return null
+  const mine = access.role === "owner"
 
   // Everything inside a folder that shares its trash state.
   const contents =
@@ -294,7 +311,13 @@ export async function getDetails(id: string) {
             ? (await getPath(row.parentId)).map((p) => p.name)
             : []),
         ]
-      : null,
+      : row.parentId
+        ? [
+            "Shared with me",
+            ...(await visiblePath(me.id, row.parentId)).map((p) => p.name),
+          ]
+        : null,
+    role: access.role,
     contents: contents && {
       folders: contents.folders,
       files: contents.files,
@@ -306,20 +329,6 @@ export async function getDetails(id: string) {
 
 export type Details = NonNullable<Awaited<ReturnType<typeof getDetails>>>
 
-// Nodes the user can see: their own, or shared with them.
-const visible = (userId: string, ids: string[]) =>
-  and(
-    inArray(nodes.id, ids),
-    or(
-      eq(nodes.ownerId, userId),
-      exists(
-        db
-          .select()
-          .from(shares)
-          .where(and(eq(shares.nodeId, nodes.id), eq(shares.granteeId, userId)))
-      )
-    )
-  )
 
 // Makes a tag and puts it on `applyTo` in one go, the way "New tag…" is used.
 export async function createTag(
@@ -356,14 +365,11 @@ export async function tagItems(rawIds: string[], tagId: string, on: boolean) {
     .where(and(eq(tags.id, tagId), eq(tags.ownerId, me.id)))
   if (!tag) return
   if (on) {
-    const allowed = await db
-      .select({ id: nodes.id })
-      .from(nodes)
-      .where(visible(me.id, ids))
+    const allowed = [...(await accessTo(me.id, ids)).keys()]
     if (allowed.length)
       await db
         .insert(nodeTags)
-        .values(allowed.map((n) => ({ nodeId: n.id, tagId })))
+        .values(allowed.map((nodeId) => ({ nodeId, tagId })))
         .onConflictDoNothing()
   } else {
     await db
@@ -371,4 +377,27 @@ export async function tagItems(rawIds: string[], tagId: string, on: boolean) {
       .where(and(eq(nodeTags.tagId, tagId), inArray(nodeTags.nodeId, ids)))
   }
   refresh()
+}
+
+// "Add shortcut to My files" for something shared with you.
+export async function addShortcut(nodeId: string): Promise<Result> {
+  const me = await requireMember()
+  const a = UUID.test(nodeId) ? await accessOne(me.id, nodeId) : null
+  if (!a || a.role === "owner" || a.trashed) return { error: NOT_ALLOWED }
+  await db
+    .insert(shortcuts)
+    .values({ userId: me.id, nodeId })
+    .onConflictDoNothing()
+  refresh()
+  return {}
+}
+
+export async function removeShortcut(nodeId: string): Promise<Result> {
+  const me = await requireMember()
+  if (!UUID.test(nodeId)) return {}
+  await db
+    .delete(shortcuts)
+    .where(and(eq(shortcuts.userId, me.id), eq(shortcuts.nodeId, nodeId)))
+  refresh()
+  return {}
 }

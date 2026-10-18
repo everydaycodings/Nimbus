@@ -3,8 +3,10 @@ import {
   bigint,
   boolean,
   check,
+  customType,
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   primaryKey,
@@ -71,7 +73,8 @@ export const nodes = pgTable(
       (): AnyPgColumn => fileVersions.id,
       { onDelete: "set null" }
     ),
-    starred: boolean("starred").notNull().default(false),
+    // Off: people it's shared with as editors can't share it (or anything inside) further.
+    allowReshare: boolean("allow_reshare").notNull().default(true),
     trashedAt: timestamp("trashed_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -82,9 +85,6 @@ export const nodes = pgTable(
     index("nodes_owner_parent_idx").on(t.ownerId, t.parentId),
     index("nodes_parent_id_idx").on(t.parentId),
     index("nodes_vault_id_idx").on(t.vaultId),
-    index("nodes_owner_starred_idx")
-      .on(t.ownerId)
-      .where(sql`${t.starred}`),
     index("nodes_owner_trashed_idx")
       .on(t.ownerId)
       .where(sql`${t.trashedAt} is not null`),
@@ -96,6 +96,11 @@ export const nodes = pgTable(
       )
       .where(sql`${t.trashedAt} is null`),
     index("nodes_owner_updated_idx").on(t.ownerId, t.updatedAt),
+    // Name search (pg_trgm): substring and typo-tolerant matches.
+    index("nodes_name_trgm_idx").using(
+      "gin",
+      sql`lower(${t.name}) gin_trgm_ops`
+    ),
     check(
       "nodes_file_has_key",
       sql`(${t.kind} = 'folder') = (${t.s3Key} is null)`
@@ -122,6 +127,11 @@ export const fileVersions = pgTable(
     uploadedBy: text("uploaded_by").references(() => user.id, {
       onDelete: "set null",
     }),
+    // Uploads through a file-drop link: the link, and the name the uploader gave.
+    viaShareId: uuid("via_share_id").references((): AnyPgColumn => shares.id, {
+      onDelete: "set null",
+    }),
+    uploaderLabel: text("uploader_label"),
     // v1, v2, … per file. Stays put when other versions are deleted.
     number: integer("number").notNull(),
     note: text("note"),
@@ -136,6 +146,9 @@ export const fileVersions = pgTable(
     uniqueIndex("file_versions_node_number_idx").on(t.nodeId, t.number),
     index("file_versions_node_id_idx").on(t.nodeId),
     index("file_versions_s3_key_idx").on(t.s3Key),
+    index("file_versions_via_share_idx")
+      .on(t.viaShareId)
+      .where(sql`${t.viaShareId} is not null`),
   ]
 )
 
@@ -191,7 +204,10 @@ export const nodeTags = pgTable(
 
 export const shareRole = pgEnum("share_role", ["viewer", "editor"])
 
-// A share targets a user (grantee_id) or is a public link (token), never neither.
+// A share is one of: a member (grantee_id), an email invite for someone without
+// an account yet (grantee_email, bound to grantee_id when they sign up), or a
+// public link (token). Shares are inherited by everything inside a folder; the
+// highest role on any ancestor wins.
 export const shares = pgTable(
   "shares",
   {
@@ -202,23 +218,174 @@ export const shares = pgTable(
     granteeId: text("grantee_id").references(() => user.id, {
       onDelete: "cascade",
     }),
+    granteeEmail: text("grantee_email"),
     token: text("token").unique(),
     role: shareRole("role").notNull().default("viewer"),
     createdBy: text("created_by")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    // Links only from here on.
     expiresAt: timestamp("expires_at", { withTimezone: true }),
+    name: text("name"),
+    passwordHash: text("password_hash"),
+    // Bumped when the password changes, so old unlock cookies stop working.
+    pwRev: integer("pw_rev").notNull().default(0),
+    allowView: boolean("allow_view").notNull().default(true),
+    allowDownload: boolean("allow_download").notNull().default(true),
+    allowUpload: boolean("allow_upload").notNull().default(false),
+    // Total bytes a file-drop link takes in. Null: only the owner's quota.
+    uploadCapBytes: bigint("upload_cap_bytes", { mode: "number" }),
+    viewCount: integer("view_count").notNull().default(0),
+    downloadCount: integer("download_count").notNull().default(0),
+    lastOpenedAt: timestamp("last_opened_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [
     index("shares_node_id_idx").on(t.nodeId),
     index("shares_grantee_id_idx").on(t.granteeId),
     index("shares_created_by_idx").on(t.createdBy),
+    uniqueIndex("shares_node_grantee_idx")
+      .on(t.nodeId, t.granteeId)
+      .where(sql`${t.granteeId} is not null`),
+    uniqueIndex("shares_node_email_idx")
+      .on(t.nodeId, sql`lower(${t.granteeEmail})`)
+      .where(sql`${t.granteeEmail} is not null`),
+    index("shares_grantee_email_idx")
+      .on(sql`lower(${t.granteeEmail})`)
+      .where(sql`${t.granteeEmail} is not null`),
     check(
       "shares_has_target",
-      sql`${t.granteeId} is not null or ${t.token} is not null`
+      sql`${t.granteeId} is not null or ${t.token} is not null or ${t.granteeEmail} is not null`
     ),
   ]
+)
+
+// Every visit, download, upload and wrong password on a public link. Kept 90
+// days (pruned with the trash). Also rate-limits unlocks and drops per IP.
+export const linkEvents = pgTable(
+  "link_events",
+  {
+    id: id(),
+    shareId: uuid("share_id")
+      .notNull()
+      .references(() => shares.id, { onDelete: "cascade" }),
+    kind: text("kind")
+      .$type<"view" | "download" | "upload" | "unlock_fail">()
+      .notNull(),
+    ip: text("ip"),
+    ua: text("ua"),
+    // What was downloaded or uploaded.
+    detail: text("detail"),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("link_events_share_at_idx").on(t.shareId, t.at),
+    index("link_events_ip_kind_at_idx").on(t.ip, t.kind, t.at),
+  ]
+)
+
+// Stars are per person, so shared items can be starred too.
+export const stars = pgTable(
+  "stars",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    nodeId: uuid("node_id")
+      .notNull()
+      .references(() => nodes.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.nodeId] }),
+    index("stars_node_id_idx").on(t.nodeId),
+  ]
+)
+
+// "Add shortcut to My files": something shared with you, shown in your root.
+export const shortcuts = pgTable(
+  "shortcuts",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    nodeId: uuid("node_id")
+      .notNull()
+      .references(() => nodes.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.nodeId] }),
+    index("shortcuts_node_id_idx").on(t.nodeId),
+  ]
+)
+
+// Ownership waits for the new owner to accept. One pending transfer per item.
+export const ownershipTransfers = pgTable("ownership_transfers", {
+  nodeId: uuid("node_id")
+    .primaryKey()
+    .references(() => nodes.id, { onDelete: "cascade" }),
+  fromId: text("from_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  toId: text("to_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  createdAt: createdAt(),
+})
+
+export const NOTIFICATION_KINDS = [
+  "shared",
+  "access_changed",
+  "access_removed",
+  "file_drop",
+  "edits",
+  "transfer",
+  "signup_request",
+] as const
+export type NotificationKind = (typeof NOTIFICATION_KINDS)[number]
+
+// The bell. Edits in a shared folder fold into one unread row per folder per
+// hour (`count` goes up) so a big upload is one notification, not hundreds.
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<NotificationKind>().notNull(),
+    nodeId: uuid("node_id").references(() => nodes.id, {
+      onDelete: "cascade",
+    }),
+    actorId: text("actor_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    count: integer("count").notNull().default(1),
+    // Kind-specific text bits: the role given, the uploader's name, …
+    data: jsonb("data").$type<Record<string, string>>(),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("notifications_user_created_idx").on(t.userId, t.createdAt),
+    index("notifications_user_unread_idx")
+      .on(t.userId)
+      .where(sql`${t.readAt} is null`),
+  ]
+)
+
+// Email on or off per kind. No row: on.
+export const notificationPrefs = pgTable(
+  "notification_prefs",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<NotificationKind>().notNull(),
+    email: boolean("email").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.kind] })]
 )
 
 export const SIGNUP_MODES = ["approval", "invite", "open", "closed"] as const
@@ -261,6 +428,16 @@ export const settings = pgTable(
     blockedExtensions: text("blocked_extensions").array().notNull().default([]),
     versionKeepLast: integer("version_keep_last"),
     versionMaxAgeDays: integer("version_max_age_days"),
+    // Collabora (WOPI) server the browser can reach, e.g. http://localhost:9980. Null: off.
+    officeUrl: text("office_url"),
+    // Public links.
+    publicLinksEnabled: boolean("public_links_enabled").notNull().default(true),
+    maxLinkDays: integer("max_link_days"),
+    requireLinkPassword: boolean("require_link_password")
+      .notNull()
+      .default(false),
+    // Tesseract languages for reading text in images, joined with "+".
+    ocrLangs: text("ocr_langs").notNull().default("eng"),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -279,6 +456,51 @@ export const settings = pgTable(
       "settings_trash_retention_positive",
       sql`${t.trashRetentionDays} is null or ${t.trashRetentionDays} > 0`
     ),
+  ]
+)
+
+const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" })
+
+// Text found inside a file, for search. Only the current version is indexed: a
+// row whose version_id isn't the node's current one is stale. An empty body
+// means there was nothing to read.
+export const nodeContent = pgTable(
+  "node_content",
+  {
+    nodeId: uuid("node_id")
+      .primaryKey()
+      .references(() => nodes.id, { onDelete: "cascade" }),
+    versionId: uuid("version_id").notNull(),
+    body: text("body").notNull(),
+    tsv: tsvector("tsv")
+      .notNull()
+      .generatedAlwaysAs(sql`to_tsvector('simple', body)`),
+    // How the text was read: text, pdf, docx, sheet or ocr.
+    source: text("source").notNull(),
+    indexedAt: timestamp("indexed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("node_content_tsv_idx").using("gin", t.tsv)]
+)
+
+// When each person last opened something, for Recent.
+export const nodeOpens = pgTable(
+  "node_opens",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    nodeId: uuid("node_id")
+      .notNull()
+      .references(() => nodes.id, { onDelete: "cascade" }),
+    openedAt: timestamp("opened_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.nodeId] }),
+    index("node_opens_user_idx").on(t.userId, t.openedAt),
   ]
 )
 

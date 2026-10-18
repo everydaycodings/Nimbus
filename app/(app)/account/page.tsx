@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm"
 import { redirect } from "next/navigation"
 
 import { PasswordForm } from "@/components/password-form"
+import { SubmitButton } from "@/components/submit-button"
 import { ResendVerification } from "@/components/resend-verification"
 import { TwoFactorManage, TwoFactorSetup } from "@/components/two-factor"
 import { Badge } from "@/components/ui/badge"
@@ -21,8 +22,20 @@ import { UserAvatar } from "@/components/user-avatar"
 import { db } from "@/lib/db"
 import { account } from "@/lib/db/schema"
 import { emailEnabled } from "@/lib/email"
-import { getSession } from "@/lib/session"
+import { emailPrefs } from "@/lib/notify"
+import { getSession, isAdmin } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
+import { setEmailPrefs } from "./actions"
+
+const KIND_LABEL = {
+  shared: "Something is shared with me",
+  access_changed: "My access to something changes",
+  access_removed: "Someone removes my access",
+  file_drop: "Files arrive through my file-drop links",
+  edits: "Editors change things in my shared folders (at most hourly)",
+  transfer: "Someone offers me ownership of an item",
+  signup_request: "Someone asks to join this Nimbus",
+} as const
 
 const PROVIDER = { google: "Google", github: "GitHub" } as Record<
   string,
@@ -33,13 +46,14 @@ export default async function AccountPage() {
   const session = await getSession()
   if (!session) redirect("/sign-in")
   const me = session.user
-  const [linked, email, { require2fa }] = await Promise.all([
+  const [linked, email, { require2fa }, prefs] = await Promise.all([
     db
       .select({ providerId: account.providerId })
       .from(account)
       .where(eq(account.userId, me.id)),
     emailEnabled(),
     getSettings(),
+    emailPrefs(me.id),
   ])
   const password = linked.some((a) => a.providerId === "credential")
   const providers = linked
@@ -139,6 +153,43 @@ export default async function AccountPage() {
             )}
           </CardContent>
         )}
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Email notifications</CardTitle>
+          <CardDescription>
+            {email
+              ? "Everything also shows under the bell. Pick what's worth an email."
+              : "This Nimbus can't send email yet, so these apply once an admin sets it up. Everything shows under the bell."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={setEmailPrefs} className="flex flex-col gap-4">
+            <fieldset className="flex flex-col gap-3">
+              <legend className="sr-only">Email me when</legend>
+              {prefs
+                .filter(
+                  (p) => p.kind !== "signup_request" || isAdmin(me.role)
+                )
+                .map((p) => (
+                  <label
+                    key={p.kind}
+                    className="flex cursor-pointer items-center gap-3 text-sm"
+                  >
+                    <input
+                      type="checkbox"
+                      name={p.kind}
+                      defaultChecked={p.email}
+                      className="size-4 accent-primary"
+                    />
+                    {KIND_LABEL[p.kind]}
+                  </label>
+                ))}
+            </fieldset>
+            <SubmitButton className="self-start">Save</SubmitButton>
+          </form>
+        </CardContent>
       </Card>
     </div>
   )

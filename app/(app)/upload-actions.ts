@@ -5,8 +5,10 @@ import { refresh } from "next/cache"
 
 import { db } from "@/lib/db"
 import { fileVersions, nodes } from "@/lib/db/schema"
-import { openableFile, UUID } from "@/lib/files"
+import { accessOne, atLeast, folderOwner, viewable } from "@/lib/access"
+import { markOpened, openableFile, UUID } from "@/lib/files"
 import { formatBytes } from "@/lib/file-rules"
+import { officeAction, signWopi } from "@/lib/office"
 import { spaceLeft } from "@/lib/quota"
 import { presignGet } from "@/lib/s3"
 import { freeName, signUploadToken, splitPath } from "@/lib/upload-rules"
@@ -56,11 +58,11 @@ const BAD_NAME =
   "Names can't be blank, . or .., contain \\ or run past 255 characters."
 const ROOT = "00000000-0000-0000-0000-000000000000"
 
-const okParent = async (ownerId: string, parentId: string | null) =>
-  parentId === null ||
-  (typeof parentId === "string" &&
-    UUID.test(parentId) &&
-    (await isOpenFolder(ownerId, parentId)))
+// The owner of the folder being added to, when the user may add to it.
+const parentOwner = async (userId: string, parentId: string | null) => {
+  const owner = await folderOwner(userId, parentId)
+  return owner && (await isOpenFolder(owner, parentId)) ? owner : null
+}
 
 export async function planUpload(
   parentId: string | null,
@@ -70,7 +72,9 @@ export async function planUpload(
   const plan: Plan = { conflicts: [], rejected: [] }
   if (!Array.isArray(entries) || entries.length > MAX_ENTRIES)
     return { ...plan, error: "Upload at most 10,000 items at a time." }
-  if (!(await okParent(me.id, parentId))) return { ...plan, error: GONE }
+  // Uploads into a shared folder belong to, and count against, its owner.
+  const owner = await parentOwner(me.id, parentId)
+  if (!owner) return { ...plan, error: GONE }
 
   const limits = await uploadLimits()
   const files: { path: string; names: string[]; size: number }[] = []
@@ -98,12 +102,12 @@ export async function planUpload(
     else files.push({ path, names, size })
   }
 
-  const left = await spaceLeft(me.id)
+  const left = await spaceLeft(owner)
   const need = files.reduce((n, f) => n + f.size, 0)
   if (left !== null && need > left)
     return {
       ...plan,
-      error: `This upload needs ${formatBytes(need)}, but only ${formatBytes(left)} is left in your storage.`,
+      error: `This upload needs ${formatBytes(need)}, but only ${formatBytes(left)} is left in ${owner === me.id ? "your storage" : "the owner's storage"}.`,
     }
 
   // Existing untrashed nodes, keyed "<folder id or root>/<lowercased name>".
@@ -124,7 +128,7 @@ export async function planUpload(
       .from(nodes)
       .where(
         and(
-          eq(nodes.ownerId, me.id),
+          eq(nodes.ownerId, owner),
           isNull(nodes.trashedAt),
           sql`coalesce(${nodes.parentId}, ${ROOT}) in ${folders}`,
           sql`lower(${nodes.name}) in ${names}`
@@ -187,7 +191,7 @@ export async function planUpload(
       .from(nodes)
       .where(
         and(
-          eq(nodes.ownerId, me.id),
+          eq(nodes.ownerId, owner),
           isNull(nodes.trashedAt),
           sql`coalesce(${nodes.parentId}, ${ROOT}) in ${clashFolders}`
         )
@@ -212,7 +216,15 @@ export async function planUpload(
       freeName: freeName(c.name, takenIn(c.folder, c.dir)),
     })
 
-  return { ...plan, token: signUploadToken(me.id, parentId) }
+  return {
+    ...plan,
+    token: signUploadToken(
+      owner,
+      parentId,
+      Date.now(),
+      owner === me.id ? {} : { b: me.id }
+    ),
+  }
 }
 
 // Makes these folders (mkdir -p, relative to parentId), reusing existing ones.
@@ -224,12 +236,13 @@ export async function createFolders(
   const me = await requireMember()
   if (!Array.isArray(paths) || paths.length > MAX_ENTRIES)
     return { error: "Upload at most 10,000 items at a time." }
-  if (!(await okParent(me.id, parentId))) return { error: GONE }
+  const owner = await parentOwner(me.id, parentId)
+  if (!owner) return { error: GONE }
   const cache = new Map<string, string>()
   for (const p of paths) {
     const names = splitPath(p)
     if (!names) return { error: BAD_NAME }
-    const made = await mkdirp(db, me.id, parentId, names, cache)
+    const made = await mkdirp(db, owner, parentId, names, cache)
     if ("error" in made) return made
   }
   refresh()
@@ -251,8 +264,11 @@ export async function finishUpload(
         .pop() ?? ""
     )
   } catch {}
-  const done = await finishTusUpload(id, me.id)
-  if (done.nodeId) refresh()
+  const done = await finishTusUpload(id, { user: me.id })
+  if (done.nodeId) {
+    await markOpened(me.id, done.nodeId)
+    refresh()
+  }
   return done
 }
 
@@ -274,7 +290,7 @@ const GONE_VERSION = "That version is gone. Refresh and try again."
 
 export async function listVersions(nodeId: string): Promise<Version[]> {
   const me = await requireMember()
-  if (!(await ownsFile(me.id, nodeId))) return []
+  if (!(await editsFile(me.id, nodeId))) return []
   const rows = await versionsOf(nodeId)
   return rows.map((v) => ({
     id: v.id,
@@ -295,7 +311,7 @@ export async function makeCurrent(
   versionId: string
 ): Promise<{ error?: string }> {
   const me = await requireMember()
-  const v = await ownedVersion(me.id, versionId)
+  const v = await editableVersion(me.id, versionId)
   if (!v) return { error: GONE_VERSION }
   if (v.current) return {}
   await db
@@ -316,7 +332,7 @@ export async function deleteVersion(
   versionId: string
 ): Promise<{ error?: string }> {
   const me = await requireMember()
-  const v = await ownedVersion(me.id, versionId)
+  const v = await editableVersion(me.id, versionId)
   if (!v) return { error: GONE_VERSION }
   if (v.current)
     return { error: "Make another version current before deleting this one." }
@@ -333,7 +349,7 @@ export async function setVersionNote(
   const me = await requireMember()
   const note = String(raw ?? "").trim()
   if (note.length > 200) return { error: "Keep notes under 200 characters." }
-  const v = await ownedVersion(me.id, versionId)
+  const v = await editableVersion(me.id, versionId)
   if (!v) return { error: GONE_VERSION }
   await db
     .update(fileVersions)
@@ -347,7 +363,7 @@ export async function setVersionKeep(
   keep: boolean
 ): Promise<{ error?: string }> {
   const me = await requireMember()
-  const v = await ownedVersion(me.id, versionId)
+  const v = await editableVersion(me.id, versionId)
   if (!v) return { error: GONE_VERSION }
   await db
     .update(fileVersions)
@@ -362,7 +378,7 @@ export async function copyVersion(
   versionId: string
 ): Promise<{ error?: string; name?: string }> {
   const me = await requireMember()
-  const v = await ownedVersion(me.id, versionId)
+  const v = await editableVersion(me.id, versionId)
   if (!v) return { error: GONE_VERSION }
   if (v.trashedAt) return { error: "Restore the file from the trash first." }
   const dot = v.name.lastIndexOf(".")
@@ -375,7 +391,7 @@ export async function copyVersion(
       .from(nodes)
       .where(
         and(
-          eq(nodes.ownerId, me.id),
+          eq(nodes.ownerId, v.ownerId),
           v.parentId ? eq(nodes.parentId, v.parentId) : isNull(nodes.parentId),
           isNull(nodes.trashedAt)
         )
@@ -387,7 +403,7 @@ export async function copyVersion(
     const [node] = await tx
       .insert(nodes)
       .values({
-        ownerId: me.id,
+        ownerId: v.ownerId,
         parentId: v.parentId,
         kind: "file",
         name: free,
@@ -426,7 +442,7 @@ export async function zipManifest(ids: string[]): Promise<ZipManifest> {
   const clean = Array.isArray(ids)
     ? ids.filter((id) => UUID.test(id)).slice(0, 1000)
     : []
-  const tree = await zipTree(me.id, clean)
+  const tree = await zipTree(await viewable(me.id, clean))
   if (!tree) return { name: "Nimbus files.zip", entries: [], dirs: [] }
   return {
     name: tree.name,
@@ -444,23 +460,15 @@ export async function zipManifest(ids: string[]): Promise<ZipManifest> {
   }
 }
 
-async function ownsFile(ownerId: string, nodeId: string) {
+// Owners and editors manage a file's versions.
+async function editsFile(userId: string, nodeId: string) {
   if (typeof nodeId !== "string" || !UUID.test(nodeId)) return false
-  const [row] = await db
-    .select({ id: nodes.id })
-    .from(nodes)
-    .where(
-      and(
-        eq(nodes.id, nodeId),
-        eq(nodes.ownerId, ownerId),
-        eq(nodes.kind, "file")
-      )
-    )
-  return Boolean(row)
+  const a = await accessOne(userId, nodeId)
+  return a?.kind === "file" && atLeast(a.role, "editor")
 }
 
-// The version if its file is the user's, with what the actions need to know.
-async function ownedVersion(ownerId: string, versionId: string) {
+// The version if the user can manage its file, with what the actions need.
+async function editableVersion(userId: string, versionId: string) {
   if (typeof versionId !== "string" || !UUID.test(versionId)) return null
   const [v] = await db
     .select({
@@ -472,29 +480,46 @@ async function ownedVersion(ownerId: string, versionId: string) {
       mime: fileVersions.mime,
       thumb: fileVersions.thumb,
       name: nodes.name,
+      ownerId: nodes.ownerId,
       parentId: nodes.parentId,
       trashedAt: nodes.trashedAt,
       current: sql<boolean>`${fileVersions.id} = ${nodes.currentVersionId}`,
     })
     .from(fileVersions)
     .innerJoin(nodes, eq(nodes.id, fileVersions.nodeId))
-    .where(and(eq(fileVersions.id, versionId), eq(nodes.ownerId, ownerId)))
-  return v ?? null
+    .where(eq(fileVersions.id, versionId))
+  return v && (await editsFile(userId, v.nodeId)) ? v : null
 }
 
 // A short-lived direct S3 URL for the previewer. PDFs come inline so the
 // browser's viewer can show them; everything else is read by fetch or media
 // elements, which ignore the disposition.
+// `open`: someone is looking at it (Recent), not just drawing its thumbnail.
 export async function previewUrl(
   id: string,
-  v?: string | null
+  v?: string | null,
+  open = false
 ): Promise<string | null> {
   const me = await requireMember()
   const file = await openableFile(me.id, id, v)
   if (!file) return null
+  if (open) await markOpened(me.id, id)
   const pdf = file.mime === "application/pdf"
   return presignGet(file.key, file.name, {
     inline: pdf,
     type: pdf ? "application/pdf" : undefined,
   })
+}
+
+// Collabora's viewer for an office file, or null to use the built-in viewers.
+export async function officeFrame(
+  id: string,
+  v?: string | null
+): Promise<{ action: string; token: string } | null> {
+  const me = await requireMember()
+  const file = await openableFile(me.id, id, v)
+  if (!file) return null
+  const action = await officeAction(file.name, id)
+  if (action) await markOpened(me.id, id)
+  return action ? { action, token: signWopi(me.id, id, v ?? null) } : null
 }

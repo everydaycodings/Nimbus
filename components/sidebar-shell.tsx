@@ -19,10 +19,13 @@ export function SidebarShell({
   sidebar,
   children,
   defaultCollapsed,
+  actions,
 }: {
   sidebar: React.ReactNode
   children: React.ReactNode
   defaultCollapsed: boolean
+  // Right end of the header: search and the bell.
+  actions?: React.ReactNode
 }) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed)
   const [open, setOpen] = useState(false)
@@ -103,6 +106,7 @@ export function SidebarShell({
             >
               <SidebarSimpleIcon />
             </Button>
+            <div className="ml-auto flex items-center gap-1">{actions}</div>
           </header>
           <main className="min-w-0 flex-1 p-4 sm:p-6 lg:p-10">{children}</main>
         </div>

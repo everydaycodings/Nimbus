@@ -6,6 +6,10 @@ import { Menu } from "@base-ui/react/menu"
 import {
   ArrowBendUpRightIcon,
   ArrowDownIcon,
+  ArrowSquareOutIcon,
+  LinkSimpleIcon,
+  ShareNetworkIcon,
+  UsersIcon,
   ArrowsDownUpIcon,
   ArrowUpIcon,
   CalendarBlankIcon,
@@ -53,6 +57,8 @@ import {
   moveItems,
   renameItem,
   createTag,
+  addShortcut,
+  removeShortcut,
   restoreItems,
   setStarred,
   tagItems,
@@ -60,6 +66,8 @@ import {
 } from "@/app/(app)/file-actions"
 import type { Version } from "@/app/(app)/upload-actions"
 import { DetailsSheet } from "@/components/details-sheet"
+import { ShareDialog } from "@/components/share-dialog"
+import { UserAvatar } from "@/components/user-avatar"
 import { Previewer, type Shown } from "@/components/previewer"
 import { Thumb } from "@/components/thumb"
 import { VersionsDialog } from "@/components/versions-dialog"
@@ -84,13 +92,16 @@ import {
 } from "@/components/upload-provider"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import type { Access } from "@/lib/access"
 import type { TagColor } from "@/lib/db/schema"
 import { TAG_DOT, fileType, formatBytes } from "@/lib/file-types"
 import type { Item, Tag } from "@/lib/files"
+import { ensureIndexed } from "@/lib/index-content"
 import { resetThumb, thumbFromFrame, thumbFromImage } from "@/lib/thumbs"
 import { cn } from "@/lib/utils"
 
-export type View = "folder" | "recent" | "starred" | "shared" | "trash"
+export type View =
+  "folder" | "recent" | "starred" | "shared" | "trash" | "search"
 type Layout = "grid" | "list"
 type Tiles = "small" | "medium" | "large"
 type Act = {
@@ -104,11 +115,13 @@ type Act = {
   group?: number
   run: () => void
 }
-type SortKey = "name" | "date" | "size"
+// "rank": the order the page gave (relevance, or last opened).
+type SortKey = "rank" | "name" | "date" | "size"
 type Notice = { text: string; error?: boolean; undo?: () => void }
 
 const DRAG = "application/x-nimbus-items"
 const ROOT: Place = { id: null, name: "My files" }
+const SHARED_ROOT: Place = { id: null, name: "Shared with me" }
 const DAY = 864e5
 const SINCE = [
   { label: "Today", from: () => new Date().setHours(0, 0, 0, 0) },
@@ -165,6 +178,7 @@ export function FileBrowser({
   description,
   path = [],
   folderId = null,
+  role = "owner",
   empty,
   tags,
   layout: initialLayout,
@@ -178,6 +192,8 @@ export function FileBrowser({
   // Folder view: the folders above this one and this one, root excluded.
   path?: { id: string; name: string }[]
   folderId?: string | null
+  // The viewer's access to this folder: someone else's when not "owner".
+  role?: Access
   empty: { title: string; body: string }
   // The viewer's own tags.
   tags: Tag[]
@@ -221,10 +237,14 @@ export function FileBrowser({
     version?: Shown["version"]
   } | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
+  // The item whose Share dialog is open.
+  const [sharing, setSharing] = useState<Item | null>(null)
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>(
-    view === "recent" || view === "trash"
-      ? { key: "date", desc: true }
-      : { key: "name", desc: false }
+    view === "recent" || view === "search"
+      ? { key: "rank", desc: false }
+      : view === "trash"
+        ? { key: "date", desc: true }
+        : { key: "name", desc: false }
   )
   const [typeFilter, setTypeFilter] = useState("")
   const [since, setSince] = useState<{ label: string; from: number } | null>(
@@ -242,7 +262,16 @@ export function FileBrowser({
   const thumbInput = useRef<HTMLInputElement>(null)
   const thumbFor = useRef<Item | null>(null)
 
-  const canEdit = view !== "trash" && view !== "shared"
+  // Selection and dragging. What may change is per item: roleOf.
+  const canEdit = view !== "trash"
+  const shared = role !== "owner"
+  const roleOf = (i: Item): Access => i.role ?? role
+  const editable = (list: Item[]) =>
+    view !== "trash" &&
+    list.length > 0 &&
+    list.every((i) => roleOf(i) !== "viewer" && !i.shortcut)
+  // New folder, uploads and pastes into this folder.
+  const canAdd = view === "folder" && role !== "viewer"
   const dateOf = (i: Item) => (view === "trash" ? i.trashedAt! : i.updatedAt)
   const typeOf = (i: Item) => fileType(i.kind, i.mime, i.name)
   const presentTypes = [
@@ -259,6 +288,7 @@ export function FileBrowser({
         (!tagFilter || i.tags.includes(tagFilter))
     )
     .sort((a, b) => {
+      if (sort.key === "rank") return 0
       if (a.kind !== b.kind) return a.kind === "folder" ? -1 : 1
       const d =
         sort.key === "name"
@@ -281,7 +311,7 @@ export function FileBrowser({
   const previewIndex = files.findIndex((f) => f.id === preview?.id)
   const tabStop =
     focusId && items.some((i) => i.id === focusId) ? focusId : items[0]?.id
-  const here: Place[] = [ROOT, ...path]
+  const here: Place[] = [shared ? SHARED_ROOT : ROOT, ...path]
 
   const label = (list: { name: string }[]) =>
     list.length === 1 ? `“${list[0].name}”` : plural(list.length, "item")
@@ -539,7 +569,6 @@ export function FileBrowser({
             run: () => showDetails(t[0]),
           }
         : null
-    if (view === "shared") return info ? [info] : []
     if (view === "trash")
       return [
         ...(info ? [info] : []),
@@ -563,6 +592,7 @@ export function FileBrowser({
       ]
     const one = t.length === 1 ? t[0] : null
     const starred = t.every((i) => i.starred)
+    const edit = editable(t)
     const list: (Act | false | null)[] = [
       one && {
         label: one.kind === "folder" ? "Open" : "Preview",
@@ -576,14 +606,23 @@ export function FileBrowser({
         icon: DownloadSimpleIcon,
         run: () => download(t),
       },
-      one && {
-        label: "Rename",
-        icon: PencilSimpleIcon,
-        kbd: "F2",
-        group: 1,
-        run: () => rename(one),
-      },
-      {
+      one &&
+        !one.shortcut &&
+        roleOf(one) !== "viewer" && {
+          label: "Share…",
+          icon: ShareNetworkIcon,
+          kbd: "Shift S",
+          run: () => setSharing(one),
+        },
+      one &&
+        edit && {
+          label: "Rename",
+          icon: PencilSimpleIcon,
+          kbd: "F2",
+          group: 1,
+          run: () => rename(one),
+        },
+      edit && {
         label: "Move",
         icon: ArrowBendUpRightIcon,
         group: 1,
@@ -597,22 +636,43 @@ export function FileBrowser({
         group: 1,
         run: () => star(t),
       },
+      one &&
+        roleOf(one) !== "owner" &&
+        !one.shortcut && {
+          label: "Add shortcut to My files",
+          icon: ArrowSquareOutIcon,
+          menuOnly: true,
+          group: 1,
+          run: () =>
+            run(() => addShortcut(one.id), {
+              text: `Added a shortcut to “${one.name}” in My files.`,
+            }),
+        },
+      one?.shortcut === true && {
+        label: "Remove shortcut",
+        icon: XIcon,
+        menuOnly: true,
+        group: 1,
+        run: () => run(() => removeShortcut(one.id)),
+      },
       info && { ...info, group: 2 },
-      one?.kind === "file" && {
-        label: "Versions…",
-        icon: ClockCounterClockwiseIcon,
-        menuOnly: true,
-        group: 2,
-        run: () => showVersions(one),
-      },
-      one?.kind === "file" && {
-        label: "Change thumbnail…",
-        icon: ImageSquareIcon,
-        menuOnly: true,
-        group: 2,
-        run: () => pickThumb(one),
-      },
-      one?.thumb
+      edit &&
+        one?.kind === "file" && {
+          label: "Versions…",
+          icon: ClockCounterClockwiseIcon,
+          menuOnly: true,
+          group: 2,
+          run: () => showVersions(one),
+        },
+      edit &&
+        one?.kind === "file" && {
+          label: "Change thumbnail…",
+          icon: ImageSquareIcon,
+          menuOnly: true,
+          group: 2,
+          run: () => pickThumb(one),
+        },
+      edit && one?.thumb
         ? {
             label: "Reset thumbnail",
             icon: ArrowCounterClockwiseIcon,
@@ -621,7 +681,7 @@ export function FileBrowser({
             run: () => thumbTask(one, () => resetThumb(one), "Reset"),
           }
         : null,
-      {
+      edit && {
         label: "Move to trash",
         short: "Trash",
         icon: TrashIcon,
@@ -639,7 +699,7 @@ export function FileBrowser({
     if (!acts.length)
       return (
         <>
-          {view === "folder" && (
+          {canAdd && (
             <Menu.Item className={MENU_ITEM} onClick={newFolder}>
               <FolderSimplePlusIcon />
               New folder
@@ -695,7 +755,7 @@ export function FileBrowser({
 
   // Shift+N makes a folder from anywhere on the page.
   useEffect(() => {
-    if (view !== "folder") return
+    if (!canAdd) return
     function onKey(e: KeyboardEvent) {
       if (
         e.key === "N" &&
@@ -711,7 +771,20 @@ export function FileBrowser({
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [view])
+  }, [canAdd])
+
+  // Files whose text isn't searchable yet get read in the background.
+  useEffect(() => {
+    if (view === "trash") return
+    for (const i of all)
+      if (
+        i.kind === "file" &&
+        !i.indexed &&
+        !i.shortcut &&
+        (i.role ?? role) !== "viewer"
+      )
+        ensureIndexed(i)
+  }, [all, view, role])
 
   // Sidebar New › New folder from another view lands here, then opens the dialog.
   useEffect(() => {
@@ -721,7 +794,7 @@ export function FileBrowser({
 
   // Ctrl/Cmd+V with files on the clipboard uploads them here.
   useEffect(() => {
-    if (view !== "folder") return
+    if (!canAdd) return
     function onPaste(e: ClipboardEvent) {
       if (busyTarget(e.target)) return
       const files = pastedFiles(e)
@@ -731,7 +804,7 @@ export function FileBrowser({
     }
     window.addEventListener("paste", onPaste)
     return () => window.removeEventListener("paste", onPaste)
-  }, [view, folderId, upload])
+  }, [canAdd, folderId, upload])
 
   // Nearest item in the next or previous visual row, for arrow keys in the grid.
   function vertical(cur: number, dir: 1 | -1) {
@@ -798,7 +871,7 @@ export function FileBrowser({
         selectAll()
         break
       case "F2":
-        if (canEdit && sel.length === 1) rename(sel[0])
+        if (sel.length === 1 && editable(sel)) rename(sel[0])
         break
       case "Delete":
       case "Backspace":
@@ -808,7 +881,7 @@ export function FileBrowser({
             sel.map((i) => i.id),
             label(sel)
           )
-        else if (canEdit) trash(sel)
+        else if (editable(sel)) trash(sel)
         break
       case "i":
       case "I":
@@ -818,7 +891,10 @@ export function FileBrowser({
       case "s":
       case "S":
         if (mod || !canEdit || !sel.length) return
-        star(sel)
+        if (e.shiftKey) {
+          if (sel.length !== 1 || roleOf(sel[0]) === "viewer") return
+          setSharing(sel[0])
+        } else star(sel)
         break
       default:
         return
@@ -864,7 +940,7 @@ export function FileBrowser({
   }
 
   const osFiles = (e: React.DragEvent) =>
-    view === "folder" &&
+    canAdd &&
     e.dataTransfer.types.includes("Files") &&
     !e.dataTransfer.types.includes(DRAG)
 
@@ -872,7 +948,10 @@ export function FileBrowser({
   // the folder view, files dragged in from the OS (uploaded into that folder).
   function dropTarget(to: Place) {
     const key = to.id ?? "root"
-    if (!canEdit) return {}
+    // Your own root, or a folder you can edit. Breadcrumbs share the page's role.
+    const tile = items.find((i) => i.id === to.id)
+    const ok = !to.id ? !shared : tile ? editable([tile]) : role !== "viewer"
+    if (!canEdit || !ok) return {}
     return {
       "data-drop": dropId === key || undefined,
       onDragOver(e: React.DragEvent) {
@@ -920,7 +999,7 @@ export function FileBrowser({
       "aria-selected": isSelected,
       "aria-busy": (pending && isSelected) || undefined,
       tabIndex: tabStop === item.id ? 0 : -1,
-      draggable: canEdit,
+      draggable: editable([item]),
       onClick: (e: React.MouseEvent) => onClick(e, item),
       onDoubleClick: () => open(item),
       onFocus: () => setFocusId(item.id),
@@ -980,6 +1059,24 @@ export function FileBrowser({
             className="size-3 shrink-0 text-muted-foreground"
           />
         )}
+        {item.shortcut && (
+          <ArrowSquareOutIcon
+            aria-label="Shortcut"
+            className="size-3 shrink-0 text-muted-foreground"
+          />
+        )}
+        {item.sharedWithPeople && !shared && view !== "shared" && (
+          <UsersIcon
+            aria-label="Shared with people"
+            className="size-3 shrink-0 text-muted-foreground"
+          />
+        )}
+        {item.hasLink && !shared && view !== "shared" && (
+          <LinkSimpleIcon
+            aria-label="Has a public link"
+            className="size-3 shrink-0 text-muted-foreground"
+          />
+        )}
         {item.tags.length > 0 && (
           <span className="flex shrink-0 -space-x-0.5" title={tagNames(item)}>
             <span className="sr-only">Tags: {tagNames(item)}</span>
@@ -1012,9 +1109,15 @@ export function FileBrowser({
     return (
       <span
         suppressHydrationWarning
-        className="truncate text-xs text-muted-foreground tabular-nums"
+        className="flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground tabular-nums"
       >
-        {when(dateOf(item))} ·{" "}
+        {view === "shared" && item.owner && (
+          <>
+            <UserAvatar name={item.owner} image={item.ownerImage} size={16} />
+            <span className="truncate">{item.owner}</span>·
+          </>
+        )}
+        {view !== "shared" && <>{when(dateOf(item))} · </>}
         <span className="tabular-nums">{formatBytes(item.size)}</span>
       </span>
     )
@@ -1120,7 +1223,7 @@ export function FileBrowser({
                   </div>
                   <Thumb
                     item={f}
-                    make={canEdit}
+                    make={editable([f])}
                     className="mx-1.5 mb-1.5 grid aspect-[4/3] place-items-center rounded-lg bg-muted/40"
                   >
                     <t.icon
@@ -1146,6 +1249,9 @@ export function FileBrowser({
         : { head: "Modified", cell: (i: Item) => when(i.updatedAt) }
   const COLS =
     "grid-cols-[minmax(0,1fr)_2rem] sm:grid-cols-[minmax(0,1fr)_9rem_6rem_2rem]"
+
+  const rankLabel =
+    view === "search" ? "Relevance" : view === "recent" ? "Last opened" : null
 
   const sortBy = (key: SortKey) =>
     setSort((s) => ({ key, desc: s.key === key ? !s.desc : key !== "name" }))
@@ -1259,7 +1365,7 @@ export function FileBrowser({
       }}
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-auto">
           {view === "folder" && path.length > 0 ? (
             <nav
               aria-label="Breadcrumb"
@@ -1283,7 +1389,9 @@ export function FileBrowser({
                     className="flex min-w-0 shrink items-center gap-1"
                   >
                     <Link
-                      href={c.id ? `/folders/${c.id}` : "/"}
+                      href={
+                        c.id ? `/folders/${c.id}` : shared ? "/shared" : "/"
+                      }
                       {...dropTarget(c)}
                       className="-mx-1 truncate rounded-md px-1 text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 data-drop:bg-brand/15 data-drop:text-foreground"
                     >
@@ -1299,7 +1407,7 @@ export function FileBrowser({
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {view === "folder" && (
+          {canAdd && (
             <Button
               id="new-folder"
               onClick={newFolder}
@@ -1582,6 +1690,7 @@ export function FileBrowser({
           value={sort.key}
           onChange={(v) => setSort((s) => ({ ...s, key: v as SortKey }))}
           options={[
+            ...(rankLabel ? [{ value: "rank", label: rankLabel }] : []),
             { value: "name", label: "Name" },
             ...(view === "shared"
               ? []
@@ -1590,8 +1699,15 @@ export function FileBrowser({
           ]}
           display={
             <>
-              {{ name: "Name", date: second.head, size: "Size" }[sort.key]}
-              {sort.desc ? (
+              {
+                {
+                  rank: rankLabel,
+                  name: "Name",
+                  date: second.head,
+                  size: "Size",
+                }[sort.key]
+              }
+              {sort.key === "rank" ? null : sort.desc ? (
                 <ArrowDownIcon className="size-3.5 text-muted-foreground" />
               ) : (
                 <ArrowUpIcon className="size-3.5 text-muted-foreground" />
@@ -1599,28 +1715,30 @@ export function FileBrowser({
             </>
           }
           extra={
-            <Menu.RadioGroup
-              value={sort.desc ? "desc" : "asc"}
-              onValueChange={(v) =>
-                setSort((s) => ({ ...s, desc: v === "desc" }))
-              }
-            >
-              <Menu.Separator className="-mx-1 my-1 h-px bg-border" />
-              <PickItem value="asc">
-                {sort.key === "name"
-                  ? "A to Z"
-                  : sort.key === "size"
-                    ? "Smallest first"
-                    : "Oldest first"}
-              </PickItem>
-              <PickItem value="desc">
-                {sort.key === "name"
-                  ? "Z to A"
-                  : sort.key === "size"
-                    ? "Largest first"
-                    : "Newest first"}
-              </PickItem>
-            </Menu.RadioGroup>
+            sort.key !== "rank" && (
+              <Menu.RadioGroup
+                value={sort.desc ? "desc" : "asc"}
+                onValueChange={(v) =>
+                  setSort((s) => ({ ...s, desc: v === "desc" }))
+                }
+              >
+                <Menu.Separator className="-mx-1 my-1 h-px bg-border" />
+                <PickItem value="asc">
+                  {sort.key === "name"
+                    ? "A to Z"
+                    : sort.key === "size"
+                      ? "Smallest first"
+                      : "Oldest first"}
+                </PickItem>
+                <PickItem value="desc">
+                  {sort.key === "name"
+                    ? "Z to A"
+                    : sort.key === "size"
+                      ? "Largest first"
+                      : "Newest first"}
+                </PickItem>
+              </Menu.RadioGroup>
+            )
           }
         />
       </div>
@@ -1703,7 +1821,7 @@ export function FileBrowser({
         open={moveOpen}
         title={`Move ${label(moving)}`}
         moving={moving.map((i) => i.id)}
-        start={view === "folder" ? here : [ROOT]}
+        start={shared ? path : view === "folder" ? here : [ROOT]}
         onClose={() => setMoveOpen(false)}
         onMove={(to) => {
           setMoveOpen(false)
@@ -1716,12 +1834,14 @@ export function FileBrowser({
         }}
       />
 
+      <ShareDialog item={sharing} onClose={() => setSharing(null)} />
+
       <DetailsSheet
         item={detailsItem}
         open={detailsOpen}
         onClose={() => setDetailsOpen(false)}
         tags={view === "trash" ? null : tags}
-        editable={canEdit}
+        editable={detailsItem ? editable([detailsItem]) : false}
         onAllVersions={() => detailsItem && showVersions(detailsItem)}
         onPreviewVersion={(v) =>
           detailsItem && previewVersion(detailsItem.id, v)
@@ -1748,7 +1868,7 @@ export function FileBrowser({
       <VersionsDialog
         item={all.find((i) => i.id === versionsId) ?? null}
         open={versionsOpen}
-        editable={canEdit}
+        editable={editable(all.filter((i) => i.id === versionsId))}
         onClose={() => setVersionsOpen(false)}
         onPreview={(v) => versionsId && previewVersion(versionsId, v)}
       />
@@ -1768,7 +1888,7 @@ export function FileBrowser({
         onDetails={previewItem ? () => showDetails(previewItem) : undefined}
         menu={previewItem && itemMenu(previewItem, true)}
         onUseFrame={
-          canEdit
+          previewItem && editable([previewItem])
             ? async (item, video) => {
                 await thumbFromFrame(item, video)
                 router.refresh()
@@ -2068,7 +2188,7 @@ function Kbd({ children }: { children: React.ReactNode }) {
   )
 }
 
-function Segmented<T extends string>({
+export function Segmented<T extends string>({
   label,
   value,
   options,
