@@ -55,7 +55,12 @@ name, in menus and on the Tags filter.
 - Auth and status screens are a centered `Card` (`components/ui/card.tsx`). Gate screens (`StatusScreen` in
   `app/(app)/layout.tsx`) hold their own way forward (a form or setup flow) above Sign out; `wide` for flows like two-factor.
 - Every server-action submit is a `SubmitButton` (spinner and disabled while pending). Results show inline next to
-  the button: a teal check plus muted text for success, `text-destructive` for errors. No toasts.
+  the button: a teal check plus muted text for success, `text-destructive` for errors.
+- Results of actions on files and folders (star, move, trash with Undo, rename, tag, restore, delete, version changes)
+  are toasts (`components/toaster.tsx`, Base UI Toast): `bg-popover` pill with a teal check, red warning or spinner,
+  optional Undo, ×. Every action confirms success, not only failure. Callers use `useNotice()`, one toast slot each;
+  text ending in "…" stays up until replaced. Position is an admin setting (`settings.toast_position`, default
+  bottom center); bottom-right is reserved for the upload panel.
 - A page-level status strip (icon tile + one bold line + one muted line in a `rounded-xl border bg-card` row) opens
   settings pages whose state matters more than their form, like `/admin/email`.
 - Modals (Base UI Dialog, `bg-popover`, black/60 backdrop; classes in `components/overlay-styles.ts`)
@@ -73,7 +78,7 @@ name, in menus and on the Tags filter.
   Actions on the right: New folder (primary), Select, then segmented Layout (list/grid),
   Tile size (small/medium/large, grid only) and Density controls.
 - Below it, one row: filter pills (Type, Modified, Size, Tags) and a summary on the left, the
-  action notice and the Sort pill on the right. In selection mode the pills give way to the
+  Sort pill on the right. In selection mode the pills give way to the
   selection bar (count, Select all, ghost action buttons).
 - Pills are `rounded-full` with a leading icon. A filter that is on shows its value and icon,
   an `border-brand/40 bg-brand/10` tint and an inline × to clear it. Menu options carry
@@ -83,7 +88,7 @@ name, in menus and on the Tags filter.
   date · size line. List: `bg-card` table with sortable column headers.
 - A click highlights one item (teal border and 8% teal wash); double-click opens. Checkboxes
   replace the leading icon on hover and everywhere in selection mode.
-- Action results (moved, trashed with Undo, errors) show inline in the notice slot, never as toasts.
+- Action results (moved, trashed with Undo, errors) are toasts; see Layout.
 - Details is a right-hand sheet (Base UI Dialog sliding from the right) with a `dl` of facts.
 - Destructive menu actions (Move to trash, Delete forever, Delete version) are `text-destructive`
   everywhere they appear: ⋯ menu, right-click menu and selection bar.

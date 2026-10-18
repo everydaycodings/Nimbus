@@ -18,6 +18,7 @@ import {
 } from "drizzle-orm/pg-core"
 
 import { user } from "./auth-schema"
+import type { PasswordPolicy } from "../password-policy"
 
 export * from "./auth-schema"
 
@@ -406,6 +407,16 @@ export const notificationPrefs = pgTable(
 export const SIGNUP_MODES = ["approval", "invite", "open", "closed"] as const
 export type SignupMode = (typeof SIGNUP_MODES)[number]
 
+// The bottom-right corner belongs to the upload panel.
+export const TOAST_POSITIONS = [
+  "top-left",
+  "top-center",
+  "top-right",
+  "bottom-left",
+  "bottom-center",
+] as const
+export type ToastPosition = (typeof TOAST_POSITIONS)[number]
+
 export const EMAIL_TRANSPORTS = ["none", "smtp", "resend"] as const
 export type EmailTransport = (typeof EMAIL_TRANSPORTS)[number]
 
@@ -456,6 +467,14 @@ export const settings = pgTable(
     // Vaults. Off stops new vaults; existing ones keep working. Null cap: no limit.
     vaultsEnabled: boolean("vaults_enabled").notNull().default(true),
     maxVaultsPerMember: integer("max_vaults_per_member"),
+    // Where action messages (toasts) appear for everyone.
+    toastPosition: text("toast_position")
+      .$type<ToastPosition>()
+      .notNull()
+      .default("bottom-center"),
+    // Rules for new passwords and vault passphrases. Null: the owner hasn't
+    // chosen, so the industry-standard defaults apply (lib/password-policy).
+    passwordPolicy: jsonb("password_policy").$type<PasswordPolicy>(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

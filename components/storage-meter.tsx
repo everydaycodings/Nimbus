@@ -27,10 +27,13 @@ export function StorageMeter({ usage }: { usage: Usage }) {
   const full = quota !== null && used >= quota
   const near = quota !== null && used >= quota * 0.9
   const parts = PARTS.filter((p) => usage[p.key] > 0)
+  const share = quota ? (used / quota) * 100 : 0
+  const percent =
+    share > 0 && share < 1 ? "<1" : Math.min(100, Math.round(share))
   const summary =
     quota === null
       ? `${formatBytes(used)} used`
-      : `${formatBytes(used)} of ${formatBytes(quota)}`
+      : `${formatBytes(used)} of ${formatBytes(quota)}, ${formatBytes(Math.max(0, quota - used))} free`
 
   return (
     <div className="flex flex-col gap-2 px-2 pb-1 group-data-[collapsed=true]/sidebar:hidden">
@@ -47,7 +50,7 @@ export function StorageMeter({ usage }: { usage: Usage }) {
         >
           {quota === null
             ? `${formatBytes(used)} used`
-            : `${formatBytes(used)} / ${formatBytes(quota)}`}
+            : `${formatBytes(used)} of ${formatBytes(quota)}`}
         </span>
       </div>
       <div
@@ -69,6 +72,18 @@ export function StorageMeter({ usage }: { usage: Usage }) {
             />
           ))}
       </div>
+      {quota !== null && !full && (
+        <div
+          aria-hidden
+          className={cn(
+            "-mt-1 flex justify-between gap-2 text-xs tabular-nums",
+            near ? "text-destructive" : "text-sidebar-foreground/70"
+          )}
+        >
+          <span>{percent}% used</span>
+          <span>{formatBytes(quota - used)} free</span>
+        </div>
+      )}
       {parts.length > 0 && (
         <ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-sidebar-foreground/70">
           {parts.map((p) => (

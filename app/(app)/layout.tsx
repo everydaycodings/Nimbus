@@ -22,10 +22,12 @@ import { SIDEBAR_COOKIE } from "@/components/nav-styles"
 import { NavUser } from "@/components/nav-user"
 import { StorageMeter } from "@/components/storage-meter"
 import { PasswordForm } from "@/components/password-form"
+import { PasswordPolicyProvider } from "@/components/password-input"
 import { ResendVerification } from "@/components/resend-verification"
 import { NotificationBell, SharedBadge } from "@/components/notification-bell"
 import { SearchPalette } from "@/components/search-palette"
 import { SidebarShell } from "@/components/sidebar-shell"
+import { Toaster } from "@/components/toaster"
 import { TwoFactorSetup } from "@/components/two-factor"
 import { NewMenu, UploadProvider } from "@/components/upload-provider"
 import { VaultKeysProvider } from "@/components/vault-keys"
@@ -110,10 +112,12 @@ export default async function AppLayout({
           one only you know to continue.
         </p>
         <div className="pt-2 text-foreground">
-          <PasswordForm
-            currentLabel="Temporary password"
-            submitLabel="Save password"
-          />
+          <PasswordPolicyProvider policy={(await getSettings()).passwordPolicy}>
+            <PasswordForm
+              currentLabel="Temporary password"
+              submitLabel="Save password"
+            />
+          </PasswordPolicyProvider>
         </div>
       </StatusScreen>
     )
@@ -274,24 +278,28 @@ export default async function AppLayout({
   )
 
   return (
-    <UploadProvider
-      tusUrl={process.env.TUS_URL ?? ""}
-      zipMode={process.env.VERCEL ? "client" : "server"}
-    >
-      <SidebarShell
-        sidebar={sidebar}
-        defaultCollapsed={collapsed}
-        actions={
-          <>
-            <SearchPalette admin={admin} />
-            <NotificationBell initial={counts} />
-          </>
-        }
+    <Toaster position={settings.toastPosition}>
+      <UploadProvider
+        tusUrl={process.env.TUS_URL ?? ""}
+        zipMode={process.env.VERCEL ? "client" : "server"}
       >
-        <VaultKeysProvider minutes={vaultPrefs.lockMinutes}>
-          {children}
-        </VaultKeysProvider>
-      </SidebarShell>
-    </UploadProvider>
+        <SidebarShell
+          sidebar={sidebar}
+          defaultCollapsed={collapsed}
+          actions={
+            <>
+              <SearchPalette admin={admin} />
+              <NotificationBell initial={counts} />
+            </>
+          }
+        >
+          <VaultKeysProvider minutes={vaultPrefs.lockMinutes}>
+            <PasswordPolicyProvider policy={settings.passwordPolicy}>
+              {children}
+            </PasswordPolicyProvider>
+          </VaultKeysProvider>
+        </SidebarShell>
+      </UploadProvider>
+    </Toaster>
   )
 }

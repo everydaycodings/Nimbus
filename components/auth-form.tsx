@@ -5,11 +5,17 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 
+import {
+  PasswordInput,
+  StrengthMeter,
+  usePasswordPolicy,
+} from "@/components/password-input"
 import { SubmitButton } from "@/components/submit-button"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { authClient } from "@/lib/auth-client"
+import { minLength } from "@/lib/password-policy"
 
 type Props = {
   mode: "sign-in" | "sign-up"
@@ -33,7 +39,9 @@ export function AuthForm({
     initialError ? OAUTH_ERROR : null
   )
   const [busy, setBusy] = useState(false)
+  const [password, setPassword] = useState("")
   const signUp = mode === "sign-up"
+  const min = minLength(usePasswordPolicy())
   const hasSocial = providers.google || providers.github
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -135,20 +143,17 @@ export function AuthForm({
               </Link>
             )}
           </div>
-          <Input
+          <PasswordInput
             id="password"
             name="password"
-            type="password"
             autoComplete={signUp ? "new-password" : "current-password"}
-            minLength={signUp ? 10 : undefined}
+            minLength={signUp ? min : undefined}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
             aria-describedby={signUp ? "password-hint" : undefined}
             required
           />
-          {signUp && (
-            <p id="password-hint" className="text-xs text-muted-foreground">
-              At least 10 characters.
-            </p>
-          )}
+          {signUp && <StrengthMeter id="password-hint" password={password} />}
         </div>
         {error && (
           <p role="alert" className="text-sm text-destructive">

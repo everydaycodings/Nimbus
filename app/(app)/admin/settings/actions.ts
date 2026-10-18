@@ -7,10 +7,13 @@ import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import {
   SIGNUP_MODES,
+  TOAST_POSITIONS,
   invites,
   settings,
   type SignupMode,
+  type ToastPosition,
 } from "@/lib/db/schema"
+import { POLICY_MAX, POLICY_MIN } from "@/lib/password-policy"
 import { hasPassword, requireAdmin } from "@/lib/session"
 
 const DOMAIN = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/
@@ -30,6 +33,16 @@ export async function setRequire2fa(form: FormData) {
   const on = form.get("require2fa") === "on"
   if (on && !actor.twoFactorEnabled && (await hasPassword(actor.id))) return
   await db.update(settings).set({ require2fa: on, updatedAt: new Date() })
+  revalidatePath("/", "layout")
+}
+
+export async function setToastPosition(form: FormData) {
+  await requireAdmin()
+  const position = form.get("position") as ToastPosition
+  if (!TOAST_POSITIONS.includes(position)) return
+  await db
+    .update(settings)
+    .set({ toastPosition: position, updatedAt: new Date() })
   revalidatePath("/", "layout")
 }
 
@@ -202,6 +215,30 @@ export async function setVaultPolicy(form: FormData) {
     maxVaultsPerMember: cap && Math.min(Math.ceil(cap), 1000),
     updatedAt: new Date(),
   })
+  revalidatePath("/", "layout")
+}
+
+// Off: null, the industry-standard defaults. Applies to passwords chosen from now on.
+export async function setPasswordPolicy(form: FormData) {
+  await requireAdmin()
+  const min = Math.floor(Number(form.get("min")))
+  const passwordPolicy =
+    form.get("custom") === "on"
+      ? {
+          min: Math.min(
+            Math.max(Number.isFinite(min) ? min : POLICY_MIN, POLICY_MIN),
+            POLICY_MAX
+          ),
+          lower: form.get("lower") === "on",
+          upper: form.get("upper") === "on",
+          digit: form.get("digit") === "on",
+          symbol: form.get("symbol") === "on",
+          exclude: [...new Set(String(form.get("exclude") ?? ""))]
+            .join("")
+            .slice(0, 64),
+        }
+      : null
+  await db.update(settings).set({ passwordPolicy, updatedAt: new Date() })
   revalidatePath("/", "layout")
 }
 

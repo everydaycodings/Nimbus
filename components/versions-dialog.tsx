@@ -3,7 +3,6 @@
 import { Dialog } from "@base-ui/react/dialog"
 import { Menu } from "@base-ui/react/menu"
 import {
-  CheckCircleIcon,
   CopySimpleIcon,
   DotsThreeIcon,
   DownloadSimpleIcon,
@@ -12,7 +11,6 @@ import {
   PushPinIcon,
   PushPinSlashIcon,
   TrashIcon,
-  WarningCircleIcon,
 } from "@phosphor-icons/react"
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
@@ -32,6 +30,7 @@ import {
   MENU_ITEM,
   MENU_POPUP,
 } from "@/components/overlay-styles"
+import { useNotice } from "@/components/toaster"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -62,10 +61,7 @@ export function useVersions(item: Item, enabled = true) {
   } | null>(null)
   // Keeps the previous list on screen while the same file re-fetches.
   const list = loaded?.key.startsWith(`${item.id}|`) ? loaded.list : undefined
-  const [notice, setNotice] = useState<{
-    text: string
-    error?: boolean
-  } | null>(null)
+  const setNotice = useNotice()
   const [busy, setBusy] = useState<string | null>(null)
 
   useEffect(() => {
@@ -80,7 +76,7 @@ export function useVersions(item: Item, enabled = true) {
     }
   }, [key, item.id, enabled])
 
-  async function act(id: string, task: () => Promise<Result>) {
+  async function act(id: string, task: () => Promise<Result>, done?: string) {
     setNotice(null)
     setBusy(id)
     const res: Result = await task().catch(() => ({
@@ -92,6 +88,7 @@ export function useVersions(item: Item, enabled = true) {
       return false
     }
     if (res.name) setNotice({ text: `Saved as “${res.name}”.` })
+    else if (done) setNotice({ text: done })
     setTick((t) => t + 1)
     router.refresh()
     return true
@@ -100,16 +97,29 @@ export function useVersions(item: Item, enabled = true) {
   const older = (list ?? []).filter((v) => !v.current)
   return {
     list,
-    notice,
     busy,
     olderBytes: older.reduce((n, v) => n + v.size, 0),
     olderCount: older.length,
-    makeCurrent: (v: Version) => act(v.id, () => makeCurrent(v.id)),
-    remove: (v: Version) => act(v.id, () => deleteVersion(v.id)),
+    makeCurrent: (v: Version) =>
+      act(v.id, () => makeCurrent(v.id), `v${v.number} is now current.`),
+    remove: (v: Version) =>
+      act(v.id, () => deleteVersion(v.id), `Deleted v${v.number}.`),
     note: (v: Version, text: string) =>
-      act(v.id, () => setVersionNote(v.id, text)),
+      act(
+        v.id,
+        () => setVersionNote(v.id, text),
+        text.trim()
+          ? `Saved the note on v${v.number}.`
+          : `Removed the note on v${v.number}.`
+      ),
     keep: (v: Version, on: boolean) =>
-      act(v.id, () => setVersionKeep(v.id, on)),
+      act(
+        v.id,
+        () => setVersionKeep(v.id, on),
+        on
+          ? `v${v.number} will be kept forever.`
+          : `v${v.number} is no longer kept forever.`
+      ),
     copy: (v: Version) => act(v.id, () => copyVersion(v.id)),
   }
 }
@@ -140,7 +150,7 @@ export function VersionList({
   // Opens a version in the previewer.
   onPreview?: (v: Version) => void
 }) {
-  const { list, notice, busy } = versions
+  const { list, busy } = versions
   const [confirming, setConfirming] = useState<string | null>(null)
   const [noting, setNoting] = useState<string | null>(null)
 
@@ -378,22 +388,6 @@ export function VersionList({
           )
         })}
       </ul>
-      {notice && (
-        <p
-          role={notice.error ? "alert" : "status"}
-          className={cn(
-            "flex items-center gap-1.5 text-sm",
-            notice.error ? "text-destructive" : "text-muted-foreground"
-          )}
-        >
-          {notice.error ? (
-            <WarningCircleIcon className="size-4 shrink-0" />
-          ) : (
-            <CheckCircleIcon className="size-4 shrink-0 text-brand" />
-          )}
-          {notice.text}
-        </p>
-      )}
     </div>
   )
 }

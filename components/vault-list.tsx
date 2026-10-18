@@ -16,11 +16,17 @@ import { useEffect, useState } from "react"
 
 import { createVault, myVaults } from "@/app/(app)/vault/actions"
 import { DIALOG_BACKDROP, DIALOG_POPUP } from "@/components/overlay-styles"
+import {
+  PasswordInput,
+  StrengthMeter,
+  usePasswordPolicy,
+} from "@/components/password-input"
 import { SubmitButton } from "@/components/submit-button"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useVaultKeys } from "@/components/vault-keys"
 import { formatBytes } from "@/lib/file-types"
+import { minLength, passwordProblem } from "@/lib/password-policy"
 import { cn } from "@/lib/utils"
 import type { VaultSummary } from "@/lib/vault"
 import { newVault } from "@/lib/vault-crypto"
@@ -121,13 +127,14 @@ function CreateVault({ onClose }: { onClose: () => void }) {
   const [saved, setSaved] = useState(false)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const policy = usePasswordPolicy()
 
   async function makeKeys(form: FormData) {
     const name = String(form.get("name")).trim()
     const pass = String(form.get("pass"))
     if (!name) return setError("Give the vault a name.")
-    if (pass.length < 12)
-      return setError("Use at least 12 characters for the passphrase.")
+    const problem = passwordProblem(pass, policy, true)
+    if (problem) return setError(problem)
     if (pass !== form.get("again"))
       return setError("The passphrases don't match.")
     setError(null)
@@ -338,44 +345,11 @@ function CopyCode({
   )
 }
 
-const STRENGTH = [
-  { label: "Very weak", color: "bg-destructive" },
-  { label: "Weak", color: "bg-destructive" },
-  { label: "Fair", color: "bg-tag-yellow" },
-  { label: "Strong", color: "bg-tag-green" },
-  { label: "Very strong", color: "bg-tag-green" },
-]
-
-type Zxcvbn = (pw: string) => {
-  score: number
-  feedback: { warning: string | null }
-}
-
-// New passphrase, repeated, with a strength meter (zxcvbn, loaded on demand).
+// New passphrase, repeated, with a strength meter.
 // Fields are named `pass` and `again`.
 export function PassphraseFields({ label = "Passphrase" }: { label?: string }) {
   const [pass, setPass] = useState("")
-  const [check, setCheck] = useState<Zxcvbn | null>(null)
-
-  useEffect(() => {
-    let live = true
-    Promise.all([
-      import("@zxcvbn-ts/core"),
-      import("@zxcvbn-ts/language-common"),
-    ]).then(([core, common]) => {
-      core.zxcvbnOptions.setOptions({
-        dictionary: common.dictionary,
-        graphs: common.adjacencyGraphs,
-      })
-      if (live) setCheck(() => core.zxcvbn as Zxcvbn)
-    })
-    return () => {
-      live = false
-    }
-  }, [])
-
-  const result = pass && check ? check(pass) : null
-  const s = result ? STRENGTH[result.score] : null
+  const min = minLength(usePasswordPolicy(), true)
 
   return (
     <>
@@ -383,43 +357,24 @@ export function PassphraseFields({ label = "Passphrase" }: { label?: string }) {
         <label htmlFor="vault-pass" className="text-sm font-medium">
           {label}
         </label>
-        <Input
+        <PasswordInput
           id="vault-pass"
           name="pass"
-          type="password"
           autoComplete="new-password"
-          minLength={12}
+          minLength={min}
           value={pass}
           onChange={(e) => setPass(e.target.value)}
           aria-describedby="vault-pass-hint"
         />
-        <div className="flex gap-1" aria-hidden>
-          {[0, 1, 2, 3].map((i) => (
-            <span
-              key={i}
-              className={cn(
-                "h-1 flex-1 rounded-full bg-muted",
-                s && result!.score > i && s.color
-              )}
-            />
-          ))}
-        </div>
-        <p id="vault-pass-hint" className="text-xs text-muted-foreground">
-          {pass.length < 12
-            ? "At least 12 characters. A few random words work well."
-            : s
-              ? `${s.label}.${result!.feedback.warning ? ` ${result!.feedback.warning}` : ""}`
-              : "Checking…"}
-        </p>
+        <StrengthMeter id="vault-pass-hint" password={pass} vault />
       </div>
       <div className="grid gap-2">
         <label htmlFor="vault-again" className="text-sm font-medium">
           Repeat it
         </label>
-        <Input
+        <PasswordInput
           id="vault-again"
           name="again"
-          type="password"
           autoComplete="new-password"
         />
       </div>

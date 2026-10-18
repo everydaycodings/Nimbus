@@ -26,7 +26,6 @@ import {
   SquaresFourIcon,
   TrashIcon,
   UploadSimpleIcon,
-  WarningCircleIcon,
   type Icon,
 } from "@phosphor-icons/react"
 import Link from "next/link"
@@ -57,6 +56,7 @@ import {
   vaultTree,
 } from "@/app/(app)/vault/actions"
 import { NameDialog, Segmented } from "@/components/file-browser"
+import { useNotice } from "@/components/toaster"
 import { MoveDialog as FilesPicker, type Place } from "@/components/move-dialog"
 import { Previewer, type Decrypted } from "@/components/previewer"
 import { LAYOUT_COOKIE, TILES_COOKIE } from "@/components/nav-styles"
@@ -66,6 +66,7 @@ import {
   MENU_ITEM,
   MENU_POPUP,
 } from "@/components/overlay-styles"
+import { usePasswordPolicy } from "@/components/password-input"
 import { SubmitButton } from "@/components/submit-button"
 import {
   pastedFiles,
@@ -88,6 +89,7 @@ import {
 import { extOf, freeName, mimeOf, previewKind } from "@/lib/file-rules"
 import { fileType, formatBytes } from "@/lib/file-types"
 import type { Item } from "@/lib/files"
+import { passwordProblem } from "@/lib/password-policy"
 import { readRange } from "@/lib/thumbs"
 import { cn } from "@/lib/utils"
 import {
@@ -244,8 +246,6 @@ type Entry = {
   trashedAt: string | null
 }
 
-type Notice = { text: string; error?: boolean }
-
 // Previews decrypt the whole file into memory first; bigger files download.
 const VIEW_MAX = 1024 ** 3
 const viewable = (n: Entry) =>
@@ -356,7 +356,7 @@ function VaultBrowser({
   const [filter, setFilter] = useState("")
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [anchor, setAnchor] = useState<string | null>(null)
-  const [notice, setNotice] = useState<Notice | null>(null)
+  const setNotice = useNotice()
   const [naming, setNaming] = useState<{ item: Entry | null } | null>(null)
   const [nameErr, setNameErr] = useState<string | null>(null)
   const [moving, setMoving] = useState<Entry[] | null>(null)
@@ -433,7 +433,7 @@ function VaultBrowser({
       abort.abort()
       if (url) URL.revokeObjectURL(url)
     }
-  }, [viewing, plaintext])
+  }, [viewing, plaintext, setNotice])
 
   const load = useCallback(
     () =>
@@ -606,6 +606,9 @@ function VaultBrowser({
     })
   }
 
+  const what = (t: Entry[]) =>
+    t.length === 1 ? `“${t[0].name}”` : plural(t.length, "item")
+
   async function download(n: Entry) {
     // The save picker needs the click, so it opens before anything else.
     const target = await pickSaveTarget(n.name)
@@ -618,7 +621,7 @@ function VaultBrowser({
         n.name,
         new AbortController().signal
       )
-      setNotice(null)
+      setNotice({ text: `Saved “${n.name}”.` })
     } catch {
       setNotice({ text: `Couldn't download “${n.name}”.`, error: true })
     }
@@ -643,6 +646,11 @@ function VaultBrowser({
     setPending(false)
     if (res.error) return setNameErr(res.error)
     setNaming(null)
+    setNotice({
+      text: item
+        ? `Renamed to “${value.trim()}”.`
+        : `Created folder “${value.trim()}”.`,
+    })
     load()
   }
 
@@ -665,7 +673,12 @@ function VaultBrowser({
     setPending(false)
     setMoving(null)
     if (res.error) setNotice({ text: res.error, error: true })
-    else setSelected(new Set())
+    else {
+      setSelected(new Set())
+      setNotice({
+        text: `Moved ${what(moving)} to ${target ? `“${byId.get(target)?.name}”` : "the vault's top level"}.`,
+      })
+    }
     load()
   }
 
@@ -679,7 +692,7 @@ function VaultBrowser({
       res.error
         ? { text: res.error, error: true }
         : {
-            text: `${t.length === 1 ? `“${t[0].name}”` : plural(t.length, "item")} moved to this vault's trash.`,
+            text: `Moved ${what(t)} to this vault's trash.`,
           }
     )
     load()
@@ -706,7 +719,7 @@ function VaultBrowser({
         text: `${clash.length ? clash.map((n) => `“${n.name}”`).join(", ") : plural(res.kept!, "item")} couldn't come back because something with the same name is in its folder now. Rename that one, then restore again.`,
         error: true,
       })
-    else setNotice(null)
+    else setNotice({ text: `Restored ${what(t)}.` })
     load()
   }
 
@@ -720,7 +733,11 @@ function VaultBrowser({
     setPending(false)
     setDeleting(null)
     setSelected(new Set())
-    if (res.error) setNotice({ text: res.error, error: true })
+    setNotice(
+      res.error
+        ? { text: res.error, error: true }
+        : { text: `Deleted ${what(deleting)} forever.` }
+    )
     load()
   }
 
@@ -1601,26 +1618,6 @@ function VaultBrowser({
         )}
       </div>
 
-      {notice && (
-        <p
-          role={notice.error ? "alert" : "status"}
-          className={cn(
-            "flex items-center gap-2 text-sm",
-            notice.error ? "text-destructive" : "text-muted-foreground"
-          )}
-        >
-          {notice.error && <WarningCircleIcon className="size-4 shrink-0" />}
-          {notice.text}
-          <button
-            type="button"
-            onClick={() => setNotice(null)}
-            className="ml-1 underline-offset-4 hover:underline"
-          >
-            Dismiss
-          </button>
-        </p>
-      )}
-
       <ContextMenu.Root>
         <ContextMenu.Trigger
           role="listbox"
@@ -1905,10 +1902,12 @@ function PassphraseDialog({
 }) {
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const policy = usePasswordPolicy()
 
   async function submit(form: FormData) {
     const pass = String(form.get("pass"))
-    if (pass.length < 12) return setError("Use at least 12 characters.")
+    const problem = passwordProblem(pass, policy, true)
+    if (problem) return setError(problem)
     if (pass !== form.get("again"))
       return setError("The passphrases don't match.")
     setPending(true)

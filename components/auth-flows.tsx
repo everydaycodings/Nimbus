@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 
+import { NewPasswordFields } from "@/components/password-input"
 import { SubmitButton } from "@/components/submit-button"
 import { CodeInput, FormError } from "@/components/two-factor"
 import { Button } from "@/components/ui/button"
@@ -128,33 +129,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
         setDone(true)
       }}
     >
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="password">New password</Label>
-        <Input
-          id="password"
-          name="password"
-          type="password"
-          autoComplete="new-password"
-          minLength={10}
-          aria-describedby="password-hint"
-          required
-          autoFocus
-        />
-        <p id="password-hint" className="text-xs text-muted-foreground">
-          At least 10 characters.
-        </p>
-      </div>
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="confirm">Confirm new password</Label>
-        <Input
-          id="confirm"
-          name="confirm"
-          type="password"
-          autoComplete="new-password"
-          minLength={10}
-          required
-        />
-      </div>
+      <NewPasswordFields autoFocus />
       <FormError>{error}</FormError>
       <SubmitButton className="w-full" pending={busy}>
         Save new password

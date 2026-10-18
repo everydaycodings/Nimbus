@@ -113,6 +113,20 @@
       "when": 1792330398026,
       "tag": "0015_vault_name_tags",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1792345202635,
+      "tag": "0016_brainy_argent",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792345245799,
+      "tag": "0017_password_policy",
+      "breakpoints": true
     }
   ]
 }

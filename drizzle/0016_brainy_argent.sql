@@ -1,0 +1,1 @@
+ALTER TABLE "settings" ADD COLUMN "toast_position" text DEFAULT 'bottom-center' NOT NULL;

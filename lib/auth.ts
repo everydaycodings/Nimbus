@@ -8,6 +8,7 @@ import { and, count, eq, inArray } from "drizzle-orm"
 import { db } from "./db"
 import * as schema from "./db/schema"
 import { message, sendInBackground } from "./email"
+import { POLICY_MAX, POLICY_MIN, passwordProblem } from "./password-policy"
 import {
   INVITE_COOKIE,
   SHARE_INVITE_COOKIE,
@@ -37,7 +38,9 @@ export const auth = betterAuth({
   database: drizzleAdapter(db, { provider: "pg", schema }),
   emailAndPassword: {
     enabled: true,
-    minPasswordLength: 10,
+    // The floor an owner can choose; the before-hook applies their actual policy.
+    minPasswordLength: POLICY_MIN,
+    maxPasswordLength: POLICY_MAX,
     revokeSessionsOnPasswordReset: true,
     // Every auth email goes out in the background and is skipped when email isn't
     // set up; the sign-in page hides "Forgot password?" in that case.
@@ -190,8 +193,22 @@ export const auth = betterAuth({
     },
   },
   hooks: {
-    // The UI hides "Turn off" when an admin requires two-factor; this covers direct calls.
     before: createAuthMiddleware(async (ctx) => {
+      // Every way a password gets chosen: sign-up, reset link, and change.
+      const fresh =
+        ctx.path === "/sign-up/email"
+          ? ctx.body?.password
+          : ctx.path === "/reset-password" || ctx.path === "/change-password"
+            ? ctx.body?.newPassword
+            : undefined
+      if (typeof fresh === "string") {
+        const problem = passwordProblem(
+          fresh,
+          (await getSettings()).passwordPolicy
+        )
+        if (problem) throw new APIError("BAD_REQUEST", { message: problem })
+      }
+      // The UI hides "Turn off" when an admin requires two-factor; this covers direct calls.
       if (
         ctx.path === "/two-factor/disable" &&
         (await getSettings()).require2fa

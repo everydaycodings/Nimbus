@@ -22,7 +22,6 @@ import {
   ArrowsInLineVerticalIcon,
   ArrowsOutLineVerticalIcon,
   CaretRightIcon,
-  CheckCircleIcon,
   CheckIcon,
   CheckSquareIcon,
   ClockCounterClockwiseIcon,
@@ -42,7 +41,6 @@ import {
   TagIcon,
   TrashIcon,
   UploadSimpleIcon,
-  WarningCircleIcon,
   XIcon,
   type Icon,
   LockKeyIcon,
@@ -67,6 +65,7 @@ import {
 } from "@/app/(app)/file-actions"
 import type { Version } from "@/app/(app)/upload-actions"
 import { DetailsSheet } from "@/components/details-sheet"
+import { useNotice, type Notice } from "@/components/toaster"
 import { ShareDialog } from "@/components/share-dialog"
 import { UserAvatar } from "@/components/user-avatar"
 import { Previewer, type Shown } from "@/components/previewer"
@@ -119,7 +118,6 @@ type Act = {
 }
 // "rank": the order the page gave (relevance, or last opened).
 type SortKey = "rank" | "name" | "date" | "size"
-type Notice = { text: string; error?: boolean; undo?: () => void }
 
 const DRAG = "application/x-nimbus-items"
 const ROOT: Place = { id: null, name: "My files" }
@@ -221,7 +219,7 @@ export function FileBrowser({
   const [naming, setNaming] = useState<{ item: Item | null }>({ item: null })
   const [nameOpen, setNameOpen] = useState(false)
   const [nameError, setNameError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<Notice | null>(null)
+  const setNotice = useNotice()
   const [moving, setMoving] = useState<Item[]>([])
   const [moveOpen, setMoveOpen] = useState(false)
   const [toVault, setToVault] = useState<Item[] | null>(null)
@@ -406,6 +404,11 @@ export function FileBrowser({
         : await createFolder(folderId, value)
       if (res.error) return setNameError(res.error)
       setNameOpen(false)
+      setNotice({
+        text: item
+          ? `Renamed to “${value.trim()}”.`
+          : `Created folder “${value.trim()}”.`,
+      })
     })
   }
 
@@ -414,17 +417,24 @@ export function FileBrowser({
     clear()
     run(() => trashItems(ids), {
       text: `Moved ${label(list)} to the trash.`,
-      undo: () => run(() => restoreItems(ids)),
+      undo: () =>
+        run(() => restoreItems(ids), { text: `Restored ${label(list)}.` }),
     })
   }
 
   function star(list: Item[]) {
     const on = !list.every((i) => i.starred)
-    run(() =>
-      setStarred(
-        list.map((i) => i.id),
-        on
-      )
+    run(
+      () =>
+        setStarred(
+          list.map((i) => i.id),
+          on
+        ),
+      {
+        text: on
+          ? `Added ${label(list)} to starred.`
+          : `Removed ${label(list)} from starred.`,
+      }
     )
   }
 
@@ -444,9 +454,21 @@ export function FileBrowser({
     if (!confirm) return
     const { ids } = confirm
     start(async () => {
-      await (ids.length ? deleteForever(ids) : emptyTrash())
+      try {
+        await (ids.length ? deleteForever(ids) : emptyTrash())
+      } catch {
+        return setNotice({
+          text: "Couldn't delete. Try again.",
+          error: true,
+        })
+      }
       clear()
       setConfirmOpen(false)
+      setNotice({
+        text: ids.length
+          ? `Deleted ${confirm.label} forever.`
+          : "Emptied the trash.",
+      })
     })
   }
 
@@ -501,8 +523,15 @@ export function FileBrowser({
       const res = await createTag(name, color, tagTargets)
       if (res.error) return setTagError(res.error)
       setTagOpen(false)
+      setNotice({ text: `Created tag “${name.trim()}”.` })
     })
   }
+
+  const tagNotice = (t: Item[], tag: string, on: boolean) => ({
+    text: on
+      ? `Tagged ${label(t)} “${tag}”.`
+      : `Removed “${tag}” from ${label(t)}.`,
+  })
 
   // Checkbox list of the viewer's tags for the given items, plus "New tag…".
   function tagList(t: Item[]) {
@@ -513,7 +542,9 @@ export function FileBrowser({
           <Menu.CheckboxItem
             key={tag.id}
             checked={t.every((i) => i.tags.includes(tag.id))}
-            onCheckedChange={(on) => run(() => tagItems(ids, tag.id, on))}
+            onCheckedChange={(on) =>
+              run(() => tagItems(ids, tag.id, on), tagNotice(t, tag.name, on))
+            }
             closeOnClick={false}
             className={cn(MENU_ITEM, "relative pr-8")}
           >
@@ -666,7 +697,10 @@ export function FileBrowser({
         icon: XIcon,
         menuOnly: true,
         group: 1,
-        run: () => run(() => removeShortcut(one.id)),
+        run: () =>
+          run(() => removeShortcut(one.id), {
+            text: `Removed the shortcut to “${one.name}”.`,
+          }),
       },
       info && { ...info, group: 2 },
       edit &&
@@ -1660,45 +1694,7 @@ export function FileBrowser({
             </p>
           </div>
         )}
-        <div
-          aria-live="polite"
-          className="ml-auto flex min-w-0 items-center gap-2 text-sm"
-        >
-          {notice && (
-            <>
-              {notice.error ? (
-                <WarningCircleIcon className="size-4 shrink-0 text-destructive" />
-              ) : (
-                <CheckCircleIcon className="size-4 shrink-0 text-brand" />
-              )}
-              <span
-                className={
-                  notice.error ? "text-destructive" : "text-muted-foreground"
-                }
-              >
-                {notice.text}
-              </span>
-              {notice.undo && (
-                <Button
-                  variant="link"
-                  size="sm"
-                  className="h-auto px-0"
-                  onClick={notice.undo}
-                >
-                  Undo
-                </Button>
-              )}
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label="Dismiss"
-                onClick={() => setNotice(null)}
-              >
-                <XIcon />
-              </Button>
-            </>
-          )}
-        </div>
+        <div className="ml-auto" />
         <Pick
           label="Sort by"
           icon={ArrowsDownUpIcon}
@@ -1869,7 +1865,15 @@ export function FileBrowser({
           detailsItem && previewVersion(detailsItem.id, v)
         }
         onTag={(tagId, on) =>
-          detailsItem && run(() => tagItems([detailsItem.id], tagId, on))
+          detailsItem &&
+          run(
+            () => tagItems([detailsItem.id], tagId, on),
+            tagNotice(
+              [detailsItem],
+              tags.find((x) => x.id === tagId)?.name ?? "tag",
+              on
+            )
+          )
         }
         onNewTag={() => detailsItem && newTag([detailsItem.id])}
       />

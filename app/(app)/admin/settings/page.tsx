@@ -17,9 +17,16 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { db } from "@/lib/db"
-import { invites, type SignupMode } from "@/lib/db/schema"
+import { POLICY_MAX, POLICY_MIN } from "@/lib/password-policy"
+import {
+  TOAST_POSITIONS,
+  invites,
+  type SignupMode,
+  type ToastPosition,
+} from "@/lib/db/schema"
 import { hasPassword, requireAdmin } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
+import { cn } from "@/lib/utils"
 import {
   addBlockedExtension,
   addTrustedDomain,
@@ -37,7 +44,17 @@ import {
   setOfficeUrl,
   setLinkPolicy,
   setVaultPolicy,
+  setPasswordPolicy,
+  setToastPosition,
 } from "./actions"
+
+const TOAST_LABEL: Record<ToastPosition, string> = {
+  "top-left": "Top left",
+  "top-center": "Top center",
+  "top-right": "Top right",
+  "bottom-left": "Bottom left",
+  "bottom-center": "Bottom center",
+}
 
 const MODES: { mode: SignupMode; label: string; hint: string }[] = [
   {
@@ -110,6 +127,8 @@ export default async function SettingsPage() {
     requireLinkPassword,
     vaultsEnabled,
     maxVaultsPerMember,
+    toastPosition,
+    passwordPolicy,
   } = await getSettings()
   const quota = sizeField(defaultQuotaBytes, "GB", "TB")
   const size = sizeField(maxUploadBytes, "MB", "GB")
@@ -635,6 +654,99 @@ export default async function SettingsPage() {
 
       <Card>
         <CardHeader>
+          <CardTitle className="text-base">Passwords</CardTitle>
+          <CardDescription>
+            Rules for new account passwords and vault passphrases. Existing ones
+            keep working until they&apos;re changed.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form
+            action={setPasswordPolicy}
+            className="group flex flex-col gap-4"
+          >
+            <label className="flex cursor-pointer items-start gap-3 text-sm">
+              <input
+                type="checkbox"
+                id="pw-custom"
+                name="custom"
+                defaultChecked={Boolean(passwordPolicy)}
+                className="mt-0.5 size-4 accent-primary"
+              />
+              <span>
+                Set my own rules
+                <span className="block text-muted-foreground">
+                  Off: the industry standard (NIST). At least 10 characters for
+                  passwords and 12 for passphrases, no forced character mix, and
+                  a meter that flags common and guessable ones.
+                </span>
+              </span>
+            </label>
+            <div className="hidden gap-4 group-has-[#pw-custom:checked]:grid">
+              <div className="grid gap-2">
+                <Label htmlFor="pw-min">Minimum length</Label>
+                <Input
+                  id="pw-min"
+                  name="min"
+                  type="number"
+                  min={POLICY_MIN}
+                  max={POLICY_MAX}
+                  step={1}
+                  defaultValue={passwordPolicy?.min ?? 12}
+                  className="max-w-32"
+                />
+              </div>
+              <fieldset className="grid gap-2 sm:grid-cols-2">
+                <legend className="mb-2 text-sm font-medium">
+                  Must contain
+                </legend>
+                {(
+                  [
+                    ["lower", "A lowercase letter"],
+                    ["upper", "An uppercase letter"],
+                    ["digit", "A number"],
+                    ["symbol", "A symbol"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <label
+                    key={key}
+                    className="flex cursor-pointer items-center gap-3 text-sm"
+                  >
+                    <input
+                      type="checkbox"
+                      name={key}
+                      defaultChecked={passwordPolicy?.[key]}
+                      className="size-4 accent-primary"
+                    />
+                    {label}
+                  </label>
+                ))}
+              </fieldset>
+              <div className="grid gap-2">
+                <Label htmlFor="pw-exclude">Characters not allowed</Label>
+                <Input
+                  id="pw-exclude"
+                  name="exclude"
+                  maxLength={64}
+                  defaultValue={passwordPolicy?.exclude ?? ""}
+                  placeholder="None"
+                  spellCheck={false}
+                  autoComplete="off"
+                  className="font-mono"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Type them together, e.g. <code>&quot;&apos;`</code>. A space
+                  counts too.
+                </p>
+              </div>
+            </div>
+            <SubmitButton className="self-end">Save</SubmitButton>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle className="text-base">Office documents</CardTitle>
           <CardDescription>
             With a Collabora Online server, Word, Excel, PowerPoint and
@@ -721,6 +833,59 @@ export default async function SettingsPage() {
               </select>
             </div>
             <SubmitButton>Save</SubmitButton>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Action messages</CardTitle>
+          <CardDescription>
+            Where short messages like &ldquo;Moved 3 items to the trash.&rdquo;
+            appear, for everyone. The bottom-right corner is kept for uploads.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={setToastPosition} className="flex flex-col gap-4">
+            <fieldset className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              <legend className="sr-only">Position</legend>
+              {TOAST_POSITIONS.map((p) => {
+                const [y, x] = p.split("-")
+                return (
+                  <label
+                    key={p}
+                    className="flex cursor-pointer flex-col gap-2.5 rounded-lg border p-3 transition-colors hover:bg-input/20 has-checked:border-ring/60 has-checked:bg-input/30 has-focus-visible:ring-[3px] has-focus-visible:ring-ring/50"
+                  >
+                    {/* A tiny screen with the toast where it would sit. */}
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "flex h-14 rounded-md border bg-background p-1.5",
+                        y === "top" ? "items-start" : "items-end",
+                        x === "left"
+                          ? "justify-start"
+                          : x === "right"
+                            ? "justify-end"
+                            : "justify-center"
+                      )}
+                    >
+                      <span className="h-2 w-8 rounded-sm bg-muted-foreground/60" />
+                    </span>
+                    <span className="flex items-center gap-2 text-sm font-medium">
+                      <input
+                        type="radio"
+                        name="position"
+                        value={p}
+                        defaultChecked={p === toastPosition}
+                        className="size-4 shrink-0 accent-primary outline-none"
+                      />
+                      {TOAST_LABEL[p]}
+                    </span>
+                  </label>
+                )
+              })}
+            </fieldset>
+            <SubmitButton className="self-end">Save</SubmitButton>
           </form>
         </CardContent>
       </Card>
