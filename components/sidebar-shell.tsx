@@ -16,12 +16,15 @@ export const useSidebar = () => useContext(SidebarContext)
 // below md. `sidebar` is rendered in both places; it styles itself off the
 // `group/sidebar` data-collapsed attribute and useSidebar().
 export function SidebarShell({
-  sidebar,
+  sidebar: files,
+  adminSidebar,
   children,
   defaultCollapsed,
   actions,
 }: {
   sidebar: React.ReactNode
+  // Shown instead of `sidebar` anywhere under /admin.
+  adminSidebar?: React.ReactNode
   children: React.ReactNode
   defaultCollapsed: boolean
   // Right end of the header: search and the bell.
@@ -37,6 +40,8 @@ export function SidebarShell({
     setLastPath(path)
     setOpen(false)
   }
+  const sidebar =
+    adminSidebar && path.startsWith("/admin") ? adminSidebar : files
 
   function toggle() {
     const next = !collapsed
@@ -61,7 +66,7 @@ export function SidebarShell({
         <aside
           data-collapsed={collapsed}
           aria-label="Sidebar"
-          className="group/sidebar sticky top-0 hidden h-svh w-64 shrink-0 overflow-x-hidden text-sidebar-foreground transition-[width] duration-200 ease-out motion-reduce:transition-none data-[collapsed=true]:w-12 md:block"
+          className="group/sidebar sticky top-0 hidden h-svh w-64 shrink-0 overflow-x-hidden text-sidebar-foreground transition-[width] duration-200 ease-out data-[collapsed=true]:w-12 motion-reduce:transition-none md:block"
         >
           {sidebar}
         </aside>
@@ -70,7 +75,7 @@ export function SidebarShell({
       <Dialog.Root open={open} onOpenChange={setOpen}>
         <Dialog.Portal>
           <Dialog.Backdrop className="fixed inset-0 z-40 bg-black/60 transition-opacity duration-200 data-ending-style:opacity-0 data-starting-style:opacity-0 md:hidden" />
-          <Dialog.Popup className="fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] border-r bg-sidebar text-sidebar-foreground shadow-lg outline-none transition-transform duration-200 ease-out data-ending-style:-translate-x-full data-starting-style:-translate-x-full motion-reduce:transition-none md:hidden">
+          <Dialog.Popup className="fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] border-r bg-sidebar text-sidebar-foreground shadow-lg transition-transform duration-200 ease-out outline-none data-ending-style:-translate-x-full data-starting-style:-translate-x-full motion-reduce:transition-none md:hidden">
             <Dialog.Title className="sr-only">Navigation</Dialog.Title>
             <div data-collapsed="false" className="group/sidebar h-full">
               {sidebar}

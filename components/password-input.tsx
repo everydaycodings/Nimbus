@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils"
 
 const PolicyContext = createContext<PasswordPolicy | null>(null)
 
-// Set by the layouts from Admin → Settings, so every new-password form agrees.
+// Set by the layouts from Admin → Authentication, so every new-password form agrees.
 export function PasswordPolicyProvider({
   policy,
   children,

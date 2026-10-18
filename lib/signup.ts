@@ -1,5 +1,15 @@
 // Relative imports: lib/auth.ts imports this and the Better Auth CLI can't resolve `@/`.
-import { and, eq, gt, isNotNull, isNull, lt, or, sql } from "drizzle-orm"
+import {
+  and,
+  eq,
+  getTableColumns,
+  gt,
+  isNotNull,
+  isNull,
+  lt,
+  or,
+  sql,
+} from "drizzle-orm"
 
 import { db } from "./db"
 import { invites, settings, shares } from "./db/schema"
@@ -13,6 +23,17 @@ export async function getSettings() {
   const [row] = await db.select().from(settings)
   return row
 }
+
+export type Settings = Awaited<ReturnType<typeof getSettings>>
+export type SettingKey = keyof Settings
+
+const COLUMNS = getTableColumns(settings)
+
+// What a setting is before an admin changes it: the column's default, or null.
+export const settingDefault = (key: SettingKey) => COLUMNS[key].default ?? null
+
+export const isModified = (s: Settings, ...keys: SettingKey[]) =>
+  keys.some((k) => JSON.stringify(s[k]) !== JSON.stringify(settingDefault(k)))
 
 const usable = and(
   or(isNull(invites.expiresAt), gt(invites.expiresAt, sql`now()`)),

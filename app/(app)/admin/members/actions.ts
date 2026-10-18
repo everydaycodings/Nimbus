@@ -50,6 +50,11 @@ export async function setStatus(targetId: string, status: Status) {
   revalidatePath("/", "layout")
 }
 
+// Bulk approve or decline: every checked "id" in the form, with setStatus's rules.
+export async function setStatusMany(status: Status, form: FormData) {
+  for (const id of form.getAll("id")) await setStatus(String(id), status)
+}
+
 // Only the owner promotes or demotes admins. The owner role is never assigned here.
 export async function setRole(targetId: string, role: Role) {
   const actor = await requireAdmin()
@@ -72,7 +77,7 @@ async function recoverable(targetId: string) {
   return target
 }
 
-// Null goes back to the instance default from /admin/settings.
+// Null goes back to the instance default from /admin/storage/quotas.
 export async function setMemberQuota(targetId: string, bytes: number | null) {
   const target = await recoverable(targetId)
   if (!target) return { error: "You can't change storage for this person." }
@@ -82,7 +87,7 @@ export async function setMemberQuota(targetId: string, bytes: number | null) {
     .update(user)
     .set({ quotaBytes: bytes === null ? null : Math.round(bytes) })
     .where(eq(user.id, target.id))
-  revalidatePath("/admin/members")
+  revalidatePath("/admin/members", "layout")
   return { ok: true }
 }
 
@@ -97,7 +102,7 @@ export async function resetTwoFactor(targetId: string) {
       .set({ twoFactorEnabled: false })
       .where(eq(user.id, target.id))
   })
-  revalidatePath("/admin/members")
+  revalidatePath("/admin/members", "layout")
   return { ok: true }
 }
 
@@ -134,7 +139,7 @@ export async function setTemporaryPassword(targetId: string) {
       .where(eq(user.id, target.id))
     await tx.delete(session).where(eq(session.userId, target.id))
   })
-  revalidatePath("/admin/members")
+  revalidatePath("/admin/members", "layout")
   return { password }
 }
 
@@ -145,6 +150,6 @@ export async function deleteMemberVault(targetId: string, vaultId: string) {
   const vault = target && (await getVault(target.id, vaultId))
   if (!vault) return { error: "That vault is already gone." }
   await destroyVault(vault.id)
-  revalidatePath("/admin/members")
+  revalidatePath("/admin/members", "layout")
   return { ok: true }
 }

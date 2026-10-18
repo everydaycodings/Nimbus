@@ -3,18 +3,14 @@ import {
   EnvelopeSimpleOpenIcon,
 } from "@phosphor-icons/react/dist/ssr"
 
+import { AdminPage, Section } from "@/components/admin/setting"
 import { Badge } from "@/components/ui/badge"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import { canSend, getEmailConfig, type EmailConfig } from "@/lib/email"
 import { requireAdmin } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
 import { EmailForm, TestEmail } from "./email-form"
+
+export const metadata = { title: "Email · Admin · Nimbus" }
 
 const TRANSPORT_LABEL = { none: "Off", smtp: "SMTP", resend: "Resend" }
 
@@ -77,7 +73,10 @@ export default async function EmailPage() {
   const s = c.source === "db" ? await getSettings() : null
 
   return (
-    <div className="flex flex-col gap-6">
+    <AdminPage
+      title="Email"
+      description="How Nimbus sends password resets, email confirmations and approval notices."
+    >
       <div className="flex items-start gap-3 rounded-xl border bg-card px-4 py-3.5">
         <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted">
           {working ? (
@@ -94,7 +93,7 @@ export default async function EmailPage() {
                 ? "Email is off"
                 : `${via} isn't finished, so email is off`}
           </p>
-          <p className="text-muted-foreground">
+          <p className="text-pretty text-muted-foreground">
             {working
               ? "Password resets, email confirmation, join-request notices to admins and approval notices to members all go out."
               : "Without email, members who forget their password ask an admin, who sets a temporary one from Members. Two-factor still works."}
@@ -102,21 +101,20 @@ export default async function EmailPage() {
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            Delivery
-            {c.source === "env" && (
-              <Badge variant="outline">From environment</Badge>
-            )}
-          </CardTitle>
-          <CardDescription>
+      <Section
+        title="Connection"
+        description={
+          <span className="flex flex-wrap items-center gap-2">
             {c.source === "env"
               ? "Email settings are set in env, so they're read-only here."
               : "Credentials are encrypted before they're saved, and never sent back to your browser."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-6">
+            {c.source === "env" && (
+              <Badge variant="outline">From environment</Badge>
+            )}
+          </span>
+        }
+      >
+        <div id="email-delivery" className="scroll-mt-24 rounded-xl p-4">
           {c.source === "env" || !s ? (
             <EnvSummary c={c} />
           ) : (
@@ -134,22 +132,21 @@ export default async function EmailPage() {
               }}
             />
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </Section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Test</CardTitle>
-          <CardDescription>
-            {working
-              ? `Sends a short email to ${me.email} using the saved settings.`
-              : "Save working settings first, then send yourself a test."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+      <Section
+        title="Send a test"
+        description={
+          working
+            ? `Sends a short email to ${me.email} using the saved settings.`
+            : "Save working settings first, then send yourself a test."
+        }
+      >
+        <div id="email-test" className="scroll-mt-24 rounded-xl p-4">
           <TestEmail to={me.email} disabled={!working} />
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+      </Section>
+    </AdminPage>
   )
 }

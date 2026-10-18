@@ -22,7 +22,7 @@ const PLACE: Record<ToastPosition, string> = {
   "bottom-center": "bottom-4 left-1/2 -translate-x-1/2 flex-col-reverse",
 }
 
-// Action results as toasts, where the admin chose (Admin → Settings).
+// Action results as toasts, where the admin chose (Admin → Appearance).
 export function Toaster({
   position,
   children,

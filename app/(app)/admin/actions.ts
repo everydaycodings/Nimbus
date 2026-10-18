@@ -1,7 +1,7 @@
 "use server"
 
 import { randomBytes } from "node:crypto"
-import { eq, sql } from "drizzle-orm"
+import { and, eq, ilike, isNotNull, or, sql } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 
 import { db } from "@/lib/db"
@@ -10,11 +10,14 @@ import {
   TOAST_POSITIONS,
   invites,
   settings,
+  shares,
+  user,
   type SignupMode,
   type ToastPosition,
 } from "@/lib/db/schema"
 import { POLICY_MAX, POLICY_MIN } from "@/lib/password-policy"
 import { hasPassword, requireAdmin } from "@/lib/session"
+import { settingDefault, type SettingKey } from "@/lib/signup"
 
 const DOMAIN = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/
 const DAY = 24 * 60 * 60 * 1000
@@ -24,7 +27,7 @@ export async function setSignupMode(form: FormData) {
   const mode = form.get("mode") as SignupMode
   if (!SIGNUP_MODES.includes(mode)) return
   await db.update(settings).set({ signupMode: mode, updatedAt: new Date() })
-  revalidatePath("/admin/settings")
+  revalidatePath("/admin", "layout")
 }
 
 // The admin turning it on must already use two-factor, so they don't lock themselves behind the setup screen.
@@ -55,7 +58,7 @@ export async function setTrashRetention(form: FormData) {
     trashRetentionDays: RETENTION.includes(days) ? days : null,
     updatedAt: new Date(),
   })
-  revalidatePath("/admin/settings")
+  revalidatePath("/admin", "layout")
 }
 
 export async function addTrustedDomain(form: FormData) {
@@ -72,7 +75,7 @@ export async function addTrustedDomain(form: FormData) {
       updatedAt: new Date(),
     })
     .where(sql`not (${domain} = any(${settings.trustedDomains}))`)
-  revalidatePath("/admin/settings")
+  revalidatePath("/admin", "layout")
 }
 
 export async function removeTrustedDomain(domain: string) {
@@ -81,7 +84,7 @@ export async function removeTrustedDomain(domain: string) {
     trustedDomains: sql`array_remove(${settings.trustedDomains}, ${domain})`,
     updatedAt: new Date(),
   })
-  revalidatePath("/admin/settings")
+  revalidatePath("/admin", "layout")
 }
 
 export async function createInvite(form: FormData) {
@@ -94,13 +97,13 @@ export async function createInvite(form: FormData) {
     expiresAt: days > 0 ? new Date(Date.now() + days * DAY) : null,
     maxUses: Number.isInteger(maxUses) && maxUses > 0 ? maxUses : null,
   })
-  revalidatePath("/admin/settings")
+  revalidatePath("/admin", "layout")
 }
 
 export async function revokeInvite(id: string) {
   await requireAdmin()
   await db.delete(invites).where(eq(invites.id, id))
-  revalidatePath("/admin/settings")
+  revalidatePath("/admin", "layout")
 }
 
 // Blank means unlimited; anything else must be a positive whole number.
@@ -120,7 +123,7 @@ export async function setUploadLimit(form: FormData) {
     maxUploadBytes: n === null ? null : Math.round(n * unit),
     updatedAt: new Date(),
   })
-  revalidatePath("/admin/settings")
+  revalidatePath("/admin", "layout")
 }
 
 export async function setDefaultQuota(form: FormData) {
@@ -148,7 +151,7 @@ export async function addBlockedExtension(form: FormData) {
       updatedAt: new Date(),
     })
     .where(sql`not (${ext} = any(${settings.blockedExtensions}))`)
-  revalidatePath("/admin/settings")
+  revalidatePath("/admin", "layout")
 }
 
 export async function removeBlockedExtension(ext: string) {
@@ -157,7 +160,7 @@ export async function removeBlockedExtension(ext: string) {
     blockedExtensions: sql`array_remove(${settings.blockedExtensions}, ${ext})`,
     updatedAt: new Date(),
   })
-  revalidatePath("/admin/settings")
+  revalidatePath("/admin", "layout")
 }
 
 export async function setVersionRetention(form: FormData) {
@@ -169,7 +172,7 @@ export async function setVersionRetention(form: FormData) {
     versionMaxAgeDays: days && Math.floor(days),
     updatedAt: new Date(),
   })
-  revalidatePath("/admin/settings")
+  revalidatePath("/admin", "layout")
 }
 
 // Blank turns Collabora off. Only http(s), without a trailing slash.
@@ -189,7 +192,7 @@ export async function setOfficeUrl(form: FormData) {
     }
   }
   await db.update(settings).set({ officeUrl: url, updatedAt: new Date() })
-  revalidatePath("/admin/settings")
+  revalidatePath("/admin", "layout")
 }
 
 // Tesseract language codes, e.g. "eng" or "eng+deu+chi_sim".
@@ -203,7 +206,7 @@ export async function setOcrLangs(form: FormData) {
   await db
     .update(settings)
     .set({ ocrLangs: langs.join("+") || "eng", updatedAt: new Date() })
-  revalidatePath("/admin/settings")
+  revalidatePath("/admin", "layout")
 }
 
 // Off stops new vaults; existing ones keep working for their owners.
@@ -251,5 +254,65 @@ export async function setLinkPolicy(form: FormData) {
     requireLinkPassword: form.get("requirePassword") === "on",
     updatedAt: new Date(),
   })
-  revalidatePath("/admin/settings")
+  revalidatePath("/admin", "layout")
+}
+
+// Settings a "Reset to default" button may touch. Email has its own form.
+const RESETTABLE: SettingKey[] = [
+  "signupMode",
+  "require2fa",
+  "passwordPolicy",
+  "defaultQuotaBytes",
+  "maxUploadBytes",
+  "blockedExtensions",
+  "versionKeepLast",
+  "versionMaxAgeDays",
+  "trashRetentionDays",
+  "publicLinksEnabled",
+  "requireLinkPassword",
+  "maxLinkDays",
+  "vaultsEnabled",
+  "maxVaultsPerMember",
+  "officeUrl",
+  "ocrLangs",
+  "toastPosition",
+]
+
+export async function resetSetting(keys: SettingKey[]) {
+  await requireAdmin()
+  const set = Object.fromEntries(
+    keys
+      .filter((k) => RESETTABLE.includes(k))
+      .map((k) => [k, settingDefault(k)])
+  )
+  if (!Object.keys(set).length) return
+  await db.update(settings).set({ ...set, updatedAt: new Date() })
+  revalidatePath("/", "layout")
+}
+
+export async function revokeLink(id: string) {
+  await requireAdmin()
+  await db
+    .delete(shares)
+    .where(and(eq(shares.id, String(id)), isNotNull(shares.token)))
+  revalidatePath("/admin", "layout")
+}
+
+// Admin search: people by name or email. The owner is listed but never acted on here.
+export async function findMembers(q: string) {
+  await requireAdmin()
+  const like = `%${String(q)
+    .trim()
+    .replace(/[\\%_]/g, "\\$&")}%`
+  return db
+    .select({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      status: user.status,
+    })
+    .from(user)
+    .where(or(ilike(user.name, like), ilike(user.email, like)))
+    .orderBy(user.name)
+    .limit(5)
 }

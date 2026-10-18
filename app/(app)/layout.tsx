@@ -7,16 +7,19 @@ import {
   KeyIcon,
   LockIcon,
   ShieldIcon,
+  ShieldCheckIcon,
   SignOutIcon,
   StarIcon,
   TrashIcon,
   UsersIcon,
   XCircleIcon,
 } from "@phosphor-icons/react/dist/ssr"
-import { and, count, eq, isNull, sql } from "drizzle-orm"
+import { and, count, eq, gt, isNotNull, isNull, or, sql } from "drizzle-orm"
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 
+import { AdminNav } from "@/components/admin-nav"
+import { Search } from "@/components/admin-search"
 import { NavLink } from "@/components/nav-link"
 import { SIDEBAR_COOKIE } from "@/components/nav-styles"
 import { NavUser } from "@/components/nav-user"
@@ -25,7 +28,6 @@ import { PasswordForm } from "@/components/password-form"
 import { PasswordPolicyProvider } from "@/components/password-input"
 import { ResendVerification } from "@/components/resend-verification"
 import { NotificationBell, SharedBadge } from "@/components/notification-bell"
-import { SearchPalette } from "@/components/search-palette"
 import { SidebarShell } from "@/components/sidebar-shell"
 import { Toaster } from "@/components/toaster"
 import { TwoFactorSetup } from "@/components/two-factor"
@@ -34,7 +36,7 @@ import { VaultKeysProvider } from "@/components/vault-keys"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { db } from "@/lib/db"
-import { notifications, user } from "@/lib/db/schema"
+import { notifications, shares, user } from "@/lib/db/schema"
 import { emailEnabled } from "@/lib/email"
 import { getUsage } from "@/lib/quota"
 import { getSession, hasPassword, isAdmin } from "@/lib/session"
@@ -48,6 +50,29 @@ const FILE_LINKS = [
   { href: "/starred", label: "Starred", icon: StarIcon },
   { href: "/shared", label: "Shared files", icon: UsersIcon },
 ]
+
+function Brand({
+  icon: Icon,
+  title,
+  fade,
+}: {
+  icon: typeof CloudIcon
+  title: string
+  // Hides the text on the collapsed rail.
+  fade: string
+}) {
+  return (
+    <div className="flex items-center gap-2 p-2 group-data-[collapsed=true]/sidebar:p-0">
+      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-sidebar-accent">
+        <Icon weight="fill" className="size-5 text-brand" />
+      </span>
+      <span className={`grid text-sm leading-tight whitespace-nowrap ${fade}`}>
+        <span className="font-semibold">{title}</span>
+        <span className="text-xs text-muted-foreground">Self-hosted</span>
+      </span>
+    </div>
+  )
+}
 
 function SignOutButton() {
   return (
@@ -225,19 +250,20 @@ export default async function AppLayout({
   const label =
     "transition-opacity group-data-[collapsed=true]/sidebar:opacity-0"
 
+  const navUser = (
+    <NavUser
+      name={me.name}
+      email={me.email}
+      image={me.image}
+      role={ROLE_LABEL[me.role]}
+      admin={admin}
+      pending={pending}
+    />
+  )
+
   const sidebar = (
     <div className="flex h-full flex-col gap-4 p-2">
-      <div className="flex items-center gap-2 p-2 group-data-[collapsed=true]/sidebar:p-0">
-        <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-sidebar-accent">
-          <CloudIcon weight="fill" className="size-5 text-brand" />
-        </span>
-        <span
-          className={`grid text-sm leading-tight whitespace-nowrap ${label}`}
-        >
-          <span className="font-semibold">Nimbus</span>
-          <span className="text-xs text-muted-foreground">Self-hosted</span>
-        </span>
-      </div>
+      <Brand icon={CloudIcon} title="Nimbus" fade={label} />
       <nav className="flex flex-col gap-4" aria-label="Main">
         <NewMenu />
         <div className="flex flex-col gap-0.5">
@@ -265,15 +291,33 @@ export default async function AppLayout({
       </nav>
       <div className="mt-auto flex flex-col gap-3">
         <StorageMeter usage={await getUsage(me.id)} />
-        <NavUser
-          name={me.name}
-          email={me.email}
-          image={me.image}
-          role={ROLE_LABEL[me.role]}
-          admin={admin}
-          pending={pending}
-        />
+        {navUser}
       </div>
+    </div>
+  )
+
+  // Admins get their own sidebar under /admin; SidebarShell picks it by path.
+  const adminSidebar = admin && (
+    <div className="flex h-full flex-col gap-4 p-2">
+      <Brand icon={ShieldCheckIcon} title="Nimbus Admin" fade={label} />
+      <AdminNav
+        pending={pending}
+        links={
+          (
+            await db
+              .select({ n: count() })
+              .from(shares)
+              .where(
+                and(
+                  isNotNull(shares.token),
+                  or(isNull(shares.expiresAt), gt(shares.expiresAt, sql`now()`))
+                )
+              )
+          )[0].n
+        }
+        emailOff={!(await emailEnabled())}
+      />
+      <div className="mt-auto">{navUser}</div>
     </div>
   )
 
@@ -285,10 +329,11 @@ export default async function AppLayout({
       >
         <SidebarShell
           sidebar={sidebar}
+          adminSidebar={adminSidebar}
           defaultCollapsed={collapsed}
           actions={
             <>
-              <SearchPalette admin={admin} />
+              <Search admin={admin} />
               <NotificationBell initial={counts} />
             </>
           }

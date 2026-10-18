@@ -301,3 +301,13 @@
   background: var(--card);
   font-weight: 600;
 }
+
+/* Admin search lands on a setting row and briefly lights it up. */
+@keyframes setting-flash {
+  from {
+    background-color: var(--accent);
+  }
+}
+[data-flash] {
+  animation: setting-flash 1.8s cubic-bezier(0.22, 1, 0.36, 1);
+}

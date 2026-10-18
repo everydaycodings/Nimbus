@@ -13,9 +13,12 @@ export function NavLink({
   icon,
   label,
   match,
+  exact,
   children,
 }: {
   href: string
+  // Only this path, not its sub-pages, like the admin Overview.
+  exact?: boolean
   // Another path prefix this link owns, like /folders for My files.
   match?: string
   icon: React.ReactNode
@@ -24,10 +27,10 @@ export function NavLink({
 }) {
   const path = usePathname()
   const { collapsed } = useSidebar()
-  // Sections own their sub-pages: /admin stays active on /admin/settings.
+  // Sections own their sub-pages: /admin/storage stays active on /admin/storage/trash.
   const active =
     path === href ||
-    path.startsWith(`${href}/`) ||
+    (!exact && path.startsWith(`${href}/`)) ||
     Boolean(match && path.startsWith(match))
 
   return (

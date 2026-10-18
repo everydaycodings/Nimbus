@@ -171,7 +171,7 @@ async function describe(userId: string, ids?: string[]) {
     const seen = r.nodeId ? access.get(r.nodeId) : undefined
     const href =
       r.kind === "signup_request"
-        ? "/admin/members?tab=pending"
+        ? "/admin/approvals"
         : !seen
           ? "/shared"
           : r.kindOf === "folder"

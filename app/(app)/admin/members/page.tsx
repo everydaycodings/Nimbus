@@ -1,30 +1,21 @@
 import { ShieldCheckIcon } from "@phosphor-icons/react/dist/ssr"
-import { desc, eq } from "drizzle-orm"
+import { and, desc, eq, ilike, or } from "drizzle-orm"
 import Link from "next/link"
 
-import { SubmitButton } from "@/components/submit-button"
+import { AdminPage, FRAME, SELECT } from "@/components/admin/setting"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { UserAvatar } from "@/components/user-avatar"
 import { db } from "@/lib/db"
-import { user, type Status } from "@/lib/db/schema"
-import { cn } from "@/lib/utils"
+import { user } from "@/lib/db/schema"
 import { requireAdmin } from "@/lib/session"
 import { formatBytes } from "@/lib/file-rules"
 import { usedByOwner } from "@/lib/quota"
 import { getSettings } from "@/lib/signup"
+import { cn } from "@/lib/utils"
 import { vaultsByOwner } from "@/lib/vault"
-import { setRole, setStatus } from "./actions"
-import { MemberMenu } from "./member-menu"
-
-const TABS: { status: Status; label: string; empty: string }[] = [
-  {
-    status: "pending",
-    label: "Waiting",
-    empty: "No one is waiting for approval.",
-  },
-  { status: "active", label: "Active", empty: "No active members." },
-  { status: "rejected", label: "Declined", empty: "No declined requests." },
-]
+import { MemberActions } from "./member-actions"
 
 const ROLE_LABEL = { owner: "Owner", admin: "Admin", member: "Member" }
 
@@ -41,60 +32,117 @@ function vaultLabel(vaults: { bytes: number }[]) {
   return ` · ${vaults.length} vault${vaults.length === 1 ? "" : "s"} (${formatBytes(bytes)})`
 }
 
+export const metadata = { title: "Members · Admin · Nimbus" }
+
+const SORTS = {
+  joined: "Newest first",
+  name: "Name",
+  storage: "Most storage",
+} as const
+
 export default async function MembersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>
+  searchParams: Promise<{ q?: string; status?: string; sort?: string }>
 }) {
   const me = await requireAdmin()
-  const { tab } = await searchParams
-  const current = TABS.find((t) => t.status === tab) ?? TABS[0]
+  const params = await searchParams
+  const q = (params.q ?? "").trim()
+  const declined = params.status === "rejected"
+  const sort =
+    (params.sort ?? "joined") in SORTS
+      ? (params.sort as keyof typeof SORTS)
+      : "joined"
 
   const settings = await getSettings()
+  const like = `%${q.replace(/[\\%_]/g, "\\$&")}%`
   const people = await db
     .select()
     .from(user)
-    .where(eq(user.status, current.status))
+    .where(
+      and(
+        eq(user.status, declined ? "rejected" : "active"),
+        q ? or(ilike(user.name, like), ilike(user.email, like)) : undefined
+      )
+    )
     .orderBy(desc(user.createdAt))
-  const active = current.status === "active"
   const ids = people.map((p) => p.id)
-  const [used, vaults] = active
-    ? await Promise.all([usedByOwner(ids), vaultsByOwner(ids)])
-    : [null, null]
+  const [used, vaults] = declined
+    ? [null, null]
+    : await Promise.all([usedByOwner(ids), vaultsByOwner(ids)])
+  if (sort === "name") people.sort((a, b) => a.name.localeCompare(b.name))
+  if (sort === "storage" && used)
+    people.sort((a, b) => (used.get(b.id) ?? 0) - (used.get(a.id) ?? 0))
+  const filtered = Boolean(q) || declined
 
   return (
-    <div className="flex flex-col gap-6">
-      <nav
-        aria-label="Member status"
-        className="inline-flex h-9 w-fit items-center rounded-lg bg-muted p-[3px]"
-      >
-        {TABS.map((t) => (
-          <Link
-            key={t.status}
-            href={`/admin/members?tab=${t.status}`}
-            aria-current={t.status === current.status ? "page" : undefined}
-            className={cn(
-              "flex h-full items-center rounded-md border border-transparent px-3 text-sm font-medium text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50",
-              "aria-[current=page]:border-input aria-[current=page]:bg-input/30 aria-[current=page]:text-foreground aria-[current=page]:shadow-sm"
-            )}
-          >
-            {t.label}
-          </Link>
-        ))}
-      </nav>
+    <AdminPage
+      wide
+      title="Members"
+      description="Everyone with access to this Nimbus. Change roles, storage and recovery from each row."
+    >
+      <form role="search" className="flex flex-wrap items-center gap-2">
+        <Input
+          name="q"
+          type="search"
+          defaultValue={q}
+          placeholder="Search by name or email"
+          aria-label="Search members"
+          className="max-w-xs flex-1 basis-56"
+        />
+        <select
+          name="status"
+          defaultValue={declined ? "rejected" : "active"}
+          aria-label="Status"
+          className={cn(SELECT, "w-auto")}
+        >
+          <option value="active">Active</option>
+          <option value="rejected">Declined</option>
+        </select>
+        <select
+          name="sort"
+          defaultValue={sort}
+          aria-label="Sort"
+          className={cn(SELECT, "w-auto")}
+        >
+          {Object.entries(SORTS).map(([k, label]) => (
+            <option key={k} value={k} disabled={declined && k === "storage"}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <Button type="submit" variant="outline">
+          Apply
+        </Button>
+        <p className="ml-auto text-sm text-muted-foreground tabular-nums">
+          {people.length} {declined ? "declined" : "member"}
+          {people.length === 1 || declined ? "" : "s"}
+        </p>
+      </form>
 
       {people.length === 0 ? (
         <p className="rounded-xl border border-dashed border-input px-6 py-12 text-center text-sm text-muted-foreground">
-          {current.empty}
+          {q
+            ? `No one matches “${q}”.`
+            : declined
+              ? "No declined requests."
+              : "No active members."}
+          {filtered && (
+            <>
+              {" "}
+              <Link
+                href="/admin/members"
+                className="text-foreground underline underline-offset-4"
+              >
+                Show everyone
+              </Link>
+            </>
+          )}
         </p>
       ) : (
-        <ul className="flex flex-col divide-y rounded-xl border bg-card shadow-sm">
+        <ul className={`${FRAME} flex flex-col divide-y`}>
           {people.map((p) => {
             const self = p.id === me.id
-            const locked = p.role === "owner" || self
-            // Mirrors recoverable() in actions.ts.
-            const recoverable =
-              !locked && (p.role !== "admin" || me.role === "owner")
             return (
               <li
                 key={p.id}
@@ -103,7 +151,12 @@ export default async function MembersPage({
                 <UserAvatar name={p.name} image={p.image} />
                 <div className="min-w-0 flex-1 basis-48">
                   <p className="truncate text-sm font-medium">
-                    {p.name}
+                    <Link
+                      href={`/admin/members/${p.id}`}
+                      className="rounded-sm underline-offset-4 outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    >
+                      {p.name}
+                    </Link>
                     {self && (
                       <span className="text-muted-foreground"> (you)</span>
                     )}
@@ -112,7 +165,7 @@ export default async function MembersPage({
                     {p.email}
                   </p>
                 </div>
-                {used && (
+                {used && !declined && (
                   <p className="text-sm text-muted-foreground tabular-nums">
                     {storageLabel(
                       used.get(p.id) ?? 0,
@@ -137,50 +190,17 @@ export default async function MembersPage({
                     Joined {joined.format(p.createdAt)}
                   </span>
                 </div>
-                {!locked && (
-                  <div className="flex items-center gap-2">
-                    {p.status !== "active" && (
-                      <form action={setStatus.bind(null, p.id, "active")}>
-                        <SubmitButton size="sm">Approve</SubmitButton>
-                      </form>
-                    )}
-                    {p.status !== "rejected" && (
-                      <form action={setStatus.bind(null, p.id, "rejected")}>
-                        <SubmitButton size="sm" variant="destructive">
-                          {p.status === "pending" ? "Decline" : "Remove access"}
-                        </SubmitButton>
-                      </form>
-                    )}
-                    {me.role === "owner" && p.status === "active" && (
-                      <form
-                        action={setRole.bind(
-                          null,
-                          p.id,
-                          p.role === "admin" ? "member" : "admin"
-                        )}
-                      >
-                        <SubmitButton size="sm" variant="outline">
-                          {p.role === "admin" ? "Make member" : "Make admin"}
-                        </SubmitButton>
-                      </form>
-                    )}
-                    {recoverable && p.status === "active" && (
-                      <MemberMenu
-                        id={p.id}
-                        name={p.name}
-                        twoFactor={Boolean(p.twoFactorEnabled)}
-                        quota={p.quotaBytes}
-                        fallback={settings.defaultQuotaBytes}
-                        vaults={vaults?.get(p.id) ?? []}
-                      />
-                    )}
-                  </div>
-                )}
+                <MemberActions
+                  me={me}
+                  p={p}
+                  fallback={settings.defaultQuotaBytes}
+                  vaults={vaults?.get(p.id) ?? []}
+                />
               </li>
             )
           })}
         </ul>
       )}
-    </div>
+    </AdminPage>
   )
 }

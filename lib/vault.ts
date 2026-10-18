@@ -44,6 +44,9 @@ async function summaries(where: SQL) {
 export const listVaults = (ownerId: string): Promise<VaultSummary[]> =>
   summaries(sql`v.owner_id = ${ownerId}`)
 
+// Every vault on the instance, for the admin usage summary.
+export const allVaults = () => summaries(sql`true`)
+
 export async function vaultsByOwner(ids: string[]) {
   const out = new Map<string, VaultSummary[]>()
   if (!ids.length) return out
