@@ -6,7 +6,6 @@ import {
   HourglassIcon,
   KeyIcon,
   LockIcon,
-  ShieldCheckIcon,
   ShieldIcon,
   SignOutIcon,
   StarIcon,
@@ -30,7 +29,6 @@ import { SidebarShell } from "@/components/sidebar-shell"
 import { TwoFactorSetup } from "@/components/two-factor"
 import { NewMenu, UploadProvider } from "@/components/upload-provider"
 import { VaultKeysProvider } from "@/components/vault-keys"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { db } from "@/lib/db"
@@ -260,18 +258,6 @@ export default async function AppLayout({
           )}
           <NavLink href="/trash" icon={<TrashIcon />} label="Trash" />
         </div>
-        {admin && (
-          <div className="flex flex-col gap-0.5">
-            <NavLink href="/admin" icon={<ShieldCheckIcon />} label="Admin">
-              {pending > 0 && (
-                <Badge className="h-5 min-w-5 rounded-full px-1.5 tabular-nums group-data-[collapsed=true]/sidebar:absolute group-data-[collapsed=true]/sidebar:top-1 group-data-[collapsed=true]/sidebar:right-1 group-data-[collapsed=true]/sidebar:h-2 group-data-[collapsed=true]/sidebar:min-w-2 group-data-[collapsed=true]/sidebar:p-0 group-data-[collapsed=true]/sidebar:text-[0px]">
-                  {pending}
-                  <span className="sr-only"> waiting for approval</span>
-                </Badge>
-              )}
-            </NavLink>
-          </div>
-        )}
       </nav>
       <div className="mt-auto flex flex-col gap-3">
         <StorageMeter usage={await getUsage(me.id)} />
@@ -280,6 +266,8 @@ export default async function AppLayout({
           email={me.email}
           image={me.image}
           role={ROLE_LABEL[me.role]}
+          admin={admin}
+          pending={pending}
         />
       </div>
     </div>

@@ -2,7 +2,9 @@
 
 import { Menu } from "@base-ui/react/menu"
 import {
+  ArrowSquareOutIcon,
   CaretUpDownIcon,
+  ShieldCheckIcon,
   SignOutIcon,
   UserCircleIcon,
 } from "@phosphor-icons/react"
@@ -18,9 +20,15 @@ type Props = {
   email: string
   image?: string | null
   role: string
+  admin: boolean
+  pending: number
 }
 
-function Identity({ name, email, image }: Omit<Props, "role">) {
+function Identity({
+  name,
+  email,
+  image,
+}: Omit<Props, "role" | "admin" | "pending">) {
   return (
     <>
       <UserAvatar name={name} image={image} />
@@ -36,7 +44,7 @@ const ITEM =
   "flex h-8 cursor-default items-center gap-2 rounded-md px-2 text-sm outline-none select-none data-highlighted:bg-accent [&_svg]:size-4 [&_svg]:text-muted-foreground"
 
 // Account section in the sidebar footer: who you are, your role, account, sign out.
-export function NavUser({ role, ...user }: Props) {
+export function NavUser({ role, admin, pending, ...user }: Props) {
   const { collapsed } = useSidebar()
   return (
     <Menu.Root>
@@ -63,6 +71,22 @@ export function NavUser({ role, ...user }: Props) {
               <UserCircleIcon />
               Account and security
             </Menu.Item>
+            {admin && (
+              <Menu.Item
+                render={<a href="/admin" target="_blank" rel="noopener" />}
+                className={ITEM}
+              >
+                <ShieldCheckIcon />
+                Admin
+                {pending > 0 && (
+                  <Badge className="ml-auto h-5 min-w-5 rounded-full px-1.5 tabular-nums">
+                    {pending}
+                    <span className="sr-only"> waiting for approval</span>
+                  </Badge>
+                )}
+                <ArrowSquareOutIcon className={pending > 0 ? "" : "ml-auto"} />
+              </Menu.Item>
+            )}
             <Menu.Item onClick={() => signOut()} className={ITEM}>
               <SignOutIcon />
               Sign out
