@@ -35,6 +35,7 @@ import { NewMenu, UploadProvider } from "@/components/upload-provider"
 import { VaultKeysProvider } from "@/components/vault-keys"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { cached } from "@/lib/cache"
 import { db } from "@/lib/db"
 import { notifications, shares, user } from "@/lib/db/schema"
 import { emailEnabled } from "@/lib/email"
@@ -291,7 +292,9 @@ export default async function AppLayout({
         </div>
       </nav>
       <div className="mt-auto flex flex-col gap-3">
-        <StorageMeter usage={await getUsage(me.id)} />
+        <StorageMeter
+          usage={await cached(`usage:${me.id}`, 30, () => getUsage(me.id))}
+        />
         {navUser}
       </div>
     </div>
@@ -317,7 +320,7 @@ export default async function AppLayout({
           )[0].n
         }
         emailOff={!(await emailEnabled())}
-        healthAlarm={await healthAlarm()}
+        healthAlarm={await cached("health:alarm", 30, healthAlarm)}
       />
       <div className="mt-auto">{navUser}</div>
     </div>

@@ -10,6 +10,7 @@ import {
   or,
   sql,
 } from "drizzle-orm"
+import { cache } from "react"
 
 import { db } from "./db"
 import { invites, settings, shares } from "./db/schema"
@@ -18,11 +19,12 @@ import { readToken } from "./upload-rules"
 // Set by /invite/[token] and read when the account is created.
 export const INVITE_COOKIE = "nimbus_invite"
 
-// The row is seeded by the migration that created the table.
-export async function getSettings() {
+// The row is seeded by the migration that created the table. Read once per
+// request: the layout, auth and email each ask for it.
+export const getSettings = cache(async () => {
   const [row] = await db.select().from(settings)
   return row
-}
+})
 
 export type Settings = Awaited<ReturnType<typeof getSettings>>
 export type SettingKey = keyof Settings

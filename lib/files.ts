@@ -101,14 +101,16 @@ const cols = (viewer: string) => ({
   // A folder's size is everything inside it that shares its trash state.
   // ponytail: recursive sum per folder row; cache it on the node if big trees get slow.
   // Raw "nodes".x refs: Drizzle leaves ${column} unqualified here, which would
-  // bind to the inner table.
+  // bind to the inner table. Coalesce, not `is not distinct from`: the planner
+  // guesses that matches one row and goes quadratic (18s at 10k files vs 0.2s).
   size: sql<number>`case when "nodes".kind = 'file' then "nodes".size else (
     with recursive d as (
       select c.id, c.size from nodes c
-      where c.parent_id = "nodes".id and c.trashed_at is not distinct from "nodes".trashed_at
+      where c.parent_id = "nodes".id
+        and coalesce(c.trashed_at, 'infinity') = coalesce("nodes".trashed_at, 'infinity')
       union all
       select n.id, n.size from nodes n join d on n.parent_id = d.id
-      where n.trashed_at is not distinct from "nodes".trashed_at
+      where coalesce(n.trashed_at, 'infinity') = coalesce("nodes".trashed_at, 'infinity')
     ) select coalesce(sum(size), 0) from d) end`.mapWith(Number),
   mime: nodes.mime,
   starred: sql<boolean>`exists (
