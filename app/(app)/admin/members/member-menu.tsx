@@ -6,6 +6,7 @@ import {
   DotsThreeIcon,
   HardDrivesIcon,
   KeyIcon,
+  LockKeyIcon,
   ShieldSlashIcon,
 } from "@phosphor-icons/react"
 import { useState, useTransition } from "react"
@@ -23,7 +24,13 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { formatBytes } from "@/lib/file-types"
-import { resetTwoFactor, setMemberQuota, setTemporaryPassword } from "./actions"
+import type { VaultSummary } from "@/lib/vault"
+import {
+  deleteMemberVault,
+  resetTwoFactor,
+  setMemberQuota,
+  setTemporaryPassword,
+} from "./actions"
 
 const GB = 2 ** 30
 
@@ -33,6 +40,7 @@ export function MemberMenu({
   twoFactor,
   quota,
   fallback,
+  vaults,
 }: {
   id: string
   name: string
@@ -40,8 +48,10 @@ export function MemberMenu({
   // Their own storage limit, and the instance default it falls back to.
   quota: number | null
   fallback: number | null
+  vaults: VaultSummary[]
 }) {
   const [quotaOpen, setQuotaOpen] = useState(false)
+  const [vaultOpen, setVaultOpen] = useState(false)
   // `kind` outlives `open` so the dialog's text doesn't change while it animates out.
   const [kind, setKind] = useState<"password" | "2fa">("password")
   const [open, setOpen] = useState(false)
@@ -106,6 +116,15 @@ export function MemberMenu({
                 <Menu.Item className={MENU_ITEM} onClick={() => show("2fa")}>
                   <ShieldSlashIcon />
                   Reset two-factor
+                </Menu.Item>
+              )}
+              {vaults.length > 0 && (
+                <Menu.Item
+                  className={MENU_ITEM}
+                  onClick={() => setVaultOpen(true)}
+                >
+                  <LockKeyIcon />
+                  Delete vault…
                 </Menu.Item>
               )}
             </Menu.Popup>
@@ -234,6 +253,122 @@ export function MemberMenu({
           </Dialog.Popup>
         </Dialog.Portal>
       </Dialog.Root>
+      {vaultOpen && (
+        <DeleteVault
+          id={id}
+          name={name}
+          vaults={vaults}
+          onClose={() => setVaultOpen(false)}
+        />
+      )}
     </>
+  )
+}
+
+// Picks one of their vaults and confirms by its name.
+function DeleteVault({
+  id,
+  name,
+  vaults,
+  onClose,
+}: {
+  id: string
+  name: string
+  vaults: VaultSummary[]
+  onClose: () => void
+}) {
+  const [pick, setPick] = useState(vaults[0].id)
+  const [typed, setTyped] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  const [pending, start] = useTransition()
+  const vault = vaults.find((v) => v.id === pick) ?? vaults[0]
+
+  return (
+    <Dialog.Root open onOpenChange={(o) => !o && !pending && onClose()}>
+      <Dialog.Portal>
+        <Dialog.Backdrop className={DIALOG_BACKDROP} />
+        <Dialog.Popup className={DIALOG_POPUP}>
+          <div className="grid gap-1.5">
+            <Dialog.Title className="text-base font-semibold">
+              Delete a vault of {name}?
+            </Dialog.Title>
+            <Dialog.Description className="text-sm text-muted-foreground">
+              Everything in it is deleted for good, trash included. Nobody can
+              open a vault without its passphrase, so this is the only thing
+              that can be done with one.
+            </Dialog.Description>
+          </div>
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={(e) => {
+              e.preventDefault()
+              setError(null)
+              start(async () => {
+                const res = await deleteMemberVault(id, vault.id)
+                if ("error" in res && res.error) return setError(res.error)
+                onClose()
+              })
+            }}
+          >
+            <fieldset className="flex flex-col gap-2">
+              <legend className="sr-only">Vault</legend>
+              {vaults.map((v) => (
+                <label
+                  key={v.id}
+                  className="flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-sm has-checked:border-ring/60 has-checked:bg-input/30"
+                >
+                  <input
+                    type="radio"
+                    name="vault"
+                    checked={v.id === pick}
+                    onChange={() => {
+                      setPick(v.id)
+                      setTyped("")
+                    }}
+                    className="size-4 accent-primary"
+                  />
+                  <span className="min-w-0 flex-1 truncate font-medium">
+                    {v.name}
+                  </span>
+                  <span className="text-muted-foreground tabular-nums">
+                    {v.items} file{v.items === 1 ? "" : "s"} ·{" "}
+                    {formatBytes(v.bytes)}
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+            <div className="grid gap-2">
+              <Label htmlFor={`vault-name-${id}`}>
+                Type <span className="font-semibold">{vault.name}</span> to
+                confirm
+              </Label>
+              <Input
+                id={`vault-name-${id}`}
+                value={typed}
+                onChange={(e) => setTyped(e.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </div>
+            <FormError>{error}</FormError>
+            <div className="flex justify-end gap-2">
+              <Dialog.Close
+                disabled={pending}
+                render={<Button variant="outline" />}
+              >
+                Cancel
+              </Dialog.Close>
+              <SubmitButton
+                variant="destructive"
+                pending={pending}
+                disabled={typed !== vault.name}
+              >
+                Delete vault
+              </SubmitButton>
+            </div>
+          </form>
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
   )
 }

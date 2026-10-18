@@ -18,22 +18,7 @@ export function splitPath(raw: unknown): string[] | null {
   return ok ? names : null
 }
 
-// Lowercase, without the dot: "a.JPG" → "jpg". Dotfiles like ".env" have none.
-export function extOf(name: string) {
-  const dot = name.lastIndexOf(".")
-  return dot > 0 ? name.slice(dot + 1).toLowerCase() : ""
-}
-
-// The lowest free "name (n).ext". `taken` holds lowercased names.
-export function freeName(name: string, taken: Set<string>, folder = false) {
-  const dot = folder ? -1 : name.lastIndexOf(".")
-  const [base, ext] =
-    dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""]
-  for (let n = 1; ; n++) {
-    const next = `${base} (${n})${ext}`
-    if (!taken.has(next.toLowerCase())) return next
-  }
-}
+export { extOf, freeName } from "./file-rules.ts"
 
 // RFC 6266 with an RFC 5987 filename* for non-ASCII names.
 export function contentDisposition(filename: string, inline = false) {
@@ -91,7 +76,8 @@ export function readToken<T extends { exp: number }>(
 
 // The upload token binds the folder's owner (`u`) and folder (`p`) to who is
 // uploading: a member (`b`, missing when it's the owner) or a file-drop link
-// (`s`, with the name the uploader typed in `l` and their IP in `i`).
+// (`s`, with the name the uploader typed in `l` and their IP in `i`). Vault
+// uploads carry the vault (`v`); `p` null is then the vault's root.
 export type UploadToken = {
   u: string
   p: string | null
@@ -99,6 +85,7 @@ export type UploadToken = {
   s?: string
   l?: string
   i?: string
+  v?: string
   exp: number
 }
 
@@ -106,7 +93,7 @@ export function signUploadToken(
   ownerId: string,
   parentId: string | null,
   now = Date.now(),
-  by: Pick<UploadToken, "b" | "s" | "l" | "i"> = {}
+  by: Pick<UploadToken, "b" | "s" | "l" | "i" | "v"> = {}
 ) {
   return signToken("upload-token", { u: ownerId, p: parentId, ...by }, DAY, now)
 }

@@ -16,9 +16,12 @@ export type Answers = Map<string, Choice>
 // copy or skipped can't clash inside, so its files are never asked about.
 export function ConflictDialog({
   conflicts,
+  replace = false,
   onDone,
 }: {
   conflicts: Conflict[]
+  // Vault files have no versions: "version" replaces the file instead.
+  replace?: boolean
   // null when the person cancels the whole upload.
   onDone: (answers: Answers | null) => void
 }) {
@@ -79,7 +82,9 @@ export function ConflictDialog({
               )}
               {folder
                 ? `Merge adds what you're uploading to the existing folder. Keep both uploads it as “${cur.freeName}”.`
-                : `New version keeps the current file in its version history. Keep both uploads it as “${cur.freeName}”.`}
+                : replace
+                  ? `Replace deletes the current file. Keep both uploads it as “${cur.freeName}”.`
+                  : `New version keeps the current file in its version history. Keep both uploads it as “${cur.freeName}”.`}
             </Dialog.Description>
           </div>
           {left.length > 1 && (
@@ -106,7 +111,7 @@ export function ConflictDialog({
               Keep both
             </Button>
             <Button onClick={() => answer("version")}>
-              {folder ? "Merge" : "New version"}
+              {folder ? "Merge" : replace ? "Replace" : "New version"}
             </Button>
           </div>
         </Dialog.Popup>

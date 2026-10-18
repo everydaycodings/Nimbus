@@ -36,6 +36,7 @@ import {
   setOcrLangs,
   setOfficeUrl,
   setLinkPolicy,
+  setVaultPolicy,
 } from "./actions"
 
 const MODES: { mode: SignupMode; label: string; hint: string }[] = [
@@ -107,6 +108,8 @@ export default async function SettingsPage() {
     publicLinksEnabled,
     maxLinkDays,
     requireLinkPassword,
+    vaultsEnabled,
+    maxVaultsPerMember,
   } = await getSettings()
   const quota = sizeField(defaultQuotaBytes, "GB", "TB")
   const size = sizeField(maxUploadBytes, "MB", "GB")
@@ -575,6 +578,52 @@ export default async function SettingsPage() {
                   max={3650}
                   step={1}
                   defaultValue={maxLinkDays ?? ""}
+                  placeholder="No limit"
+                />
+              </div>
+              <SubmitButton>Save</SubmitButton>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Vaults</CardTitle>
+          <CardDescription>
+            Vaults are encrypted in the member&apos;s browser with a passphrase
+            only they know. Nobody on this server can open or recover them. You
+            can see their size and delete them from Members.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={setVaultPolicy} className="flex flex-col gap-4">
+            <label className="flex cursor-pointer items-start gap-3 text-sm">
+              <input
+                type="checkbox"
+                name="enabled"
+                defaultChecked={vaultsEnabled}
+                className="mt-0.5 size-4 accent-primary"
+              />
+              <span>
+                Allow new vaults
+                <span className="block text-muted-foreground">
+                  Off: members can&apos;t make new vaults. The ones they have
+                  keep working.
+                </span>
+              </span>
+            </label>
+            <div className="grid items-end gap-3 sm:grid-cols-[1fr_auto]">
+              <div className="grid gap-2">
+                <Label htmlFor="maxVaults">Vaults per member</Label>
+                <Input
+                  id="maxVaults"
+                  name="maxVaults"
+                  type="number"
+                  min={1}
+                  max={1000}
+                  step={1}
+                  defaultValue={maxVaultsPerMember ?? ""}
                   placeholder="No limit"
                 />
               </div>

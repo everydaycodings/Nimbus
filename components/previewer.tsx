@@ -31,6 +31,10 @@ import type { Item } from "@/lib/files"
 import { SHIKI_THEME, langOf, readRange } from "@/lib/thumbs"
 import { cn } from "@/lib/utils"
 
+// A file decrypted in the browser (vault files): its bytes and an object URL
+// for them. Null while it's still decrypting.
+export type Decrypted = { blob: Blob; url: string } | null
+
 // What the previewer shows: a file, or one of its older versions.
 export type Shown = {
   item: Item
@@ -59,6 +63,7 @@ export function Previewer({
   menu,
   onUseFrame,
   link,
+  src,
 }: {
   shown: Shown | null
   open: boolean
@@ -75,11 +80,14 @@ export function Previewer({
   onUseFrame?: (item: Item, video: HTMLVideoElement) => Promise<void>
   // On a public link's page: its token, and whether it allows downloads.
   link?: { token: string; download: boolean }
+  // Decrypted bytes to show instead of fetching the file from the server.
+  src?: Decrypted
 }) {
   const item = shown?.item
   const v = shown?.version
   const t = item && fileType("file", item.mime, item.name)
-  const href = item && downloadHref(item, v, link)
+  const href =
+    src !== undefined ? (src?.url ?? null) : item && downloadHref(item, v, link)
 
   function onKeyDown(e: React.KeyboardEvent) {
     if (
@@ -129,7 +137,7 @@ export function Previewer({
                     size="icon"
                     aria-label="Download"
                     title="Download"
-                    render={<a href={href} />}
+                    render={<a href={href} download={blobName(href, item)} />}
                     nativeButton={false}
                     className="max-sm:ml-auto"
                   >
@@ -156,6 +164,7 @@ export function Previewer({
                   version={v}
                   href={href ?? null}
                   link={link?.token}
+                  src={src}
                   onUseFrame={
                     onUseFrame && !v
                       ? (video) => onUseFrame(item, video)
@@ -214,6 +223,10 @@ export function downloadHref(
   return `/api/files/${item.id}/download${v ? `?v=${v.id}` : ""}`
 }
 
+// Object URLs open in the tab unless the link says to save them.
+const blobName = (href: string, item: Item) =>
+  href.startsWith("blob:") ? item.name : undefined
+
 // Fetches a short-lived URL for the file, then hands it to its viewer.
 // Exported for the public link page, which shows one file inline.
 export function View({
@@ -221,6 +234,7 @@ export function View({
   version,
   href,
   link,
+  src,
   onUseFrame,
 }: {
   item: Item
@@ -228,6 +242,8 @@ export function View({
   href: string | null
   // A public link's token: URLs come from the link, and Collabora is skipped.
   link?: string
+  // Already-decrypted bytes: no server URL, and Collabora is skipped.
+  src?: Decrypted
   onUseFrame?: (video: HTMLVideoElement) => Promise<void>
 }) {
   const mime = version ? version.mime : item.mime
@@ -238,7 +254,7 @@ export function View({
   // Collabora's viewer: undefined while asking, null when it's off.
   const [frame, setFrame] = useState<
     Awaited<ReturnType<typeof officeFrame>> | undefined
-  >(!link && OFFICE_EXT.test(item.name) ? undefined : null)
+  >(!link && src === undefined && OFFICE_EXT.test(item.name) ? undefined : null)
 
   useEffect(() => {
     if (frame !== undefined) return
@@ -253,31 +269,41 @@ export function View({
   }, [item.id, version?.id, frame])
 
   useEffect(() => {
-    if (!kind || frame !== null) return
+    if (!kind || frame !== null || src !== undefined) return
     let live = true
-    ;(link ? linkPreviewUrl(link, item.id) : previewUrl(item.id, version?.id, true)).then(
+    ;(link
+      ? linkPreviewUrl(link, item.id)
+      : previewUrl(item.id, version?.id, true)
+    ).then(
       (u) => live && (u ? setUrl(u) : setFailed(OPEN_FAILED)),
       () => live && setFailed(OPEN_FAILED)
     )
     return () => {
       live = false
     }
-  }, [item.id, version?.id, kind, frame, link])
+  }, [item.id, version?.id, kind, frame, link, src])
 
-  if (frame === undefined) return <Loading />
+  if (frame === undefined || src === null) return <Loading />
   if (frame) return <OfficeView {...frame} title={item.name} />
   if (!kind) return <NoPreview item={item} href={href} />
   if (failed) return <NoPreview item={item} href={href} error={failed} />
-  if (!url) return <Loading />
+  const shownUrl = src?.url ?? url
+  if (!shownUrl) return <Loading />
 
-  const props = { url, item, size, href }
+  const props = {
+    url: shownUrl,
+    data: src?.blob ?? shownUrl,
+    item,
+    size,
+    href,
+  }
   switch (kind) {
     case "image":
       return <ImageView {...props} />
     case "video":
       return (
         <VideoPlayer
-          src={url}
+          src={shownUrl}
           title={item.name}
           onUseFrame={onUseFrame}
           onError={() => setFailed("This video can't play in this browser.")}
@@ -288,7 +314,7 @@ export function View({
     case "pdf":
       return (
         <iframe
-          src={url}
+          src={shownUrl}
           title={item.name}
           className="size-full rounded-lg border bg-white"
         />
@@ -309,6 +335,8 @@ export function View({
 
 type ViewProps = {
   url: string
+  // What readers read from: the URL, or the decrypted bytes.
+  data: string | Blob
   item: Item
   size: number
   href: string | null
@@ -386,7 +414,10 @@ function NoPreview({
         </p>
       </div>
       {href && (
-        <Button render={<a href={href} />} nativeButton={false}>
+        <Button
+          render={<a href={href} download={blobName(href, item)} />}
+          nativeButton={false}
+        >
           <DownloadSimpleIcon />
           Download · {formatBytes(item.size)}
         </Button>
@@ -577,7 +608,7 @@ function AudioView({ url, item }: ViewProps) {
 // Code and plain text, highlighted by shiki, with line numbers. Markdown also
 // renders, sanitised, with a toggle back to its source.
 function TextView({
-  url,
+  data,
   item,
   size,
   href,
@@ -587,7 +618,7 @@ function TextView({
   const [source, setSource] = useState(!markdown)
   const [copied, setCopied] = useState(false)
   const loaded = useLoad(async () => {
-    const bytes = await readRange(url, 0, Math.min(size, TEXT_MAX))
+    const bytes = await readRange(data, 0, Math.min(size, TEXT_MAX))
     const text = new TextDecoder().decode(bytes)
     let html: string | null = null
     let rendered: string | null = null
@@ -757,9 +788,9 @@ function Table({ rows, note }: { rows: string[][]; note?: string }) {
 const rowsNote = (shown: number, more: boolean) =>
   more ? `Showing the first ${shown.toLocaleString()} rows.` : undefined
 
-function CsvView({ url, item, size, href }: ViewProps) {
+function CsvView({ data, item, size, href }: ViewProps) {
   const loaded = useLoad(async () => {
-    const bytes = await readRange(url, 0, Math.min(size, 5 * TEXT_MAX))
+    const bytes = await readRange(data, 0, Math.min(size, 5 * TEXT_MAX))
     const sep = /\.tsv$/i.test(item.name) ? "\t" : ","
     return parseCsv(new TextDecoder().decode(bytes), sep, ROWS + 2)
   })
@@ -778,13 +809,13 @@ function CsvView({ url, item, size, href }: ViewProps) {
   )
 }
 
-function SheetView({ url, item, size, href }: ViewProps) {
+function SheetView({ data, item, size, href }: ViewProps) {
   const [tab, setTab] = useState(0)
   const loaded = useLoad(async () => {
     if (size > OFFICE_MAX)
       throw new Error("This spreadsheet is too big to preview.")
     const XLSX = await import("xlsx")
-    const book = XLSX.read(await readRange(url, 0, size), {
+    const book = XLSX.read(await readRange(data, 0, size), {
       sheetRows: ROWS + 1,
     })
     return book.SheetNames.map((name) => ({
@@ -826,14 +857,14 @@ function SheetView({ url, item, size, href }: ViewProps) {
   )
 }
 
-function DocxView({ url, item, size, href }: ViewProps) {
+function DocxView({ data, item, size, href }: ViewProps) {
   const box = useRef<HTMLDivElement>(null)
   const loaded = useLoad(async () => {
     if (size > OFFICE_MAX)
       throw new Error("This document is too big to preview.")
     const [{ renderAsync }, bytes] = await Promise.all([
       import("docx-preview"),
-      readRange(url, 0, size),
+      readRange(data, 0, size),
     ])
     await renderAsync(new Blob([bytes as BlobPart]), box.current!, undefined, {
       renderAltChunks: false,
@@ -860,14 +891,14 @@ function DocxView({ url, item, size, href }: ViewProps) {
   )
 }
 
-function ZipView({ url, item, size, href }: ViewProps) {
+function ZipView({ data, item, size, href }: ViewProps) {
   const loaded = useLoad(async () => {
     const { unzipRaw } = await import("unzipit")
     // Presigned URLs only allow GET, so the length comes from the file row.
     const { entries } = await unzipRaw({
       getLength: async () => size,
       read: async (offset, n) =>
-        (await readRange(url, offset, offset + n)) as Uint8Array<ArrayBuffer>,
+        (await readRange(data, offset, offset + n)) as Uint8Array<ArrayBuffer>,
     })
     return entries
       .filter((e) => !e.isDirectory)

@@ -12,6 +12,7 @@ import { requireAdmin } from "@/lib/session"
 import { formatBytes } from "@/lib/file-rules"
 import { usedByOwner } from "@/lib/quota"
 import { getSettings } from "@/lib/signup"
+import { vaultsByOwner } from "@/lib/vault"
 import { setRole, setStatus } from "./actions"
 import { MemberMenu } from "./member-menu"
 
@@ -34,6 +35,12 @@ const storageLabel = (used: number, quota: number | null) =>
     ? `${formatBytes(used)} used`
     : `${formatBytes(used)} of ${formatBytes(quota)}`
 
+function vaultLabel(vaults: { bytes: number }[]) {
+  if (!vaults.length) return null
+  const bytes = vaults.reduce((n, v) => n + v.bytes, 0)
+  return ` · ${vaults.length} vault${vaults.length === 1 ? "" : "s"} (${formatBytes(bytes)})`
+}
+
 export default async function MembersPage({
   searchParams,
 }: {
@@ -49,10 +56,11 @@ export default async function MembersPage({
     .from(user)
     .where(eq(user.status, current.status))
     .orderBy(desc(user.createdAt))
-  const used =
-    current.status === "active"
-      ? await usedByOwner(people.map((p) => p.id))
-      : null
+  const active = current.status === "active"
+  const ids = people.map((p) => p.id)
+  const [used, vaults] = active
+    ? await Promise.all([usedByOwner(ids), vaultsByOwner(ids)])
+    : [null, null]
 
   return (
     <div className="flex flex-col gap-6">
@@ -112,6 +120,7 @@ export default async function MembersPage({
                         ? null
                         : (p.quotaBytes ?? settings.defaultQuotaBytes)
                     )}
+                    {vaultLabel(vaults?.get(p.id) ?? [])}
                   </p>
                 )}
                 <div className="flex items-center gap-3 text-sm text-muted-foreground">
@@ -162,6 +171,7 @@ export default async function MembersPage({
                         twoFactor={Boolean(p.twoFactorEnabled)}
                         quota={p.quotaBytes}
                         fallback={settings.defaultQuotaBytes}
+                        vaults={vaults?.get(p.id) ?? []}
                       />
                     )}
                   </div>

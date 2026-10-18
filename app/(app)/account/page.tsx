@@ -20,12 +20,12 @@ import {
 } from "@/components/ui/card"
 import { UserAvatar } from "@/components/user-avatar"
 import { db } from "@/lib/db"
-import { account } from "@/lib/db/schema"
+import { account, user } from "@/lib/db/schema"
 import { emailEnabled } from "@/lib/email"
 import { emailPrefs } from "@/lib/notify"
 import { getSession, isAdmin } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
-import { setEmailPrefs } from "./actions"
+import { setEmailPrefs, setVaultLock } from "./actions"
 
 const KIND_LABEL = {
   shared: "Something is shared with me",
@@ -46,7 +46,7 @@ export default async function AccountPage() {
   const session = await getSession()
   if (!session) redirect("/sign-in")
   const me = session.user
-  const [linked, email, { require2fa }, prefs] = await Promise.all([
+  const [linked, email, { require2fa }, prefs, [lock]] = await Promise.all([
     db
       .select({ providerId: account.providerId })
       .from(account)
@@ -54,6 +54,10 @@ export default async function AccountPage() {
     emailEnabled(),
     getSettings(),
     emailPrefs(me.id),
+    db
+      .select({ minutes: user.vaultLockMinutes })
+      .from(user)
+      .where(eq(user.id, me.id)),
   ])
   const password = linked.some((a) => a.providerId === "credential")
   const providers = linked
@@ -188,6 +192,35 @@ export default async function AccountPage() {
                 ))}
             </fieldset>
             <SubmitButton className="self-start">Save</SubmitButton>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Vault</CardTitle>
+          <CardDescription>
+            Unlocked vaults lock themselves when you leave this browser alone
+            for a while.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={setVaultLock} className="flex flex-wrap items-end gap-3">
+            <label className="grid gap-2 text-sm font-medium">
+              Lock after
+              <select
+                name="minutes"
+                defaultValue={lock?.minutes ?? 15}
+                className="h-9 rounded-md border border-input bg-input/30 px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              >
+                {[5, 15, 30, 60].map((m) => (
+                  <option key={m} value={m}>
+                    {m} minutes idle
+                  </option>
+                ))}
+              </select>
+            </label>
+            <SubmitButton>Save</SubmitButton>
           </form>
         </CardContent>
       </Card>

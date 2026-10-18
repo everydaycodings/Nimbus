@@ -22,8 +22,10 @@ import {
   settings,
   shares,
   user,
+  vaults,
 } from "@/lib/db/schema"
 import { notify, notifyEdit } from "@/lib/notify"
+import { UUID } from "@/lib/file-rules"
 import { deleteKeys, getText, headSize } from "@/lib/s3"
 import {
   extOf,
@@ -38,7 +40,7 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 type Db = typeof db | Tx
 
 // Postgres unique_violation, raw or wrapped by Drizzle.
-function isClash(e: unknown) {
+export function isClash(e: unknown) {
   const err = e as { code?: string; cause?: { code?: string } }
   return (err.cause?.code ?? err.code) === "23505"
 }
@@ -74,9 +76,20 @@ export async function isActiveUser(id: string) {
   return row?.status === "active"
 }
 
-// A folder the user can put things in: theirs, untrashed, outside any vault.
-// Null is their root.
-export async function isOpenFolder(ownerId: string, id: string | null) {
+// A folder the user can put things in: theirs, untrashed, and in `vaultId`
+// (or outside any vault without one). Null is the root of either.
+export async function isOpenFolder(
+  ownerId: string,
+  id: string | null,
+  vaultId?: string
+) {
+  if (vaultId) {
+    const [v] = await db
+      .select({ id: vaults.id })
+      .from(vaults)
+      .where(and(eq(vaults.id, vaultId), eq(vaults.ownerId, ownerId)))
+    if (!v) return false
+  }
   if (id === null) return true
   const [row] = await db
     .select({ id: nodes.id })
@@ -87,11 +100,15 @@ export async function isOpenFolder(ownerId: string, id: string | null) {
         eq(nodes.ownerId, ownerId),
         eq(nodes.kind, "folder"),
         isNull(nodes.trashedAt),
-        isNull(nodes.vaultId)
+        vaultId ? eq(nodes.vaultId, vaultId) : isNull(nodes.vaultId)
       )
     )
   return Boolean(row)
 }
+
+// A vault upload's name is sealed by the browser (base64 of iv + ciphertext).
+export const isSealedName = (s: unknown): s is string =>
+  typeof s === "string" && s.length <= 4096 && /^[A-Za-z0-9+/]+=*$/.test(s)
 
 const inFolder = (ownerId: string, parentId: string | null) =>
   and(
@@ -222,7 +239,12 @@ export async function deleteNodes(where: SQL | undefined) {
   await deleteUnreferenced(keys.map((r) => r.s3_key))
 }
 
-type Finished = { error?: string; nodeId?: string; versionId?: string }
+type Finished = {
+  error?: string
+  nodeId?: string
+  versionId?: string
+  vault?: boolean
+}
 
 // A public link that still takes uploads, with what notifications need.
 export async function dropLink(shareId: string) {
@@ -263,8 +285,9 @@ export async function droppedBytes(shareId: string) {
 // who still is one, or a link that still takes uploads into that folder or
 // one inside it.
 export async function uploaderMayAdd(t: UploadToken) {
-  if (!(await isActiveUser(t.u)) || !(await isOpenFolder(t.u, t.p)))
+  if (!(await isActiveUser(t.u)) || !(await isOpenFolder(t.u, t.p, t.v)))
     return false
+  if (t.v) return !t.b && !t.s
   if (t.b) return (await folderOwner(t.b, t.p)) === t.u
   if (t.s) {
     const link = await dropLink(t.s)
@@ -321,6 +344,7 @@ export async function finishTusUpload(
     (by?.share && token.s !== by.share)
   )
     return { error: "That upload isn't yours." }
+  if (token.v) return finishVaultUpload(token, meta, key, size, uploadId, done)
   const names = splitPath(meta.path)
   if (!names) return { error: "That upload has an invalid name." }
   if (!(await uploaderMayAdd(token)))
@@ -417,6 +441,79 @@ export async function finishTusUpload(
     }
   }
   return result
+}
+
+// Vault files: the name, its tag and the file key arrive sealed, folders were
+// made before the upload (so no plaintext path is sent), and there are no
+// versions: "Replace" names the file this one takes the place of.
+async function finishVaultUpload(
+  token: UploadToken,
+  meta: Record<string, string>,
+  key: string,
+  size: number,
+  uploadId: string,
+  done: () => Promise<{ nodeId: string; versionId: string } | undefined>
+): Promise<Finished> {
+  if (![meta.filename, meta.encKey, meta.nameTag].every(isSealedName))
+    return { error: "That upload has an invalid name." }
+  if (!(await uploaderMayAdd(token)))
+    return { error: "The folder for that upload is gone." }
+  const replaces = UUID.test(meta.replaces ?? "") ? meta.replaces : null
+  let oldKeys: string[] = []
+  try {
+    const row = await db.transaction(async (tx) => {
+      if (replaces) {
+        const old = await tx
+          .select({ key: fileVersions.s3Key })
+          .from(fileVersions)
+          .innerJoin(nodes, eq(nodes.id, fileVersions.nodeId))
+          .where(
+            and(
+              eq(nodes.id, replaces),
+              eq(nodes.vaultId, token.v!),
+              eq(nodes.kind, "file")
+            )
+          )
+        oldKeys = old.map((r) => r.key)
+        if (old.length) await tx.delete(nodes).where(eq(nodes.id, replaces))
+      }
+      const [node] = await tx
+        .insert(nodes)
+        .values({
+          ownerId: token.u,
+          parentId: token.p,
+          vaultId: token.v,
+          kind: "file",
+          name: meta.filename,
+          nameTag: meta.nameTag,
+          size,
+          s3Key: key,
+        })
+        .returning({ id: nodes.id })
+      const v = await addVersion(tx, node.id, {
+        s3Key: key,
+        size,
+        uploadId,
+        uploadedBy: token.u,
+        encKey: meta.encKey,
+      })
+      await tx
+        .update(nodes)
+        .set({ currentVersionId: v.id })
+        .where(eq(nodes.id, node.id))
+      return { nodeId: node.id, versionId: v.id, vault: true }
+    })
+    await deleteUnreferenced(oldKeys)
+    return row
+  } catch (e) {
+    if (!isClash(e)) throw e
+    // Finished already (tusd's hook and the browser both finish), or the name
+    // was taken while this uploaded.
+    const row = await done()
+    if (row) return { ...row, vault: true }
+    await deleteKeys([key])
+    return { error: "Something with that name is already in this folder." }
+  }
 }
 
 // Everything under `ids` (untrashed) as relative paths, for zips. Callers

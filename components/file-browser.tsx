@@ -45,6 +45,7 @@ import {
   WarningCircleIcon,
   XIcon,
   type Icon,
+  LockKeyIcon,
 } from "@phosphor-icons/react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -72,6 +73,7 @@ import { Previewer, type Shown } from "@/components/previewer"
 import { Thumb } from "@/components/thumb"
 import { VersionsDialog } from "@/components/versions-dialog"
 import { MoveDialog, type Place } from "@/components/move-dialog"
+import { MoveToVault } from "@/components/vault-list"
 import {
   DENSITY_COOKIE,
   LAYOUT_COOKIE,
@@ -219,6 +221,7 @@ export function FileBrowser({
   const [notice, setNotice] = useState<Notice | null>(null)
   const [moving, setMoving] = useState<Item[]>([])
   const [moveOpen, setMoveOpen] = useState(false)
+  const [toVault, setToVault] = useState<Item[] | null>(null)
   const [confirm, setConfirm] = useState<{
     ids: string[]
     label: string
@@ -627,6 +630,13 @@ export function FileBrowser({
         icon: ArrowBendUpRightIcon,
         group: 1,
         run: () => move(t),
+      },
+      t.every((i) => roleOf(i) === "owner" && !i.shortcut) && {
+        label: "Move to vault…",
+        icon: LockKeyIcon,
+        menuOnly: true,
+        group: 1,
+        run: () => setToVault(t),
       },
       {
         label: starred ? "Remove from starred" : "Add to starred",
@@ -1817,6 +1827,13 @@ export function FileBrowser({
         className="pointer-events-none fixed -top-40 left-0 max-w-60 truncate rounded-md bg-primary px-2.5 py-1 text-sm font-medium text-primary-foreground shadow-md"
       />
 
+      {toVault && (
+        <MoveToVault
+          ids={toVault.map((i) => i.id)}
+          label={label(toVault)}
+          onClose={() => setToVault(null)}
+        />
+      )}
       <MoveDialog
         open={moveOpen}
         title={`Move ${label(moving)}`}
@@ -2223,7 +2240,7 @@ export function Segmented<T extends string>({
 }
 
 // Name entry for rename and new folder. Selects a file's name without its extension.
-function NameDialog({
+export function NameDialog({
   open,
   item,
   error,
@@ -2232,7 +2249,7 @@ function NameDialog({
   onClose,
 }: {
   open: boolean
-  item: Item | null
+  item: Pick<Item, "name" | "kind"> | null
   error: string | null
   pending: boolean
   onSubmit: (value: string) => void

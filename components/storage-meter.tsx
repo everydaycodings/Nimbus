@@ -11,6 +11,7 @@ const PARTS = [
   { key: "videos", label: "Videos", fill: "bg-file-video" },
   { key: "docs", label: "Docs", fill: "bg-file-doc" },
   { key: "other", label: "Other", fill: "bg-file-archive" },
+  { key: "vault", label: "Vault", fill: "bg-foreground/70" },
   {
     key: "extra",
     label: "Versions & trash",

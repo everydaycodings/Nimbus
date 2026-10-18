@@ -31,14 +31,42 @@ import { MENU_ITEM, MENU_POPUP } from "@/components/overlay-styles"
 import { useSidebar } from "@/components/sidebar-shell"
 import { UploadPanel } from "@/components/upload-panel"
 import { Button } from "@/components/ui/button"
-import { clientZipDownload } from "@/lib/client-zip-download"
+import {
+  clientZipDownload,
+  zipDownload,
+  type ZipManifest,
+} from "@/lib/client-zip-download"
 import { ensureIndexed } from "@/lib/index-content"
 import { ensureThumb } from "@/lib/thumbs"
 import { cn } from "@/lib/utils"
+import {
+  CHUNK,
+  CIPHER_CHUNK,
+  cipherSize,
+  cipherSlice,
+  newFileKey,
+  openFileKey,
+} from "@/lib/vault-crypto"
 
 // A file, or an empty folder (file null), at a "/"-separated path relative to
 // the target folder.
-export type UploadInput = { file: File | null; path: string }
+// A file read on demand by byte range instead of from disk: moves into and out
+// of a vault stream through these, so nothing is held whole in memory.
+export type Lazy = {
+  name: string
+  type: string
+  size: number
+  lastModified: number
+  read: (start: number, end: number) => Promise<Uint8Array<ArrayBuffer>>
+}
+
+export type UploadInput = { file: File | Lazy | null; path: string }
+
+const bytesOf = (f: File | Lazy) =>
+  f instanceof Blob
+    ? async (s: number, e: number) =>
+        new Uint8Array(await f.slice(s, e).arrayBuffer())
+    : f.read
 type Target = { id: string; kind: "file" | "folder"; name: string }
 
 // OS files and folders from a drop, folders walked recursively. Must be called
@@ -116,16 +144,88 @@ export type Job = {
   version?: number
   // Refused before upload (too big, blocked type): retrying can't help.
   final?: boolean
+  // Went into this vault (parentId is a folder in it).
+  vault?: string
 }
 
 type Data = {
-  file?: File
+  file?: File | Lazy
   meta?: Record<string, string>
   fingerprint?: string
   upload?: Upload
   // tus finished; only finishUpload is left (or needs a retry).
   uploaded?: boolean
   abort?: AbortController
+  vault?: VaultData
+  // Runs once the file has landed.
+  onDone?: () => void
+}
+
+// A vault upload: encrypted on the way out, under a file key that's picked
+// once and reused on resume, so the bytes already on the server still match.
+type VaultData = {
+  vk: CryptoKey
+  fk?: CryptoKey
+  vaultId: string
+}
+
+export type VaultJob = {
+  file: File | Lazy
+  name: string
+  // The name's tag, so the server can refuse duplicates (see nameTag).
+  nameTag: string
+  vaultId: string
+  parentId: string | null
+  token: string
+  sealedName: string
+  vk: CryptoKey
+  // A same-named file this one takes the place of once it lands (Replace).
+  replaces?: string
+  onDone: () => void
+}
+
+// tus PATCHes this much ciphertext at a time; whole cipher chunks, so each
+// slice encrypts only its own chunks.
+const VAULT_PART = 16 * CIPHER_CHUNK
+
+// Hands tus ciphertext instead of the file's bytes.
+const vaultReader = (v: VaultData) => ({
+  async openFile(file: File | Lazy) {
+    const size = cipherSize(file.size)
+    const read = bytesOf(file)
+    return {
+      size,
+      async slice(start: number, end: number) {
+        const bytes = await cipherSlice(v.fk!, file.size, read, start, end)
+        // tus sizes the slice by `value.size`, which a Blob has.
+        return { value: new Blob([bytes]), done: end >= size }
+      },
+      close() {},
+    }
+  },
+})
+
+// Plain uploads from a Lazy source, a part at a time.
+const LAZY_PART = 16 * CHUNK
+const lazyReader = {
+  async openFile(file: Lazy) {
+    return {
+      size: file.size,
+      async slice(start: number, end: number) {
+        end = Math.min(end, file.size)
+        const bytes = await file.read(start, end)
+        return { value: new Blob([bytes]), done: end >= file.size }
+      },
+      close() {},
+    }
+  },
+}
+
+async function sha256(s: string) {
+  const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s))
+  return [...new Uint8Array(h)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("")
 }
 
 const CONCURRENT = 3
@@ -133,8 +233,11 @@ const STORE = "tus::nimbus|"
 
 // Fingerprint the resume flow can read back from localStorage:
 // nimbus|<parent>|<size>|<lastModified>|<path>. Path is last since it may hold "|".
-const fingerprintOf = (parentId: string | null, file: File, path: string) =>
-  `nimbus|${parentId ?? ""}|${file.size}|${file.lastModified}|${path}`
+const fingerprintOf = (
+  parentId: string | null,
+  file: File | Lazy,
+  path: string
+) => `nimbus|${parentId ?? ""}|${file.size}|${file.lastModified}|${path}`
 
 type Stale = {
   key: string
@@ -257,10 +360,16 @@ class Engine {
     const d = this.data.get(id)!
     if (d.uploaded) return this.finish(id)
     if (d.upload) return d.upload.start()
-    const up = new Upload(d.file!, {
+    const v = d.vault
+    // A Lazy source can't be picked again after a reload, so it isn't resumable.
+    const lazy = !(d.file instanceof Blob)
+    const up = new Upload(d.file as File, {
+      ...(v
+        ? { chunkSize: VAULT_PART, fileReader: vaultReader(v) }
+        : lazy && { chunkSize: LAZY_PART, fileReader: lazyReader }),
       endpoint: this.tusUrl,
       retryDelays: [0, 1000, 3000, 5000, 10000, 20000],
-      storeFingerprintForResuming: true,
+      storeFingerprintForResuming: !lazy,
       removeFingerprintOnSuccess: true,
       fingerprint: async () => d.fingerprint!,
       metadata: d.meta,
@@ -275,7 +384,20 @@ class Engine {
       },
     })
     d.upload = up
-    up.findPreviousUploads().then((prev) => {
+    up.findPreviousUploads().then(async (prev) => {
+      if (v && !v.fk) {
+        const old = prev[0]?.metadata?.encKey
+        v.fk = old
+          ? await openFileKey(v.vk, old).catch(() => undefined)
+          : undefined
+        if (old && v.fk) up.options.metadata = { ...d.meta, encKey: old }
+        else {
+          prev = []
+          const k = await newFileKey(v.vk)
+          v.fk = k.fk
+          up.options.metadata = { ...d.meta, encKey: k.wrapped }
+        }
+      }
       if (prev[0]) up.resumeFromPreviousUpload(prev[0])
       if (this.job(id)?.status === "uploading") up.start()
     })
@@ -297,9 +419,10 @@ class Engine {
     } else {
       this.patch(id, { status: "done", sent: this.job(id)?.size ?? 0 })
       this.data.set(id, {})
+      d.onDone?.()
       // Drawn and indexed from the local copy while it's at hand; failures just
       // leave the icon, and the text gets read on a later visit.
-      if (file && res.versionId) {
+      if (!d.vault && file instanceof Blob && res.versionId) {
         const f = {
           id: res.nodeId,
           version: res.versionId,
@@ -387,10 +510,31 @@ class Engine {
 }
 
 type Ctx = {
-  upload: (inputs: UploadInput[], parentId: string | null) => void
+  upload: (
+    inputs: UploadInput[],
+    parentId: string | null,
+    onDone?: () => void
+  ) => void
   download: (items: Target[]) => void
+  // Vaults plan their own uploads; these queue them and ask about clashes.
+  uploadToVault: (jobs: VaultJob[]) => void
+  ask: (conflicts: Conflict[], replace?: boolean) => Promise<Answers | null>
+  // An open vault takes what the pickers return, so nothing lands in My files.
+  claimPicks: (fn: (inputs: UploadInput[]) => void) => () => void
+  // A zip of decrypted vault files, built in this browser.
+  zipVault: (
+    name: string,
+    load: (signal: AbortSignal) => Promise<ZipManifest>
+  ) => void
 }
-const UploadContext = createContext<Ctx>({ upload() {}, download() {} })
+const UploadContext = createContext<Ctx>({
+  upload() {},
+  download() {},
+  uploadToVault() {},
+  ask: async () => null,
+  claimPicks: () => () => {},
+  zipVault() {},
+})
 export const useUploads = () => useContext(UploadContext)
 
 let asks = 0
@@ -422,6 +566,7 @@ export function UploadProvider({
   const [asking, setAsking] = useState<{
     n: number
     conflicts: Conflict[]
+    replace: boolean
     resolve: (a: Answers | null) => void
   } | null>(null)
   const [collapsed, setCollapsed] = useState(false)
@@ -430,6 +575,7 @@ export function UploadProvider({
   const pickFor = useRef<{ parentId: string | null; resume?: boolean }>({
     parentId: null,
   })
+  const vaultPicks = useRef<((inputs: UploadInput[]) => void) | null>(null)
 
   // Refresh once a burst of uploads settles, not once per file.
   useEffect(() => {
@@ -441,7 +587,57 @@ export function UploadProvider({
     return () => clearTimeout(t)
   }, [engine, router])
 
-  async function upload(inputs: UploadInput[], parentId: string | null) {
+  // One dialog at a time when two uploads clash at once.
+  async function ask(conflicts: Conflict[], replace = false) {
+    if (!conflicts.length) return new Map() as Answers
+    const asked = askQueue.current.then(
+      () =>
+        new Promise<Answers | null>((resolve) =>
+          setAsking({ n: ++asks, conflicts, replace, resolve })
+        )
+    )
+    askQueue.current = asked.then(() => {})
+    return asked
+  }
+
+  async function uploadToVault(jobs: VaultJob[]) {
+    setCollapsed(false)
+    for (const j of jobs) {
+      const { file } = j
+      engine.add(
+        {
+          kind: "upload",
+          name: j.name,
+          mime: file.type,
+          parentId: j.parentId,
+          size: file.size,
+          status: "queued",
+          vault: j.vaultId,
+        },
+        {
+          file,
+          // Hashed, so vault names don't sit in localStorage.
+          fingerprint: `nimbus-vault|${j.vaultId}|${j.parentId ?? ""}|${file.size}|${file.lastModified}|${await sha256(j.name)}`,
+          meta: {
+            filename: j.sealedName,
+            nameTag: j.nameTag,
+            token: j.token,
+            ...(j.replaces && { replaces: j.replaces }),
+          },
+          vault: { vk: j.vk, vaultId: j.vaultId },
+          onDone: j.onDone,
+        }
+      )
+    }
+    engine.pump()
+  }
+
+  // `onDone` hears about each file that lands (moves out of a vault use it).
+  async function upload(
+    inputs: UploadInput[],
+    parentId: string | null,
+    onDone?: () => void
+  ) {
     if (!inputs.length) return
     setCollapsed(false)
     const plan = await planUpload(
@@ -463,18 +659,7 @@ export function UploadProvider({
     const refused = new Set(plan.rejected.map((r) => r.path))
     let list = inputs.filter((i) => !refused.has(i.path))
 
-    // One dialog at a time when two uploads clash at once.
-    let answers: Answers | null = new Map()
-    if (plan.conflicts.length) {
-      const ask = askQueue.current.then(
-        () =>
-          new Promise<Answers | null>((resolve) =>
-            setAsking({ n: ++asks, conflicts: plan.conflicts, resolve })
-          )
-      )
-      askQueue.current = ask.then(() => {})
-      answers = await ask
-    }
+    const answers = await ask(plan.conflicts)
     if (!answers) return
 
     // Folders first: their Keep both renames paths that file answers no longer match.
@@ -529,6 +714,7 @@ export function UploadProvider({
             path,
             onConflict: versions.has(path) ? "version" : "rename",
           },
+          onDone,
         }
       )
     }
@@ -548,6 +734,10 @@ export function UploadProvider({
     const chosen = [...(e.target.files ?? [])]
     e.target.value = ""
     const { parentId, resume } = pickFor.current
+    if (!resume && vaultPicks.current)
+      return vaultPicks.current(
+        chosen.map((f) => ({ file: f, path: f.webkitRelativePath || f.name }))
+      )
     if (!resume)
       return upload(
         chosen.map((f) => ({ file: f, path: f.webkitRelativePath || f.name })),
@@ -606,6 +796,24 @@ export function UploadProvider({
     }
     const name =
       items.length === 1 ? `${items[0].name}.zip` : "Nimbus files.zip"
+    zipJob(name, (progress, signal) =>
+      clientZipDownload(
+        items.map((i) => i.id),
+        name,
+        progress,
+        signal
+      )
+    )
+  }
+
+  // A zip built in this browser, shown in the panel while it saves.
+  function zipJob(
+    name: string,
+    run: (
+      progress: (sent: number, size: number) => void,
+      signal: AbortSignal
+    ) => Promise<boolean>
+  ) {
     const abort = new AbortController()
     const id = engine.add(
       {
@@ -619,19 +827,37 @@ export function UploadProvider({
       { abort }
     )
     setCollapsed(false)
-    clientZipDownload(
-      items.map((i) => i.id),
-      name,
-      (sent, size) => engine.progress(id, sent, size),
-      abort.signal
-    ).then(
+    run((sent, size) => engine.progress(id, sent, size), abort.signal).then(
       (ok) => (ok ? engine.end(id) : engine.drop(id)),
       (e: Error) =>
         e.name !== "AbortError" && engine.end(id, "Couldn't make the zip.")
     )
   }
 
-  const ctx: Ctx = { upload, download }
+  function zipVault(
+    name: string,
+    load: (signal: AbortSignal) => Promise<ZipManifest>
+  ) {
+    zipJob(name, (progress, signal) =>
+      zipDownload(load, name, progress, signal)
+    )
+  }
+
+  function claimPicks(fn: (inputs: UploadInput[]) => void) {
+    vaultPicks.current = fn
+    return () => {
+      if (vaultPicks.current === fn) vaultPicks.current = null
+    }
+  }
+
+  const ctx: Ctx = {
+    upload,
+    download,
+    uploadToVault,
+    ask,
+    claimPicks,
+    zipVault,
+  }
   const here = parentFromPath(pathname)
 
   return (
@@ -653,12 +879,21 @@ export function UploadProvider({
         collapsed={collapsed}
         onCollapse={setCollapsed}
         onResumeStale={() => pick("files", here, true)}
-        onOpen={(j) => router.push(j.parentId ? `/folders/${j.parentId}` : "/")}
+        onOpen={(j) =>
+          router.push(
+            j.vault
+              ? `/vault/${j.vault}${j.parentId ? `?f=${j.parentId}` : ""}`
+              : j.parentId
+                ? `/folders/${j.parentId}`
+                : "/"
+          )
+        }
       />
       {asking && (
         <ConflictDialog
           key={asking.n}
           conflicts={asking.conflicts}
+          replace={asking.replace}
           onDone={(a) => {
             setAsking(null)
             asking.resolve(a)

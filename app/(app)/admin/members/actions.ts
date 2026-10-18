@@ -16,6 +16,7 @@ import {
 } from "@/lib/db/schema"
 import { appUrl, message, sendInBackground } from "@/lib/email"
 import { requireAdmin } from "@/lib/session"
+import { destroyVault, getVault } from "@/lib/vault"
 
 const STATUSES: Status[] = ["pending", "active", "rejected"]
 const ASSIGNABLE_ROLES: Role[] = ["admin", "member"]
@@ -135,4 +136,15 @@ export async function setTemporaryPassword(targetId: string) {
   })
   revalidatePath("/admin/members")
   return { password }
+}
+
+// For a member who forgot both their passphrase and recovery key, or a vault
+// that has to go. Nobody can open it, so deleting is all there is.
+export async function deleteMemberVault(targetId: string, vaultId: string) {
+  const target = await recoverable(targetId)
+  const vault = target && (await getVault(target.id, vaultId))
+  if (!vault) return { error: "That vault is already gone." }
+  await destroyVault(vault.id)
+  revalidatePath("/admin/members")
+  return { ok: true }
 }

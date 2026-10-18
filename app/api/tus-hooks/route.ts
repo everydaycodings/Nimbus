@@ -9,6 +9,7 @@ import {
   droppedBytes,
   dropLink,
   finishTusUpload,
+  isSealedName,
   rejectReason,
   uploadLimits,
   uploaderMayAdd,
@@ -38,16 +39,25 @@ async function whyNot(upload: Upload) {
   const token = readUploadToken(meta.token)
   if (!token || token.exp < Date.now())
     return "This upload's permission ran out. Start it again."
-  const names = splitPath(meta.path)
-  if (!names) return "That name can't be used."
+  // Vault names are sealed, so only the size limit applies to them; the
+  // browser checks blocked types before encrypting.
+  let name = splitPath(meta.path)?.at(-1)
+  if (token.v)
+    name = [meta.filename, meta.encKey, meta.nameTag].every(isSealedName)
+      ? ""
+      : undefined
+  if (name === undefined) return "That name can't be used."
   if (upload.SizeIsDeferred) return "Uploads need a size up front."
   if (!(await uploaderMayAdd(token)))
     return "The folder for this upload is gone, or you can no longer add to it."
-  const reason = rejectReason(names.at(-1)!, upload.Size, await uploadLimits())
+  const reason = rejectReason(name, upload.Size, await uploadLimits())
   if (reason) return reason
   if (token.s) {
     const link = await dropLink(token.s)
-    if (link?.cap != null && (await droppedBytes(token.s)) + upload.Size > link.cap)
+    if (
+      link?.cap != null &&
+      (await droppedBytes(token.s)) + upload.Size > link.cap
+    )
       return "This link has taken all the files it can."
   }
   // ponytail: each upload is checked alone, so parallel uploads can overshoot

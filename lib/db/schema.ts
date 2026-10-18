@@ -27,7 +27,8 @@ const createdAt = () =>
   timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 
 // Vault keys never reach the server in the clear: the browser wraps the vault key
-// with a passphrase-derived key and only the wrapped key and salt are stored.
+// with an Argon2id key from the passphrase (salt, kdf_iterations = t, kdf_memory = m
+// in KiB) and again with a key from the recovery code. See lib/vault-crypto.ts.
 export const vaults = pgTable(
   "vaults",
   {
@@ -39,6 +40,8 @@ export const vaults = pgTable(
     salt: text("salt").notNull(),
     wrappedKey: text("wrapped_key").notNull(),
     kdfIterations: integer("kdf_iterations").notNull(),
+    kdfMemory: integer("kdf_memory").notNull(),
+    recoveryWrappedKey: text("recovery_wrapped_key").notNull(),
     createdAt: createdAt(),
   },
   (t) => [index("vaults_owner_id_idx").on(t.ownerId)]
@@ -65,6 +68,9 @@ export const nodes = pgTable(
     }),
     kind: nodeKind("kind").notNull(),
     name: text("name").notNull(),
+    // Vault items: an HMAC of the lowercased name under a vault-derived key,
+    // so same-named items in one folder can be refused without reading names.
+    nameTag: text("name_tag"),
     size: bigint("size", { mode: "number" }).notNull().default(0),
     mime: text("mime"),
     s3Key: text("s3_key"),
@@ -95,6 +101,13 @@ export const nodes = pgTable(
         sql`lower(${t.name})`
       )
       .where(sql`${t.trashedAt} is null`),
+    uniqueIndex("nodes_vault_name_idx")
+      .on(
+        t.vaultId,
+        sql`coalesce(${t.parentId}, '00000000-0000-0000-0000-000000000000')`,
+        t.nameTag
+      )
+      .where(sql`${t.trashedAt} is null and ${t.nameTag} is not null`),
     index("nodes_owner_updated_idx").on(t.ownerId, t.updatedAt),
     // Name search (pg_trgm): substring and typo-tolerant matches.
     index("nodes_name_trgm_idx").using(
@@ -140,6 +153,8 @@ export const fileVersions = pgTable(
     // Thumbnail at thumbs/<s3Key>.webp: null until tried, "" when the browser
     // couldn't make one, otherwise a revision that changes when it's replaced.
     thumb: text("thumb"),
+    // Vault files: the file's key, wrapped by the vault key. Null outside vaults.
+    encKey: text("enc_key"),
     createdAt: createdAt(),
   },
   (t) => [
@@ -438,6 +453,9 @@ export const settings = pgTable(
       .default(false),
     // Tesseract languages for reading text in images, joined with "+".
     ocrLangs: text("ocr_langs").notNull().default("eng"),
+    // Vaults. Off stops new vaults; existing ones keep working. Null cap: no limit.
+    vaultsEnabled: boolean("vaults_enabled").notNull().default(true),
+    maxVaultsPerMember: integer("max_vaults_per_member"),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

@@ -265,7 +265,7 @@ export async function finishUpload(
     )
   } catch {}
   const done = await finishTusUpload(id, { user: me.id })
-  if (done.nodeId) {
+  if (done.nodeId && !done.vault) {
     await markOpened(me.id, done.nodeId)
     refresh()
   }

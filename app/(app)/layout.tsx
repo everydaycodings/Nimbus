@@ -19,7 +19,7 @@ import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 
 import { NavLink } from "@/components/nav-link"
-import { NAV_ITEM, NAV_LABEL, SIDEBAR_COOKIE } from "@/components/nav-styles"
+import { SIDEBAR_COOKIE } from "@/components/nav-styles"
 import { NavUser } from "@/components/nav-user"
 import { StorageMeter } from "@/components/storage-meter"
 import { PasswordForm } from "@/components/password-form"
@@ -29,6 +29,7 @@ import { SearchPalette } from "@/components/search-palette"
 import { SidebarShell } from "@/components/sidebar-shell"
 import { TwoFactorSetup } from "@/components/two-factor"
 import { NewMenu, UploadProvider } from "@/components/upload-provider"
+import { VaultKeysProvider } from "@/components/vault-keys"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -212,6 +213,13 @@ export default async function AppLayout({
     })
     .from(notifications)
     .where(and(eq(notifications.userId, me.id), isNull(notifications.readAt)))
+  const [vaultPrefs] = await db
+    .select({
+      lockMinutes: user.vaultLockMinutes,
+      vaults: sql<number>`(select count(*)::int from vaults where owner_id = ${me.id})`,
+    })
+    .from(user)
+    .where(eq(user.id, me.id))
   const label =
     "transition-opacity group-data-[collapsed=true]/sidebar:opacity-0"
 
@@ -247,14 +255,9 @@ export default async function AppLayout({
               {href === "/shared" && <SharedBadge initial={counts} />}
             </NavLink>
           ))}
-          <span
-            aria-disabled
-            title="Vault: coming in a later update"
-            className={`${NAV_ITEM} cursor-default text-sidebar-foreground/40`}
-          >
-            <LockIcon />
-            <span className={NAV_LABEL}>Vault</span>
-          </span>
+          {(settings.vaultsEnabled || vaultPrefs.vaults > 0) && (
+            <NavLink href="/vault" icon={<LockIcon />} label="Vault" />
+          )}
           <NavLink href="/trash" icon={<TrashIcon />} label="Trash" />
         </div>
         {admin && (
@@ -297,7 +300,9 @@ export default async function AppLayout({
           </>
         }
       >
-        {children}
+        <VaultKeysProvider minutes={vaultPrefs.lockMinutes}>
+          {children}
+        </VaultKeysProvider>
       </SidebarShell>
     </UploadProvider>
   )

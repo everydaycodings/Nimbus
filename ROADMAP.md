@@ -211,9 +211,60 @@ password accounts must set it up. Google and GitHub sign-ins rely on the provide
   locally (it downloads from the jsDelivr CDN the first time), a compose service for the
   indexer.
 
-## Phase 7: Vault
-- Client-side encrypted folders behind a separate passphrase (WebCrypto)
-- Server stores only ciphertext and the wrapped key; no previews, thumbnails or content search for vault files
+## Phase 7: Vault ✓ done
+- **Vaults** (`/vault`): each member can have several named vaults, each with its own
+  passphrase. Vault names are plaintext; everything inside is encrypted in the browser,
+  file and folder names included. The server stores only ciphertext and wrapped keys.
+- **Keys** (`lib/vault-crypto.ts`, tested by `lib/vault-crypto.test.ts`):
+  - A random AES-GCM vault key is wrapped twice. One copy uses Argon2id of the passphrase
+    (hash-wasm, 64 MiB, t=3). The other uses HKDF of a 32-byte recovery key, which is shown
+    once at creation and can't be skipped.
+  - Each file has its own key, wrapped by the vault key and stored on its version.
+  - Files are encrypted in 4 MiB chunks. Each chunk's nonce is its index, and its AAD holds the
+    index and an is-last flag, so reordered or truncated files fail to decrypt.
+- **Creating a vault**: an explainer with an "I understand" checkbox, a passphrase of at least
+  12 characters with a zxcvbn meter, then the recovery key (Copy or Download first).
+- **Locking**: keys live in memory only. A reload, the Lock button or idle time locks every
+  vault. Members pick 5/15/30/60 minutes of idle time in `/account`.
+- **Inside a vault**: a browser like My files over the decrypted tree. Grid or list,
+  breadcrumbs, a name filter across the whole vault, rename, move, keyboard shortcuts and
+  context menus. Names are checked for duplicates in the browser, since the server can't.
+- **Uploads**: every upload path works in an unlocked vault (New menu, Upload button,
+  drag-drop, paste, folders). Files are encrypted chunk by chunk as tus sends them, resume after
+  a reload, and use the normal progress panel. There are no versions: Replace, Keep both or
+  Skip.
+- **Opening files**: previews decrypt in the browser with the usual viewers (up to 1 GB),
+  stepping with ← and →. Downloads decrypt as they stream. Zips are built in the browser. No
+  thumbnails, and vaults stay out of search, Recent, starred, sharing and notifications.
+- **Trash**: each vault has its own trash, with Restore, Delete forever and Empty trash. The
+  admin's retention setting applies to it too.
+- **Moving files**:
+  - "Move to vault…" in My files encrypts items into a vault, and "Move to My files…" decrypts
+    them back out.
+  - The originals are deleted for good only once every file has landed; a skip, failure or
+    cancel keeps them.
+- **Passphrases**: change one from the vault's ⋯ menu; the files and the recovery key stay as
+  they are. Unlocking with the recovery key offers to set a new one.
+- **Deleting a vault**: the owner needs the passphrase and the vault's name, typed. Its rows
+  and S3 objects go together.
+- **Storage**: vault bytes count toward the quota, as a "Vault" part of the storage meter.
+- **Admin**:
+  - `/admin/settings` can turn new vaults off and cap how many each member has.
+  - `/admin/members` shows each member's vault count and size, and "Delete vault…" for a member
+    who lost both keys.
+- **Unique names**: each item stores a name tag, an HMAC of its lowercased name under a key
+  derived from the vault key. A unique index refuses two same-named items in one folder, even
+  from racing tabs. The tag reveals only that two items in a vault share a name. Items from
+  before the tags get theirs the next time the vault opens.
+- **Moving files streams**: files are read by byte range and encrypted or decrypted a piece at
+  a time, so memory stays flat at any size.
+- By design:
+  - Blocked file types don't apply inside vaults. The server can't see names, and vault files
+    can't be shared, which is what the block list guards against.
+  - Deleting a vault asks for the passphrase in the browser, not on the server. A stolen
+    session can already trash everything inside, as in My files; two-factor is the defence.
+- Left for later: encrypted thumbnails, vault versions, sharing a vault, paging very large
+  vault trees, and resuming a vault move after a reload.
 
 ## Phase 8: Ship
 - Production Dockerfile and compose, Vercel guide, backups

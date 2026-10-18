@@ -36,6 +36,8 @@ export const user = pgTable(
     passwordTemporary: boolean("password_temporary").default(false).notNull(),
     // Storage limit for this account; null falls back to settings.default_quota_bytes.
     quotaBytes: bigint("quota_bytes", { mode: "number" }),
+    // Unlocked vaults lock after this many idle minutes.
+    vaultLockMinutes: integer("vault_lock_minutes").default(15).notNull(),
   },
   (table) => [
     check(

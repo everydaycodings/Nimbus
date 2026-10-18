@@ -69,3 +69,20 @@ export const OFFICE_EXT =
 // Kinds the browser can draw a thumbnail of.
 export const thumbable = (k: PreviewKind | null) =>
   k !== null && k !== "zip" && k !== "docx" && k !== "sheet"
+
+// Lowercase, without the dot: "a.JPG" → "jpg". Dotfiles like ".env" have none.
+export function extOf(name: string) {
+  const dot = name.lastIndexOf(".")
+  return dot > 0 ? name.slice(dot + 1).toLowerCase() : ""
+}
+
+// The lowest free "name (n).ext". `taken` holds lowercased names.
+export function freeName(name: string, taken: Set<string>, folder = false) {
+  const dot = folder ? -1 : name.lastIndexOf(".")
+  const [base, ext] =
+    dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""]
+  for (let n = 1; ; n++) {
+    const next = `${base} (${n})${ext}`
+    if (!taken.has(next.toLowerCase())) return next
+  }
+}

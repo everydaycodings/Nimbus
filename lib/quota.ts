@@ -15,6 +15,8 @@ export type Usage = {
   videos: number
   docs: number
   other: number
+  // Everything in vaults, trash included (it's ciphertext, so no kinds).
+  vault: number
   // Older versions and trashed files: `used` minus the current files.
   extra: number
 }
@@ -30,22 +32,27 @@ export async function getUsage(userId: string): Promise<Usage> {
         join nodes n on n.id = fv.node_id
         where n.owner_id = ${userId}
       ) k`),
-    db.execute<Record<"images" | "videos" | "docs" | "other", string>>(sql`
+    db.execute<
+      Record<"images" | "videos" | "docs" | "other" | "vault", string>
+    >(sql`
       with f as (
         select size, case
+          when vault_id is not null then 'vault'
           when mime like 'image/%' then 'images'
           when mime like 'video/%' then 'videos'
           when mime = 'application/pdf' or mime like 'text/%'
             or name ~* ${DOC.source} then 'docs'
           else 'other' end as cat
         from nodes
-        where owner_id = ${userId} and kind = 'file' and trashed_at is null
+        where owner_id = ${userId} and kind = 'file'
+          and (trashed_at is null or vault_id is not null)
       )
       select
         coalesce(sum(size) filter (where cat = 'images'), 0)::text as images,
         coalesce(sum(size) filter (where cat = 'videos'), 0)::text as videos,
         coalesce(sum(size) filter (where cat = 'docs'), 0)::text as docs,
-        coalesce(sum(size) filter (where cat = 'other'), 0)::text as other
+        coalesce(sum(size) filter (where cat = 'other'), 0)::text as other,
+        coalesce(sum(size) filter (where cat = 'vault'), 0)::text as vault
       from f`),
     quotaFor(userId),
   ])
@@ -53,6 +60,7 @@ export async function getUsage(userId: string): Promise<Usage> {
   const videos = Number(current.videos)
   const docs = Number(current.docs)
   const other = Number(current.other)
+  const vault = Number(current.vault)
   const used = Number(stored.used)
   return {
     used,
@@ -61,7 +69,8 @@ export async function getUsage(userId: string): Promise<Usage> {
     videos,
     docs,
     other,
-    extra: Math.max(0, used - images - videos - docs - other),
+    vault,
+    extra: Math.max(0, used - images - videos - docs - other - vault),
   }
 }
 

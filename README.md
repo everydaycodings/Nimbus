@@ -26,6 +26,14 @@ Set `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` or `GITHUB_CLIENT_ID`/`GITHUB_CLIE
 
 A provider's button only appears once both of its keys are set.
 
+## What a vault protects
+
+Vault files are encrypted in the browser before upload, names included, with a passphrase the
+server never sees. Someone with the database and the bucket learns only how many files a vault
+holds, their rough sizes and when they changed. Lose both the passphrase and the recovery key
+and the files are gone; an admin can only delete the vault. A vault doesn't protect against a
+compromised server sending tampered JavaScript to the browser.
+
 ## Database
 
 - `npm run db:generate` creates a migration after changing `lib/db/schema.ts`

@@ -193,6 +193,18 @@ export async function setOcrLangs(form: FormData) {
   revalidatePath("/admin/settings")
 }
 
+// Off stops new vaults; existing ones keep working for their owners.
+export async function setVaultPolicy(form: FormData) {
+  await requireAdmin()
+  const cap = limit(form, "maxVaults")
+  await db.update(settings).set({
+    vaultsEnabled: form.get("enabled") === "on",
+    maxVaultsPerMember: cap && Math.min(Math.ceil(cap), 1000),
+    updatedAt: new Date(),
+  })
+  revalidatePath("/", "layout")
+}
+
 export async function setLinkPolicy(form: FormData) {
   await requireAdmin()
   const days = limit(form, "maxLinkDays")

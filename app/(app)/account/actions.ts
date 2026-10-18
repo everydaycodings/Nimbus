@@ -80,3 +80,16 @@ export async function setEmailPrefs(form: FormData) {
     })
   revalidatePath("/account")
 }
+
+// How long an unlocked vault stays open without a click or key press.
+export async function setVaultLock(form: FormData) {
+  const session = await getSession()
+  if (!session) return
+  const minutes = Number(form.get("minutes"))
+  if (![5, 15, 30, 60].includes(minutes)) return
+  await db
+    .update(user)
+    .set({ vaultLockMinutes: minutes })
+    .where(eq(user.id, session.user.id))
+  revalidatePath("/", "layout")
+}

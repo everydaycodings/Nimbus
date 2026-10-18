@@ -1,0 +1,2 @@
+ALTER TABLE "nodes" ADD COLUMN "name_tag" text;--> statement-breakpoint
+CREATE UNIQUE INDEX "nodes_vault_name_idx" ON "nodes" USING btree ("vault_id",coalesce("parent_id", '00000000-0000-0000-0000-000000000000'),"name_tag") WHERE "nodes"."trashed_at" is null and "nodes"."name_tag" is not null;
