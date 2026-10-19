@@ -18,6 +18,7 @@ import {
   type NotificationKind,
 } from "@/lib/db/schema"
 import { appUrl, message, sendInBackground } from "@/lib/email"
+import { KIND_LABEL, type Kind } from "@/lib/backup-rules"
 import { SERVICE_LABEL, type Service } from "@/lib/health-rules"
 
 type Event = {
@@ -173,6 +174,7 @@ async function describe(userId: string, ids?: string[]) {
       transfer: `${who} wants to make you the owner of ${item}`,
       signup_request: `${d.who ?? who} asked to join Nimbus`,
       service_health: `${SERVICE_LABEL[d.service as Service] ?? "A service"} ${d.state === "up" ? "is working again" : "is down"}`,
+      backup: `${KIND_LABEL[d.backup as Kind] ?? "A"} backup ${d.event === "stale" ? "hasn't succeeded in a while" : d.event === "warning" ? "finished with a warning" : "failed"}`,
     }[r.kind]
     const seen = r.nodeId ? access.get(r.nodeId) : undefined
     const href =
@@ -180,6 +182,8 @@ async function describe(userId: string, ids?: string[]) {
         ? "/admin/approvals"
         : r.kind === "service_health"
           ? `/admin/system/health#health-${d.service}`
+          : r.kind === "backup"
+            ? `/admin/system/backups/history?run=${d.run}`
           : !seen
             ? "/shared"
             : r.kindOf === "folder"

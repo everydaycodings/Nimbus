@@ -1,6 +1,7 @@
 // The worker (scripts/worker.ts) hands queued and scheduled jobs here, because
 // they reuse the app's database, storage and email code. Anything but a 2xx
 // makes the worker try the job again later.
+import { backupAlert } from "@/lib/backup/alert"
 import { sendNow, type Message } from "@/lib/email"
 import { purgeExpiredTrash } from "@/lib/files"
 import { removeObjects } from "@/lib/s3"
@@ -11,6 +12,7 @@ const jobs: Record<string, (data: never) => Promise<unknown>> = {
   purge: purgeExpiredTrash,
   email: (m: Message) => sendNow(m),
   "delete-keys": ({ keys }: { keys: string[] }) => removeObjects(keys),
+  "backup-alert": backupAlert,
   // An error here (not ours, gone) won't fix itself; only a throw is retried.
   "tus-finish": async ({ id }: { id: string }) => {
     const done = await finishTusUpload(id)

@@ -12,8 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { isModified, type SettingKey, type Settings } from "@/lib/signup"
 import { cn } from "@/lib/utils"
 
-export const SELECT =
-  "h-9 w-full rounded-md border border-input bg-input/30 px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+export { SELECT } from "./setting-styles"
 
 export const UNIT_BYTES = { MB: 2 ** 20, GB: 2 ** 30, TB: 2 ** 40 }
 type Unit = keyof typeof UNIT_BYTES

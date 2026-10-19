@@ -17,7 +17,17 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core"
 
-import { user } from "./auth-schema"
+import { session, user } from "./auth-schema"
+import type {
+  Checks,
+  Diff,
+  Fingerprint,
+  Kind,
+  Provider,
+  Retention,
+  RunStatus,
+  Trigger,
+} from "../backup-rules"
 import type { Outcome, Service } from "../health-rules"
 import type { PasswordPolicy } from "../password-policy"
 
@@ -360,12 +370,14 @@ export const NOTIFICATION_KINDS = [
   "transfer",
   "signup_request",
   "service_health",
+  "backup",
 ] as const
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number]
 // Only admins get these, so only admins see their settings.
 export const ADMIN_KINDS: NotificationKind[] = [
   "signup_request",
   "service_health",
+  "backup",
 ]
 
 // The bell. Edits in a shared folder fold into one unread row per folder per
@@ -497,6 +509,61 @@ export const settings = pgTable(
       .$type<Partial<Record<Service, number>>>()
       .notNull()
       .default({}),
+    // Backups (Admin → Backups). Off until an admin turns each kind on.
+    backupDbEnabled: boolean("backup_db_enabled").notNull().default(false),
+    backupDbIntervalH: integer("backup_db_interval_h").notNull().default(6),
+    backupDbStart: text("backup_db_start").notNull().default("03:00"),
+    backupFilesEnabled: boolean("backup_files_enabled")
+      .notNull()
+      .default(false),
+    backupFilesIntervalH: integer("backup_files_interval_h")
+      .notNull()
+      .default(24),
+    backupFilesStart: text("backup_files_start").notNull().default("02:00"),
+    backupTz: text("backup_tz").notNull().default("UTC"),
+    backupPaused: boolean("backup_paused").notNull().default(false),
+    backupRetention: jsonb("backup_retention")
+      .$type<Retention>()
+      .notNull()
+      // In jsonb's own key order, so "Changed" (lib/signup isModified) compares equal.
+      .default({ days: 30, mode: "tiered", hours: 48, weeks: 12, months: 12 }),
+    // Files purged from Nimbus stay in the backup this long.
+    backupFilesGraceDays: integer("backup_files_grace_days")
+      .notNull()
+      .default(30),
+    backupFilesEncrypt: boolean("backup_files_encrypt")
+      .notNull()
+      .default(true),
+    backupFilesConcurrency: integer("backup_files_concurrency")
+      .notNull()
+      .default(4),
+    backupFilesSamplePct: integer("backup_files_sample_pct")
+      .notNull()
+      .default(1),
+    backupRetryAttempts: integer("backup_retry_attempts").notNull().default(1),
+    backupRetryDelayMin: integer("backup_retry_delay_min")
+      .notNull()
+      .default(15),
+    // Null: no shrink warning.
+    backupShrinkWarnPct: integer("backup_shrink_warn_pct").default(20),
+    // Which events email the admins. Empty: none.
+    backupAlerts: text("backup_alerts")
+      .$type<"failure" | "warning" | "stale">()
+      .array()
+      .notNull()
+      .default(["failure", "warning"]),
+    // Where backups go, used when no BACKUP_S3_BUCKET is set in env. Keys are
+    // sealed by lib/crypto. Null bucket: not set up.
+    backupProvider: text("backup_provider").$type<Provider>(),
+    backupEndpoint: text("backup_endpoint"),
+    backupRegion: text("backup_region"),
+    backupBucket: text("backup_bucket"),
+    backupFolder: text("backup_folder").notNull().default("nimbus"),
+    backupPathStyle: boolean("backup_path_style").notNull().default(false),
+    backupAccessKey: text("backup_access_key"),
+    backupSecretKey: text("backup_secret_key"),
+    // Where backup_objects' copies are. A different destination starts the mirror over.
+    backupMirrorAt: text("backup_mirror_at"),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -618,3 +685,109 @@ export const healthChecks = pgTable(
     ),
   ]
 )
+
+// Every backup attempt, kept after its file is deleted (deleted_at) as history.
+export const backupRuns = pgTable(
+  "backup_runs",
+  {
+    id: id(),
+    kind: text("kind").$type<Kind>().notNull(),
+    trigger: text("trigger").$type<Trigger>().notNull(),
+    // A retry's first attempt, or the run a re-verify checked.
+    sourceRunId: uuid("source_run_id").references(
+      (): AnyPgColumn => backupRuns.id,
+      { onDelete: "set null" }
+    ),
+    attempt: integer("attempt").notNull().default(1),
+    actorId: text("actor_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    status: text("status").$type<RunStatus>().notNull().default("running"),
+    // What it's doing now, while running.
+    step: text("step"),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    // Database dumps: the object in the backup bucket.
+    s3Key: text("s3_key"),
+    // Dump size, or bytes copied this run for files.
+    sizeBytes: bigint("size_bytes", { mode: "number" }),
+    sha256: text("sha256"),
+    dbSizeBytes: bigint("db_size_bytes", { mode: "number" }),
+    // Files: objects copied/removed/sampled, and the mirror's size after.
+    stats: jsonb("stats").$type<Record<string, number>>().notNull().default({}),
+    checks: jsonb("checks").$type<Checks>().notNull().default({}),
+    // The live database at dump time, for re-verifying the file later.
+    fingerprint: jsonb("fingerprint").$type<Fingerprint>(),
+    diffs: jsonb("diffs").$type<Diff[]>().notNull().default([]),
+    error: text("error"),
+    pinned: boolean("pinned").notNull().default(false),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    alertedAt: timestamp("alerted_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("backup_runs_kind_idx").on(t.kind, t.startedAt.desc()),
+    // One run of each kind at a time.
+    uniqueIndex("backup_runs_one_running")
+      .on(t.kind)
+      .where(sql`${t.status} = 'running'`),
+    check("backup_runs_kind_check", sql`${t.kind} in ('db', 'files')`),
+    check(
+      "backup_runs_status_check",
+      sql`${t.status} in ('running', 'ok', 'warning', 'failed', 'skipped')`
+    ),
+  ]
+)
+
+// Append-only: notes, pins and unpins on a run.
+export const backupNotes = pgTable(
+  "backup_notes",
+  {
+    id: id(),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => backupRuns.id, { onDelete: "cascade" }),
+    userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+    kind: text("kind").$type<"note" | "pin" | "unpin">().notNull(),
+    body: text("body").notNull().default(""),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("backup_notes_run_idx").on(t.runId, t.createdAt),
+    check(
+      "backup_notes_kind_check",
+      sql`${t.kind} in ('note', 'pin', 'unpin')`
+    ),
+  ]
+)
+
+// What the file mirror holds: one row per object copied to the backup bucket.
+// gone_at: Nimbus no longer has it; the copy is deleted after the grace days.
+export const backupObjects = pgTable(
+  "backup_objects",
+  {
+    key: text("key").primaryKey(),
+    size: bigint("size", { mode: "number" }).notNull(),
+    sha256: text("sha256").notNull(),
+    encrypted: boolean("encrypted").notNull(),
+    copiedAt: timestamp("copied_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    goneAt: timestamp("gone_at", { withTimezone: true }),
+  },
+  (t) => [index("backup_objects_gone_idx").on(t.goneAt)]
+)
+
+// Re-auth for sensitive backup actions, per session: an emailed code while
+// waiting, then verified_until once proven.
+export const backupReauth = pgTable("backup_reauth", {
+  sessionId: text("session_id")
+    .primaryKey()
+    .references(() => session.id, { onDelete: "cascade" }),
+  codeHash: text("code_hash"),
+  codeExpiresAt: timestamp("code_expires_at", { withTimezone: true }),
+  codeSentAt: timestamp("code_sent_at", { withTimezone: true }),
+  attempts: integer("attempts").notNull().default(0),
+  verifiedUntil: timestamp("verified_until", { withTimezone: true }),
+})

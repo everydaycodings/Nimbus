@@ -11,6 +11,7 @@ export const SERVICES = [
   "office",
   "indexer",
   "oauth",
+  "backups",
 ] as const
 export type Service = (typeof SERVICES)[number]
 
@@ -23,6 +24,7 @@ export const SERVICE_LABEL: Record<Service, string> = {
   office: "Office viewer",
   indexer: "Search indexer",
   oauth: "Sign-in providers",
+  backups: "Backups",
 }
 
 // What each check does, in the words the Health page uses.
@@ -38,6 +40,8 @@ export const PROBE_TEXT: Record<Service, string> = {
   indexer: "Looks for a recent indexer sweep from npm run worker.",
   oauth:
     "Checks that each Google or GitHub sign-in has both its client ID and secret.",
+  backups:
+    "Writes and deletes a test file in the backup bucket, and looks for a failed or overdue backup.",
 }
 
 // Where to fix a service, when Nimbus has a page for it.
@@ -45,6 +49,7 @@ export const SERVICE_HREF: Partial<Record<Service, string>> = {
   email: "/admin/system/email",
   office: "/admin/system/office",
   indexer: "/admin/system/ocr",
+  backups: "/admin/system/backups",
 }
 
 // Choices for the check interval, in minutes.
@@ -59,6 +64,7 @@ export const DEFAULT_SLOW_MS: Partial<Record<Service, number>> = {
   uploads: 1000,
   email: 3000,
   office: 3000,
+  backups: 3000,
 }
 
 // One probe's result, as stored. "off": not set up, or turned off.

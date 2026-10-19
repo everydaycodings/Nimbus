@@ -1,4 +1,5 @@
 import {
+  ArchiveIcon,
   ClockCounterClockwiseIcon,
   EnvelopeSimpleIcon,
   FileDocIcon,
@@ -80,6 +81,7 @@ export const ADMIN_GROUPS: { title: string; pages: AdminPage[] }[] = [
     title: "System",
     pages: [
       { href: "/admin/system/health", label: "Health", icon: HeartbeatIcon },
+      { href: "/admin/system/backups", label: "Backups", icon: ArchiveIcon },
       {
         href: "/admin/system/email",
         label: "Email",
@@ -137,6 +139,78 @@ export const ADMIN_SETTINGS: {
     label: "Slow service threshold",
     href: "/admin/system/health",
     keywords: "health latency milliseconds ms degraded",
+  },
+  {
+    id: "backup-db-schedule",
+    label: "Database backup schedule",
+    href: "/admin/system/backups/settings",
+    keywords: "backup database postgres dump schedule interval every hours",
+  },
+  {
+    id: "backup-files-schedule",
+    label: "File backup schedule",
+    href: "/admin/system/backups/settings",
+    keywords: "backup files mirror s3 copy schedule interval",
+  },
+  {
+    id: "backup-timezone",
+    label: "Backup time zone",
+    href: "/admin/system/backups/settings",
+    keywords: "backup schedule timezone tz",
+  },
+  {
+    id: "backup-retention",
+    label: "Backup retention",
+    href: "/admin/system/backups/settings",
+    keywords: "backup keep delete old retention tiered daily weekly monthly",
+  },
+  {
+    id: "backup-files-encrypt",
+    label: "Encrypt file backups",
+    href: "/admin/system/backups/settings",
+    keywords: "backup files encryption aes key",
+  },
+  {
+    id: "backup-files-grace",
+    label: "Keep deleted files in backup",
+    href: "/admin/system/backups/settings",
+    keywords: "backup purge grace days deleted",
+  },
+  {
+    id: "backup-files-speed",
+    label: "File backup speed",
+    href: "/admin/system/backups/settings",
+    keywords: "backup concurrency parallel copies",
+  },
+  {
+    id: "backup-files-sample",
+    label: "File backup check",
+    href: "/admin/system/backups/settings",
+    keywords: "backup verify sample read back hash",
+  },
+  {
+    id: "backup-alerts",
+    label: "Backup alerts",
+    href: "/admin/system/backups/settings",
+    keywords: "backup email notify failure warning stale",
+  },
+  {
+    id: "backup-retries",
+    label: "Backup retries",
+    href: "/admin/system/backups/settings",
+    keywords: "backup retry attempts delay",
+  },
+  {
+    id: "backup-shrink",
+    label: "Backup shrink warning",
+    href: "/admin/system/backups/settings",
+    keywords: "backup size smaller percent warning",
+  },
+  {
+    id: "backup-storage",
+    label: "Backup storage",
+    href: "/admin/system/backups/settings",
+    keywords: "backup s3 bucket r2 b2 wasabi minio aws keys endpoint",
   },
   {
     id: "signup-mode",

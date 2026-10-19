@@ -36,6 +36,7 @@ const KIND_LABEL = {
   transfer: "Someone offers me ownership of an item",
   signup_request: "Someone asks to join this Nimbus",
   service_health: "A service goes down or comes back (Admin → Health)",
+  backup: "A backup fails, warns, or hasn't run (Admin → Backups)",
 } as const
 
 const PROVIDER = { google: "Google", github: "GitHub" } as Record<

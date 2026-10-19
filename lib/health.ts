@@ -6,6 +6,9 @@ import "server-only"
 import { and, eq, inArray, sql } from "drizzle-orm"
 import nodemailer from "nodemailer"
 
+import { KIND_LABEL } from "@/lib/backup-rules"
+import { testDest } from "@/lib/backup/dest"
+import { backupStatus } from "@/lib/backup/status"
 import { db } from "@/lib/db"
 import { healthChecks, user } from "@/lib/db/schema"
 import { appUrl, canSend, getEmailConfig } from "@/lib/email"
@@ -143,6 +146,29 @@ const PROBES: Record<Service, (s: Settings) => Promise<Found>> = {
     }
   },
 
+  async backups(s) {
+    const b = await backupStatus(s)
+    const on = b.kinds.filter((k) => k.schedule.enabled)
+    if (b.error) throw new Error(b.error)
+    if (!b.dest) {
+      if (on.length) throw new Error("Backups are on, but no storage is set up.")
+      return off("Not set up.")
+    }
+    await testDest(b.dest)
+    if (on.length && !b.worker)
+      throw new Error("The backup worker isn't running. Start `npm run worker:backup`.")
+    for (const k of on) {
+      if (k.last?.status === "failed")
+        throw new Error(`The last ${KIND_LABEL[k.kind].toLowerCase()} backup failed: ${k.last.error}`)
+      if (k.stale)
+        throw new Error(`No good ${KIND_LABEL[k.kind].toLowerCase()} backup in over ${2 * k.schedule.intervalHours} h.`)
+    }
+    const last = on
+      .flatMap((k) => (k.lastGood ? [`${KIND_LABEL[k.kind]} ${ago(k.lastGood.startedAt.toISOString(), Date.now())}`] : []))
+      .join(", ")
+    return { detail: `Wrote a test file to ${b.dest.bucket}.${last ? ` Last good: ${last}.` : ""}` }
+  },
+
   async oauth() {
     const env = process.env
     const set = (["GOOGLE", "GITHUB"] as const).flatMap((p) => {
@@ -222,7 +248,7 @@ async function recentOutcomes(services: readonly Service[], n: number) {
   return by
 }
 
-async function admins() {
+export async function admins() {
   return db
     .select({ id: user.id })
     .from(user)

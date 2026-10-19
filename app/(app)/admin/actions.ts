@@ -16,9 +16,9 @@ import {
   type ToastPosition,
 } from "@/lib/db/schema"
 import { POLICY_MAX, POLICY_MIN } from "@/lib/password-policy"
-import { scheduleHealth } from "@/lib/redis"
+import { scheduleBackups, scheduleHealth } from "@/lib/redis"
 import { hasPassword, requireAdmin } from "@/lib/session"
-import { settingDefault, type SettingKey } from "@/lib/signup"
+import { getSettings, settingDefault, type SettingKey } from "@/lib/signup"
 
 const DOMAIN = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/
 const DAY = 24 * 60 * 60 * 1000
@@ -282,6 +282,20 @@ const RESETTABLE: SettingKey[] = [
   "healthRetentionDays",
   "healthDisabled",
   "healthSlowMs",
+  "backupDbIntervalH",
+  "backupDbStart",
+  "backupFilesIntervalH",
+  "backupFilesStart",
+  "backupTz",
+  "backupRetention",
+  "backupFilesGraceDays",
+  "backupFilesEncrypt",
+  "backupFilesConcurrency",
+  "backupFilesSamplePct",
+  "backupRetryAttempts",
+  "backupRetryDelayMin",
+  "backupShrinkWarnPct",
+  "backupAlerts",
 ]
 
 export async function resetSetting(keys: SettingKey[]) {
@@ -295,6 +309,8 @@ export async function resetSetting(keys: SettingKey[]) {
   await db.update(settings).set({ ...set, updatedAt: new Date() })
   if ("healthIntervalMin" in set)
     await scheduleHealth(set.healthIntervalMin as number | null)
+  if (keys.some((k) => /^backup(Db|Files)(IntervalH|Start)$|^backupTz$/.test(k)))
+    await scheduleBackups(await getSettings()).catch(() => {})
   revalidatePath("/", "layout")
 }
 
