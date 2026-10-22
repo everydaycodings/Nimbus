@@ -1,0 +1,144 @@
+name: nimbus
+
+# Every port binds to 127.0.0.1: only nginx on this host (setup-nginx.sh) faces
+# the internet. Values come from .env next to this file
+# (copy production_script/.env.example).
+
+x-nimbus: &nimbus
+  image: nimbus:latest
+  build: .
+  restart: unless-stopped
+  env_file: .env
+  environment: &nimbus-env
+    DATABASE_URL: postgres://nimbus:${POSTGRES_PASSWORD}@postgres:5432/nimbus
+    REDIS_URL: redis://redis:6379/0
+    CACHE_URL: redis://redis:6379/1
+    BETTER_AUTH_URL: https://${DOMAIN}
+    TUS_URL: https://${DOMAIN}/files/
+    # Browsers download straight from storage with presigned URLs, so the app
+    # uses the public storage address too.
+    S3_ENDPOINT: https://${S3_DOMAIN}
+    S3_REGION: us-east-1
+    S3_BUCKET: nimbus
+    S3_ACCESS_KEY: nimbus
+    S3_SECRET_KEY: ${S3_SECRET_KEY}
+    S3_FORCE_PATH_STYLE: "true"
+  # Reach the public names through this host's nginx, not a hairpin through the router.
+  extra_hosts: ["${DOMAIN}:host-gateway", "${S3_DOMAIN}:host-gateway"]
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nimbus
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: nimbus
+    ports: ["127.0.0.1:54340:5432"] # for the backup worker, which runs on the host network
+    volumes: [postgres:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nimbus"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports: ["127.0.0.1:6340:6379"]
+    volumes: [redis:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: nimbus
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+      MINIO_API_CORS_ALLOW_ORIGIN: https://${DOMAIN}
+    ports: ["127.0.0.1:3402:9000", "127.0.0.1:3403:9001"] # console: ssh -L 3403:127.0.0.1:3403
+    volumes: [minio:/data]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      retries: 10
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio: { condition: service_healthy }
+    entrypoint: >
+      sh -c "mc alias set local http://minio:9000 nimbus $${S3_SECRET_KEY} &&
+             mc mb --ignore-existing local/nimbus"
+    environment:
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+    restart: "no"
+
+  tusd:
+    image: tusproject/tusd:latest
+    restart: unless-stopped
+    depends_on:
+      minio-init: { condition: service_completed_successfully }
+    command: >
+      -host 0.0.0.0 -port 1080 -base-path /files/ -behind-proxy
+      -s3-bucket nimbus -s3-endpoint http://minio:9000
+      -hooks-http http://app:3000/api/tus-hooks?secret=${TUS_HOOK_SECRET}
+      -hooks-enabled-events pre-create,post-finish
+      -cors-allow-origin https://${DOMAIN}
+    environment:
+      AWS_ACCESS_KEY_ID: nimbus
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
+      AWS_REGION: us-east-1
+    ports: ["127.0.0.1:3401:1080"]
+
+  migrate:
+    <<: *nimbus
+    command: ["node", "scripts/migrate.ts"]
+    restart: "no"
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  app:
+    <<: *nimbus
+    ports: ["127.0.0.1:3400:3000"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      minio-init: { condition: service_completed_successfully }
+
+  # Emails, storage cleanup, search indexing, health checks. Required.
+  worker:
+    <<: *nimbus
+    command: ["node", "scripts/worker.ts"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  # Admin → Backups. Opt in: docker compose --profile backup up -d
+  # It drives this host's Docker (pg_dump and a throwaway Postgres to verify each
+  # dump), so it gets the Docker socket, root, and the host network.
+  backup-worker:
+    <<: *nimbus
+    profiles: [backup]
+    command: ["node", "scripts/backup-worker.ts"]
+    user: root
+    network_mode: host
+    extra_hosts: []
+    environment:
+      <<: *nimbus-env
+      DATABASE_URL: postgres://nimbus:${POSTGRES_PASSWORD}@127.0.0.1:54340/nimbus
+      REDIS_URL: redis://127.0.0.1:6340/0
+      CACHE_URL: redis://127.0.0.1:6340/1
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+volumes:
+  postgres:
+  minio:
+  redis:

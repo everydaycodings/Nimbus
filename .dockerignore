@@ -1,0 +1,10 @@
+.git
+node_modules
+.next
+.env*
+!.env.example
+local_server
+production_script
+.playwright-mcp
+graphify-out
+tsconfig.tsbuildinfo
