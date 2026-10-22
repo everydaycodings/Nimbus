@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import type { Job } from "@/components/upload-provider"
 import { fileType } from "@/lib/file-types"
+import { formatBytes } from "@/lib/file-rules"
 import { cn } from "@/lib/utils"
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`
@@ -25,6 +26,37 @@ function left(s: number) {
   if (s < 3600) return `${Math.ceil(s / 60)} min left`
   return `${Math.floor(s / 3600)} hr ${Math.ceil((s % 3600) / 60)} min left`
 }
+
+// Bytes per second over the last ~10 seconds while active, else null.
+function useSpeed(sent: number, active: boolean) {
+  const [speed, setSpeed] = useState<number | null>(null)
+  const live = useRef(sent)
+  useEffect(() => {
+    live.current = sent
+  })
+  useEffect(() => {
+    if (!active) return
+    const samples: { t: number; sent: number }[] = []
+    const id = setInterval(() => {
+      const sent = live.current
+      if (samples.length && sent < samples[samples.length - 1].sent)
+        samples.length = 0
+      samples.push({ t: Date.now(), sent })
+      if (samples.length > 10) samples.shift()
+      const a = samples[0]
+      const b = samples[samples.length - 1]
+      const s = (b.sent - a.sent) / ((b.t - a.t) / 1000 || 1)
+      setSpeed(s > 0 ? s : null)
+    }, 1000)
+    return () => {
+      clearInterval(id)
+      setSpeed(null)
+    }
+  }, [active])
+  return active ? speed : null
+}
+
+const rate = (s: number | null) => (s ? `${formatBytes(s)}/s` : null)
 
 // Drive-style corner panel: overall status, then one row per upload or zip.
 export function UploadPanel({
@@ -70,29 +102,12 @@ export function UploadPanel({
   const size = counted.reduce((n, j) => n + j.size, 0)
   const sent = counted.reduce((n, j) => n + j.sent, 0)
 
-  // Time left from the last ~10 seconds of overall throughput.
-  const [eta, setEta] = useState<string | null>(null)
-  const live = useRef({ sent, left: size - sent })
-  useEffect(() => {
-    live.current = { sent, left: size - sent }
-  })
-  const moving = running.length > 0
-  useEffect(() => {
-    if (!moving) return
-    const samples: { t: number; sent: number }[] = []
-    const id = setInterval(() => {
-      const { sent, left: rest } = live.current
-      if (samples.length && sent < samples[samples.length - 1].sent)
-        samples.length = 0
-      samples.push({ t: Date.now(), sent })
-      if (samples.length > 10) samples.shift()
-      const a = samples[0]
-      const b = samples[samples.length - 1]
-      const speed = (b.sent - a.sent) / ((b.t - a.t) / 1000 || 1)
-      setEta(speed > 0 ? left(rest / speed) : null)
-    }, 1000)
-    return () => clearInterval(id)
-  }, [moving])
+  // Speed and time left from the last ~10 seconds of overall throughput.
+  const speed = useSpeed(sent, running.length > 0)
+  const eta = [rate(speed), speed && left((size - sent) / speed)]
+    .filter(Boolean)
+    .join(" · ")
+  const zipSpeed = rate(useSpeed(zipping?.sent ?? 0, Boolean(zipping)))
 
   // All done with no failures: collapse after ~5 s, then clear. Hover or focus
   // holds it open; leaving restarts a shorter countdown.
@@ -118,7 +133,7 @@ export function UploadPanel({
   const title = running.length
     ? `Uploading ${done} of ${ups.length}${eta ? ` · ${eta}` : ""}`
     : zipping
-      ? `Zipping ${zipping.name}`
+      ? `Zipping ${zipping.name}${zipSpeed ? ` · ${zipSpeed}` : ""}`
       : paused
         ? `Paused · ${done} of ${ups.length} uploaded`
         : ups.length
@@ -257,6 +272,7 @@ function Row({
   const t = fileType("file", j.mime || null, j.name)
   const zip = j.kind === "zip"
   const p = pct(j)
+  const speed = rate(useSpeed(j.sent, j.status === "uploading"))
 
   const status =
     j.status === "done" ? (
@@ -275,7 +291,7 @@ function Row({
     ) : zip && !j.size ? (
       "Preparing"
     ) : (
-      `${p}%`
+      `${p}%${speed ? ` · ${speed}` : ""}`
     )
 
   const body = (
