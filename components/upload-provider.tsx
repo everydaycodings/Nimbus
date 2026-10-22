@@ -205,7 +205,7 @@ const vaultReader = (v: VaultData) => ({
   },
 })
 
-// Plain uploads from a Lazy source, a part at a time.
+// Plain uploads go a part at a time; a Lazy source is read through this.
 const LAZY_PART = 16 * CHUNK
 const lazyReader = {
   async openFile(file: Lazy) {
@@ -364,11 +364,15 @@ class Engine {
     // A Lazy source can't be picked again after a reload, so it isn't resumable.
     const lazy = !(d.file instanceof Blob)
     const up = new Upload(d.file as File, {
+      // Every upload goes in parts: one long PATCH for a big file dies on the
+      // first network blip and has to be retried as a whole.
+      chunkSize: v ? VAULT_PART : LAZY_PART,
       ...(v
-        ? { chunkSize: VAULT_PART, fileReader: vaultReader(v) }
-        : lazy && { chunkSize: LAZY_PART, fileReader: lazyReader }),
+        ? { fileReader: vaultReader(v) }
+        : lazy && { fileReader: lazyReader }),
       endpoint: this.tusUrl,
-      retryDelays: [0, 1000, 3000, 5000, 10000, 20000],
+      // ~3.5 min of retries, so a dropped Wi-Fi or a server restart doesn't fail it.
+      retryDelays: [0, 1000, 3000, 5000, 10000, 20000, 30000, 60000, 90000],
       storeFingerprintForResuming: !lazy,
       removeFingerprintOnSuccess: true,
       fingerprint: async () => d.fingerprint!,
