@@ -55,7 +55,10 @@ export function AutoRefresh({ running }: { running: boolean }) {
 
 function Done({ children }: { children: React.ReactNode }) {
   return (
-    <p role="status" className="flex items-center gap-1.5 text-sm text-muted-foreground">
+    <p
+      role="status"
+      className="flex items-center gap-1.5 text-sm text-muted-foreground"
+    >
       <CheckCircleIcon weight="fill" className="size-4 text-brand" />
       {children}
     </p>
@@ -63,13 +66,22 @@ function Done({ children }: { children: React.ReactNode }) {
 }
 
 // "Back up now", with an optional note and pin for this run.
-export function BackupNow({ kind, disabled }: { kind: Kind; disabled?: boolean }) {
+export function BackupNow({
+  kind,
+  disabled,
+}: {
+  kind: Kind
+  disabled?: boolean
+}) {
   const [open, setOpen] = useState(false)
-  const [state, action] = useActionState(async (prev: FormState, form: FormData) => {
-    const r = await startBackup(prev, form)
-    if (r?.ok) setOpen(false)
-    return r
-  }, null)
+  const [state, action] = useActionState(
+    async (prev: FormState, form: FormData) => {
+      const r = await startBackup(prev, form)
+      if (r?.ok) setOpen(false)
+      return r
+    },
+    null
+  )
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger
@@ -80,7 +92,12 @@ export function BackupNow({ kind, disabled }: { kind: Kind; disabled?: boolean }
         Back up now
       </Popover.Trigger>
       <Popover.Portal>
-        <Popover.Positioner side="bottom" align="end" sideOffset={6} className="z-50">
+        <Popover.Positioner
+          side="bottom"
+          align="end"
+          sideOffset={6}
+          className="z-50"
+        >
           <Popover.Popup className="w-80 origin-(--transform-origin) rounded-lg border bg-popover p-4 text-popover-foreground shadow-md transition-[opacity,scale] duration-100 outline-none data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
             <form action={action} className="flex flex-col gap-3">
               <input type="hidden" name="kind" value={kind} />
@@ -100,15 +117,23 @@ export function BackupNow({ kind, disabled }: { kind: Kind; disabled?: boolean }
               </div>
               {kind === "db" && (
                 <label className="flex items-start gap-2 text-sm">
-                  <input type="checkbox" name="pin" className="mt-0.5 size-4 shrink-0 accent-primary" />
+                  <input
+                    type="checkbox"
+                    name="pin"
+                    className="mt-0.5 size-4 shrink-0 accent-primary"
+                  />
                   <span className="grid gap-0.5">
                     <span>Pin it</span>
-                    <span className="text-muted-foreground">Retention never deletes a pinned backup.</span>
+                    <span className="text-muted-foreground">
+                      Retention never deletes a pinned backup.
+                    </span>
                   </span>
                 </label>
               )}
               <FormError>{state?.error}</FormError>
-              <SubmitButton size="sm" className="self-end">Start</SubmitButton>
+              <SubmitButton size="sm" className="self-end">
+                Start
+              </SubmitButton>
             </form>
           </Popover.Popup>
         </Popover.Positioner>
@@ -117,10 +142,21 @@ export function BackupNow({ kind, disabled }: { kind: Kind; disabled?: boolean }
   )
 }
 
-const ASK: Record<Exclude<Method, "none">, { label: string; type: string; auto: string }> = {
-  password: { label: "Your password", type: "password", auto: "current-password" },
+const ASK: Record<
+  Exclude<Method, "none">,
+  { label: string; type: string; auto: string }
+> = {
+  password: {
+    label: "Your password",
+    type: "password",
+    auto: "current-password",
+  },
   email: { label: "Code from your email", type: "text", auto: "one-time-code" },
-  totp: { label: "Code from your authenticator app", type: "text", auto: "one-time-code" },
+  totp: {
+    label: "Code from your authenticator app",
+    type: "text",
+    auto: "one-time-code",
+  },
 }
 
 // Confirms it's really this admin. Unlocks downloads and storage changes for 10 minutes.
@@ -136,9 +172,19 @@ export function Reauth({ method, email }: { method: Method; email: string }) {
       <p className="text-sm text-pretty text-muted-foreground">
         Nimbus can&apos;t send email yet, so confirming it&apos;s you needs an
         authenticator app. Turn on two-factor under{" "}
-        <a href="/account" className="text-foreground underline underline-offset-4">Account</a>
+        <a
+          href="/account"
+          className="text-foreground underline underline-offset-4"
+        >
+          Account
+        </a>
         , or set up{" "}
-        <a href="/admin/system/email" className="text-foreground underline underline-offset-4">Email</a>
+        <a
+          href="/admin/system/email"
+          className="text-foreground underline underline-offset-4"
+        >
+          Email
+        </a>
         . Accounts that sign in only with Google or GitHub need Email.
       </p>
     )
@@ -155,7 +201,11 @@ export function Reauth({ method, email }: { method: Method; email: string }) {
             autoComplete={ask.auto}
             inputMode={method === "password" ? undefined : "numeric"}
             maxLength={method === "password" ? undefined : 8}
-            className={method === "password" ? "" : "font-mono tracking-widest tabular-nums"}
+            className={
+              method === "password"
+                ? ""
+                : "font-mono tracking-widest tabular-nums"
+            }
             required
           />
         </div>
@@ -163,7 +213,9 @@ export function Reauth({ method, email }: { method: Method; email: string }) {
       </form>
       {method === "email" && (
         <form action={send} className="flex flex-wrap items-center gap-3">
-          <SubmitButton variant="ghost" size="sm">Email me a code</SubmitButton>
+          <SubmitButton variant="ghost" size="sm">
+            Email me a code
+          </SubmitButton>
           {sent?.ok && <Done>Sent to {email}. It works for 10 minutes.</Done>}
           <FormError>{sent?.error}</FormError>
         </form>
@@ -222,7 +274,13 @@ const ENDPOINT_HINT: Record<Provider, string> = {
   other: "Your provider's S3 endpoint URL.",
 }
 
-export function StorageForm({ values, locked }: { values: StorageValues; locked: boolean }) {
+export function StorageForm({
+  values,
+  locked,
+}: {
+  values: StorageValues
+  locked: boolean
+}) {
   const [provider, setProvider] = useState(values.provider)
   // One state for both buttons, so only the latest result shows.
   const [state, run, busy] = useActionState(
@@ -245,7 +303,11 @@ export function StorageForm({ values, locked }: { values: StorageValues; locked:
   }
   const lost = values.sealedLost
   return (
-    <form ref={ref} onSubmit={(e) => (e.preventDefault(), submit("save"))} className="flex flex-col gap-5 p-4">
+    <form
+      ref={ref}
+      onSubmit={(e) => (e.preventDefault(), submit("save"))}
+      className="flex flex-col gap-5 p-4"
+    >
       <div className="flex flex-col gap-5">
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="grid content-start gap-2">
@@ -258,7 +320,9 @@ export function StorageForm({ values, locked }: { values: StorageValues; locked:
               className={SELECT}
             >
               {PROVIDERS.map((p) => (
-                <option key={p} value={p}>{PROVIDER_LABEL[p]}</option>
+                <option key={p} value={p}>
+                  {PROVIDER_LABEL[p]}
+                </option>
               ))}
             </select>
           </div>
@@ -275,12 +339,21 @@ export function StorageForm({ values, locked }: { values: StorageValues; locked:
               aria-describedby="endpoint-hint"
             />
             <p id="endpoint-hint" className="text-xs text-muted-foreground">
-              {provider === "aws" ? ENDPOINT_HINT.aws : "The S3 API address, not the dashboard."}
+              {provider === "aws"
+                ? ENDPOINT_HINT.aws
+                : "The S3 API address, not the dashboard."}
             </p>
           </div>
           <div className="grid content-start gap-2">
             <Label htmlFor="bucket">Bucket</Label>
-            <Input id="bucket" name="bucket" defaultValue={values.bucket} required spellCheck={false} autoComplete="off" />
+            <Input
+              id="bucket"
+              name="bucket"
+              defaultValue={values.bucket}
+              required
+              spellCheck={false}
+              autoComplete="off"
+            />
           </div>
           <div className="grid content-start gap-2">
             <Label htmlFor="region">Region</Label>
@@ -305,8 +378,10 @@ export function StorageForm({ values, locked }: { values: StorageValues; locked:
               aria-describedby="folder-hint"
             />
             <p id="folder-hint" className="text-xs text-muted-foreground">
-              Backups go under this prefix: <span className="font-mono">db/</span> for dumps,{" "}
-              <span className="font-mono">files/</span> for the mirror. Blank uses the bucket&apos;s top level.
+              Backups go under this prefix:{" "}
+              <span className="font-mono">db/</span> for dumps,{" "}
+              <span className="font-mono">files/</span> for the mirror. Blank
+              uses the bucket&apos;s top level.
             </p>
           </div>
           <div className="grid content-start gap-2">
@@ -316,7 +391,9 @@ export function StorageForm({ values, locked }: { values: StorageValues; locked:
               name="accessKey"
               autoComplete="off"
               spellCheck={false}
-              placeholder={values.accessKeyHint && !lost ? `…${values.accessKeyHint}` : ""}
+              placeholder={
+                values.accessKeyHint && !lost ? `…${values.accessKeyHint}` : ""
+              }
               className="font-mono"
               aria-invalid={lost || undefined}
             />
@@ -332,7 +409,12 @@ export function StorageForm({ values, locked }: { values: StorageValues; locked:
               aria-invalid={lost || undefined}
             />
           </div>
-          <p className={cn("text-xs sm:col-span-2", lost ? "text-destructive" : "text-muted-foreground")}>
+          <p
+            className={cn(
+              "text-xs sm:col-span-2",
+              lost ? "text-destructive" : "text-muted-foreground"
+            )}
+          >
             {lost
               ? "The saved keys can't be read, probably because BETTER_AUTH_SECRET changed. Enter them again."
               : values.hasSecret
@@ -341,19 +423,38 @@ export function StorageForm({ values, locked }: { values: StorageValues; locked:
           </p>
         </div>
         <label className="flex items-start gap-2 text-sm">
-          <input type="checkbox" name="pathStyle" defaultChecked={values.pathStyle} className="mt-0.5 size-4 shrink-0 accent-primary" />
+          <input
+            type="checkbox"
+            name="pathStyle"
+            defaultChecked={values.pathStyle}
+            className="mt-0.5 size-4 shrink-0 accent-primary"
+          />
           <span className="grid gap-0.5">
             <span>Path-style addresses</span>
-            <span className="text-muted-foreground">Usually needed for MinIO and other self-hosted servers.</span>
+            <span className="text-muted-foreground">
+              Usually needed for MinIO and other self-hosted servers.
+            </span>
           </span>
         </label>
       </div>
       <div className="flex flex-wrap items-center gap-3 border-t pt-4">
-        <SubmitButton pending={busy && !locked} disabled={locked || busy}>Test and save</SubmitButton>
-        <Button type="button" variant="outline" disabled={busy} aria-busy={busy} onClick={() => submit("test")}>
+        <SubmitButton pending={busy && !locked} disabled={locked || busy}>
+          Test and save
+        </SubmitButton>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={busy}
+          aria-busy={busy}
+          onClick={() => submit("test")}
+        >
           Test connection
         </Button>
-        {state?.ok && <Done>{state.test ? "Connected." : "Saved."} A test file went in and out.</Done>}
+        {state?.ok && (
+          <Done>
+            {state.test ? "Connected." : "Saved."} A test file went in and out.
+          </Done>
+        )}
         <FormError>{state?.error}</FormError>
       </div>
     </form>
@@ -364,7 +465,15 @@ export function StorageForm({ values, locked }: { values: StorageValues; locked:
 export type TrendPoint = { day: string; value: number; label: string }
 
 // One measure over recent runs, as thin bars. Hover or focus a bar for its value.
-export function Trend({ title, points, peak }: { title: string; points: TrendPoint[]; peak: string }) {
+export function Trend({
+  title,
+  points,
+  peak,
+}: {
+  title: string
+  points: TrendPoint[]
+  peak: string
+}) {
   const [hover, setHover] = useState<number | null>(null)
   const max = Math.max(...points.map((p) => p.value), 1)
   const shown = hover ?? points.length - 1
@@ -373,10 +482,15 @@ export function Trend({ title, points, peak }: { title: string; points: TrendPoi
       <figcaption className="flex items-baseline justify-between gap-3">
         <span className="text-sm font-medium">{title}</span>
         {points.length > 0 && (
-          <span className="text-sm text-muted-foreground tabular-nums" aria-live="polite">
+          <span
+            className="text-sm text-muted-foreground tabular-nums"
+            aria-live="polite"
+          >
             {points[shown].label}
             <span className="sr-only">, </span>
-            <span className="ml-1.5 text-xs">{hover === null ? "latest" : points[shown].day}</span>
+            <span className="ml-1.5 text-xs">
+              {hover === null ? "latest" : points[shown].day}
+            </span>
           </span>
         )}
       </figcaption>
@@ -390,8 +504,14 @@ export function Trend({ title, points, peak }: { title: string; points: TrendPoi
             <span className="pointer-events-none absolute top-0 left-0 text-[11px] leading-none text-muted-foreground tabular-nums">
               {peak}
             </span>
-            <div className="absolute inset-x-0 top-0 border-t border-dashed border-border" aria-hidden />
-            <div className="absolute inset-0 flex items-end justify-end gap-0.5 pt-4" role="list">
+            <div
+              className="absolute inset-x-0 top-0 border-t border-dashed border-border"
+              aria-hidden
+            />
+            <div
+              className="absolute inset-0 flex items-end justify-end gap-0.5 pt-4"
+              role="list"
+            >
               {points.map((p, i) => (
                 <button
                   key={i}
@@ -414,7 +534,10 @@ export function Trend({ title, points, peak }: { title: string; points: TrendPoi
               ))}
             </div>
           </div>
-          <div className="flex justify-between text-[11px] leading-none text-muted-foreground tabular-nums" aria-hidden>
+          <div
+            className="flex justify-between text-[11px] leading-none text-muted-foreground tabular-nums"
+            aria-hidden
+          >
             <span>{points[0].day}</span>
             <span>{points[points.length - 1].day}</span>
           </div>

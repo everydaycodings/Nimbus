@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto"
 import { and, eq, ilike, isNotNull, or, sql } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 
+import { MAX_SESSIONS } from "@/lib/accounts"
 import { db } from "@/lib/db"
 import {
   SIGNUP_MODES,
@@ -37,6 +38,29 @@ export async function setRequire2fa(form: FormData) {
   const on = form.get("require2fa") === "on"
   if (on && !actor.twoFactorEnabled && (await hasPassword(actor.id))) return
   await db.update(settings).set({ require2fa: on, updatedAt: new Date() })
+  revalidatePath("/", "layout")
+}
+
+// Several accounts on one browser (the account menu's switcher).
+export async function setMultiAccount(form: FormData) {
+  await requireAdmin()
+  const max = Math.round(Number(form.get("maxAccounts")))
+  await db.update(settings).set({
+    multiAccount: form.get("multiAccount") === "on",
+    maxAccounts: max >= 2 && max <= MAX_SESSIONS ? max : 5,
+    updatedAt: new Date(),
+  })
+  revalidatePath("/", "layout")
+}
+
+// One-tap saved logins. Turning either switch off makes existing ones stop working.
+export async function setSavedLogins(form: FormData) {
+  await requireAdmin()
+  await db.update(settings).set({
+    savedLogins: form.get("savedLogins") === "on",
+    savedLoginsAdmins: form.get("savedLoginsAdmins") === "on",
+    updatedAt: new Date(),
+  })
   revalidatePath("/", "layout")
 }
 
@@ -263,6 +287,10 @@ const RESETTABLE: SettingKey[] = [
   "signupMode",
   "require2fa",
   "passwordPolicy",
+  "multiAccount",
+  "maxAccounts",
+  "savedLogins",
+  "savedLoginsAdmins",
   "defaultQuotaBytes",
   "maxUploadBytes",
   "blockedExtensions",
@@ -309,7 +337,9 @@ export async function resetSetting(keys: SettingKey[]) {
   await db.update(settings).set({ ...set, updatedAt: new Date() })
   if ("healthIntervalMin" in set)
     await scheduleHealth(set.healthIntervalMin as number | null)
-  if (keys.some((k) => /^backup(Db|Files)(IntervalH|Start)$|^backupTz$/.test(k)))
+  if (
+    keys.some((k) => /^backup(Db|Files)(IntervalH|Start)$|^backupTz$/.test(k))
+  )
     await scheduleBackups(await getSettings()).catch(() => {})
   revalidatePath("/", "layout")
 }

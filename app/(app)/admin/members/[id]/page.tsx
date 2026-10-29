@@ -12,7 +12,15 @@ import { SubmitButton } from "@/components/submit-button"
 import { Badge } from "@/components/ui/badge"
 import { UserAvatar } from "@/components/user-avatar"
 import { db } from "@/lib/db"
-import { account, nodes, session, shares, user } from "@/lib/db/schema"
+import {
+  account,
+  authEvents,
+  type AuthEventKind,
+  nodes,
+  session,
+  shares,
+  user,
+} from "@/lib/db/schema"
 import { formatBytes } from "@/lib/file-rules"
 import { usedByOwner } from "@/lib/quota"
 import { requireAdmin } from "@/lib/session"
@@ -34,6 +42,13 @@ const PROVIDER_LABEL: Record<string, string> = {
   google: "Google",
   github: "GitHub",
 }
+
+const EVENT_LABEL = {
+  added: "Added to a browser with another account",
+  switched: "Switched to from another account",
+  signed_out: "Signed out",
+  saved_login_used: "Signed in with a saved login",
+} satisfies Record<AuthEventKind, string>
 
 const day = new Intl.DateTimeFormat("en", { dateStyle: "medium" })
 const moment = new Intl.DateTimeFormat("en", {
@@ -146,6 +161,7 @@ export default async function MemberPage({
     sessions,
     links,
     [people],
+    events,
   ] = await Promise.all([
     getSettings(),
     usedByOwner([id]),
@@ -198,6 +214,12 @@ export default async function MemberPage({
           sql`(${shares.granteeId} is not null or ${shares.granteeEmail} is not null)`
         )
       ),
+    db
+      .select()
+      .from(authEvents)
+      .where(eq(authEvents.userId, id))
+      .orderBy(desc(authEvents.at))
+      .limit(10),
   ])
 
   const vaults = vaultMap.get(id) ?? []
@@ -327,6 +349,28 @@ export default async function MemberPage({
                 </li>
               ))}
             </ul>
+          )}
+          {events.length > 0 && (
+            <>
+              <h3 className="pt-3 text-sm font-medium">
+                Account activity{" "}
+                <span className="font-normal text-muted-foreground">
+                  · last 90 days
+                </span>
+              </h3>
+              <ul className={`${FRAME} flex flex-col divide-y`}>
+                {events.map((e) => (
+                  <li key={e.id} className="grid gap-0.5 px-4 py-3">
+                    <span className="text-sm">{EVENT_LABEL[e.kind]}</span>
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {device(e.ua)} ·{" "}
+                      {e.ip && !/^[0:.]*$/.test(e.ip) && `${e.ip} · `}
+                      {moment.format(e.at)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
         </section>
       </div>

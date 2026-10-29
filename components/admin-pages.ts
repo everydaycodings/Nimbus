@@ -237,6 +237,18 @@ export const ADMIN_SETTINGS: {
     keywords: "2fa mfa totp authenticator otp",
   },
   {
+    id: "multi-account",
+    label: "Several accounts per browser",
+    href: "/admin/authentication",
+    keywords: "multiple accounts switch switcher add account sessions limit",
+  },
+  {
+    id: "saved-logins",
+    label: "Saved logins",
+    href: "/admin/authentication",
+    keywords: "save login info remember me one tap instagram",
+  },
+  {
     id: "password-rules",
     label: "Password rules",
     href: "/admin/authentication",

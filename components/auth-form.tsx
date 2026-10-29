@@ -14,6 +14,7 @@ import { SubmitButton } from "@/components/submit-button"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { reloadTo } from "@/lib/accounts"
 import { authClient } from "@/lib/auth-client"
 import { minLength } from "@/lib/password-policy"
 
@@ -22,6 +23,8 @@ type Props = {
   providers: { google: boolean; github: boolean }
   // Set when an OAuth sign-in bounced back with ?error, e.g. sign-ups are closed.
   initialError?: string
+  // "Sign in again" on an account whose session ran out.
+  initialEmail?: string
   allowSignUp?: boolean
 }
 
@@ -32,6 +35,7 @@ export function AuthForm({
   mode,
   providers,
   initialError,
+  initialEmail,
   allowSignUp = true,
 }: Props) {
   const router = useRouter()
@@ -65,8 +69,8 @@ export function AuthForm({
     // Two-factor accounts get a session only after the second step.
     if (data && "twoFactorRedirect" in data && data.twoFactorRedirect)
       return router.push("/two-factor")
-    router.push("/")
-    router.refresh()
+    // A full load, so nothing from an account signed in before carries over.
+    reloadTo("/")
   }
 
   async function social(provider: "google" | "github") {
@@ -128,6 +132,7 @@ export function AuthForm({
             name="email"
             type="email"
             autoComplete="email"
+            defaultValue={initialEmail}
             required
           />
         </div>

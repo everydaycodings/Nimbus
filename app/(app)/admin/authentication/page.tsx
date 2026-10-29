@@ -10,7 +10,13 @@ import { Input } from "@/components/ui/input"
 import { POLICY_MAX, POLICY_MIN } from "@/lib/password-policy"
 import { hasPassword, requireAdmin } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
-import { setPasswordPolicy, setRequire2fa } from "../actions"
+import { MAX_SESSIONS } from "@/lib/accounts"
+import {
+  setMultiAccount,
+  setPasswordPolicy,
+  setRequire2fa,
+  setSavedLogins,
+} from "../actions"
 
 export const metadata = { title: "Authentication · Admin · Nimbus" }
 
@@ -76,6 +82,112 @@ export default async function AuthenticationPage() {
             name="require2fa"
             defaultChecked={s.require2fa}
             disabled={blocked}
+            className={`${CHECK} self-start sm:self-end`}
+          />
+        </SettingRow>
+      </SettingsForm>
+
+      <SettingsForm
+        action={setMultiAccount}
+        title="Several accounts"
+        description="People can sign in to more than one account in the same browser and switch between them from the account menu."
+      >
+        <SettingRow
+          id="multi-account"
+          label="Allow several accounts per browser"
+          htmlFor="multiAccount"
+          hint="Off hides “Add an existing account”. Accounts already signed in stay until they sign out."
+          tip={{
+            does: "Lets someone stay signed in to a personal and a work account at once.",
+            affects:
+              "Everyone on this Nimbus. Each account still needs its own password and two-factor.",
+            default: "On",
+          }}
+          reset={reset("multiAccount")}
+        >
+          <input
+            type="checkbox"
+            id="multiAccount"
+            name="multiAccount"
+            defaultChecked={s.multiAccount}
+            className={`${CHECK} self-start sm:self-end`}
+          />
+        </SettingRow>
+        <SettingRow
+          id="max-accounts"
+          label="Accounts per browser"
+          htmlFor="maxAccounts"
+          hint={`From 2 to ${MAX_SESSIONS}.`}
+          tip={{
+            does: "The most accounts one browser can be signed in to at the same time.",
+            affects: "Adding another account; ones already signed in are kept.",
+            default: "5",
+          }}
+          reset={reset("maxAccounts")}
+        >
+          <Input
+            id="maxAccounts"
+            name="maxAccounts"
+            type="number"
+            min={2}
+            max={MAX_SESSIONS}
+            step={1}
+            defaultValue={s.maxAccounts}
+          />
+        </SettingRow>
+      </SettingsForm>
+
+      <SettingsForm
+        action={setSavedLogins}
+        title="Saved logins"
+        description="After signing in, people can save their login info on that browser and come back with one tap instead of their password."
+        risks={[
+          {
+            name: "savedLoginsAdmins",
+            when: "checked",
+            message:
+              "Anyone who can use a browser where an admin saved their login can open the admin pages without a password. Two-factor still applies to admins who have it.",
+          },
+        ]}
+      >
+        <SettingRow
+          id="saved-logins"
+          label="Allow saved logins"
+          htmlFor="savedLogins"
+          hint="Two-factor is still asked. Saved logins stop working after 90 days unused, or when the password changes."
+          tip={{
+            does: "Offers “Save your login info?” after sign-in, then shows saved accounts on the sign-in page.",
+            affects:
+              "Members, and admins when the next switch is on. Turning this off makes every saved login stop working.",
+            default: "On",
+          }}
+          reset={reset("savedLogins")}
+        >
+          <input
+            type="checkbox"
+            id="savedLogins"
+            name="savedLogins"
+            defaultChecked={s.savedLogins}
+            className={`${CHECK} self-start sm:self-end`}
+          />
+        </SettingRow>
+        <SettingRow
+          id="saved-logins-admins"
+          label="Let owners and admins save logins"
+          htmlFor="savedLoginsAdmins"
+          hint="Off keeps admin accounts on their password every time."
+          tip={{
+            does: "Lets accounts that can change this Nimbus use saved logins too.",
+            affects: "The owner and admins.",
+            default: "Off",
+          }}
+          reset={reset("savedLoginsAdmins")}
+        >
+          <input
+            type="checkbox"
+            id="savedLoginsAdmins"
+            name="savedLoginsAdmins"
+            defaultChecked={s.savedLoginsAdmins}
             className={`${CHECK} self-start sm:self-end`}
           />
         </SettingRow>

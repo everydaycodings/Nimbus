@@ -12,7 +12,12 @@ import Link from "next/link"
 import { AdminPage, FRAME, Section } from "@/components/admin/setting"
 import { SubmitButton } from "@/components/submit-button"
 import { Badge } from "@/components/ui/badge"
-import { KIND_LABEL, PROVIDER_LABEL, monthlyCents, type Kind } from "@/lib/backup-rules"
+import {
+  KIND_LABEL,
+  PROVIDER_LABEL,
+  monthlyCents,
+  type Kind,
+} from "@/lib/backup-rules"
 import { backupStatus } from "@/lib/backup/status"
 import { db } from "@/lib/db"
 import { backupRuns } from "@/lib/db/schema"
@@ -21,8 +26,21 @@ import { ago } from "@/lib/health-rules"
 import { getSettings } from "@/lib/signup"
 import { cn } from "@/lib/utils"
 import { setPaused } from "./actions"
-import { AutoRefresh, BackupNow, Trend, type TrendPoint } from "./backups-client"
-import { BASE, SetupNotes, StatusLabel, Tabs, duration, until, when } from "./parts"
+import {
+  AutoRefresh,
+  BackupNow,
+  Trend,
+  type TrendPoint,
+} from "./backups-client"
+import {
+  BASE,
+  SetupNotes,
+  StatusLabel,
+  Tabs,
+  duration,
+  until,
+  when,
+} from "./parts"
 
 export const metadata = { title: "Backups · Admin · Nimbus" }
 
@@ -44,22 +62,40 @@ async function history(kind: Kind) {
   return db
     .select()
     .from(backupRuns)
-    .where(and(eq(backupRuns.kind, kind), ne(backupRuns.trigger, "reverify"), inArray(backupRuns.status, ["ok", "warning"])))
+    .where(
+      and(
+        eq(backupRuns.kind, kind),
+        ne(backupRuns.trigger, "reverify"),
+        inArray(backupRuns.status, ["ok", "warning"])
+      )
+    )
     .orderBy(desc(backupRuns.startedAt))
     .limit(30)
 }
 
 const secs = (r: { startedAt: Date; finishedAt: Date | null }) =>
   r.finishedAt ? (r.finishedAt.getTime() - r.startedAt.getTime()) / 1000 : null
-const fmtSecs = (s: number) => (s < 90 ? `${Math.round(s)} s` : `${Math.round(s / 60)} min`)
+const fmtSecs = (s: number) =>
+  s < 90 ? `${Math.round(s)} s` : `${Math.round(s / 60)} min`
 
 export default async function BackupsPage() {
   const s = await getSettings()
-  const day = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: s.backupTz })
-  const points = (rows: Awaited<ReturnType<typeof history>>, pick: (r: (typeof rows)[number]) => number | null, label: (n: number) => string): TrendPoint[] =>
+  const day = (d: Date) =>
+    d.toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      timeZone: s.backupTz,
+    })
+  const points = (
+    rows: Awaited<ReturnType<typeof history>>,
+    pick: (r: (typeof rows)[number]) => number | null,
+    label: (n: number) => string
+  ): TrendPoint[] =>
     rows.toReversed().flatMap((r) => {
       const v = pick(r)
-      return v === null ? [] : [{ day: day(r.startedAt), value: v, label: label(v) }]
+      return v === null
+        ? []
+        : [{ day: day(r.startedAt), value: v, label: label(v) }]
     })
 
   const [b, dbRuns, fileRuns, recent] = await Promise.all([
@@ -82,15 +118,35 @@ export default async function BackupsPage() {
     : running
       ? [ClockIcon, "text-brand", `Backing up the ${name(running.kind)}`]
       : failed
-        ? [XCircleIcon, "text-destructive", `The last ${name(failed.kind)} backup failed`]
+        ? [
+            XCircleIcon,
+            "text-destructive",
+            `The last ${name(failed.kind)} backup failed`,
+          ]
         : stale
-          ? [WarningCircleIcon, "text-warning", `No good ${name(stale.kind)} backup in over ${2 * stale.schedule.intervalHours} h`]
+          ? [
+              WarningCircleIcon,
+              "text-warning",
+              `No good ${name(stale.kind)} backup in over ${2 * stale.schedule.intervalHours} h`,
+            ]
           : warned
-            ? [WarningCircleIcon, "text-warning", `The last ${name(warned.kind)} backup has a warning`]
+            ? [
+                WarningCircleIcon,
+                "text-warning",
+                `The last ${name(warned.kind)} backup has a warning`,
+              ]
             : s.backupPaused
-              ? [PauseCircleIcon, "text-muted-foreground", "Scheduled backups are paused"]
+              ? [
+                  PauseCircleIcon,
+                  "text-muted-foreground",
+                  "Scheduled backups are paused",
+                ]
               : !on.length
-                ? [ClockIcon, "text-muted-foreground", "Scheduled backups are off"]
+                ? [
+                    ClockIcon,
+                    "text-muted-foreground",
+                    "Scheduled backups are off",
+                  ]
                 : [CheckCircleIcon, "text-success", "Backups are working"]
   const lastGood = b.kinds
     .flatMap((k) => (k.lastGood ? [k.lastGood.startedAt] : []))
@@ -109,7 +165,12 @@ export default async function BackupsPage() {
       <AutoRefresh running={Boolean(running)} />
 
       <section aria-label="Status" className="flex flex-col gap-3">
-        <div className={cn(FRAME, "flex flex-wrap items-center gap-x-6 gap-y-4 px-5 py-4")}>
+        <div
+          className={cn(
+            FRAME,
+            "flex flex-wrap items-center gap-x-6 gap-y-4 px-5 py-4"
+          )}
+        >
           <div className="flex min-w-[min(100%,18rem)] flex-1 items-center gap-3">
             <Icon weight="fill" className={cn("size-7 shrink-0", tone)} />
             <div className="grid min-w-0 gap-0.5">
@@ -127,7 +188,9 @@ export default async function BackupsPage() {
           </div>
           {on.length > 0 && (
             <form action={setPaused.bind(null, !s.backupPaused)}>
-              <SubmitButton variant="outline">{s.backupPaused ? "Resume schedules" : "Pause schedules"}</SubmitButton>
+              <SubmitButton variant="outline">
+                {s.backupPaused ? "Resume schedules" : "Pause schedules"}
+              </SubmitButton>
             </form>
           )}
         </div>
@@ -141,7 +204,10 @@ export default async function BackupsPage() {
             ? "Not scheduled"
             : `Every ${sch.intervalHours === 24 ? "day" : `${sch.intervalHours} h`} from ${sch.start} ${sch.tz}`
           return (
-            <div key={k.kind} className="grid gap-3 px-4 py-4 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-center sm:gap-6">
+            <div
+              key={k.kind}
+              className="grid gap-3 px-4 py-4 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-center sm:gap-6"
+            >
               <div className="grid min-w-0 gap-0.5">
                 <p className="text-sm font-medium">{KIND_LABEL[k.kind]}</p>
                 <p className="text-sm text-muted-foreground">
@@ -162,7 +228,10 @@ export default async function BackupsPage() {
                 <span className="text-muted-foreground">{plan}</span>
                 <span className="tabular-nums">
                   {k.last?.status === "running" ? (
-                    <Link href={`${BASE}/history?run=${k.last.id}`} className="text-brand underline-offset-4 hover:underline">
+                    <Link
+                      href={`${BASE}/history?run=${k.last.id}`}
+                      className="text-brand underline-offset-4 hover:underline"
+                    >
                       Running now
                     </Link>
                   ) : k.next ? (
@@ -170,25 +239,59 @@ export default async function BackupsPage() {
                   ) : sch.enabled && s.backupPaused ? (
                     "Paused"
                   ) : (
-                    <Link href={`${BASE}/settings#backup-${k.kind === "db" ? "db" : "files"}-schedule`} className="underline-offset-4 hover:underline">
+                    <Link
+                      href={`${BASE}/settings#backup-${k.kind === "db" ? "db" : "files"}-schedule`}
+                      className="underline-offset-4 hover:underline"
+                    >
                       Set a schedule
                     </Link>
                   )}
                 </span>
               </div>
-              <BackupNow kind={k.kind} disabled={!ready || k.last?.status === "running"} />
+              <BackupNow
+                kind={k.kind}
+                disabled={!ready || k.last?.status === "running"}
+              />
             </div>
           )
         })}
       </Section>
 
       <section aria-labelledby="trends" className="flex flex-col gap-3">
-        <h2 id="trends" className="text-base font-semibold">Trends</h2>
+        <h2 id="trends" className="text-base font-semibold">
+          Trends
+        </h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Trend title="Database size" peak={formatBytes(Math.max(0, ...dbRuns.map((r) => r.dbSizeBytes ?? 0)))} points={points(dbRuns, (r) => r.dbSizeBytes, formatBytes)} />
-          <Trend title="Dump size" peak={formatBytes(Math.max(0, ...dbRuns.map((r) => r.sizeBytes ?? 0)))} points={points(dbRuns, (r) => r.sizeBytes, formatBytes)} />
-          <Trend title="Database backup time" peak={fmtSecs(Math.max(0, ...dbRuns.map((r) => secs(r) ?? 0)))} points={points(dbRuns, secs, fmtSecs)} />
-          <Trend title="Files in backup" peak={formatBytes(Math.max(0, ...fileRuns.map((r) => r.stats.totalBytes ?? 0)))} points={points(fileRuns, (r) => r.stats.totalBytes ?? null, formatBytes)} />
+          <Trend
+            title="Database size"
+            peak={formatBytes(
+              Math.max(0, ...dbRuns.map((r) => r.dbSizeBytes ?? 0))
+            )}
+            points={points(dbRuns, (r) => r.dbSizeBytes, formatBytes)}
+          />
+          <Trend
+            title="Dump size"
+            peak={formatBytes(
+              Math.max(0, ...dbRuns.map((r) => r.sizeBytes ?? 0))
+            )}
+            points={points(dbRuns, (r) => r.sizeBytes, formatBytes)}
+          />
+          <Trend
+            title="Database backup time"
+            peak={fmtSecs(Math.max(0, ...dbRuns.map((r) => secs(r) ?? 0)))}
+            points={points(dbRuns, secs, fmtSecs)}
+          />
+          <Trend
+            title="Files in backup"
+            peak={formatBytes(
+              Math.max(0, ...fileRuns.map((r) => r.stats.totalBytes ?? 0))
+            )}
+            points={points(
+              fileRuns,
+              (r) => r.stats.totalBytes ?? null,
+              formatBytes
+            )}
+          />
         </div>
       </section>
 
@@ -205,9 +308,20 @@ export default async function BackupsPage() {
         >
           <dl className="divide-y text-sm">
             {[
-              ["Where", b.dest ? `${PROVIDER_LABEL[b.dest.provider]} · ${b.dest.bucket}${b.dest.folder ? `/${b.dest.folder}` : ""}` : "Not set up"],
-              ["Database dumps kept", `${b.stored.dumps.n} · ${formatBytes(b.stored.dumps.bytes)}`],
-              ["Files in the mirror", `${b.stored.mirror.n} · ${formatBytes(b.stored.mirror.bytes)}`],
+              [
+                "Where",
+                b.dest
+                  ? `${PROVIDER_LABEL[b.dest.provider]} · ${b.dest.bucket}${b.dest.folder ? `/${b.dest.folder}` : ""}`
+                  : "Not set up",
+              ],
+              [
+                "Database dumps kept",
+                `${b.stored.dumps.n} · ${formatBytes(b.stored.dumps.bytes)}`,
+              ],
+              [
+                "Files in the mirror",
+                `${b.stored.mirror.n} · ${formatBytes(b.stored.mirror.bytes)}`,
+              ],
               [
                 "Estimated cost",
                 cents === null
@@ -217,7 +331,10 @@ export default async function BackupsPage() {
                   : `About $${(cents / 100).toFixed(2)} a month for storage`,
               ],
             ].map(([k, v]) => (
-              <div key={k} className="grid grid-cols-[minmax(0,10rem)_1fr] gap-4 px-4 py-3">
+              <div
+                key={k}
+                className="grid grid-cols-[minmax(0,10rem)_1fr] gap-4 px-4 py-3"
+              >
                 <dt className="text-muted-foreground">{k}</dt>
                 <dd className="min-w-0 truncate tabular-nums">{v}</dd>
               </div>
@@ -228,12 +345,19 @@ export default async function BackupsPage() {
         <section className="flex flex-col gap-3">
           <div className="flex items-baseline justify-between gap-3">
             <h2 className="text-base font-semibold">Recent runs</h2>
-            <Link href={`${BASE}/history`} className="flex items-center gap-1 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+            <Link
+              href={`${BASE}/history`}
+              className="flex items-center gap-1 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            >
               All history <ArrowRightIcon className="size-3.5" />
             </Link>
           </div>
           <div className={cn(FRAME, "divide-y")}>
-            {recent.length === 0 && <p className="px-4 py-6 text-center text-sm text-muted-foreground">No backups yet.</p>}
+            {recent.length === 0 && (
+              <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+                No backups yet.
+              </p>
+            )}
             {recent.map((r) => (
               <Link
                 key={r.id}
@@ -244,11 +368,21 @@ export default async function BackupsPage() {
                 <span className="min-w-0 truncate max-sm:order-last max-sm:col-span-2 max-sm:text-muted-foreground">
                   {KIND_LABEL[r.kind]}
                   <span className="text-muted-foreground">
-                    {r.trigger === "reverify" ? " · re-verify" : r.trigger === "manual" ? " · by hand" : r.trigger === "retry" ? ` · retry ${r.attempt}` : ""}
+                    {r.trigger === "reverify"
+                      ? " · re-verify"
+                      : r.trigger === "manual"
+                        ? " · by hand"
+                        : r.trigger === "retry"
+                          ? ` · retry ${r.attempt}`
+                          : ""}
                   </span>
                 </span>
-                <span className="hidden text-muted-foreground tabular-nums sm:block">{duration(r.startedAt, r.finishedAt) ?? "…"}</span>
-                <span className="text-right text-muted-foreground tabular-nums">{when(r.startedAt)}</span>
+                <span className="hidden text-muted-foreground tabular-nums sm:block">
+                  {duration(r.startedAt, r.finishedAt) ?? "…"}
+                </span>
+                <span className="text-right text-muted-foreground tabular-nums">
+                  {when(r.startedAt)}
+                </span>
               </Link>
             ))}
           </div>

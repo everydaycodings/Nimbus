@@ -23,6 +23,7 @@ import {
 import { db } from "@/lib/db"
 import {
   fileVersions,
+  authEvents,
   linkEvents,
   nodeOpens,
   nodes,
@@ -36,6 +37,7 @@ import {
 } from "@/lib/db/schema"
 import { accessOne, accessTo, atLeast, type Access } from "@/lib/access"
 import { UUID } from "@/lib/file-rules"
+import { purgeSavedLogins } from "@/lib/saved-logins"
 import { getSession } from "@/lib/session"
 import { deleteNodes } from "@/lib/uploads"
 
@@ -437,12 +439,16 @@ export async function getTrashRetention() {
   return row?.days ?? null
 }
 
-// Deletes trash older than the admin's retention for everyone, and link events
-// older than 90 days. The worker runs it hourly (/api/jobs).
+// Deletes trash older than the admin's retention for everyone, and link and
+// account events older than 90 days, and expired saved logins. The worker runs it hourly (/api/jobs).
 export async function purgeExpiredTrash() {
   await db
     .delete(linkEvents)
     .where(sql`${linkEvents.at} < now() - interval '90 days'`)
+  await db
+    .delete(authEvents)
+    .where(sql`${authEvents.at} < now() - interval '90 days'`)
+  await purgeSavedLogins()
   const days = await getTrashRetention()
   if (!days) return
   await deleteNodes(

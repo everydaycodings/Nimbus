@@ -1,7 +1,9 @@
 import { CloudIcon } from "@phosphor-icons/react/dist/ssr"
+import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 
 import { PasswordPolicyProvider } from "@/components/password-input"
+import { ADDING_COOKIE } from "@/lib/accounts"
 import { getSession } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
 
@@ -10,7 +12,9 @@ export default async function AuthLayout({
 }: {
   children: React.ReactNode
 }) {
-  if (await getSession()) redirect("/")
+  // Signed-in people only get here to add another account.
+  if ((await getSession()) && !(await cookies()).has(ADDING_COOKIE))
+    redirect("/")
   const { passwordPolicy } = await getSettings()
   return (
     <main className="relative isolate flex min-h-svh flex-col items-center justify-center px-4 py-12">

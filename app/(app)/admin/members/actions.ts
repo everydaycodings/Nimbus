@@ -8,6 +8,7 @@ import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import {
   account,
+  savedLogins,
   session,
   twoFactor,
   user,
@@ -15,6 +16,7 @@ import {
   type Status,
 } from "@/lib/db/schema"
 import { appUrl, message, sendInBackground } from "@/lib/email"
+import { forgetSavedLogins } from "@/lib/saved-logins"
 import { requireAdmin } from "@/lib/session"
 import { destroyVault, getVault } from "@/lib/vault"
 
@@ -36,6 +38,7 @@ export async function setStatus(targetId: string, status: Status) {
       )
     )
     .returning({ email: user.email, name: user.name })
+  if (changed && status === "rejected") await forgetSavedLogins(targetId)
   if (changed && status === "active")
     sendInBackground(
       message({
@@ -63,6 +66,7 @@ export async function setRole(targetId: string, role: Role) {
     .update(user)
     .set({ role })
     .where(and(eq(user.id, targetId), ne(user.role, "owner")))
+  await forgetSavedLogins(targetId)
   revalidatePath("/", "layout")
 }
 
@@ -102,6 +106,8 @@ export async function resetTwoFactor(targetId: string) {
       .set({ twoFactorEnabled: false })
       .where(eq(user.id, target.id))
   })
+  // A saved login skips the password; without two-factor it would be all it takes.
+  await forgetSavedLogins(target.id)
   revalidatePath("/admin/members", "layout")
   return { ok: true }
 }
@@ -138,6 +144,7 @@ export async function setTemporaryPassword(targetId: string) {
       .set({ passwordTemporary: true })
       .where(eq(user.id, target.id))
     await tx.delete(session).where(eq(session.userId, target.id))
+    await tx.delete(savedLogins).where(eq(savedLogins.userId, target.id))
   })
   revalidatePath("/admin/members", "layout")
   return { password }

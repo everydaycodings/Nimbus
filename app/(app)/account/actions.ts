@@ -6,6 +6,7 @@ import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
 
 import { auth } from "@/lib/auth"
+import { AVATAR_URL, PRESETS } from "@/lib/avatars"
 import { db } from "@/lib/db"
 import {
   ADMIN_KINDS,
@@ -13,6 +14,7 @@ import {
   notificationPrefs,
   user,
 } from "@/lib/db/schema"
+import { deleteObject, putObject } from "@/lib/s3"
 import { getSession, isAdmin } from "@/lib/session"
 
 export type FormState = { ok?: boolean; error?: string } | null
@@ -98,4 +100,40 @@ export async function setVaultLock(form: FormData) {
     .set({ vaultLockMinutes: minutes })
     .where(eq(user.id, session.user.id))
   revalidatePath("/", "layout")
+}
+
+// A preset, the provider photo kept from sign-up, or an uploaded image. A
+// replaced upload is deleted from storage.
+async function putAvatar(userId: string, image: string, old: string | null) {
+  await db.update(user).set({ image }).where(eq(user.id, userId))
+  if (old?.startsWith(AVATAR_URL) && old !== image)
+    await deleteObject(`avatars/${old.slice(AVATAR_URL.length)}.jpg`).catch(
+      () => {}
+    )
+  revalidatePath("/", "layout")
+}
+
+export async function pickAvatar(choice: string) {
+  const session = await getSession()
+  if (!session) return
+  const me = session.user
+  const image =
+    choice === "provider" ? me.providerImage : PRESETS.find((p) => p === choice)
+  if (image) await putAvatar(me.id, image, me.image ?? null)
+}
+
+// The browser crops and shrinks the photo to a 256px JPEG before sending it.
+export async function uploadAvatar(form: FormData): Promise<FormState> {
+  const session = await getSession()
+  if (!session) return { error: "Your session ended. Sign in again." }
+  const file = form.get("file")
+  if (!(file instanceof File) || file.size > 300_000)
+    return { error: "That image is too large." }
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  if (bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff)
+    return { error: "That image couldn't be read." }
+  const key = `${session.user.id}-${crypto.randomUUID().slice(0, 8)}`
+  await putObject(`avatars/${key}.jpg`, bytes, "image/jpeg")
+  await putAvatar(session.user.id, AVATAR_URL + key, session.user.image ?? null)
+  return { ok: true }
 }

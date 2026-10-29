@@ -32,7 +32,13 @@ const done = () => revalidatePath(PATH, "layout")
 const field = (form: FormData, name: string) =>
   String(form.get(name) ?? "").trim()
 
-const whole = (form: FormData, name: string, min: number, max: number, fallback: number) => {
+const whole = (
+  form: FormData,
+  name: string,
+  min: number,
+  max: number,
+  fallback: number
+) => {
   const n = Math.round(Number(form.get(name)))
   return Number.isFinite(n) && String(form.get(name) ?? "") !== ""
     ? Math.min(Math.max(n, min), max)
@@ -44,7 +50,10 @@ const isKind = (k: string): k is Kind => KINDS.includes(k as Kind)
 // ---- Runs -----------------------------------------------------------------
 
 // Opens the run here so the page shows it at once; the worker picks it up.
-export async function startBackup(_: FormState, form: FormData): Promise<FormState> {
+export async function startBackup(
+  _: FormState,
+  form: FormData
+): Promise<FormState> {
   const me = await requireAdmin()
   const kind = field(form, "kind")
   if (!isKind(kind)) return { error: "Pick what to back up." }
@@ -64,13 +73,19 @@ export async function startBackup(_: FormState, form: FormData): Promise<FormSta
     ...(pin ? [{ kind: "pin" as const, body: "" }] : []),
   ]
   if (notes.length)
-    await db.insert(backupNotes).values(notes.map((n) => ({ ...n, runId: id, userId: me.id })))
+    await db
+      .insert(backupNotes)
+      .values(notes.map((n) => ({ ...n, runId: id, userId: me.id })))
   try {
     await enqueueBackup({ kind, trigger: "manual", runId: id })
   } catch {
     await db
       .update(backupRuns)
-      .set({ status: "failed", finishedAt: new Date(), error: "Redis isn't reachable, so the worker never got this run." })
+      .set({
+        status: "failed",
+        finishedAt: new Date(),
+        error: "Redis isn't reachable, so the worker never got this run.",
+      })
       .where(eq(backupRuns.id, id))
     return { error: "Redis isn't reachable, so the backup couldn't be queued." }
   }
@@ -80,12 +95,20 @@ export async function startBackup(_: FormState, form: FormData): Promise<FormSta
 
 export async function reverify(runId: string) {
   const me = await requireAdmin()
-  const [src] = await db.select().from(backupRuns).where(eq(backupRuns.id, runId))
+  const [src] = await db
+    .select()
+    .from(backupRuns)
+    .where(eq(backupRuns.id, runId))
   if (!src?.s3Key || src.deletedAt || src.kind !== "db") return
   try {
     const [{ id }] = await db
       .insert(backupRuns)
-      .values({ kind: "db", trigger: "reverify", sourceRunId: runId, actorId: me.id })
+      .values({
+        kind: "db",
+        trigger: "reverify",
+        sourceRunId: runId,
+        actorId: me.id,
+      })
       .returning({ id: backupRuns.id })
     await enqueueBackup({ kind: "db", trigger: "reverify", runId: id })
   } catch {
@@ -97,7 +120,9 @@ export async function reverify(runId: string) {
 export async function setPin(runId: string, pinned: boolean) {
   const me = await requireAdmin()
   await db.update(backupRuns).set({ pinned }).where(eq(backupRuns.id, runId))
-  await db.insert(backupNotes).values({ runId, userId: me.id, kind: pinned ? "pin" : "unpin" })
+  await db
+    .insert(backupNotes)
+    .values({ runId, userId: me.id, kind: pinned ? "pin" : "unpin" })
   done()
 }
 
@@ -105,13 +130,17 @@ export async function addNote(runId: string, form: FormData) {
   const me = await requireAdmin()
   const body = field(form, "note").slice(0, 2000)
   if (!body) return
-  await db.insert(backupNotes).values({ runId, userId: me.id, kind: "note", body })
+  await db
+    .insert(backupNotes)
+    .values({ runId, userId: me.id, kind: "note", body })
   done()
 }
 
 // A link to the encrypted dump, good for 5 minutes. Needs a fresh re-auth,
 // and leaves a note on the run saying who took it.
-export async function downloadUrl(runId: string): Promise<{ url?: string; error?: string }> {
+export async function downloadUrl(
+  runId: string
+): Promise<{ url?: string; error?: string }> {
   const me = await requireAdmin()
   try {
     await requireUnlocked()
@@ -122,7 +151,8 @@ export async function downloadUrl(runId: string): Promise<{ url?: string; error?
     .select()
     .from(backupRuns)
     .where(and(eq(backupRuns.id, runId), eq(backupRuns.kind, "db")))
-  if (!run?.s3Key || run.deletedAt) return { error: "That backup's file is no longer in storage." }
+  if (!run?.s3Key || run.deletedAt)
+    return { error: "That backup's file is no longer in storage." }
   const { dest, error } = destOf(await getSettings())
   if (!dest) return { error: error ?? "Backup storage isn't set up." }
   const url = await getSignedUrl(
@@ -134,7 +164,14 @@ export async function downloadUrl(runId: string): Promise<{ url?: string; error?
     }),
     { expiresIn: 300 }
   )
-  await db.insert(backupNotes).values({ runId, userId: me.id, kind: "note", body: "Downloaded the file." })
+  await db
+    .insert(backupNotes)
+    .values({
+      runId,
+      userId: me.id,
+      kind: "note",
+      body: "Downloaded the file.",
+    })
   done()
   return { url }
 }
@@ -212,7 +249,9 @@ export async function saveAlerts(form: FormData) {
   await requireAdmin()
   const shrink = field(form, "shrink")
   await db.update(settings).set({
-    backupAlerts: (["failure", "warning", "stale"] as const).filter((e) => form.get(`alert:${e}`) === "on"),
+    backupAlerts: (["failure", "warning", "stale"] as const).filter(
+      (e) => form.get(`alert:${e}`) === "on"
+    ),
     backupRetryAttempts: whole(form, "retries", 0, 10, 1),
     backupRetryDelayMin: whole(form, "retryDelay", 1, 24 * 60, 15),
     backupShrinkWarnPct: shrink ? whole(form, "shrink", 1, 99, 20) : null,
@@ -230,7 +269,8 @@ async function destFrom(form: FormData): Promise<Dest | string> {
   const endpoint = field(form, "endpoint")
   if (endpoint && !/^https?:\/\/\S+$/.test(endpoint))
     return "The endpoint must start with https:// (or http:// on a private network)."
-  if (provider !== "aws" && !endpoint) return "Enter the provider's endpoint URL."
+  if (provider !== "aws" && !endpoint)
+    return "Enter the provider's endpoint URL."
   const saved = destOf(await getSettings()).dest
   return {
     provider,
@@ -239,23 +279,39 @@ async function destFrom(form: FormData): Promise<Dest | string> {
     bucket,
     folder: field(form, "folder").replace(/^\/+|\/+$/g, ""),
     pathStyle: form.get("pathStyle") === "on",
-    accessKey: field(form, "accessKey") || (saved?.fromEnv ? null : saved?.accessKey ?? null),
-    secretKey: String(form.get("secretKey") ?? "") || (saved?.fromEnv ? null : saved?.secretKey ?? null),
+    accessKey:
+      field(form, "accessKey") ||
+      (saved?.fromEnv ? null : (saved?.accessKey ?? null)),
+    secretKey:
+      String(form.get("secretKey") ?? "") ||
+      (saved?.fromEnv ? null : (saved?.secretKey ?? null)),
     fromEnv: false,
   }
 }
 
 const s3Error = (e: unknown) => {
-  const err = e as { name?: string; message?: string; $metadata?: { httpStatusCode?: number } }
+  const err = e as {
+    name?: string
+    message?: string
+    $metadata?: { httpStatusCode?: number }
+  }
   const status = err.$metadata?.httpStatusCode
-  if (status === 403 || err.name === "AccessDenied" || err.name === "InvalidAccessKeyId" || err.name === "SignatureDoesNotMatch")
+  if (
+    status === 403 ||
+    err.name === "AccessDenied" ||
+    err.name === "InvalidAccessKeyId" ||
+    err.name === "SignatureDoesNotMatch"
+  )
     return "The keys were refused. Check the access key, secret, and that they can write to this bucket."
   if (status === 404 || err.name === "NoSuchBucket" || err.name === "NotFound")
     return "That bucket doesn't exist, or the region or endpoint is wrong."
   return `The bucket didn't answer: ${err.message || err.name || "no reason given"}.`
 }
 
-export async function testStorage(_: FormState, form: FormData): Promise<FormState> {
+export async function testStorage(
+  _: FormState,
+  form: FormData
+): Promise<FormState> {
   await requireAdmin()
   const d = await destFrom(form)
   if (typeof d === "string") return { error: d }
@@ -267,7 +323,10 @@ export async function testStorage(_: FormState, form: FormData): Promise<FormSta
   }
 }
 
-export async function saveStorage(_: FormState, form: FormData): Promise<FormState> {
+export async function saveStorage(
+  _: FormState,
+  form: FormData
+): Promise<FormState> {
   await requireAdmin()
   if (process.env.BACKUP_S3_BUCKET)
     return { error: "Storage is set in env, so it can't be changed here." }
@@ -300,7 +359,10 @@ export async function saveStorage(_: FormState, form: FormData): Promise<FormSta
 
 // ---- Re-auth --------------------------------------------------------------
 
-export async function confirmIdentity(_: FormState, form: FormData): Promise<FormState> {
+export async function confirmIdentity(
+  _: FormState,
+  form: FormData
+): Promise<FormState> {
   await requireAdmin()
   const error = await verify(String(form.get("secret") ?? ""))
   if (error) return { error }

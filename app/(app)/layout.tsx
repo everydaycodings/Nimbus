@@ -27,6 +27,7 @@ import { StorageMeter } from "@/components/storage-meter"
 import { PasswordForm } from "@/components/password-form"
 import { PasswordPolicyProvider } from "@/components/password-input"
 import { ResendVerification } from "@/components/resend-verification"
+import { SaveLoginPrompt } from "@/components/save-login-prompt"
 import { NotificationBell, SharedBadge } from "@/components/notification-bell"
 import { SidebarShell } from "@/components/sidebar-shell"
 import { Toaster } from "@/components/toaster"
@@ -41,7 +42,14 @@ import { notifications, shares, user } from "@/lib/db/schema"
 import { emailEnabled } from "@/lib/email"
 import { healthAlarm } from "@/lib/health"
 import { getUsage } from "@/lib/quota"
-import { getSession, hasPassword, isAdmin } from "@/lib/session"
+import {
+  deviceAccounts,
+  getSession,
+  hasPassword,
+  isAdmin,
+} from "@/lib/session"
+import { OFFER_SAVE_COOKIE, mayUse } from "@/lib/saved-login-rules"
+import { savedOnBrowser } from "@/lib/saved-logins"
 import { getSettings } from "@/lib/signup"
 import { signOut } from "./actions"
 
@@ -234,7 +242,13 @@ export default async function AppLayout({
       )[0].n
     : 0
 
-  const collapsed = (await cookies()).get(SIDEBAR_COOKIE)?.value === "1"
+  const jar = await cookies()
+  const collapsed = jar.get(SIDEBAR_COOKIE)?.value === "1"
+  // Right after signing in: offer to save this account on this browser.
+  const offerSave =
+    jar.get(OFFER_SAVE_COOKIE)?.value === me.id &&
+    mayUse(me.role, settings) &&
+    !(await savedOnBrowser(jar.getAll())).some((a) => a.userId === me.id)
   const [counts] = await db
     .select({
       unread: sql<number>`count(*)::int`,
@@ -254,6 +268,9 @@ export default async function AppLayout({
 
   const navUser = (
     <NavUser
+      id={me.id}
+      accounts={await deviceAccounts()}
+      canAdd={settings.multiAccount}
       name={me.name}
       email={me.email}
       image={me.image}
@@ -349,6 +366,13 @@ export default async function AppLayout({
             </PasswordPolicyProvider>
           </VaultKeysProvider>
         </SidebarShell>
+        {offerSave && (
+          <SaveLoginPrompt
+            name={me.name}
+            image={me.image}
+            twoFactor={Boolean(me.twoFactorEnabled)}
+          />
+        )}
       </UploadProvider>
     </Toaster>
   )

@@ -525,6 +525,10 @@ type Ctx = {
   ask: (conflicts: Conflict[], replace?: boolean) => Promise<Answers | null>
   // An open vault takes what the pickers return, so nothing lands in My files.
   claimPicks: (fn: (inputs: UploadInput[]) => void) => () => void
+  // Transfers still running, and a way to reload without the leave-page prompt
+  // (switching accounts asks first).
+  busy: () => number
+  leave: () => void
   // A zip of decrypted vault files, built in this browser.
   zipVault: (
     name: string,
@@ -538,10 +542,14 @@ const UploadContext = createContext<Ctx>({
   ask: async () => null,
   claimPicks: () => () => {},
   zipVault() {},
+  busy: () => 0,
+  leave() {},
 })
 export const useUploads = () => useContext(UploadContext)
 
 let asks = 0
+let leaving = false
+const running = (j: Job) => j.status === "uploading" || j.status === "queued"
 
 // Sidebar "New folder" outside a folder view opens My files, then the dialog.
 let wantsNewFolder = false
@@ -861,6 +869,10 @@ export function UploadProvider({
     ask,
     claimPicks,
     zipVault,
+    busy: () => engine.get().jobs.filter(running).length,
+    leave: () => {
+      leaving = true
+    },
   }
   const here = parentFromPath(pathname)
 
@@ -943,12 +955,10 @@ function Panel({
     }
   }, [])
 
-  const active = jobs.some(
-    (j) => j.status === "uploading" || j.status === "queued"
-  )
+  const active = jobs.some(running)
   useEffect(() => {
     if (!active) return
-    const warn = (e: BeforeUnloadEvent) => e.preventDefault()
+    const warn = (e: BeforeUnloadEvent) => !leaving && e.preventDefault()
     window.addEventListener("beforeunload", warn)
     return () => window.removeEventListener("beforeunload", warn)
   }, [active])

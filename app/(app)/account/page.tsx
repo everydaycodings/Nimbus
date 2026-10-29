@@ -6,6 +6,8 @@ import {
 import { eq } from "drizzle-orm"
 import { redirect } from "next/navigation"
 
+import { AvatarPicker } from "@/components/avatar-picker"
+import { DeviceAccounts } from "@/components/device-accounts"
 import { PasswordForm } from "@/components/password-form"
 import { SubmitButton } from "@/components/submit-button"
 import { ResendVerification } from "@/components/resend-verification"
@@ -18,12 +20,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { UserAvatar } from "@/components/user-avatar"
 import { db } from "@/lib/db"
 import { ADMIN_KINDS, account, user } from "@/lib/db/schema"
 import { emailEnabled } from "@/lib/email"
 import { channelPrefs } from "@/lib/notify"
-import { getSession, isAdmin } from "@/lib/session"
+import { deviceAccounts, getSession, isAdmin } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
 import { setNotificationPrefs, setVaultLock } from "./actions"
 
@@ -48,19 +49,20 @@ export default async function AccountPage() {
   const session = await getSession()
   if (!session) redirect("/sign-in")
   const me = session.user
-  const [linked, email, { require2fa }, prefs, [lock]] = await Promise.all([
-    db
-      .select({ providerId: account.providerId })
-      .from(account)
-      .where(eq(account.userId, me.id)),
-    emailEnabled(),
-    getSettings(),
-    channelPrefs(me.id),
-    db
-      .select({ minutes: user.vaultLockMinutes })
-      .from(user)
-      .where(eq(user.id, me.id)),
-  ])
+  const [linked, email, { require2fa, multiAccount }, prefs, [lock]] =
+    await Promise.all([
+      db
+        .select({ providerId: account.providerId })
+        .from(account)
+        .where(eq(account.userId, me.id)),
+      emailEnabled(),
+      getSettings(),
+      channelPrefs(me.id),
+      db
+        .select({ minutes: user.vaultLockMinutes })
+        .from(user)
+        .where(eq(user.id, me.id)),
+    ])
   const password = linked.some((a) => a.providerId === "credential")
   const providers = linked
     .map((a) => PROVIDER[a.providerId])
@@ -79,7 +81,11 @@ export default async function AccountPage() {
       <Card>
         <CardContent className="flex flex-col gap-4">
           <div className="flex items-center gap-3">
-            <UserAvatar name={me.name} image={me.image} size={40} />
+            <AvatarPicker
+              name={me.name}
+              image={me.image}
+              providerImage={me.providerImage}
+            />
             <div className="grid min-w-0 gap-0.5">
               <p className="truncate font-medium">{me.name}</p>
               <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
@@ -104,6 +110,25 @@ export default async function AccountPage() {
               <ResendVerification />
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">
+            Signed-in accounts on this browser
+          </CardTitle>
+          <CardDescription>
+            Switch between them from the account menu, or with Ctrl+Shift+1 to
+            5.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DeviceAccounts
+            meId={me.id}
+            accounts={await deviceAccounts()}
+            canAdd={multiAccount}
+          />
         </CardContent>
       </Card>
 

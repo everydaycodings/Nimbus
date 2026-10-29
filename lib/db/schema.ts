@@ -311,6 +311,52 @@ export const linkEvents = pgTable(
   ]
 )
 
+export const AUTH_EVENT_KINDS = [
+  "added",
+  "switched",
+  "signed_out",
+  "saved_login_used",
+] as const
+export type AuthEventKind = (typeof AUTH_EVENT_KINDS)[number]
+
+// Account switching on a shared browser, shown on the admin member page. Kept
+// 90 days (pruned with link events).
+export const authEvents = pgTable(
+  "auth_events",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<AuthEventKind>().notNull(),
+    ip: text("ip"),
+    ua: text("ua"),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("auth_events_user_at_idx").on(t.userId, t.at)]
+)
+
+// "Save your login info" on one browser: the cookie nimbus_saved_<id> holds a
+// secret whose SHA-256 is stored here. Works for 90 days after its last use,
+// and only while it's newer than the account's last password change.
+export const savedLogins = pgTable(
+  "saved_logins",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    secretHash: text("secret_hash").notNull(),
+    ua: text("ua"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [index("saved_logins_user_idx").on(t.userId)]
+)
+
 // Stars are per person, so shared items can be starred too.
 export const stars = pgTable(
   "stars",
@@ -492,6 +538,13 @@ export const settings = pgTable(
       .$type<ToastPosition>()
       .notNull()
       .default("bottom-center"),
+    // Several accounts signed in on one browser, switched from the account menu.
+    multiAccount: boolean("multi_account").notNull().default(true),
+    maxAccounts: integer("max_accounts").notNull().default(5),
+    // One-tap "saved login info" on the sign-in page; owners and admins only
+    // get it when the second switch is on.
+    savedLogins: boolean("saved_logins").notNull().default(true),
+    savedLoginsAdmins: boolean("saved_logins_admins").notNull().default(false),
     // Rules for new passwords and vault passphrases. Null: the owner hasn't
     // chosen, so the industry-standard defaults apply (lib/password-policy).
     passwordPolicy: jsonb("password_policy").$type<PasswordPolicy>(),

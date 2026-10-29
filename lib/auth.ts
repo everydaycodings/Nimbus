@@ -1,10 +1,34 @@
+import { randomBytes } from "node:crypto"
+
 import { betterAuth } from "better-auth"
-import { APIError, createAuthMiddleware } from "better-auth/api"
+import * as z from "zod"
+import {
+  APIError,
+  createAuthEndpoint,
+  createAuthMiddleware,
+  sessionMiddleware,
+} from "better-auth/api"
+import { setSessionCookie } from "better-auth/cookies"
 import { drizzleAdapter } from "better-auth/adapters/drizzle"
 import { nextCookies } from "better-auth/next-js"
-import { twoFactor } from "better-auth/plugins"
+import { multiSession, twoFactor } from "better-auth/plugins"
+import type { BetterAuthPlugin } from "better-auth"
 import { and, count, eq, inArray } from "drizzle-orm"
 
+import {
+  ADDING_COOKIE,
+  KNOWN_COOKIE,
+  KNOWN_COOKIE_OPTIONS,
+  MAX_SESSIONS,
+  parseKnown,
+} from "./accounts"
+import { randomPreset } from "./avatars"
+import {
+  OFFER_SAVE_COOKIE,
+  SAVED_MAX_AGE,
+  SAVED_PREFIX,
+} from "./saved-login-rules"
+import { savedOnBrowser, touchSavedLogin } from "./saved-logins"
 import { db } from "./db"
 import * as schema from "./db/schema"
 import { message, sendInBackground } from "./email"
@@ -33,6 +57,145 @@ export const enabledProviders = {
   google: Boolean(google),
   github: Boolean(github),
 }
+
+// Remembers who signed in on this browser for the account menu, and logs an
+// account added on top of another. Listed after twoFactor, whose hook clears
+// newSession while a sign-in still waits for its code.
+const requestIp = (h: Headers | undefined) =>
+  h?.get("x-forwarded-for")?.split(",")[0].trim() || h?.get("x-real-ip") || null
+
+async function logEvent(
+  h: Headers | undefined,
+  userId: string,
+  kind: schema.AuthEventKind
+) {
+  await db.insert(schema.authEvents).values({
+    userId,
+    kind,
+    ip: requestIp(h),
+    ua: h?.get("user-agent") ?? null,
+  })
+}
+
+// Sign-ins that ask "Save your login info?" afterwards: not switching or a saved login.
+const FRESH_SIGN_IN =
+  /^\/(sign-in\/email|sign-up\/email|two-factor\/verify-(totp|backup-code)|callback\/)/
+
+const accountMemory = {
+  id: "nimbus-accounts",
+  endpoints: {
+    // One tap on a saved login (sign-in page). The secret never leaves its
+    // httpOnly cookie. Two-factor accounts still go through /two-factor.
+    signInSaved: createAuthEndpoint(
+      "/saved-login/use",
+      { method: "POST", body: z.object({ id: z.uuid() }) },
+      async (ctx) => {
+        const { id } = ctx.body
+        const name = SAVED_PREFIX + id
+        const secret = ctx.getCookie(name) ?? ""
+        const [saved] = await savedOnBrowser([{ name, value: secret }])
+        if (!saved) {
+          ctx.setCookie(name, "", { path: "/", maxAge: 0 })
+          throw new APIError("UNAUTHORIZED", {
+            message:
+              "This saved login doesn't work anymore. Sign in with your password.",
+          })
+        }
+        await touchSavedLogin(id)
+        ctx.setCookie(name, secret, {
+          ...KNOWN_COOKIE_OPTIONS,
+          maxAge: SAVED_MAX_AGE,
+        })
+        await logEvent(ctx.headers, saved.userId, "saved_login_used")
+
+        if (saved.twoFactorEnabled) {
+          // Mirrors the two-factor plugin after a password sign-in: a signed
+          // cookie naming a short-lived verification row, which /two-factor
+          // turns into a session once the code checks out.
+          const maxAge = 600
+          const cookie = ctx.context.createAuthCookie("two_factor", { maxAge })
+          const identifier = `2fa-${randomBytes(15).toString("hex")}`
+          const expiresAt = new Date(Date.now() + maxAge * 1000)
+          await ctx.context.internalAdapter.createVerificationValue({
+            value: saved.userId,
+            identifier,
+            expiresAt,
+          })
+          await ctx.context.internalAdapter.createVerificationValue({
+            value: "0",
+            identifier: `2fa-attempts-${identifier}`,
+            expiresAt,
+          })
+          await ctx.setSignedCookie(
+            cookie.name,
+            identifier,
+            ctx.context.secret,
+            cookie.attributes
+          )
+          return ctx.json({ twoFactorRedirect: true })
+        }
+
+        const user = await ctx.context.internalAdapter.findUserById(
+          saved.userId
+        )
+        const session = await ctx.context.internalAdapter.createSession(
+          saved.userId
+        )
+        if (!user || !session)
+          throw new APIError("INTERNAL_SERVER_ERROR", {
+            message: "Couldn't sign you in. Try your password.",
+          })
+        await setSessionCookie(ctx, { session, user })
+        return ctx.json({ twoFactorRedirect: false })
+      }
+    ),
+    // Sessions from before multi-session was on have no multi-session cookie.
+    // Setting the session cookie again lets the plugin add one, so the current
+    // account survives another signing in on top (app/(app)/actions.ts).
+    keepCurrentSession: createAuthEndpoint(
+      "/accounts/keep-current",
+      { method: "POST", use: [sessionMiddleware] },
+      async (ctx) => {
+        await setSessionCookie(ctx, ctx.context.session)
+        return ctx.json({ ok: true })
+      }
+    ),
+  },
+  hooks: {
+    after: [
+      {
+        matcher: () => true,
+        handler: createAuthMiddleware(async (ctx) => {
+          const s = ctx.context.newSession
+          if (!s) return
+          const me = {
+            id: s.user.id,
+            name: s.user.name,
+            email: s.user.email,
+            image: s.user.image ?? null,
+          }
+          const known = parseKnown(ctx.getCookie(KNOWN_COOKIE) ?? undefined)
+          const at = known.findIndex((k) => k.id === me.id)
+          if (at < 0) known.push(me)
+          else known[at] = me
+          ctx.setCookie(
+            KNOWN_COOKIE,
+            JSON.stringify(known.slice(-MAX_SESSIONS)),
+            KNOWN_COOKIE_OPTIONS
+          )
+          if (FRESH_SIGN_IN.test(ctx.path))
+            ctx.setCookie(OFFER_SAVE_COOKIE, me.id, {
+              ...KNOWN_COOKIE_OPTIONS,
+              maxAge: 10 * 60,
+            })
+          if (!ctx.getCookie(ADDING_COOKIE)) return
+          ctx.setCookie(ADDING_COOKIE, "", { path: "/", maxAge: 0 })
+          await logEvent(ctx.headers, me.id, "added")
+        }),
+      },
+    ],
+  },
+} satisfies BetterAuthPlugin
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, { provider: "pg", schema }),
@@ -107,6 +270,7 @@ export const auth = betterAuth({
         defaultValue: false,
         input: false,
       },
+      providerImage: { type: "string", required: false, input: false },
     },
   },
   databaseHooks: {
@@ -116,7 +280,13 @@ export const auth = betterAuth({
         // mode decides; a trusted domain or an invite link skips approval. This hook
         // is the only gate, so email and OAuth sign-ups are both covered.
         // The one-owner unique index rejects a second owner if two sign-ups race.
-        before: async (user, ctx) => {
+        before: async (created, ctx) => {
+          // Start with the provider's photo, or a random preset avatar.
+          const user = {
+            ...created,
+            providerImage: created.image || null,
+            image: created.image || randomPreset(),
+          }
           const [{ n }] = await db.select({ n: count() }).from(schema.user)
           if (n === 0)
             return { data: { ...user, role: "owner", status: "active" } }
@@ -218,7 +388,13 @@ export const auth = betterAuth({
         })
     }),
   },
-  plugins: [twoFactor({ issuer: "Nimbus" }), nextCookies()],
+  plugins: [
+    twoFactor({ issuer: "Nimbus" }),
+    // The admin's lower limit is checked before adding (app/(app)/actions.ts).
+    multiSession({ maximumSessions: MAX_SESSIONS }),
+    accountMemory,
+    nextCookies(),
+  ],
 })
 
 export type Session = typeof auth.$Infer.Session

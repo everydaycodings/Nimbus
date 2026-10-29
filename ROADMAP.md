@@ -279,5 +279,37 @@ password accounts must set it up. Google and GitHub sign-ins rely on the provide
   purge and the indexer sweep. **The worker is now required**: without it emails wait in Redis,
   deleted files stay in the bucket and trash isn't purged.
 
+## Accounts a: Avatars and several accounts per browser ✓ done
+- **Avatars**: 28 flat-illustrated presets in `public/avatars` (18 people, 10 robot and animal
+  characters), the Google/GitHub photo kept from sign-up, or an uploaded photo (center-cropped
+  to 256px JPEG in the browser, stored in S3, served by `/api/avatar/<key>`). New accounts get
+  their provider photo, or a random character since we don't know what they look like.
+- **Several accounts** (Better Auth `multiSession`): the account menu lists every account
+  signed in on this browser with unread counts and status, switches with a full reload (so
+  vault keys and uploads never cross accounts), and has "Add an existing account", a × per
+  account, "Sign out <name>" (the next account takes over) and "Sign out of all accounts".
+  Ctrl+Shift+1–5 switches; other tabs follow through a localStorage key. A session that ran
+  out stays as "Sign in again" with the email filled in. Switching while transfers run asks
+  first.
+- Account page lists the accounts on this browser and adds "Sign out everywhere". A folder
+  link meant for another signed-in account offers to switch. Admins see adds, switches and
+  sign-outs (90 days) on the member page, and can turn the feature off or set the limit
+  (default 5, hard cap 10) in Authentication.
+- Sessions from before multi-session get their multi-session cookie when another account is
+  added (`/accounts/keep-current`), so the first account isn't lost.
+
+## Accounts b: Saved logins ✓ done
+- Instagram-style "Save your login info?" after a fresh sign-in (password, Google/GitHub or
+  two-factor). Saved accounts show as "Continue as" on the sign-in page: one tap, no password,
+  two-factor still asked. The secret stays in an httpOnly cookie (`nimbus_saved_<id>`); the
+  server keeps only its SHA-256 (`saved_logins`).
+- Works for 90 days after its last use. Stops working when the password changes or is reset
+  (it must be newer than the credential account's last update), and is deleted when an admin
+  declines, changes the role of or resets two-factor for the person, sets a temporary password,
+  or the person uses "Sign out everywhere".
+- Admins: Authentication → Saved logins (on by default) and a separate switch for owners and
+  admins (off by default). Turning either off makes existing saved logins stop working.
+- Account page shows "Login info saved here · Forget"; the sign-in page has × per account.
+
 ## Phase 8: Ship
 - Production Dockerfile and compose, Vercel guide, backups

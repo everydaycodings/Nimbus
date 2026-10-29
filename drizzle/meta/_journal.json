@@ -141,6 +141,27 @@
       "when": 1792402617463,
       "tag": "0019_backups",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1793274792721,
+      "tag": "0020_avatars",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1793275292111,
+      "tag": "0021_multi_account",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1793276118647,
+      "tag": "0022_saved_logins",
+      "breakpoints": true
     }
   ]
 }

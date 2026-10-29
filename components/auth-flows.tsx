@@ -1,7 +1,6 @@
 "use client"
 
 import Link from "next/link"
-import { useRouter } from "next/navigation"
 import { useState } from "react"
 
 import { NewPasswordFields } from "@/components/password-input"
@@ -10,6 +9,7 @@ import { CodeInput, FormError } from "@/components/two-factor"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { reloadTo } from "@/lib/accounts"
 import { authClient } from "@/lib/auth-client"
 
 const ERROR = "Something went wrong. Try again."
@@ -140,7 +140,6 @@ export function ResetPasswordForm({ token }: { token: string }) {
 
 // The second sign-in step for accounts with two-factor on.
 export function TwoFactorChallenge() {
-  const router = useRouter()
   const [backup, setBackup] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -174,8 +173,7 @@ export function TwoFactorChallenge() {
                 : "That code didn't match. Try the newest code from your app."
           )
         }
-        router.push("/")
-        router.refresh()
+        reloadTo("/")
       }}
     >
       <div className="flex flex-col gap-2">
