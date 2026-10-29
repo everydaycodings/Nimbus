@@ -100,6 +100,7 @@ async function email(userId: string, id: string) {
     message({
       to: to.email,
       subject: n.text,
+      heading: "New activity in Nimbus",
       lines: [n.text],
       action: { label: "Open Nimbus", url: appUrl(n.href) },
       footer: "Choose which emails you get under Account in Nimbus.",

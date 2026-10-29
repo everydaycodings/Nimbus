@@ -291,9 +291,14 @@ export function StorageForm({
     null
   )
   const ref = useRef<HTMLFormElement>(null)
-  // After a save, drop typed keys; the fields fall back to the saved values.
+  // After a save, drop typed keys. Not form.reset(): that would also put the
+  // provider back to the one the page first loaded with.
   useEffect(() => {
-    if (state?.ok && !state.test) ref.current?.reset()
+    if (!state?.ok || state.test) return
+    for (const name of ["accessKey", "secretKey"]) {
+      const el = ref.current?.elements.namedItem(name)
+      if (el instanceof HTMLInputElement) el.value = ""
+    }
   }, [state])
   const submit = (intent: "test" | "save") => {
     if (!ref.current?.reportValidity()) return

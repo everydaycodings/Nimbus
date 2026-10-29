@@ -94,10 +94,12 @@ export async function sendCode() {
     message({
       to: s.user.email,
       subject: `${code} is your Nimbus confirmation code`,
+      heading: "Confirm it's you",
       lines: [
-        `Use ${code} to confirm it's you in Admin → Backups. It works for 10 minutes.`,
+        "Enter this code in Admin → Backups to continue. It works for 10 minutes.",
         "If you didn't ask for this, someone may be using your admin session: sign out everywhere from Account.",
       ],
+      code,
     })
   )
   return null

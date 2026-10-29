@@ -44,6 +44,7 @@ export async function setStatus(targetId: string, status: Status) {
       message({
         to: changed.email,
         subject: "You're in: your Nimbus account is ready",
+        heading: "Your account is ready",
         lines: [
           `Hi ${changed.name}, an admin approved your account. You can sign in and start storing files.`,
         ],

@@ -92,6 +92,7 @@ export async function sendTestEmail(): Promise<EmailFormState> {
       message({
         to: actor.email,
         subject: "Nimbus can send email",
+        heading: "Email is working",
         lines: [
           `This test came from your Nimbus through ${config.transport === "smtp" ? `SMTP (${config.smtp.host})` : "Resend"}.`,
           "Password resets, email confirmation and approval notices will now reach people.",

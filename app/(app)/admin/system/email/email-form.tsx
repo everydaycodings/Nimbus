@@ -73,9 +73,14 @@ export function EmailForm({ values }: { values: EmailFormValues }) {
   const [state, action, pending] = useActionState(saveEmail, null)
   const lost = values.sealedSecretLost
   const formRef = useRef<HTMLFormElement>(null)
-  // After a save, drop typed secrets; the fields fall back to the saved values.
+  // After a save, drop typed secrets. Not form.reset(): that would also put the
+  // radios back to the transport the page first loaded with.
   useEffect(() => {
-    if (state?.ok) formRef.current?.reset()
+    if (!state?.ok) return
+    for (const name of ["password", "apiKey"]) {
+      const el = formRef.current?.elements.namedItem(name)
+      if (el instanceof HTMLInputElement) el.value = ""
+    }
   }, [state])
 
   return (

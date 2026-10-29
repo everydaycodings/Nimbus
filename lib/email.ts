@@ -1,4 +1,6 @@
 // Relative imports: lib/auth.ts imports this and the Better Auth CLI can't resolve `@/`.
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import nodemailer from "nodemailer"
 
 import { decrypt } from "./crypto"
@@ -79,6 +81,13 @@ export type Message = {
   html: string
 }
 
+// The app icon rides along as an inline attachment, so it shows even when this
+// server isn't reachable from the reader's mail client.
+const LOGO_CID = "nimbus-logo"
+let logo: Buffer | undefined
+const getLogo = () =>
+  (logo ??= readFileSync(join(process.cwd(), "app/apple-icon.png")))
+
 export async function sendWith(c: EmailConfig, m: Message) {
   if (!canSend(c)) throw new Error("Email isn't set up.")
   if (c.transport === "resend") {
@@ -88,7 +97,17 @@ export async function sendWith(c: EmailConfig, m: Message) {
         Authorization: `Bearer ${c.resendApiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ from: c.from, ...m }),
+      body: JSON.stringify({
+        from: c.from,
+        ...m,
+        attachments: [
+          {
+            filename: "nimbus.png",
+            content: getLogo().toString("base64"),
+            content_id: LOGO_CID,
+          },
+        ],
+      }),
     })
     if (!res.ok) {
       const body = (await res.json().catch(() => null)) as {
@@ -107,7 +126,13 @@ export async function sendWith(c: EmailConfig, m: Message) {
       secure,
       auth: user ? { user, pass: password } : undefined,
     })
-    .sendMail({ from: c.from, ...m })
+    .sendMail({
+      from: c.from,
+      ...m,
+      attachments: [
+        { filename: "nimbus.png", content: getLogo(), cid: LOGO_CID },
+      ],
+    })
 }
 
 // Auth emails must never fail the request that triggered them, and awaiting the
@@ -136,29 +161,58 @@ const esc = (s: string) =>
       ]!
   )
 
-// One plain layout for every email: a paragraph or two and at most one button.
+// One branded layout for every email: heading, a paragraph or two, an optional
+// code and at most one button. Table markup and inline styles because Outlook
+// and Gmail ignore most CSS.
 export function message(opts: {
   to: string
   subject: string
+  heading?: string
   lines: string[]
+  code?: string
   action?: { label: string; url: string }
   footer?: string
 }): Message {
-  const { to, subject, lines, action, footer } = opts
+  const { to, subject, heading = subject, lines, code, action, footer } = opts
   const text = [
+    heading,
     ...lines,
+    ...(code ? [code] : []),
     ...(action ? [`${action.label}: ${action.url}`] : []),
     ...(footer ? [footer] : []),
+    `Nimbus · ${appUrl()}`,
   ].join("\n\n")
-  const p = (s: string, style = "") =>
-    `<p style="margin:0 0 16px;${style}">${esc(s)}</p>`
-  const html = `<!doctype html><html><body style="margin:0;padding:32px 16px;background:#f5f5f5;font:15px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#171717">
-<div style="max-width:480px;margin:0 auto;background:#fff;border:1px solid #e5e5e5;border-radius:12px;padding:32px">
-<p style="margin:0 0 24px;font-weight:600">Nimbus</p>
-${lines.map((l) => p(l)).join("\n")}
-${action ? `<p style="margin:24px 0"><a href="${esc(action.url)}" style="display:inline-block;background:#171717;color:#fff;text-decoration:none;font-weight:500;padding:10px 18px;border-radius:8px">${esc(action.label)}</a></p>${p(`Or open this link: ${action.url}`, "font-size:13px;color:#737373;word-break:break-all")}` : ""}
-${footer ? p(footer, "margin:24px 0 0;font-size:13px;color:#737373") : ""}
-</div></body></html>`
+  const font =
+    "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
+  const muted = "color:#737373;font-size:13px;line-height:20px"
+  const p = (s: string) =>
+    `<p style="margin:0 0 16px;font-size:15px;line-height:24px;color:#404040">${esc(s)}</p>`
+  const host = appUrl().replace(/^https?:\/\//, "")
+  const html = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><title>${esc(subject)}</title></head>
+<body style="margin:0;padding:0;background:#f4f4f5;${font}">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0">${esc(lines[0] ?? heading)}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5"><tr><td align="center" style="padding:40px 16px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px">
+<tr><td style="padding:0 4px 24px"><table role="presentation" cellpadding="0" cellspacing="0"><tr>
+<td style="vertical-align:middle"><img src="cid:${LOGO_CID}" width="32" height="32" alt="" style="display:block;border:0;border-radius:8px"></td>
+<td style="vertical-align:middle;padding-left:10px;font-size:18px;font-weight:600;color:#171717;letter-spacing:-0.2px">Nimbus</td>
+</tr></table></td></tr>
+<tr><td style="background:#ffffff;border:1px solid #e4e4e7;border-top:4px solid #5fd0bb;border-radius:12px;padding:36px 36px 28px">
+<h1 style="margin:0 0 16px;font-size:22px;line-height:30px;font-weight:600;color:#171717;letter-spacing:-0.3px">${esc(heading)}</h1>
+${lines.slice(0, 1).map(p).join("")}
+${code ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:8px 0 24px"><tr><td align="center" style="background:#f4f4f5;border:1px solid #e4e4e7;border-radius:8px;padding:18px;font-family:'SFMono-Regular',Menlo,Consolas,monospace;font-size:30px;font-weight:600;letter-spacing:8px;color:#171717">${esc(code)}</td></tr></table>` : ""}
+${lines.slice(1).map(p).join("\n")}
+${
+  action
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 24px"><tr><td style="border-radius:8px;background:#171717"><a href="${esc(action.url)}" style="display:inline-block;padding:12px 22px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px">${esc(action.label)}</a></td></tr></table>
+<p style="margin:0 0 16px;${muted}">Button not working? Paste this link into your browser:<br><a href="${esc(action.url)}" style="color:#0f766e;word-break:break-all">${esc(action.url)}</a></p>`
+    : ""
+}
+${footer ? `<p style="margin:24px 0 0;padding-top:20px;border-top:1px solid #e4e4e7;${muted}">${esc(footer)}</p>` : ""}
+</td></tr>
+<tr><td align="center" style="padding:24px 16px 0;${muted}">Sent by Nimbus at <a href="${esc(appUrl())}" style="color:#737373;text-decoration:underline">${esc(host)}</a><br>This is an automated message; replies aren't read.</td></tr>
+</table></td></tr></table></body></html>`
   return { to, subject, text, html }
 }
 

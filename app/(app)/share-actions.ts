@@ -312,6 +312,7 @@ export async function shareWith(
     message({
       to: email,
       subject: `${me.name} shared “${n.name}” with you on Nimbus`,
+      heading: `${me.name} shared “${n.name}” with you`,
       lines: [
         `${me.name} (${me.email}) shared “${n.name}” with you as ${role}.`,
         "Create your account to open it. This invite works for 30 days.",
