@@ -38,6 +38,7 @@ import {
 } from "@/lib/client-zip-download"
 import { ensureIndexed } from "@/lib/index-content"
 import { ensureThumb } from "@/lib/thumbs"
+import { zipName } from "@/lib/file-rules"
 import { cn } from "@/lib/utils"
 import {
   CHUNK,
@@ -807,7 +808,7 @@ export function UploadProvider({
       return
     }
     const name =
-      items.length === 1 ? `${items[0].name}.zip` : "Nimbus files.zip"
+      zipName(items.length === 1 ? items[0].name : undefined)
     zipJob(name, (progress, signal) =>
       clientZipDownload(
         items.map((i) => i.id),

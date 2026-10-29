@@ -86,3 +86,7 @@ export function freeName(name: string, taken: Set<string>, folder = false) {
     if (!taken.has(next.toLowerCase())) return next
   }
 }
+
+// "nimbus_files_2026-10-29_14-30-05.zip", in local time ("sv-SE" gives ISO-like order).
+export const zipName = (base = "nimbus_files") =>
+  `${base}_${new Date().toLocaleString("sv-SE").replace(" ", "_").replaceAll(":", "-")}.zip`

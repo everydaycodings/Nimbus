@@ -7,7 +7,7 @@ import { db } from "@/lib/db"
 import { fileVersions, nodes } from "@/lib/db/schema"
 import { accessOne, atLeast, folderOwner, viewable } from "@/lib/access"
 import { markOpened, openableFile, UUID } from "@/lib/files"
-import { formatBytes } from "@/lib/file-rules"
+import { formatBytes, zipName } from "@/lib/file-rules"
 import { officeAction, signWopi } from "@/lib/office"
 import { spaceLeft } from "@/lib/quota"
 import { presignGet } from "@/lib/s3"
@@ -443,7 +443,7 @@ export async function zipManifest(ids: string[]): Promise<ZipManifest> {
     ? ids.filter((id) => UUID.test(id)).slice(0, 1000)
     : []
   const tree = await zipTree(await viewable(me.id, clean))
-  if (!tree) return { name: "Nimbus files.zip", entries: [], dirs: [] }
+  if (!tree) return { name: zipName(), entries: [], dirs: [] }
   return {
     name: tree.name,
     entries: await Promise.all(

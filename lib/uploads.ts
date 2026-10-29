@@ -25,7 +25,7 @@ import {
   vaults,
 } from "@/lib/db/schema"
 import { notify, notifyEdit } from "@/lib/notify"
-import { UUID } from "@/lib/file-rules"
+import { UUID, zipName } from "@/lib/file-rules"
 import { deleteKeys, getText, headSize } from "@/lib/s3"
 import {
   extOf,
@@ -565,8 +565,8 @@ export async function zipTree(ids: string[]) {
   return {
     name:
       tops.length === 1 && tops[0].kind === "folder"
-        ? `${tops[0].path}.zip`
-        : "Nimbus files.zip",
+        ? zipName(tops[0].path)
+        : zipName(),
     files: rows
       .filter((r) => r.kind === "file")
       .map((r) => ({
