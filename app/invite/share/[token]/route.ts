@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm"
 import { NextResponse, type NextRequest } from "next/server"
 
+import { appUrl } from "@/lib/email"
 import { db } from "@/lib/db"
 import { user } from "@/lib/db/schema"
 import { notify } from "@/lib/notify"
@@ -13,13 +14,13 @@ import {
 // The emailed "Join and open" link. Remembers the invite so the sign-up that
 // follows skips approval and receives the share.
 export async function GET(
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: Promise<{ token: string }> }
 ) {
   const { token } = await params
   const email = await readShareInvite(token)
   if (!email)
-    return NextResponse.redirect(new URL("/sign-up?invite=invalid", req.url))
+    return NextResponse.redirect(appUrl("/sign-up?invite=invalid"))
   const [existing] = await db
     .select({ id: user.id })
     .from(user)
@@ -32,10 +33,10 @@ export async function GET(
         actorId: b.createdBy,
         data: { role: b.role },
       })
-    return NextResponse.redirect(new URL("/shared", req.url))
+    return NextResponse.redirect(appUrl("/shared"))
   }
   const res = NextResponse.redirect(
-    new URL(`/sign-up?for=${encodeURIComponent(email)}`, req.url)
+    appUrl(`/sign-up?for=${encodeURIComponent(email)}`)
   )
   res.cookies.set(SHARE_INVITE_COOKIE, token, {
     httpOnly: true,
