@@ -34,6 +34,9 @@ working() {
       --resolve "$d:443:127.0.0.1" "https://$d$path" || true)
     [[ "$code" =~ ^[23] ]] || return 1
   done
+  # Sites set up before WebDAV have no /dav block.
+  curl -s -o /dev/null -D - -X OPTIONS --max-time 10 \
+    --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/dav/" | grep -qi '^dav:'
 }
 
 if command -v nginx >/dev/null && [ -f "$site" ] && working; then
