@@ -64,6 +64,16 @@ export async function setSavedLogins(form: FormData) {
   revalidatePath("/", "layout")
 }
 
+// Off makes every app password stop working; they come back when it's on.
+export async function setWebdav(form: FormData) {
+  await requireAdmin()
+  await db.update(settings).set({
+    webdav: form.get("webdav") === "on",
+    updatedAt: new Date(),
+  })
+  revalidatePath("/", "layout")
+}
+
 export async function setToastPosition(form: FormData) {
   await requireAdmin()
   const position = form.get("position") as ToastPosition
@@ -303,6 +313,7 @@ const RESETTABLE: SettingKey[] = [
   "vaultsEnabled",
   "maxVaultsPerMember",
   "officeUrl",
+  "webdav",
   "ocrLangs",
   "toastPosition",
   "healthIntervalMin",

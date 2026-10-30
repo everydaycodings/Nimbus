@@ -175,6 +175,7 @@ async function describe(userId: string, ids?: string[]) {
       transfer: `${who} wants to make you the owner of ${item}`,
       signup_request: `${d.who ?? who} asked to join Nimbus`,
       service_health: `${SERVICE_LABEL[d.service as Service] ?? "A service"} ${d.state === "up" ? "is working again" : "is down"}`,
+      app_password: `A new app password “${d.name ?? "unnamed"}” was made for your account${d.ip ? ` from ${d.ip}` : ""}. Revoke it in Account if it wasn't you.`,
       backup: `${KIND_LABEL[d.backup as Kind] ?? "A"} backup ${d.event === "stale" ? "hasn't succeeded in a while" : d.event === "warning" ? "finished with a warning" : "failed"}`,
     }[r.kind]
     const seen = r.nodeId ? access.get(r.nodeId) : undefined
@@ -185,6 +186,8 @@ async function describe(userId: string, ids?: string[]) {
           ? `/admin/system/health#health-${d.service}`
           : r.kind === "backup"
             ? `/admin/system/backups/history?run=${d.run}`
+          : r.kind === "app_password"
+            ? "/account#connect"
           : !seen
             ? "/shared"
             : r.kindOf === "folder"

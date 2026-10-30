@@ -16,12 +16,14 @@
     "db:seed": "node --env-file=.env.local scripts/seed-files.ts",
     "indexer": "node --env-file=.env.local scripts/indexer.ts",
     "worker": "node --env-file=.env.local scripts/worker.ts",
+    "webdav": "node --env-file=.env.local scripts/webdav.ts",
     "worker:backup": "node --env-file=.env.local scripts/backup-worker.ts",
     "backup:restore": "node --env-file=.env.local scripts/backup-restore.ts",
     "backup:restore-files": "node --env-file=.env.local scripts/backup-restore-files.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1152.0",
+    "@aws-sdk/lib-storage": "^3.1160.0",
     "@aws-sdk/s3-request-presigner": "^3.1152.0",
     "@base-ui/react": "^1.9.0",
     "@phosphor-icons/react": "^2.1.10",
@@ -38,6 +40,7 @@
     "hash-wasm": "^4.12.0",
     "ioredis": "^6.0.0",
     "marked": "^18.1.1",
+    "mime-types": "^3.0.2",
     "next": "16.4.2",
     "nodemailer": "^10.2.1",
     "pdfjs-dist": "^6.4.299",
@@ -57,6 +60,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/mime-types": "^3.0.1",
     "@types/node": "^20",
     "@types/nodemailer": "^8.0.2",
     "@types/react": "^19",

@@ -26,87 +26,41 @@ import {
 import {
   accessOne,
   accessTo,
-  folderOwner,
   ownerIfAll,
   visiblePath,
 } from "@/lib/access"
 import { getFolder, getPath, markOpened, UUID } from "@/lib/files"
-import { notifyEdit } from "@/lib/notify"
 import { requireMember } from "@/lib/session"
-import { restoreNode, trashNodes } from "@/lib/tree"
-import { deleteNodes } from "@/lib/uploads"
+import { restoreNode } from "@/lib/tree"
+import {
+  NOT_ALLOWED,
+  cleanIds,
+  createFolderAs,
+  moveAs,
+  owned,
+  renameAs,
+  trashAs,
+} from "@/lib/tree-ops"
+import { deleteNodes, isClash } from "@/lib/uploads"
 
 type Result = { error?: string }
-
-const CLASH = "Something with that name is already in this folder."
-
-// Postgres unique_violation, raw or wrapped by Drizzle.
-function isClash(e: unknown) {
-  const err = e as { code?: string; cause?: { code?: string } }
-  return (err.cause?.code ?? err.code) === "23505"
-}
-
-function cleanName(raw: string) {
-  const name = raw.trim()
-  if (!name) return { error: "Enter a name." }
-  if (name.length > 255) return { error: "Keep names under 255 characters." }
-  if (name === "." || name === ".." || /[/\\\0]/.test(name))
-    return { error: "Names can't be . or .. or contain / or \\." }
-  return { name }
-}
-
-function cleanIds(ids: string[]) {
-  return Array.isArray(ids)
-    ? ids.filter((id) => UUID.test(id)).slice(0, 1000)
-    : []
-}
-
-const owned = (ownerId: string, ids: string[]) =>
-  and(eq(nodes.ownerId, ownerId), inArray(nodes.id, ids))
-
-const GONE = "That folder is gone. Refresh and try again."
-const NOT_ALLOWED = "You can't change that. Ask its owner for edit access."
 
 export async function createFolder(
   parentId: string | null,
   raw: string
 ): Promise<Result> {
   const me = await requireMember()
-  const clean = cleanName(raw)
-  if ("error" in clean) return clean
-  const owner = await folderOwner(me.id, parentId)
-  if (!owner) return { error: GONE }
-  try {
-    await db
-      .insert(nodes)
-      .values({ ownerId: owner, parentId, kind: "folder", name: clean.name })
-  } catch (e) {
-    if (isClash(e)) return { error: CLASH }
-    throw e
-  }
-  if (owner !== me.id) await notifyEdit(me.id, parentId!)
+  const r = await createFolderAs(me.id, parentId, raw)
+  if (r.error) return { error: r.error }
   refresh()
   return {}
 }
 
 export async function renameItem(id: string, raw: string): Promise<Result> {
   const me = await requireMember()
-  const clean = cleanName(raw)
-  if ("error" in clean) return clean
-  const ids = cleanIds([id])
-  const owner = await ownerIfAll(me.id, ids, "editor")
-  if (!owner) return { error: NOT_ALLOWED }
-  try {
-    await db
-      .update(nodes)
-      .set({ name: clean.name, updatedAt: new Date() })
-      .where(and(owned(owner, ids), isNull(nodes.trashedAt)))
-  } catch (e) {
-    if (isClash(e)) return { error: CLASH }
-    throw e
-  }
-  if (owner !== me.id) await notifyEdit(me.id, ids[0])
-  await markOpened(me.id, ids[0])
+  const r = await renameAs(me.id, id, raw)
+  if (r.error) return r
+  await markOpened(me.id, id)
   refresh()
   return {}
 }
@@ -116,45 +70,8 @@ export async function moveItems(
   parentId: string | null
 ): Promise<Result> {
   const me = await requireMember()
-  const ids = cleanIds(rawIds)
-  // Things move only within one owner's tree, so nothing leaves a shared
-  // folder by moving: editors can only reach folders that owner shared.
-  const owner = await ownerIfAll(me.id, ids, "editor")
-  if (!owner) return { error: NOT_ALLOWED }
-  const target = await folderOwner(me.id, parentId)
-  if (!target) return { error: GONE }
-  if (target !== owner)
-    return {
-      error:
-        owner === me.id
-          ? "Your files can't go into a folder someone shared with you."
-          : "Shared items can only move between folders from the same owner.",
-    }
-  if (parentId) {
-    // The target and its ancestors can't be among the things being moved.
-    const up = await db.execute<{ id: string }>(sql`
-      with recursive up as (
-        select id, parent_id from nodes where id = ${parentId}
-        union all
-        select n.id, n.parent_id from nodes n join up on n.id = up.parent_id
-      )
-      select id from up`)
-    if (up.some((r) => ids.includes(r.id)))
-      return { error: "A folder can't go inside itself." }
-  }
-  try {
-    await db
-      .update(nodes)
-      .set({ parentId, updatedAt: new Date() })
-      .where(and(owned(owner, ids), isNull(nodes.trashedAt)))
-  } catch (e) {
-    if (isClash(e))
-      return {
-        error: "Something with the same name is already in that folder.",
-      }
-    throw e
-  }
-  if (owner !== me.id && parentId) await notifyEdit(me.id, parentId)
+  const r = await moveAs(me.id, rawIds, parentId)
+  if (r.error) return r
   refresh()
   return {}
 }
@@ -176,14 +93,10 @@ export async function setStarred(rawIds: string[], starred: boolean) {
   refresh()
 }
 
-// Editors' trash lands in the owner's trash.
 export async function trashItems(rawIds: string[]): Promise<Result> {
   const me = await requireMember()
-  const ids = cleanIds(rawIds)
-  const owner = await ownerIfAll(me.id, ids, "editor")
-  if (!owner) return { error: NOT_ALLOWED }
-  await trashNodes(db, owner, ids)
-  if (owner !== me.id) await notifyEdit(me.id, ids[0])
+  const r = await trashAs(me.id, rawIds)
+  if (r.error) return r
   refresh()
   return {}
 }

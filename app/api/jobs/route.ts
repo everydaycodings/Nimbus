@@ -2,6 +2,7 @@
 // they reuse the app's database, storage and email code. Anything but a 2xx
 // makes the worker try the job again later.
 import { backupAlert } from "@/lib/backup/alert"
+import { sweepJunk } from "@/lib/dav/locks"
 import { sendNow, type Message } from "@/lib/email"
 import { purgeExpiredTrash } from "@/lib/files"
 import { removeObjects } from "@/lib/s3"
@@ -9,7 +10,10 @@ import { readToken } from "@/lib/upload-rules"
 import { finishTusUpload } from "@/lib/uploads"
 
 const jobs: Record<string, (data: never) => Promise<unknown>> = {
-  purge: purgeExpiredTrash,
+  purge: async () => {
+    await purgeExpiredTrash()
+    await sweepJunk()
+  },
   email: (m: Message) => sendNow(m),
   "delete-keys": ({ keys }: { keys: string[] }) => removeObjects(keys),
   "backup-alert": backupAlert,

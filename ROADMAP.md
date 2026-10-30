@@ -311,5 +311,50 @@ password accounts must set it up. Google and GitHub sign-ins rely on the provide
   admins (off by default). Turning either off makes existing saved logins stop working.
 - Account page shows "Login info saved here · Forget"; the sign-in page has × per account.
 
+## WebDAV a: Mount Nimbus as a drive ✓ done
+- `/dav` for Linux file managers (GNOME Files `davs://`, Dolphin `webdavs://`), davfs2, rclone and
+  other WebDAV clients. Next can't route WebDAV's methods, so `scripts/webdav.ts` (the `webdav`
+  compose service, port 3404) forwards each request to `/api/dav` as a signed POST; everything
+  else runs in the app through the same helpers as the web (`lib/tree-ops.ts`, `saveUploaded`).
+- Sign-in is the account's email plus an **app password** from Account → Connect a device: one
+  per device, Read & write or Read only, shown once, revocable, and it stops working after 90 days
+  unused. Two-factor and Google/GitHub accounts work. 10 wrong tries from one IP block it for 15
+  minutes.
+- The mount shows My files at the root and `Shared with me/<owner>/<item>`. Vaults stay in the
+  browser. Viewers read, editors write, and nothing moves between owners (same rules as the web).
+- Saving over a file makes a new version (an empty one is replaced, since clients often create a
+  file empty first); deleting moves to the trash; the upload limit, blocked types and storage
+  quota apply (507 when full). Copies share stored bytes.
+- Exclusive write locks live in Redis with a timeout of at most an hour; a lock only stops other
+  people.
+- Search text comes from the indexer sweep; thumbnails are drawn when the folder is next opened
+  on the web.
+
+## WebDAV b: Polish, admin and other clients ✓ done
+- Temporary save files (`.goutputstream-*`, `.~lock.*#`, `~$*`, LibreOffice's `lu*.tmp`) are
+  kept so apps work, but hidden from folders, Recent and search, never versioned, never notify,
+  and deleted after a day unless locked (hourly purge; only files WebDAV wrote). A Mac's `._name`
+  files are kept the same way (Finder errors if they vanish) and go once `name` is gone.
+  `.DS_Store`, `Thumbs.db` and `desktop.ini` are accepted and dropped.
+- Saving by rename (write a temp file, MOVE it over the original, as GNOME and many editors do)
+  and COPY over a file make a new version of the original instead of replacing it.
+- A "New app password" notification (bell and email) names the device and IP.
+- Admin → System → WebDAV turns it off for everyone; a member's page shows their WebDAV state and
+  app passwords, with Revoke and a per-member off switch (same rules as other account recovery).
+- Account → Connect a device has a guide per client: Linux, rclone, Windows (HTTPS only, 50 MB
+  limit), macOS and phone apps.
+- Locks follow RFC 4918: only requests carrying the token may change what a lock covers. If
+  headers are evaluated in full (lists, Not, lock tokens and ETags), so a stale ETag answers 412.
+  litmus passes basic, copymove, http and 33/34 locks (shared locks aren't offered); props fails
+  on dead properties, which Nimbus doesn't keep.
+- Tested with rclone (sync and a FUSE mount), cadaver, litmus, and replayed Windows Explorer and
+  macOS Finder request sequences, through the production nginx config too. davfs2 1.7.1 can't list
+  folders on Linux 7.0 kernels with any server (checked against rclone's own server), so the Linux
+  guide's folder mount should use rclone there.
+- nginx answers `OPTIONS /` with the WebDAV headers, which Windows' "Map network drive" checks.
+- Left for later: dead properties (PROPPATCH is accepted and dropped), shared locks, encrypted
+  vaults over WebDAV, server-made thumbnails for files WebDAV writes, testing Windows, macOS and
+  phone apps on real devices.
+
 ## Phase 8: Ship
 - Production Dockerfile and compose, Vercel guide, backups

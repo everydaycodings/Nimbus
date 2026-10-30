@@ -40,6 +40,8 @@ export const user = pgTable(
     quotaBytes: bigint("quota_bytes", { mode: "number" }),
     // Unlocked vaults lock after this many idle minutes.
     vaultLockMinutes: integer("vault_lock_minutes").default(15).notNull(),
+    // An admin turned WebDAV off for this account.
+    webdavDisabled: boolean("webdav_disabled").default(false).notNull(),
   },
   (table) => [
     check(

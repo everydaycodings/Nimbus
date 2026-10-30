@@ -14,6 +14,7 @@ import { UserAvatar } from "@/components/user-avatar"
 import { db } from "@/lib/db"
 import {
   account,
+  appPasswords,
   authEvents,
   type AuthEventKind,
   nodes,
@@ -28,6 +29,7 @@ import { getSettings } from "@/lib/signup"
 import { vaultsByOwner } from "@/lib/vault"
 import { revokeLink } from "../../actions"
 import { MemberActions } from "../member-actions"
+import { MemberWebdav } from "../member-webdav"
 
 export const metadata = { title: "Member · Admin · Nimbus" }
 
@@ -162,6 +164,7 @@ export default async function MemberPage({
     links,
     [people],
     events,
+    apps,
   ] = await Promise.all([
     getSettings(),
     usedByOwner([id]),
@@ -220,6 +223,11 @@ export default async function MemberPage({
       .where(eq(authEvents.userId, id))
       .orderBy(desc(authEvents.at))
       .limit(10),
+    db
+      .select()
+      .from(appPasswords)
+      .where(eq(appPasswords.userId, id))
+      .orderBy(desc(appPasswords.createdAt)),
   ])
 
   const vaults = vaultMap.get(id) ?? []
@@ -229,6 +237,12 @@ export default async function MemberPage({
   const now = new Date()
   const lastActive = sessions[0]?.updatedAt
   const password = providers.some((a) => a.provider === "credential")
+  // Same rule as the actions' recoverable(): not yourself, never the owner,
+  // and admins only by the owner.
+  const editable =
+    p.id !== me.id &&
+    p.role !== "owner" &&
+    (p.role !== "admin" || me.role === "owner")
 
   return (
     <AdminPage
@@ -324,6 +338,15 @@ export default async function MemberPage({
                   : "Chosen by them"}
               </Row>
             )}
+            <Row label="WebDAV" on={settings.webdav && !p.webdavDisabled}>
+              {!settings.webdav
+                ? "Off for everyone (Admin → WebDAV)"
+                : p.webdavDisabled
+                  ? "Turned off for them"
+                  : apps.length
+                    ? `On, ${apps.length === 1 ? "1 app password" : `${apps.length} app passwords`}`
+                    : "On, no app passwords"}
+            </Row>
             <Row label="Last active">
               {lastActive ? moment.format(lastActive) : "No active sessions"}
             </Row>
@@ -350,6 +373,18 @@ export default async function MemberPage({
               ))}
             </ul>
           )}
+          <h3 className="pt-3 text-sm font-medium">App passwords (WebDAV)</h3>
+          <MemberWebdav
+            id={p.id}
+            on={!p.webdavDisabled}
+            editable={editable}
+            apps={apps.map((a) => ({
+              id: a.id,
+              name: a.name,
+              scope: a.scope,
+              used: `${a.lastUsedAt ? `${a.lastIp && !/^[0:.]*$/.test(a.lastIp) ? `${a.lastIp} · ` : ""}Used ${moment.format(a.lastUsedAt)}` : "Never used"} · Made ${day.format(a.createdAt)}`,
+            }))}
+          />
           {events.length > 0 && (
             <>
               <h3 className="pt-3 text-sm font-medium">

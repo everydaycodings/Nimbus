@@ -112,6 +112,20 @@ npm run indexer
 It uses `.env.local` for Postgres and S3, and the OCR languages from `/admin/settings`.
 Tesseract downloads each language's data from the jsDelivr CDN the first time.
 
+## WebDAV
+
+`npm run webdav` serves `/dav` on port 3404 and forwards each request to `/api/dav` on the dev
+server (Next can't route PROPFIND, MKCOL and the rest). Make an app password in Account →
+Connect a device, then for example:
+
+```sh
+curl -u you@example.com:APP-PASSWORD -X PROPFIND -H "Depth: 1" http://localhost:3404/dav/
+```
+
+`.env.local` sets `WEBDAV_URL=http://localhost:3404/dav` so Account shows that address. In
+production nginx forwards `/dav` to the `webdav` compose service and the address is
+`https://<domain>/dav`.
+
 ## Reset
 
 ```sh

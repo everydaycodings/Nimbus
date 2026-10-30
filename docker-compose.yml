@@ -126,6 +126,18 @@ services:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
 
+  # WebDAV at /dav (nginx forwards it here). Next can't route WebDAV's methods,
+  # so this hands each request to the app as a signed POST.
+  webdav:
+    <<: *nimbus
+    command: ["node", "scripts/webdav.ts"]
+    environment:
+      <<: *nimbus-env
+      WEBDAV_APP_URL: http://app:3000
+    ports: ["127.0.0.1:3404:3404"]
+    depends_on:
+      app: { condition: service_started }
+
   # Admin → System → Backups (profile "backup"). It drives this host's Docker
   # (pg_dump and a throwaway Postgres to verify each dump), so it gets the Docker
   # socket, root, and the host network.

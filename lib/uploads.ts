@@ -308,6 +308,65 @@ export async function isInside(id: string, root: string) {
   return Boolean(row?.ok)
 }
 
+// Puts an uploaded object into a folder as a new file, or with "version" as a
+// new version of the file already there. "keep" keeps both under a free name.
+export async function saveUploaded(
+  tx: Db,
+  f: {
+    ownerId: string
+    parentId: string | null
+    name: string
+    version: Omit<typeof fileVersions.$inferInsert, "nodeId" | "number">
+    onConflict: "version" | "keep"
+  }
+): Promise<Finished> {
+  const { s3Key: key, size, mime = null } = f.version
+  const insert = (n: string) =>
+    tx
+      .insert(nodes)
+      .values({
+        ownerId: f.ownerId,
+        parentId: f.parentId,
+        kind: "file",
+        name: n,
+        size,
+        mime,
+        s3Key: key,
+      })
+      .onConflictDoNothing()
+      .returning({ id: nodes.id })
+
+  let [node] = await insert(f.name)
+  if (!node) {
+    const clash = await child(tx, f.ownerId, f.parentId, f.name)
+    if (f.onConflict === "version" && clash?.kind === "file") {
+      await tx
+        .update(nodes)
+        .set({ s3Key: key, size, mime, updatedAt: new Date() })
+        .where(eq(nodes.id, clash.id))
+      node = clash
+    } else {
+      // Keep both. Retry in case another upload takes the free name first.
+      for (let i = 0; !node && i < 5; i++) {
+        const taken = await tx
+          .select({ name: sql<string>`lower(${nodes.name})` })
+          .from(nodes)
+          .where(inFolder(f.ownerId, f.parentId))
+        ;[node] = await insert(
+          freeName(f.name, new Set(taken.map((t) => t.name)))
+        )
+      }
+      if (!node) return { error: `Couldn't find a free name for “${f.name}”.` }
+    }
+  }
+  const v = await addVersion(tx, node.id, f.version)
+  await tx
+    .update(nodes)
+    .set({ currentVersionId: v.id })
+    .where(eq(nodes.id, node.id))
+  return { nodeId: node.id, versionId: v.id }
+}
+
 // Turns a finished tus upload into a node, or a version of an existing one.
 // Idempotent through file_versions.upload_id: the client and tusd's post-finish
 // hook both call it, and the second call gets the first one's node.
@@ -367,51 +426,13 @@ export async function finishTusUpload(
     result = await db.transaction(async (tx) => {
       const dir = await mkdirp(tx, token.u, token.p, names)
       if ("error" in dir) return dir
-      const insert = (n: string) =>
-        tx
-          .insert(nodes)
-          .values({
-            ownerId: token.u,
-            parentId: dir.id,
-            kind: "file",
-            name: n,
-            size,
-            mime,
-            s3Key: key,
-          })
-          .onConflictDoNothing()
-          .returning({ id: nodes.id })
-
-      let [node] = await insert(name)
-      if (!node) {
-        const clash = await child(tx, token.u, dir.id, name)
-        if (meta.onConflict === "version" && clash?.kind === "file") {
-          await tx
-            .update(nodes)
-            .set({ s3Key: key, size, mime, updatedAt: new Date() })
-            .where(eq(nodes.id, clash.id))
-          node = clash
-        } else {
-          // Keep both. Retry in case another upload takes the free name first.
-          for (let i = 0; !node && i < 5; i++) {
-            const taken = await tx
-              .select({ name: sql<string>`lower(${nodes.name})` })
-              .from(nodes)
-              .where(inFolder(token.u, dir.id))
-            ;[node] = await insert(
-              freeName(name, new Set(taken.map((t) => t.name)))
-            )
-          }
-          if (!node)
-            return { error: `Couldn't find a free name for “${name}”.` }
-        }
-      }
-      const v = await addVersion(tx, node.id, version)
-      await tx
-        .update(nodes)
-        .set({ currentVersionId: v.id })
-        .where(eq(nodes.id, node.id))
-      return { nodeId: node.id, versionId: v.id }
+      return saveUploaded(tx, {
+        ownerId: token.u,
+        parentId: dir.id,
+        name,
+        version,
+        onConflict: meta.onConflict === "version" ? "version" : "keep",
+      })
     })
   } catch (e) {
     // The other caller finished the same upload first.

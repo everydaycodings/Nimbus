@@ -1,21 +1,25 @@
 "use server"
 
 import { APIError } from "better-auth/api"
-import { eq, sql } from "drizzle-orm"
+import { and, count, eq, sql } from "drizzle-orm"
 import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
 
 import { auth } from "@/lib/auth"
 import { AVATAR_URL, PRESETS } from "@/lib/avatars"
 import { db } from "@/lib/db"
+import { hashAppPassword, newAppPassword } from "@/lib/dav/auth"
 import {
   ADMIN_KINDS,
   NOTIFICATION_KINDS,
+  appPasswords,
   notificationPrefs,
   user,
 } from "@/lib/db/schema"
+import { notify } from "@/lib/notify"
 import { deleteObject, putObject } from "@/lib/s3"
-import { getSession, isAdmin } from "@/lib/session"
+import { UUID } from "@/lib/file-rules"
+import { getSession, isAdmin, requireMember } from "@/lib/session"
 
 export type FormState = { ok?: boolean; error?: string } | null
 
@@ -136,4 +140,48 @@ export async function uploadAvatar(form: FormData): Promise<FormState> {
   await putObject(`avatars/${key}.jpg`, bytes, "image/jpeg")
   await putAvatar(session.user.id, AVATAR_URL + key, session.user.image ?? null)
   return { ok: true }
+}
+
+const APP_SCOPES = ["rw", "ro"] as const
+
+// The new password is returned once and never stored, only its hash.
+export async function createAppPassword(
+  rawName: string,
+  scope: string
+): Promise<{ password?: string; error?: string }> {
+  const me = await requireMember()
+  const name = String(rawName ?? "").trim().slice(0, 60)
+  if (!name) return { error: "Name the device, like “Laptop” or “Phone”." }
+  if (!APP_SCOPES.includes(scope as "rw")) return { error: "Pick an access level." }
+  const [{ n }] = await db
+    .select({ n: count() })
+    .from(appPasswords)
+    .where(eq(appPasswords.userId, me.id))
+  if (n >= 50) return { error: "You have 50 app passwords. Revoke one first." }
+  const password = newAppPassword()
+  await db.insert(appPasswords).values({
+    userId: me.id,
+    name,
+    scope: scope as "rw" | "ro",
+    hash: hashAppPassword(password),
+    lastFour: password.slice(-4),
+  })
+  const h = await headers()
+  await notify(me.id, "app_password", {
+    data: {
+      name,
+      ip: h.get("x-forwarded-for")?.split(",")[0].trim() || h.get("x-real-ip") || "",
+    },
+  })
+  revalidatePath("/account")
+  return { password }
+}
+
+export async function revokeAppPassword(id: string) {
+  const me = await requireMember()
+  if (!UUID.test(id)) return
+  await db
+    .delete(appPasswords)
+    .where(and(eq(appPasswords.id, id), eq(appPasswords.userId, me.id)))
+  revalidatePath("/account")
 }

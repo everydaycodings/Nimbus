@@ -8,6 +8,7 @@ import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import {
   account,
+  appPasswords,
   savedLogins,
   session,
   twoFactor,
@@ -158,6 +159,29 @@ export async function deleteMemberVault(targetId: string, vaultId: string) {
   const vault = target && (await getVault(target.id, vaultId))
   if (!vault) return { error: "That vault is already gone." }
   await destroyVault(vault.id)
+  revalidatePath("/admin/members", "layout")
+  return { ok: true }
+}
+
+// Off makes their app passwords stop working without deleting them.
+export async function setMemberWebdav(targetId: string, on: boolean) {
+  const target = await recoverable(targetId)
+  if (!target) return { error: "You can't change WebDAV for this person." }
+  await db
+    .update(user)
+    .set({ webdavDisabled: !on })
+    .where(eq(user.id, target.id))
+  revalidatePath("/admin/members", "layout")
+  return { ok: true }
+}
+
+// For a lost laptop or phone.
+export async function revokeMemberAppPassword(targetId: string, id: string) {
+  const target = await recoverable(targetId)
+  if (!target) return { error: "You can't change this person's app passwords." }
+  await db
+    .delete(appPasswords)
+    .where(and(eq(appPasswords.id, id), eq(appPasswords.userId, target.id)))
   revalidatePath("/admin/members", "layout")
   return { ok: true }
 }

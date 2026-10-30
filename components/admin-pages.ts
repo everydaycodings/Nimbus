@@ -5,6 +5,7 @@ import {
   FileDocIcon,
   FingerprintIcon,
   GaugeIcon,
+  HardDriveIcon,
   HeartbeatIcon,
   HardDrivesIcon,
   LinkSimpleIcon,
@@ -92,6 +93,7 @@ export const ADMIN_GROUPS: { title: string; pages: AdminPage[] }[] = [
         label: "Office documents",
         icon: FileDocIcon,
       },
+      { href: "/admin/system/webdav", label: "WebDAV", icon: HardDriveIcon },
       { href: "/admin/system/ocr", label: "Text in images", icon: ScanIcon },
       {
         href: "/admin/system/appearance",
@@ -343,6 +345,12 @@ export const ADMIN_SETTINGS: {
     label: "Collabora server",
     href: "/admin/system/office",
     keywords: "office word excel powerpoint collabora wopi",
+  },
+  {
+    id: "allow-webdav",
+    label: "Allow WebDAV",
+    href: "/admin/system/webdav",
+    keywords: "webdav dav mount drive app password rclone davfs finder explorer",
   },
   {
     id: "ocr-languages",

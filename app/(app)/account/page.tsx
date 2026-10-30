@@ -3,9 +3,10 @@ import {
   ShieldCheckIcon,
   WarningCircleIcon,
 } from "@phosphor-icons/react/dist/ssr"
-import { eq } from "drizzle-orm"
+import { desc, eq } from "drizzle-orm"
 import { redirect } from "next/navigation"
 
+import { AppPasswords } from "@/components/app-passwords"
 import { AvatarPicker } from "@/components/avatar-picker"
 import { DeviceAccounts } from "@/components/device-accounts"
 import { PasswordForm } from "@/components/password-form"
@@ -21,8 +22,8 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { db } from "@/lib/db"
-import { ADMIN_KINDS, account, user } from "@/lib/db/schema"
-import { emailEnabled } from "@/lib/email"
+import { ADMIN_KINDS, account, appPasswords, user } from "@/lib/db/schema"
+import { appUrl, emailEnabled } from "@/lib/email"
 import { channelPrefs } from "@/lib/notify"
 import { deviceAccounts, getSession, isAdmin } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
@@ -38,6 +39,7 @@ const KIND_LABEL = {
   signup_request: "Someone asks to join this Nimbus",
   service_health: "A service goes down or comes back (Admin → Health)",
   backup: "A backup fails, warns, or hasn't run (Admin → Backups)",
+  app_password: "A new app password is made for my account",
 } as const
 
 const PROVIDER = { google: "Google", github: "GitHub" } as Record<
@@ -49,7 +51,7 @@ export default async function AccountPage() {
   const session = await getSession()
   if (!session) redirect("/sign-in")
   const me = session.user
-  const [linked, email, { require2fa, multiAccount }, prefs, [lock]] =
+  const [linked, email, settings, prefs, [lock], apps] =
     await Promise.all([
       db
         .select({ providerId: account.providerId })
@@ -59,10 +61,21 @@ export default async function AccountPage() {
       getSettings(),
       channelPrefs(me.id),
       db
-        .select({ minutes: user.vaultLockMinutes })
+        .select({
+          minutes: user.vaultLockMinutes,
+          webdavOff: user.webdavDisabled,
+        })
         .from(user)
         .where(eq(user.id, me.id)),
+      db
+        .select()
+        .from(appPasswords)
+        .where(eq(appPasswords.userId, me.id))
+        .orderBy(desc(appPasswords.createdAt)),
     ])
+  const { require2fa, multiAccount } = settings
+  const day = (d: Date) =>
+    d.toLocaleDateString("en", { day: "numeric", month: "short", year: "numeric" })
   const password = linked.some((a) => a.providerId === "credential")
   const providers = linked
     .map((a) => PROVIDER[a.providerId])
@@ -232,6 +245,33 @@ export default async function AccountPage() {
           </form>
         </CardContent>
       </Card>
+
+      {settings.webdav && !lock?.webdavOff && (
+        <Card id="connect">
+          <CardHeader>
+            <CardTitle className="text-base">Connect a device</CardTitle>
+            <CardDescription>
+              Open your files from a computer&apos;s file manager or an app
+              over WebDAV. Vaults stay in the browser.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <AppPasswords
+              url={process.env.WEBDAV_URL ?? `${appUrl()}/dav`}
+              email={me.email}
+              items={apps.map((a) => ({
+                id: a.id,
+                name: a.name,
+                scope: a.scope,
+                lastFour: a.lastFour,
+                created: day(a.createdAt),
+                lastUsed: a.lastUsedAt ? day(a.lastUsedAt) : null,
+                lastIp: a.lastIp,
+              }))}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

@@ -6,6 +6,7 @@ import {
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3"
+import { Upload } from "@aws-sdk/lib-storage"
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 
 import { enqueue } from "./redis"
@@ -64,6 +65,31 @@ export async function headSize(key: string) {
 export async function getStream(key: string) {
   const r = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }))
   return r.Body!.transformToWebStream()
+}
+
+// `range` is an HTTP Range header passed straight to S3.
+export async function getRange(key: string, range?: string) {
+  const r = await s3.send(
+    new GetObjectCommand({ Bucket: BUCKET, Key: key, Range: range })
+  )
+  return {
+    body: r.Body!.transformToWebStream(),
+    length: r.ContentLength,
+    contentRange: r.ContentRange,
+  }
+}
+
+// Multipart, so a body of any size streams through in 8 MB parts.
+export async function putStream(
+  key: string,
+  body: ReadableStream<Uint8Array>,
+  type: string
+) {
+  await new Upload({
+    client: s3,
+    params: { Bucket: BUCKET, Key: key, Body: body, ContentType: type },
+    partSize: 8 * 1024 * 1024,
+  }).done()
 }
 
 // The browser makes thumbnails; one object holds the thumbnail of every

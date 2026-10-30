@@ -30,6 +30,27 @@ server {
         proxy_send_timeout 1h;
     }
 
+    # WebDAV (scripts/webdav.ts): mounted drives stream whole files.
+    location /dav {
+        proxy_pass http://127.0.0.1:3404;
+        client_max_body_size 0;
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+    }
+
+    # Windows' "Map network drive" asks the site root whether it speaks WebDAV.
+    location = / {
+        if ($request_method = OPTIONS) {
+            add_header DAV "1, 2";
+            add_header MS-Author-Via DAV;
+            add_header Allow "OPTIONS, PROPFIND";
+            return 200;
+        }
+        proxy_pass http://127.0.0.1:3400;
+    }
+
     location / {
         proxy_pass http://127.0.0.1:3400;
         # Zips are streamed while they're built.

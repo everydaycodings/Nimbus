@@ -357,6 +357,29 @@ export const savedLogins = pgTable(
   (t) => [index("saved_logins_user_idx").on(t.userId)]
 )
 
+// WebDAV sign-in, one per device. The token is 32 random bytes shown once; only
+// its SHA-256 is kept. Stops working 90 days after its last use.
+export const appPasswords = pgTable(
+  "app_passwords",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    scope: text("scope").$type<"rw" | "ro">().notNull(),
+    hash: text("hash").notNull().unique(),
+    lastFour: text("last_four").notNull(),
+    createdAt: createdAt(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    lastIp: text("last_ip"),
+  },
+  (t) => [
+    index("app_passwords_user_idx").on(t.userId),
+    check("app_passwords_scope_check", sql`${t.scope} in ('rw', 'ro')`),
+  ]
+)
+
 // Stars are per person, so shared items can be starred too.
 export const stars = pgTable(
   "stars",
@@ -417,6 +440,7 @@ export const NOTIFICATION_KINDS = [
   "signup_request",
   "service_health",
   "backup",
+  "app_password",
 ] as const
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number]
 // Only admins get these, so only admins see their settings.
@@ -545,6 +569,8 @@ export const settings = pgTable(
     // get it when the second switch is on.
     savedLogins: boolean("saved_logins").notNull().default(true),
     savedLoginsAdmins: boolean("saved_logins_admins").notNull().default(false),
+    // Mounting files over WebDAV at /dav with app passwords.
+    webdav: boolean("webdav").notNull().default(true),
     // Rules for new passwords and vault passphrases. Null: the owner hasn't
     // chosen, so the industry-standard defaults apply (lib/password-policy).
     passwordPolicy: jsonb("password_policy").$type<PasswordPolicy>(),

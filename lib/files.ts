@@ -36,7 +36,7 @@ import {
   type TagColor,
 } from "@/lib/db/schema"
 import { accessOne, accessTo, atLeast, type Access } from "@/lib/access"
-import { UUID } from "@/lib/file-rules"
+import { JUNK, UUID } from "@/lib/file-rules"
 import { purgeSavedLogins } from "@/lib/saved-logins"
 import { getSession } from "@/lib/session"
 import { deleteNodes } from "@/lib/uploads"
@@ -153,6 +153,9 @@ const live = (ownerId: string) =>
     isNull(nodes.vaultId)
   )
 
+// Apps' temporary save files stay off the web (they're for WebDAV clients).
+const notJunk = sql`${nodes.name} !~* ${JUNK}`
+
 const foldersFirst = [
   sql`${nodes.kind} = 'folder' desc`,
   sql`lower(${nodes.name})`,
@@ -176,7 +179,8 @@ export async function listFolder(
     .where(
       and(
         live(ownerId),
-        parentId ? eq(nodes.parentId, parentId) : isNull(nodes.parentId)
+        parentId ? eq(nodes.parentId, parentId) : isNull(nodes.parentId),
+        notJunk
       )
     )
     .orderBy(...foldersFirst)
@@ -245,7 +249,8 @@ export async function listRecent(viewer: string) {
       and(
         eq(nodeOpens.userId, viewer),
         isNull(nodes.trashedAt),
-        isNull(nodes.vaultId)
+        isNull(nodes.vaultId),
+        notJunk
       )
     )
     .orderBy(desc(nodeOpens.openedAt))
@@ -311,7 +316,7 @@ export async function searchItems(
       cross join q
       left join node_content c
         on c.node_id = n.id and c.version_id = n.current_version_id
-      where n.trashed_at is null and n.vault_id is null
+      where n.trashed_at is null and n.vault_id is null and n.name !~* ${JUNK}
         and (n.owner_id = ${viewer} or n.id in (select id from shared))
     ), top as (
       select * from scored

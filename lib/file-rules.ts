@@ -62,6 +62,20 @@ export function previewKind(
 export const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+// Temporary files apps make while saving over WebDAV (GNOME's
+// .goutputstream-*, LibreOffice's .~lock.*# and lu*.tmp, Office's ~$*), swept
+// after a day. Postgres reads the same patterns with ~*.
+export const TEMP = String.raw`^(\.goutputstream-.*|\.~lock\..*#|~\$.*|lu\w+\.tmp)$`
+// Those plus the ._name files macOS keeps beside each file (Finder tags and
+// other metadata; Finder errors if they vanish). Kept so the apps work, hidden
+// on the web, and never versioned.
+export const JUNK = String.raw`^(\._.+|\.goutputstream-.*|\.~lock\..*#|~\$.*|lu\w+\.tmp)$`
+export const isJunk = (name: string) => new RegExp(JUNK, "i").test(name)
+
+// Folder metadata Macs and Windows write everywhere and never need back.
+export const isDropped = (name: string) =>
+  /^(\.DS_Store|Thumbs\.db|desktop\.ini)$/i.test(name)
+
 // Files Collabora opens when an admin has set it up.
 export const OFFICE_EXT =
   /\.(docx?|dotx?|odt|ott|rtf|xlsx?|xlsm|ods|ots|pptx?|ppsx?|odp|otp|odg)$/i
