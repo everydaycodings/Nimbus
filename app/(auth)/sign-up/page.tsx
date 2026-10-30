@@ -100,7 +100,7 @@ export default async function SignUpPage({
       <CardContent>
         <AuthForm
           mode="sign-up"
-          providers={enabledProviders}
+          providers={await enabledProviders()}
           initialError={params.error}
         />
       </CardContent>

@@ -6,8 +6,10 @@ import {
   Section,
   SettingRow,
   SettingsForm,
+  SpeedInput,
   resettable,
   sizeField,
+  speedField,
 } from "@/components/admin/setting"
 import { SubmitButton } from "@/components/submit-button"
 import { Button } from "@/components/ui/button"
@@ -17,6 +19,7 @@ import {
   addBlockedExtension,
   removeBlockedExtension,
   setUploadLimit,
+  setUploadSpeed,
 } from "../../actions"
 
 export const metadata = { title: "Uploads · Admin · Nimbus" }
@@ -25,6 +28,7 @@ export default async function UploadsPage() {
   const s = await getSettings()
   const reset = resettable(s)
   const size = sizeField(s.maxUploadBytes, "MB", "GB")
+  const speed = speedField(s.uploadSpeedBytes)
 
   return (
     <AdminPage
@@ -65,6 +69,25 @@ export default async function UploadsPage() {
               <option value="GB">GB</option>
             </select>
           </div>
+        </SettingRow>
+      </SettingsForm>
+
+      <SettingsForm action={setUploadSpeed}>
+        <SettingRow
+          id="upload-speed"
+          label="Upload speed"
+          htmlFor="speed"
+          hint="Per member, shared across their uploads. Only the web uploader is held to it: WebDAV and file-drop links aren't capped. A member's own speed (Members) wins. Leave blank for no cap."
+          tip={{
+            does: "Paces uploads from the browser so they don't fill a slow connection.",
+            affects:
+              "Uploads in the web app, for every member without their own speed.",
+            default: "No cap",
+            example: "5 MB/s on a home connection",
+          }}
+          reset={reset("uploadSpeedBytes")}
+        >
+          <SpeedInput {...speed} />
         </SettingRow>
       </SettingsForm>
 

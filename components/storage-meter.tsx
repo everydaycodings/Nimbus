@@ -1,4 +1,5 @@
 import { HardDrivesIcon } from "@phosphor-icons/react/dist/ssr"
+import Link from "next/link"
 
 import { formatBytes } from "@/lib/file-rules"
 import type { Usage } from "@/lib/quota"
@@ -20,8 +21,8 @@ const PARTS = [
 ] as const
 
 // Sidebar footer meter: used of the quota, split by kind of file. Hidden while
-// the sidebar is collapsed.
-export function StorageMeter({ usage }: { usage: Usage }) {
+// the sidebar is collapsed. With `href` (the sidebar) it opens the storage report.
+export function StorageMeter({ usage, href }: { usage: Usage; href?: string }) {
   const { used, quota } = usage
   const scale = quota ?? used
   const full = quota !== null && used >= quota
@@ -35,8 +36,10 @@ export function StorageMeter({ usage }: { usage: Usage }) {
       ? `${formatBytes(used)} used`
       : `${formatBytes(used)} of ${formatBytes(quota)}, ${formatBytes(Math.max(0, quota - used))} free`
 
-  return (
-    <div className="flex flex-col gap-2 px-2 pb-1 group-data-[collapsed=true]/sidebar:hidden">
+  const box =
+    "flex flex-col gap-2 px-2 pb-1 group-data-[collapsed=true]/sidebar:hidden"
+  const body = (
+    <>
       <div className="flex items-center justify-between gap-2 text-xs">
         <span className="flex items-center gap-1.5 font-medium text-sidebar-foreground/70">
           <HardDrivesIcon className="size-4" />
@@ -104,9 +107,23 @@ export function StorageMeter({ usage }: { usage: Usage }) {
       )}
       {full && (
         <p className="text-xs text-destructive">
-          Full. Empty the trash to upload more.
+          Full. Uploads stop until space is freed.
         </p>
       )}
-    </div>
+    </>
+  )
+  return href ? (
+    <Link
+      href={href}
+      title="See what's using your storage"
+      className={cn(
+        box,
+        "rounded-md pt-1.5 outline-none hover:bg-sidebar-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      )}
+    >
+      {body}
+    </Link>
+  ) : (
+    <div className={box}>{body}</div>
   )
 }

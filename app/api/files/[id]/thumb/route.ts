@@ -1,11 +1,9 @@
-import { eq } from "drizzle-orm"
-
 import { atLeast } from "@/lib/access"
 import { db } from "@/lib/db"
-import { fileVersions } from "@/lib/db/schema"
 import { openableFile } from "@/lib/files"
-import { deleteObject, getStream, putObject, thumbKey } from "@/lib/s3"
+import { deleteObject, getStream, thumbKey } from "@/lib/s3"
 import { memberOrNull } from "@/lib/session"
+import { saveThumb, setThumb } from "@/lib/thumb-store"
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -17,10 +15,6 @@ async function lookup(req: Request, { params }: Ctx) {
   const v = new URL(req.url).searchParams.get("v")
   return openableFile(me.id, (await params).id, v)
 }
-
-// Every version sharing the object shares its thumbnail.
-const setThumb = (key: string, thumb: string | null) =>
-  db.update(fileVersions).set({ thumb }).where(eq(fileVersions.s3Key, key))
 
 // The thumbnail of ?v=. Its URL carries the revision (?r=), so it caches forever.
 export async function GET(req: Request, ctx: Ctx) {
@@ -54,9 +48,7 @@ export async function POST(req: Request, ctx: Ctx) {
     String.fromCharCode(...body.slice(8, 12)) === "WEBP"
   if (body.length && !webp)
     return new Response("Not a WebP image", { status: 415 })
-  if (webp) await putObject(thumbKey(file.key), body, "image/webp")
-  const thumb = webp ? Date.now().toString(36) : ""
-  await setThumb(file.key, thumb)
+  const thumb = await saveThumb(db.$client, file.key, webp ? body : null)
   return Response.json({ thumb })
 }
 
@@ -65,6 +57,6 @@ export async function DELETE(req: Request, ctx: Ctx) {
   const file = await lookup(req, ctx)
   if (!file || !atLeast(file.role, "editor")) return notFound()
   await deleteObject(thumbKey(file.key))
-  await setThumb(file.key, null)
+  await setThumb(db.$client, file.key, null)
   return new Response(null, { status: 204 })
 }

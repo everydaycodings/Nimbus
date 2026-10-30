@@ -73,6 +73,8 @@ export function UploadPanel({
   onResumeStale,
   onDismissStale,
   onOpen,
+  onKeep,
+  onRemove,
 }: {
   jobs: Job[]
   // Unfinished uploads remembered from a previous visit.
@@ -88,6 +90,9 @@ export function UploadPanel({
   onResumeStale: () => void
   onDismissStale: () => void
   onOpen: (j: Job) => void
+  // A finished upload that matches another file ("Same as …").
+  onKeep: (id: string) => void
+  onRemove: (j: Job) => void
 }) {
   const ups = jobs.filter((j) => j.kind === "upload")
   const done = ups.filter((j) => j.status === "done").length
@@ -115,7 +120,7 @@ export function UploadPanel({
     !busy &&
     stale === 0 &&
     jobs.length > 0 &&
-    jobs.every((j) => j.status === "done")
+    jobs.every((j) => j.status === "done" && !j.duplicateOf)
   const [held, setHeld] = useState(false)
   useEffect(() => {
     if (!settled || held) return
@@ -247,6 +252,8 @@ export function UploadPanel({
                 onResume={onResume}
                 onCancel={onCancel}
                 onOpen={onOpen}
+                onKeep={onKeep}
+                onRemove={onRemove}
               />
             ))}
           </ul>
@@ -262,12 +269,16 @@ function Row({
   onResume,
   onCancel,
   onOpen,
+  onKeep,
+  onRemove,
 }: {
   job: Job
   onPause: (id: string) => void
   onResume: (id: string) => void
   onCancel: (id: string) => void
   onOpen: (j: Job) => void
+  onKeep: (id: string) => void
+  onRemove: (j: Job) => void
 }) {
   const t = fileType("file", j.mime || null, j.name)
   const zip = j.kind === "zip"
@@ -275,7 +286,11 @@ function Row({
   const speed = rate(useSpeed(j.sent, j.status === "uploading"))
 
   const status =
-    j.status === "done" ? (
+    j.status === "done" && j.duplicateOf ? (
+      <span className="truncate" title={`Same as ${j.duplicateOf.path}`}>
+        Same as <span className="text-foreground">{j.duplicateOf.path}</span>
+      </span>
+    ) : j.status === "done" ? (
       <span className="flex items-center gap-1">
         <CheckCircleIcon weight="fill" className="size-3.5 text-brand" />
         {zip ? "Saved" : j.version ? `v${j.version} added` : "Done"}
@@ -325,6 +340,26 @@ function Row({
       </span>
     </>
   )
+
+  if (j.duplicateOf)
+    return (
+      <li className="flex items-center gap-3 py-2 pr-2 pl-4">
+        {body}
+        <span className="flex shrink-0 items-center gap-1">
+          <Button size="xs" variant="ghost" onClick={() => onKeep(j.id)}>
+            Keep
+          </Button>
+          <Button
+            size="xs"
+            variant="ghost"
+            className="text-destructive hover:text-destructive"
+            onClick={() => onRemove(j)}
+          >
+            Remove
+          </Button>
+        </span>
+      </li>
+    )
 
   if (j.status === "done" && !zip)
     return (

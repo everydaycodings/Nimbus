@@ -11,12 +11,19 @@ import {
   SERVICES,
   type Service,
 } from "@/lib/health-rules"
-import { scheduleHealth } from "@/lib/redis"
+import { enqueue, scheduleHealth } from "@/lib/redis"
 import { requireAdmin } from "@/lib/session"
 
 export async function runHealthChecks() {
   await requireAdmin()
   await runChecks()
+  revalidatePath("/admin", "layout")
+}
+
+// The worker runs it; the page refreshes itself and shows the result.
+export async function runOrphanSweep() {
+  await requireAdmin()
+  await enqueue("orphan-sweep", {})
   revalidatePath("/admin", "layout")
 }
 

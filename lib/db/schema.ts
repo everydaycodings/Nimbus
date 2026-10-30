@@ -167,12 +167,18 @@ export const fileVersions = pgTable(
     thumb: text("thumb"),
     // Vault files: the file's key, wrapped by the vault key. Null outside vaults.
     encKey: text("enc_key"),
+    // SHA-256 (hex) the browser computed while uploading, for spotting duplicates.
+    // Null when unknown (resumed uploads, WebDAV, vaults).
+    sha256: text("sha256"),
     createdAt: createdAt(),
   },
   (t) => [
     uniqueIndex("file_versions_node_number_idx").on(t.nodeId, t.number),
     index("file_versions_node_id_idx").on(t.nodeId),
     index("file_versions_s3_key_idx").on(t.s3Key),
+    index("file_versions_sha256_idx")
+      .on(t.sha256)
+      .where(sql`${t.sha256} is not null`),
     index("file_versions_via_share_idx")
       .on(t.viaShareId)
       .where(sql`${t.viaShareId} is not null`),
@@ -186,6 +192,10 @@ export const TAG_COLORS = [
   "green",
   "blue",
   "purple",
+  "pink",
+  "teal",
+  "indigo",
+  "brown",
   "gray",
 ] as const
 export type TagColor = (typeof TAG_COLORS)[number]
@@ -208,7 +218,7 @@ export const tags = pgTable(
     check("tags_name_not_blank", sql`length(trim(${t.name})) > 0`),
     check(
       "tags_color_check",
-      sql`${t.color} in ('red', 'orange', 'yellow', 'green', 'blue', 'purple', 'gray')`
+      sql`${t.color} in ('red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'teal', 'indigo', 'brown', 'gray')`
     ),
   ]
 )
@@ -441,6 +451,7 @@ export const NOTIFICATION_KINDS = [
   "service_health",
   "backup",
   "app_password",
+  "storage_low",
 ] as const
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number]
 // Only admins get these, so only admins see their settings.
@@ -538,6 +549,8 @@ export const settings = pgTable(
     trashRetentionDays: integer("trash_retention_days"),
     // Uploads. Null means no limit.
     maxUploadBytes: bigint("max_upload_bytes", { mode: "number" }),
+    // Web uploader speed cap per member, bytes a second. Null: no cap.
+    uploadSpeedBytes: bigint("upload_speed_bytes", { mode: "number" }),
     // Storage each member gets unless they have their own. Null: unlimited.
     defaultQuotaBytes: bigint("default_quota_bytes", { mode: "number" }),
     // Lowercase, without the dot.
@@ -574,6 +587,19 @@ export const settings = pgTable(
     // Rules for new passwords and vault passphrases. Null: the owner hasn't
     // chosen, so the industry-standard defaults apply (lib/password-policy).
     passwordPolicy: jsonb("password_policy").$type<PasswordPolicy>(),
+    // Thumbnails and search text the worker makes for files no browser handled.
+    deriveConcurrency: integer("derive_concurrency").notNull().default(1),
+    deriveMaxBytes: bigint("derive_max_bytes", { mode: "number" })
+      .notNull()
+      .default(200 * 1024 * 1024),
+    // One OpenID Connect provider, used when no OIDC_ISSUER is set in env. The
+    // secret is sealed by lib/crypto. Null issuer: off.
+    oidcName: text("oidc_name"),
+    oidcIssuer: text("oidc_issuer"),
+    oidcClientId: text("oidc_client_id"),
+    oidcClientSecret: text("oidc_client_secret"),
+    // Only OIDC sign-in, except the owner's password.
+    oidcOnly: boolean("oidc_only").notNull().default(false),
     // Health checks (Admin → Health). Null interval: no scheduled checks.
     healthIntervalMin: integer("health_interval_min").default(5),
     healthFailures: integer("health_failures").notNull().default(2),

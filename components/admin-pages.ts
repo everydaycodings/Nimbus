@@ -1,5 +1,6 @@
 import {
   ArchiveIcon,
+  ChartBarIcon,
   ClockCounterClockwiseIcon,
   EnvelopeSimpleIcon,
   FileDocIcon,
@@ -53,6 +54,7 @@ export const ADMIN_GROUPS: { title: string; pages: AdminPage[] }[] = [
   {
     title: "Storage",
     pages: [
+      { href: "/admin/storage/usage", label: "Usage", icon: ChartBarIcon },
       { href: "/admin/storage/quotas", label: "Quotas", icon: HardDrivesIcon },
       {
         href: "/admin/storage/uploads",
@@ -257,6 +259,12 @@ export const ADMIN_SETTINGS: {
     keywords: "password policy length passphrase nist characters",
   },
   {
+    id: "oidc",
+    label: "Single sign-on (OIDC)",
+    href: "/admin/authentication",
+    keywords: "sso oidc openid authentik keycloak provider login",
+  },
+  {
     id: "storage-per-member",
     label: "Storage per member",
     href: "/admin/storage/quotas",
@@ -267,6 +275,12 @@ export const ADMIN_SETTINGS: {
     label: "Largest file",
     href: "/admin/storage/uploads",
     keywords: "max upload size limit",
+  },
+  {
+    id: "upload-speed",
+    label: "Upload speed",
+    href: "/admin/storage/uploads",
+    keywords: "bandwidth throttle cap limit mb/s slow",
   },
   {
     id: "blocked-types",
@@ -357,6 +371,18 @@ export const ADMIN_SETTINGS: {
     label: "Text recognition languages",
     href: "/admin/system/ocr",
     keywords: "ocr tesseract images screenshots language",
+  },
+  {
+    id: "derive-jobs",
+    label: "Background thumbnails & text: jobs at a time",
+    href: "/admin/system/ocr",
+    keywords: "worker thumbnails search index concurrency webdav",
+  },
+  {
+    id: "derive-max",
+    label: "Background thumbnails & text: largest file",
+    href: "/admin/system/ocr",
+    keywords: "worker thumbnails search index size limit",
   },
   {
     id: "toast-position",

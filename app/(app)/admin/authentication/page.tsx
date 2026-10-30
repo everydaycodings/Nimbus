@@ -2,11 +2,16 @@ import Link from "next/link"
 
 import {
   AdminPage,
+  Section,
   SettingRow,
   SettingsForm,
   resettable,
 } from "@/components/admin/setting"
+import { CopyButton } from "@/components/copy-button"
+import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import { appUrl } from "@/lib/email"
+import { OIDC_ID, getOidcConfig, oidcReady, type OidcConfig } from "@/lib/oidc"
 import { POLICY_MAX, POLICY_MIN } from "@/lib/password-policy"
 import { hasPassword, requireAdmin } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
@@ -17,10 +22,44 @@ import {
   setRequire2fa,
   setSavedLogins,
 } from "../actions"
+import { OidcForm, TestOidc } from "./oidc-form"
 
 export const metadata = { title: "Authentication · Admin · Nimbus" }
 
 const CHECK = "size-4 shrink-0 accent-primary"
+
+function OidcEnv({ c }: { c: OidcConfig }) {
+  const rows: [string, string][] = [
+    ["OIDC_NAME", c.name],
+    ["OIDC_ISSUER", c.issuer],
+    ["OIDC_CLIENT_ID", c.clientId || "Not set"],
+    ["OIDC_CLIENT_SECRET", c.clientSecret ? "Set" : "Not set"],
+    ["OIDC_ONLY", c.only ? "true" : "false"],
+  ]
+  return (
+    <div className="flex flex-col gap-3">
+      <dl className="divide-y rounded-lg border text-sm">
+        {rows.map(([k, v]) => (
+          <div
+            key={k}
+            className="grid grid-cols-[minmax(0,12rem)_1fr] gap-4 px-4 py-2.5"
+          >
+            <dt className="truncate font-mono text-xs leading-5 text-muted-foreground">
+              {k}
+            </dt>
+            <dd className="truncate">{v}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="text-sm text-muted-foreground">
+        To change these, edit the server&apos;s environment and restart Nimbus.
+        Unset <code className="font-mono text-xs">OIDC_ISSUER</code> to manage
+        OIDC here instead.
+      </p>
+      <TestOidc />
+    </div>
+  )
+}
 
 export default async function AuthenticationPage() {
   const me = await requireAdmin()
@@ -29,11 +68,13 @@ export default async function AuthenticationPage() {
   const s = await getSettings()
   const reset = resettable(s)
   const blocked = needsOwn2fa && !s.require2fa
+  const oidc = await getOidcConfig()
+  const callback = appUrl(`/api/auth/callback/${OIDC_ID}`)
 
   return (
     <AdminPage
       title="Authentication"
-      description="How people prove who they are when they sign in with a password."
+      description="How people prove who they are when they sign in."
     >
       <SettingsForm
         action={setRequire2fa}
@@ -296,6 +337,50 @@ export default async function AuthenticationPage() {
           </SettingRow>
         </div>
       </SettingsForm>
+
+      <Section
+        title="Single sign-on (OIDC)"
+        description={
+          <span className="flex flex-wrap items-center gap-2">
+            {oidc.source === "env"
+              ? "Set in env, so it's read-only here."
+              : "One OpenID Connect provider, like Authentik or Keycloak. New people who sign in with it skip approval, unless sign-ups are closed. It links to an existing account only when that account's email is confirmed."}
+            {oidc.source === "env" && (
+              <Badge variant="outline">From environment</Badge>
+            )}
+          </span>
+        }
+      >
+        <div id="oidc-callback" className="grid scroll-mt-24 gap-2 p-4">
+          <p className="text-sm font-medium">Redirect URL</p>
+          <p className="text-sm text-muted-foreground">
+            Register this in your provider. It must match exactly.
+          </p>
+          <div className="flex items-center gap-2">
+            <code className="min-w-0 flex-1 truncate rounded-md bg-input/20 px-3 py-1.5 font-mono text-xs">
+              {callback}
+            </code>
+            <CopyButton value={callback} />
+          </div>
+        </div>
+        <div id="oidc" className="scroll-mt-24 p-4">
+          {oidc.source === "env" ? (
+            <OidcEnv c={oidc} />
+          ) : (
+            <OidcForm
+              values={{
+                name: s.oidcName ?? "",
+                issuer: s.oidcIssuer ?? "",
+                clientId: s.oidcClientId ?? "",
+                hasSecret: Boolean(s.oidcClientSecret),
+                sealedSecretLost: oidc.sealedSecretLost,
+                only: s.oidcOnly,
+                ready: oidcReady(oidc),
+              }}
+            />
+          )}
+        </div>
+      </Section>
     </AdminPage>
   )
 }

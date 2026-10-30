@@ -1,10 +1,10 @@
 // tusd v2 HTTP hooks (-hooks-http). tusd POSTs {Type, Event: {Upload, HTTPRequest}}
 // and reads {RejectUpload, HTTPResponse} back, as JSON, from a 2xx response.
-import { createHash, timingSafeEqual } from "node:crypto"
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto"
 
 import { formatBytes } from "@/lib/file-rules"
 import { enqueue } from "@/lib/redis"
-import { spaceLeft } from "@/lib/quota"
+import { release, reserve, reserved, spaceLeft } from "@/lib/quota"
 import { readUploadToken, splitPath } from "@/lib/upload-rules"
 import {
   droppedBytes,
@@ -61,9 +61,9 @@ async function whyNot(upload: Upload) {
     )
       return "This link has taken all the files it can."
   }
-  // ponytail: each upload is checked alone, so parallel uploads can overshoot
-  // the quota by what's in flight; reserve space per upload if that matters.
-  const left = await spaceLeft(token.u)
+  // Uploads still in flight hold their space (reserved in POST below).
+  let left = await spaceLeft(token.u)
+  if (left !== null) left = Math.max(0, left - (await reserved(token.u)))
   if (left !== null && upload.Size > left)
     return !token.b && !token.s
       ? `Not enough space: ${formatBytes(left)} left in this account.`
@@ -87,6 +87,18 @@ export async function POST(req: Request) {
           Header: { "Content-Type": "text/plain; charset=utf-8" },
         },
       })
+    // tusd hasn't picked an id yet, so pick it here (same shape as tusd's) to
+    // hold the space under it until post-finish or post-terminate.
+    // ponytail: check-then-reserve isn't atomic; two creates in the same instant can both pass.
+    const id = randomBytes(16).toString("hex")
+    await reserve(readUploadToken(upload.MetaData.token)!.u, id, upload.Size)
+    return Response.json({ ChangeFileInfo: { ID: id } })
+  }
+
+  // Cancelled: free the space now rather than in a day.
+  if (hook.Type === "post-terminate") {
+    const token = readUploadToken(upload.MetaData?.token)
+    if (token) await release(token.u, upload.ID.split("+")[0])
   }
 
   // tusd has already answered the client and never calls again, so a crash

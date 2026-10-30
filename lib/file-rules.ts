@@ -3,6 +3,11 @@
 
 export const DOC =
   /\.(docx?|odt|rtf|txt|xlsx?|ods|csv|pptx?|odp|pages|numbers|key)$/i
+// A known extension decides a file's kind before its stored mime type, so .ts
+// (video/mp2t) isn't counted as video.
+export const IMAGE = /\.(jpe?g|png|gif|webp|avif|heic|heif|bmp|svg|tiff?|ico)$/i
+export const VIDEO = /\.(mp4|m4v|mov|webm|mkv|avi|wmv|flv|mpe?g|3gp|ogv)$/i
+export const AUDIO = /\.(mp3|m4a|aac|wav|flac|ogg|oga|opus|wma|aiff?)$/i
 
 const UNITS = ["B", "KB", "MB", "GB", "TB"]
 
@@ -15,7 +20,7 @@ export function formatBytes(n: number) {
   return `${i ? n.toFixed(n < 10 ? 1 : 0) : n} ${UNITS[i]}`
 }
 
-const TEXT =
+export const TEXT =
   /\.(txt|log|ini|conf|cfg|env|properties|c|h|cc|cpp|hpp|cs|css|scss|less|go|html?|java|js|mjs|cjs|json|jsx|kt|lua|php|pl|py|r|rb|rs|scala|sh|bash|zsh|sql|swift|toml|ts|tsx|vue|svelte|xml|ya?ml|graphql|proto|tf|dart|gradle|bat|ps1|diff|patch)$|(^|\/)(dockerfile|makefile|readme|license)$/i
 
 export type PreviewKind =
@@ -29,6 +34,7 @@ export type PreviewKind =
   | "zip"
   | "docx"
   | "sheet"
+  | "pptx"
 
 // Browsers label TypeScript as MPEG transport stream video.
 // ponytail: real .ts video recordings show as code; sniff the bytes if that matters.
@@ -50,6 +56,7 @@ export function previewKind(
   if (/\.zip$/i.test(name)) return "zip"
   if (/\.docx$/i.test(name)) return "docx"
   if (/\.(xlsx|xlsm|xls|ods)$/i.test(name)) return "sheet"
+  if (/\.pptx$/i.test(name)) return "pptx"
   if (
     TEXT.test(name) ||
     m.startsWith("text/") ||

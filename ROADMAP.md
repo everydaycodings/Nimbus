@@ -356,5 +356,39 @@ password accounts must set it up. Google and GitHub sign-ins rely on the provide
   vaults over WebDAV, server-made thumbnails for files WebDAV writes, testing Windows, macOS and
   phone apps on real devices.
 
+## Batch 9: SSO, tags, pptx, server thumbnails, storage report, uploads ✓ done
+- **Tags**: rename, recolor (4 more colors: pink, teal, indigo, brown) and delete from a ⋯ in
+  the Tags menus or by right-clicking a tag in the sidebar's Tags section. Renaming onto an
+  existing name offers to merge. Deleting asks "Remove 'X' from N items?" and offers Undo.
+  `/tags/[id]` lists everything with a tag.
+- **Space** opens the previewer (in selection mode it still toggles the item).
+- **PowerPoint**: a built-in slide outline (title, text, pictures) when Collabora isn't set up,
+  also on public links; slide 1 as the thumbnail; slide text in search (`lib/pptx.ts`).
+- **Storage meter**: files are sorted by extension first, so `.ts` is no longer a video.
+- **Server-made thumbnails and text**: files no browser handled (WebDAV, the tus hook) get a
+  `derive` job 2 minutes after upload, run by the worker: images (sharp), PDF page 1 and the
+  first lines of text (plain monospace), plus search text. The minute sweep catches misses, 5 at a
+  time. Admin → System → Text in images sets how many run at once and the largest file. Videos
+  and audio still wait for a browser.
+- **Storage report** (`/storage`, click the meter): largest files, old versions, the trash and a
+  folder breakdown, with trash, "Delete older" and Empty trash. Admins get a view-only copy per
+  member and Admin → Storage → Usage. At 90% full a `storage_low` notification goes out once,
+  until usage drops under 85%.
+- **Uploads**:
+  - tus pre-create reserves each upload's size in Redis (`reserve:<owner>`), so parallel
+    uploads can't overshoot the quota; finish and the new `post-terminate` hook release it.
+  - A weekly orphan sweep deletes objects at the bucket root, `thumbs/` and `avatars/` that are
+    over a day old and unreferenced. Health shows the last run with Run now.
+  - Speed limit for the web uploader (Admin → Storage → Uploads, and per member). All running
+    uploads share it; WebDAV and file-drop links aren't capped.
+  - Duplicates: the browser hashes files (SHA-256) while uploading; a file identical to one
+    you already have shows "Same as …" with Keep / Remove.
+- **Single sign-on (OIDC)**: one provider, from `OIDC_*` env or Admin → Authentication (secret
+  sealed; saving applies without a restart). First sign-in skips approval (Closed still blocks);
+  it links only to accounts with a verified email. "OIDC only" hides the other methods; the owner
+  keeps a password way in. Account → Sign-in methods connects and disconnects providers.
+- Left for later: shared-bucket backup prefixes are never swept (by design), video thumbnails
+  on the server, Connect/remove for passwords on the Account page.
+
 ## Phase 8: Ship
 - Production Dockerfile and compose, Vercel guide, backups

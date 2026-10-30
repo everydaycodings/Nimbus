@@ -30,6 +30,7 @@ import {
   visiblePath,
 } from "@/lib/access"
 import { getFolder, getPath, markOpened, UUID } from "@/lib/files"
+import { checkStorage } from "@/lib/quota"
 import { requireMember } from "@/lib/session"
 import { restoreNode } from "@/lib/tree"
 import {
@@ -134,12 +135,14 @@ export async function deleteForever(rawIds: string[]) {
   const ids = cleanIds(rawIds)
   if (ids.length)
     await deleteNodes(and(owned(me.id, ids), isNotNull(nodes.trashedAt)))
+  await checkStorage(me.id)
   refresh()
 }
 
 export async function emptyTrash() {
   const me = await requireMember()
   await deleteNodes(and(eq(nodes.ownerId, me.id), isNotNull(nodes.trashedAt)))
+  await checkStorage(me.id)
   refresh()
 }
 
@@ -290,6 +293,125 @@ export async function tagItems(rawIds: string[], tagId: string, on: boolean) {
       .where(and(eq(nodeTags.tagId, tagId), inArray(nodeTags.nodeId, ids)))
   }
   refresh()
+}
+
+async function myTag(userId: string, id: string) {
+  if (!UUID.test(id)) return null
+  const [tag] = await db
+    .select()
+    .from(tags)
+    .where(and(eq(tags.id, id), eq(tags.ownerId, userId)))
+  return tag ?? null
+}
+
+// A name already used by another of your tags returns { merge } instead, so the
+// UI can ask before calling mergeTags.
+export async function renameTag(
+  id: string,
+  raw: string
+): Promise<Result & { merge?: string }> {
+  const me = await requireMember()
+  const name = raw.trim()
+  if (!name) return { error: "Enter a name." }
+  if (name.length > 40) return { error: "Keep tag names under 40 characters." }
+  const tag = await myTag(me.id, id)
+  if (!tag) return { error: NOT_ALLOWED }
+  const [other] = await db
+    .select({ id: tags.id })
+    .from(tags)
+    .where(
+      and(
+        eq(tags.ownerId, me.id),
+        sql`lower(${tags.name}) = lower(${name})`,
+        sql`${tags.id} <> ${id}`
+      )
+    )
+  if (other) return { merge: other.id }
+  await db.update(tags).set({ name }).where(eq(tags.id, id))
+  refresh()
+  return {}
+}
+
+// Moves every item tagged `from` onto `into`, then drops `from`.
+export async function mergeTags(from: string, into: string): Promise<Result> {
+  const me = await requireMember()
+  if (from === into) return {}
+  const [a, b] = [await myTag(me.id, from), await myTag(me.id, into)]
+  if (!a || !b) return { error: NOT_ALLOWED }
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`
+      insert into node_tags (node_id, tag_id)
+      select node_id, ${into} from node_tags where tag_id = ${from}
+      on conflict do nothing`)
+    await tx.delete(tags).where(eq(tags.id, from))
+  })
+  refresh()
+  return {}
+}
+
+export async function recolorTag(id: string, color: TagColor): Promise<Result> {
+  const me = await requireMember()
+  if (!TAG_COLORS.includes(color)) return { error: "Pick a color." }
+  if (!(await myTag(me.id, id))) return { error: NOT_ALLOWED }
+  await db.update(tags).set({ color }).where(eq(tags.id, id))
+  refresh()
+  return {}
+}
+
+// How many items carry the tag, for "Remove 'X' from N items?".
+export async function tagCount(id: string): Promise<number> {
+  const me = await requireMember()
+  if (!(await myTag(me.id, id))) return 0
+  const [r] = await db
+    .select({ n: count() })
+    .from(nodeTags)
+    .where(eq(nodeTags.tagId, id))
+  return r.n
+}
+
+export type TagSnapshot = {
+  tag: { id: string; name: string; color: TagColor }
+  nodeIds: string[]
+}
+
+// Returns what restoreTag needs to undo it.
+export async function deleteTag(id: string): Promise<TagSnapshot | null> {
+  const me = await requireMember()
+  const tag = await myTag(me.id, id)
+  if (!tag) return null
+  const rows = await db
+    .select({ nodeId: nodeTags.nodeId })
+    .from(nodeTags)
+    .where(eq(nodeTags.tagId, id))
+  await db.delete(tags).where(eq(tags.id, id))
+  refresh()
+  return {
+    tag: { id: tag.id, name: tag.name, color: tag.color },
+    nodeIds: rows.map((r) => r.nodeId),
+  }
+}
+
+export async function restoreTag(snap: TagSnapshot): Promise<Result> {
+  const me = await requireMember()
+  const { id, name, color } = snap.tag
+  if (!UUID.test(id) || !TAG_COLORS.includes(color))
+    return { error: NOT_ALLOWED }
+  try {
+    await db.insert(tags).values({ id, ownerId: me.id, name, color })
+  } catch (e) {
+    if (isClash(e)) return { error: "You already have a tag with that name." }
+    throw e
+  }
+  // Only items you can still reach get it back.
+  const ids = snap.nodeIds.filter((n) => UUID.test(n))
+  const allowed = [...(await accessTo(me.id, ids)).keys()]
+  if (allowed.length)
+    await db
+      .insert(nodeTags)
+      .values(allowed.map((nodeId) => ({ nodeId, tagId: id })))
+      .onConflictDoNothing()
+  refresh()
+  return {}
 }
 
 // "Add shortcut to My files" for something shared with you.

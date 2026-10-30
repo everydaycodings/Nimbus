@@ -1,10 +1,13 @@
 import "server-only"
 
-import { eq, sql } from "drizzle-orm"
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm"
 
 import { db } from "@/lib/db"
 import { settings, user } from "@/lib/db/schema"
-import { DOC } from "@/lib/file-rules"
+import { AUDIO, DOC, IMAGE, TEXT, VIDEO } from "@/lib/file-rules"
+import { notify } from "@/lib/notify"
+import { redis } from "@/lib/redis"
+import { RESERVE_TTL, reservedBytes } from "@/lib/upload-rules"
 
 export type Usage = {
   // Every stored byte: current files, older versions and the trash.
@@ -38,10 +41,15 @@ export async function getUsage(userId: string): Promise<Usage> {
       with f as (
         select size, case
           when vault_id is not null then 'vault'
+          when name ~* ${IMAGE.source} then 'images'
+          when name ~* ${VIDEO.source} then 'videos'
+          when name ~* ${AUDIO.source} then 'other'
+          when name ~* ${DOC.source} or name ~* ${TEXT.source}
+            or name ~* '\\.pdf$' then 'docs'
+          -- The stored mime type only for extensions the app doesn't know.
           when mime like 'image/%' then 'images'
           when mime like 'video/%' then 'videos'
-          when mime = 'application/pdf' or mime like 'text/%'
-            or name ~* ${DOC.source} then 'docs'
+          when mime = 'application/pdf' or mime like 'text/%' then 'docs'
           else 'other' end as cat
         from nodes
         where owner_id = ${userId} and kind = 'file'
@@ -105,4 +113,76 @@ export async function usedByOwner(ids: string[]) {
 export async function spaceLeft(userId: string) {
   const { used, quota } = await getUsage(userId)
   return quota === null ? null : Math.max(0, quota - used)
+}
+
+// Space held for tus uploads still in flight (see reservedBytes), so parallel
+// uploads can't overshoot the quota together. Keyed by whose storage they fill.
+const reserveKey = (ownerId: string) => `reserve:${ownerId}`
+
+export async function reserved(ownerId: string) {
+  return reservedBytes(await redis.hgetall(reserveKey(ownerId)))
+}
+
+export async function reserve(ownerId: string, uploadId: string, size: number) {
+  await redis
+    .multi()
+    .hset(reserveKey(ownerId), uploadId, `${size}:${Date.now()}`)
+    .pexpire(reserveKey(ownerId), RESERVE_TTL)
+    .exec()
+}
+
+export async function release(ownerId: string, uploadId: string) {
+  await redis.hdel(reserveKey(ownerId), uploadId).catch(() => {})
+}
+
+// Every upload id still holding space, for the orphan sweep.
+export async function reservedIds() {
+  const ids = new Set<string>()
+  for await (const keys of redis.scanStream({ match: "reserve:*" }))
+    for (const k of keys as string[])
+      for (const id of await redis.hkeys(k)) ids.add(id)
+  return ids
+}
+
+// The web uploader's speed cap for this account in bytes a second, or null.
+export async function speedCap(userId: string) {
+  const [row] = await db
+    .select({ own: user.uploadSpeedBytes, fallback: settings.uploadSpeedBytes })
+    .from(user)
+    .leftJoin(settings, sql`true`)
+    .where(eq(user.id, userId))
+  return row?.own ?? row?.fallback ?? null
+}
+
+// Warns once (bell and email) when an account reaches 90% of its quota, and
+// re-arms when it drops under 85%. Call after uploads land and after deletes.
+export async function checkStorage(userId: string) {
+  const quota = await quotaFor(userId)
+  const used = quota === null ? 0 : (await getUsage(userId)).used
+  if (quota !== null && used >= quota * 0.9) {
+    const [first] = await db
+      .update(user)
+      .set({ storageWarnedAt: new Date() })
+      .where(and(eq(user.id, userId), isNull(user.storageWarnedAt)))
+      .returning({ id: user.id })
+    if (first)
+      await notify(userId, "storage_low", {
+        data: {
+          percent: String(Math.min(100, Math.floor((used / quota) * 100))),
+        },
+      })
+  } else if (quota === null || used < quota * 0.85)
+    await db
+      .update(user)
+      .set({ storageWarnedAt: null })
+      .where(and(eq(user.id, userId), isNotNull(user.storageWarnedAt)))
+}
+
+// The hourly purge re-checks everyone warned, so a warning re-arms once space is freed.
+export async function recheckWarned() {
+  const rows = await db
+    .select({ id: user.id })
+    .from(user)
+    .where(isNotNull(user.storageWarnedAt))
+  for (const r of rows) await checkStorage(r.id)
 }

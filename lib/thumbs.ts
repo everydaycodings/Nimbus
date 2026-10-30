@@ -203,6 +203,41 @@ async function text(src: Src, name: string) {
   return webp(c)
 }
 
+// Slide 1: its first picture, else its title on a dark card.
+async function pptx(src: Src, size: number) {
+  const { readPptx } = await import("@/lib/pptx")
+  const [first] = await readPptx(
+    typeof src === "string" ? await readRange(src, 0, size) : src
+  )
+  if (!first) return null
+  if (first.images.length) return image(await first.images[0].blob())
+  const family =
+    getComputedStyle(document.body).getPropertyValue("--font-sans").trim() ||
+    "sans-serif"
+  const font = `600 30px ${family}`
+  await document.fonts.load(font).catch(() => {})
+  const c = canvas(SIZE, SIZE * 0.75)
+  const ctx = c.getContext("2d")!
+  ctx.fillStyle = "#171717"
+  ctx.fillRect(0, 0, c.width, c.height)
+  ctx.font = font
+  ctx.fillStyle = "#fafafa"
+  ctx.textBaseline = "top"
+  // Word-wrapped, at most 6 lines.
+  const lines: string[] = []
+  for (const word of (first.title || first.paragraphs[0] || "").split(/\s+/)) {
+    const last = lines.length - 1
+    if (
+      last >= 0 &&
+      ctx.measureText(`${lines[last]} ${word}`).width < SIZE - 64
+    )
+      lines[last] += ` ${word}`
+    else lines.push(word)
+  }
+  lines.slice(0, 6).forEach((l, i) => ctx.fillText(l, 32, 32 + i * 40))
+  return webp(c)
+}
+
 // Null when the file has nothing to show (no cover art, a codec or format the
 // browser can't read). Throws when it couldn't be read at all.
 export async function makeThumb(
@@ -221,6 +256,8 @@ export async function makeThumb(
         return audio(src, size)
       case "pdf":
         return pdf(src)
+      case "pptx":
+        return pptx(src, size)
       default:
         return text(src, name)
     }

@@ -17,6 +17,8 @@ import {
   type Status,
 } from "@/lib/db/schema"
 import { appUrl, message, sendInBackground } from "@/lib/email"
+import { notify } from "@/lib/notify"
+import { getUsage } from "@/lib/quota"
 import { forgetSavedLogins } from "@/lib/saved-logins"
 import { requireAdmin } from "@/lib/session"
 import { destroyVault, getVault } from "@/lib/vault"
@@ -95,6 +97,34 @@ export async function setMemberQuota(targetId: string, bytes: number | null) {
     .where(eq(user.id, target.id))
   revalidatePath("/admin/members", "layout")
   return { ok: true }
+}
+
+// Null goes back to the default from /admin/storage/uploads.
+export async function setMemberSpeed(targetId: string, bytes: number | null) {
+  const target = await recoverable(targetId)
+  if (!target) return { error: "You can't change uploads for this person." }
+  if (bytes !== null && !(Number.isFinite(bytes) && bytes > 0))
+    return { error: "Enter a speed above zero, or leave it blank." }
+  await db
+    .update(user)
+    .set({
+      uploadSpeedBytes:
+        bytes === null ? null : Math.max(1024, Math.round(bytes)),
+    })
+    .where(eq(user.id, target.id))
+  revalidatePath("/admin/members", "layout")
+  return { ok: true }
+}
+
+// The admin's storage view: the same storage_low bell and email, from them.
+export async function remindStorage(targetId: string) {
+  const admin = await requireAdmin()
+  const { used, quota } = await getUsage(targetId)
+  if (quota === null) return
+  await notify(targetId, "storage_low", {
+    actorId: admin.id,
+    data: { percent: String(Math.min(100, Math.floor((used / quota) * 100))) },
+  })
 }
 
 // For a member who lost their phone and their backup codes.

@@ -5,6 +5,8 @@ import { backupAlert } from "@/lib/backup/alert"
 import { sweepJunk } from "@/lib/dav/locks"
 import { sendNow, type Message } from "@/lib/email"
 import { purgeExpiredTrash } from "@/lib/files"
+import { sweepOrphans } from "@/lib/orphan-sweep"
+import { recheckWarned } from "@/lib/quota"
 import { removeObjects } from "@/lib/s3"
 import { readToken } from "@/lib/upload-rules"
 import { finishTusUpload } from "@/lib/uploads"
@@ -13,7 +15,9 @@ const jobs: Record<string, (data: never) => Promise<unknown>> = {
   purge: async () => {
     await purgeExpiredTrash()
     await sweepJunk()
+    await recheckWarned()
   },
+  "orphan-sweep": sweepOrphans,
   email: (m: Message) => sendNow(m),
   "delete-keys": ({ keys }: { keys: string[] }) => removeObjects(keys),
   "backup-alert": backupAlert,

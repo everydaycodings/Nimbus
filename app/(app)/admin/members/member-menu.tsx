@@ -29,10 +29,12 @@ import {
   deleteMemberVault,
   resetTwoFactor,
   setMemberQuota,
+  setMemberSpeed,
   setTemporaryPassword,
 } from "./actions"
 
 const GB = 2 ** 30
+const MB = 2 ** 20
 
 export function MemberMenu({
   id,
@@ -40,6 +42,8 @@ export function MemberMenu({
   twoFactor,
   quota,
   fallback,
+  speed,
+  speedFallback,
   vaults,
 }: {
   id: string
@@ -48,6 +52,9 @@ export function MemberMenu({
   // Their own storage limit, and the instance default it falls back to.
   quota: number | null
   fallback: number | null
+  // Their own web upload speed cap (bytes a second), and the default.
+  speed: number | null
+  speedFallback: number | null
   vaults: VaultSummary[]
 }) {
   const [quotaOpen, setQuotaOpen] = useState(false)
@@ -110,7 +117,7 @@ export function MemberMenu({
                 }}
               >
                 <HardDrivesIcon />
-                Storage limit…
+                Storage and speed…
               </Menu.Item>
               {twoFactor && (
                 <Menu.Item className={MENU_ITEM} onClick={() => show("2fa")}>
@@ -199,7 +206,7 @@ export function MemberMenu({
           <Dialog.Popup className={DIALOG_POPUP}>
             <div className="grid gap-1.5">
               <Dialog.Title className="text-base font-semibold">
-                Storage limit for {name}
+                Storage for {name}
               </Dialog.Title>
               <Dialog.Description className="text-sm text-muted-foreground">
                 Counts their files, older versions and trash. Leave it blank to
@@ -213,9 +220,9 @@ export function MemberMenu({
               className="flex flex-col gap-4"
               onSubmit={(e) => {
                 e.preventDefault()
-                const raw = String(
-                  new FormData(e.currentTarget).get("gb") ?? ""
-                ).trim()
+                const form = new FormData(e.currentTarget)
+                const raw = String(form.get("gb") ?? "").trim()
+                const mbs = String(form.get("mbs") ?? "").trim()
                 setError(null)
                 start(async () => {
                   const res = await setMemberQuota(
@@ -223,6 +230,11 @@ export function MemberMenu({
                     raw ? Number(raw) * GB : null
                   )
                   if ("error" in res && res.error) return setError(res.error)
+                  const sped = await setMemberSpeed(
+                    id,
+                    mbs ? Number(mbs) * MB : null
+                  )
+                  if ("error" in sped && sped.error) return setError(sped.error)
                   setQuotaOpen(false)
                 })
               }}
@@ -238,6 +250,29 @@ export function MemberMenu({
                   defaultValue={quota === null ? "" : +(quota / GB).toFixed(2)}
                   placeholder="Use the default"
                 />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor={`speed-${id}`}>Upload speed in MB/s</Label>
+                <Input
+                  id={`speed-${id}`}
+                  name="mbs"
+                  type="number"
+                  min={0.01}
+                  step="any"
+                  defaultValue={speed === null ? "" : +(speed / MB).toFixed(2)}
+                  placeholder="Use the default"
+                  aria-describedby={`speed-hint-${id}`}
+                />
+                <p
+                  id={`speed-hint-${id}`}
+                  className="text-xs text-muted-foreground"
+                >
+                  Caps the web uploader only; WebDAV and file-drop links
+                  aren&apos;t capped. Blank uses the default
+                  {speedFallback === null
+                    ? " (no cap)."
+                    : ` (${formatBytes(speedFallback)}/s).`}
+                </p>
               </div>
               <FormError>{error}</FormError>
               <div className="flex justify-end gap-2">

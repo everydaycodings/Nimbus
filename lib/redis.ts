@@ -18,6 +18,7 @@ const globalForRedis = globalThis as unknown as {
   healthQueue?: Queue
   jobsQueue?: Queue
   backupsQueue?: Queue
+  deriveQueue?: Queue
 }
 export const redis =
   globalForRedis.redis ??
@@ -34,6 +35,9 @@ export const HEARTBEAT_KEY = "health:heartbeat"
 export const INDEXER_KEY = "health:indexer"
 export const JOBS_QUEUE = "jobs"
 export const BACKUPS_QUEUE = "backups"
+// The last orphan sweep's {at, count, bytes}, for Admin → Health.
+export const ORPHANS_KEY = "jobs:orphans"
+export const DERIVE_QUEUE = "derive"
 // Set by npm run worker:backup while it's up.
 export const BACKUP_HEARTBEAT_KEY = "backups:heartbeat"
 
@@ -43,8 +47,16 @@ export const jobsQueue =
   globalForRedis.jobsQueue ?? new Queue(JOBS_QUEUE, { connection: redis })
 export const backupsQueue =
   globalForRedis.backupsQueue ?? new Queue(BACKUPS_QUEUE, { connection: redis })
+export const deriveQueue =
+  globalForRedis.deriveQueue ?? new Queue(DERIVE_QUEUE, { connection: redis })
 if (process.env.NODE_ENV !== "production")
-  Object.assign(globalForRedis, { redis, healthQueue, jobsQueue, backupsQueue })
+  Object.assign(globalForRedis, {
+    redis,
+    healthQueue,
+    jobsQueue,
+    backupsQueue,
+    deriveQueue,
+  })
 
 // Runs the checks every `minutes`, or stops the schedule when null.
 export async function scheduleHealth(minutes: number | null) {
@@ -57,7 +69,8 @@ export async function scheduleHealth(minutes: number | null) {
     )
 }
 
-export type JobName = "email" | "delete-keys" | "tus-finish" | "backup-alert"
+export type JobName =
+  "email" | "delete-keys" | "tus-finish" | "backup-alert" | "orphan-sweep"
 
 // Work the request shouldn't wait for, retried by `npm run worker` until it lands.
 // Failed jobs stay a week for a look; done ones go, since emails carry file names.
@@ -70,13 +83,36 @@ export async function enqueue(name: JobName, data: object) {
   })
 }
 
-// Trash and old link events hourly; the indexer sweeps every minute.
+// A thumbnail and search text for a version no browser uploaded (WebDAV, the
+// API), made by the worker (scripts/derive.ts). The version id as job id: a
+// double finish queues it once. The delay lets a browser that's looking get there first.
+export async function enqueueDerive(versionId: string) {
+  await deriveQueue.add(
+    "derive",
+    { versionId },
+    {
+      jobId: versionId,
+      delay: 2 * 60_000,
+      attempts: 3,
+      backoff: { type: "exponential", delay: 60_000 },
+      removeOnComplete: true,
+      removeOnFail: { age: 7 * 24 * 3600 },
+    }
+  )
+}
+
+// Trash and old link events hourly, orphaned objects weekly; the indexer sweeps every minute.
 export async function scheduleJobs() {
   const opts = { removeOnComplete: true, removeOnFail: 50 }
   await jobsQueue.upsertJobScheduler(
     "purge",
     { every: 3600_000 },
     { name: "purge", opts }
+  )
+  await jobsQueue.upsertJobScheduler(
+    "orphan-sweep",
+    { every: 7 * 24 * 3600_000 },
+    { name: "orphan-sweep", opts }
   )
   await jobsQueue.upsertJobScheduler(
     "index",

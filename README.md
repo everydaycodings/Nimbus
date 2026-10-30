@@ -27,6 +27,29 @@ Set `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` or `GITHUB_CLIENT_ID`/`GITHUB_CLIE
 
 A provider's button only appears once both of its keys are set.
 
+### Single sign-on with OIDC (optional)
+
+One OpenID Connect provider (Authentik, Keycloak, Zitadel, …) can be set up in
+**Admin → Authentication**, or in env, which wins and locks the admin form:
+
+```
+OIDC_ISSUER=https://auth.example.com/application/o/nimbus/
+OIDC_CLIENT_ID=nimbus
+OIDC_CLIENT_SECRET=...
+OIDC_NAME=Authentik        # the button says "Sign in with Authentik"
+OIDC_ONLY=false            # true hides password, Google and GitHub (the owner keeps a password)
+```
+
+Register `<your Nimbus URL>/api/auth/callback/oidc` as the redirect URL, as a
+confidential client with the `openid email profile` scopes (PKCE is used).
+New people who sign in with it skip approval unless sign-ups are closed, and it
+links to an existing account only when that account's email is confirmed.
+
+- **Authentik:** Applications → Create with provider → OAuth2/OpenID. The issuer
+  is `https://<authentik>/application/o/<app-slug>/`.
+- **Keycloak:** create a client in your realm with Client authentication on. The
+  issuer is `https://<keycloak>/realms/<realm>`.
+
 ## What a vault protects
 
 Vault files are encrypted in the browser before upload, names included, with a passphrase the

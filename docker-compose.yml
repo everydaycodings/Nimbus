@@ -92,7 +92,7 @@ services:
       -host 0.0.0.0 -port 1080 -base-path /files/ -behind-proxy
       -s3-bucket ${S3_BUCKET} -s3-endpoint=${S3_ENDPOINT}
       -hooks-http http://app:3000/api/tus-hooks?secret=${TUS_HOOK_SECRET}
-      -hooks-enabled-events pre-create,post-finish
+      -hooks-enabled-events pre-create,post-finish,post-terminate
       -cors-allow-origin https://${DOMAIN}
     environment:
       AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY}

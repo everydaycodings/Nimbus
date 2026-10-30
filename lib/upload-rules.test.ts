@@ -64,3 +64,58 @@ test("upload tokens verify, expire on paper, and reject tampering", () => {
   process.env.BETTER_AUTH_SECRET = "test-secret-two"
   assert.equal(readUploadToken(t), null)
 })
+
+const { orphans, reservedBytes, RESERVE_TTL } =
+  await import("./upload-rules.ts")
+
+test("reservedBytes sums live reservations and skips stale or junk ones", () => {
+  const now = 10 * RESERVE_TTL
+  assert.equal(
+    reservedBytes(
+      {
+        a: `100:${now - 1000}`,
+        b: `50:${now - RESERVE_TTL + 1}`,
+        stale: `999:${now - RESERVE_TTL}`,
+        junk: "nope",
+      },
+      now
+    ),
+    150
+  )
+  assert.equal(reservedBytes({}, now), 0)
+})
+
+test("orphans only picks old, unreferenced keys under known prefixes", () => {
+  const now = 10 * RESERVE_TTL
+  const old = now - RESERVE_TTL - 1
+  const keys = [
+    "used",
+    "used.info",
+    "lost",
+    "lost.info",
+    "lost.part",
+    "thumbs/used.webp",
+    "thumbs/lost.webp",
+    "thumbs/nested/lost.webp",
+    "avatars/me-1.jpg",
+    "avatars/gone-2.jpg",
+    "backups/db/2026.dump",
+    "nimbus-backup/lost",
+  ]
+  const objects = [
+    ...keys.map((key) => ({ key, lastModified: old })),
+    { key: "fresh", lastModified: now - 1000 },
+  ]
+  const got = orphans(
+    objects,
+    { files: new Set(["used"]), avatars: new Set(["me-1"]) },
+    now
+  ).map((o) => o.key)
+  assert.deepEqual(got, [
+    "lost",
+    "lost.info",
+    "lost.part",
+    "thumbs/lost.webp",
+    "avatars/gone-2.jpg",
+  ])
+})

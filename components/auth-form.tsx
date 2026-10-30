@@ -1,6 +1,6 @@
 "use client"
 
-import { GithubLogoIcon, GoogleLogoIcon } from "@phosphor-icons/react"
+import { GithubLogoIcon, GoogleLogoIcon, KeyIcon } from "@phosphor-icons/react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
@@ -20,7 +20,13 @@ import { minLength } from "@/lib/password-policy"
 
 type Props = {
   mode: "sign-in" | "sign-up"
-  providers: { google: boolean; github: boolean }
+  providers: {
+    google: boolean
+    github: boolean
+    oidc: { name: string } | null
+    // OIDC only: the rest hide, and sign-in keeps an "Owner sign-in" link.
+    only: boolean
+  }
   // Set when an OAuth sign-in bounced back with ?error, e.g. sign-ups are closed.
   initialError?: string
   // "Sign in again" on an account whose session ran out.
@@ -46,7 +52,11 @@ export function AuthForm({
   const [password, setPassword] = useState("")
   const signUp = mode === "sign-up"
   const min = minLength(usePasswordPolicy())
-  const hasSocial = providers.google || providers.github
+  const [owner, setOwner] = useState(false)
+  const only = providers.only && !owner
+  const google = providers.google && !providers.only
+  const github = providers.github && !providers.only
+  const hasSocial = google || github || Boolean(providers.oidc)
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -73,7 +83,7 @@ export function AuthForm({
     reloadTo("/")
   }
 
-  async function social(provider: "google" | "github") {
+  async function social(provider: "google" | "github" | "oidc") {
     setError(null)
     const { error } = await authClient.signIn.social({
       provider,
@@ -87,7 +97,17 @@ export function AuthForm({
     <div className="flex flex-col gap-6">
       {hasSocial && (
         <div className="flex flex-col gap-2">
-          {providers.google && (
+          {providers.oidc && (
+            <Button
+              variant="outline"
+              type="button"
+              onClick={() => social("oidc")}
+            >
+              <KeyIcon weight="bold" />
+              Sign in with {providers.oidc.name}
+            </Button>
+          )}
+          {google && (
             <Button
               variant="outline"
               type="button"
@@ -97,7 +117,7 @@ export function AuthForm({
               Continue with Google
             </Button>
           )}
-          {providers.github && (
+          {github && (
             <Button
               variant="outline"
               type="button"
@@ -110,7 +130,7 @@ export function AuthForm({
         </div>
       )}
 
-      {hasSocial && (
+      {hasSocial && !only && (
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
           <span className="h-px flex-1 bg-border" />
           Or continue with email
@@ -118,7 +138,26 @@ export function AuthForm({
         </div>
       )}
 
-      <form onSubmit={onSubmit} className="flex flex-col gap-4">
+      {only && (
+        <>
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          {!signUp && (
+            <button
+              type="button"
+              onClick={() => setOwner(true)}
+              className="mx-auto w-fit text-sm text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:text-foreground focus-visible:underline"
+            >
+              Owner sign-in
+            </button>
+          )}
+        </>
+      )}
+
+      <form onSubmit={onSubmit} hidden={only} className="flex flex-col gap-4">
         {signUp && (
           <div className="flex flex-col gap-2">
             <Label htmlFor="name">Name</Label>
@@ -170,7 +209,7 @@ export function AuthForm({
         </SubmitButton>
       </form>
 
-      {allowSignUp && (
+      {allowSignUp && !providers.only && (
         <p className="text-center text-sm text-muted-foreground">
           {signUp ? "Already have an account? " : "New here? "}
           <Link

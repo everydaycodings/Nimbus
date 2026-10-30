@@ -25,7 +25,9 @@ import {
   vaults,
 } from "@/lib/db/schema"
 import { notify, notifyEdit } from "@/lib/notify"
+import { checkStorage, release } from "@/lib/quota"
 import { UUID, zipName } from "@/lib/file-rules"
+import { enqueueDerive } from "@/lib/redis"
 import { deleteKeys, getText, headSize } from "@/lib/s3"
 import {
   extOf,
@@ -403,7 +405,12 @@ export async function finishTusUpload(
     (by?.share && token.s !== by.share)
   )
     return { error: "That upload isn't yours." }
-  if (token.v) return finishVaultUpload(token, meta, key, size, uploadId, done)
+  if (token.v) {
+    const r = await finishVaultUpload(token, meta, key, size, uploadId, done)
+    await release(token.u, key)
+    if (r.nodeId) await checkStorage(token.u)
+    return r
+  }
   const names = splitPath(meta.path)
   if (!names) return { error: "That upload has an invalid name." }
   if (!(await uploaderMayAdd(token)))
@@ -442,8 +449,13 @@ export async function finishTusUpload(
     }
     throw e
   }
+  // Counted in usage now (or refused), so it no longer holds space.
+  await release(token.u, key)
   if (result.nodeId) {
     await pruneVersions(result.nodeId)
+    await checkStorage(token.u)
+    // A browser makes these itself; this covers API uploads and closed tabs.
+    if (result.versionId) await enqueueDerive(result.versionId)
     if (token.b) await notifyEdit(token.b, result.nodeId)
     if (token.s) {
       const link = await dropLink(token.s)

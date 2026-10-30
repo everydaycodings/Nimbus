@@ -10,6 +10,7 @@ import { AppPasswords } from "@/components/app-passwords"
 import { AvatarPicker } from "@/components/avatar-picker"
 import { DeviceAccounts } from "@/components/device-accounts"
 import { PasswordForm } from "@/components/password-form"
+import { SignInMethods } from "@/components/sign-in-methods"
 import { SubmitButton } from "@/components/submit-button"
 import { ResendVerification } from "@/components/resend-verification"
 import { TwoFactorManage, TwoFactorSetup } from "@/components/two-factor"
@@ -21,10 +22,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { enabledProviders } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { ADMIN_KINDS, account, appPasswords, user } from "@/lib/db/schema"
 import { appUrl, emailEnabled } from "@/lib/email"
 import { channelPrefs } from "@/lib/notify"
+import { OIDC_ID, getOidcConfig } from "@/lib/oidc"
 import { deviceAccounts, getSession, isAdmin } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
 import { setNotificationPrefs, setVaultLock } from "./actions"
@@ -40,6 +43,7 @@ const KIND_LABEL = {
   service_health: "A service goes down or comes back (Admin → Health)",
   backup: "A backup fails, warns, or hasn't run (Admin → Backups)",
   app_password: "A new app password is made for my account",
+  storage_low: "My storage is nearly full (90%)",
 } as const
 
 const PROVIDER = { google: "Google", github: "GitHub" } as Record<
@@ -54,7 +58,7 @@ export default async function AccountPage() {
   const [linked, email, settings, prefs, [lock], apps] =
     await Promise.all([
       db
-        .select({ providerId: account.providerId })
+        .select({ id: account.id, providerId: account.providerId })
         .from(account)
         .where(eq(account.userId, me.id)),
       emailEnabled(),
@@ -77,10 +81,28 @@ export default async function AccountPage() {
   const day = (d: Date) =>
     d.toLocaleDateString("en", { day: "numeric", month: "short", year: "numeric" })
   const password = linked.some((a) => a.providerId === "credential")
+  const [offered, oidc] = await Promise.all([
+    enabledProviders(),
+    getOidcConfig(),
+  ])
+  const names: Record<string, string> = {
+    ...PROVIDER,
+    [OIDC_ID]: oidc.name,
+  }
   const providers = linked
-    .map((a) => PROVIDER[a.providerId])
+    .map((a) => names[a.providerId])
     .filter(Boolean)
     .join(" and ")
+  const has = (id: string) => linked.find((a) => a.providerId === id)?.id
+  // What's turned on, plus anything still linked from before.
+  const methods = [
+    { id: "credential", label: "Password", on: true },
+    { id: "google", label: "Google", on: offered.google && !offered.only },
+    { id: "github", label: "GitHub", on: offered.github && !offered.only },
+    { id: OIDC_ID, label: oidc.name, on: Boolean(offered.oidc) },
+  ]
+    .filter((m) => m.on || has(m.id))
+    .map(({ id, label }) => ({ id, label, accountId: has(id) }))
 
   return (
     <div className="flex max-w-3xl flex-col gap-6">
@@ -142,6 +164,19 @@ export default async function AccountPage() {
             accounts={await deviceAccounts()}
             canAdd={multiAccount}
           />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Sign-in methods</CardTitle>
+          <CardDescription>
+            Connect a provider to sign in with it too. Its email must match this
+            account&apos;s.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <SignInMethods methods={methods} />
         </CardContent>
       </Card>
 

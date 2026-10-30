@@ -112,3 +112,40 @@ export function sizeLabel(bytes: number) {
     ? `${+gb.toFixed(2)} GB`
     : `${+(bytes / 2 ** 20).toFixed(2)} MB`
 }
+
+// Space held for tus uploads in flight: a Redis hash of uploadId → "size:startedAt".
+// A field older than a day is an upload that never finished or was cancelled.
+export const RESERVE_TTL = DAY
+
+export function reservedBytes(
+  fields: Record<string, string>,
+  now = Date.now()
+) {
+  let total = 0
+  for (const v of Object.values(fields)) {
+    const [size, at] = v.split(":").map(Number)
+    if (size > 0 && now - at < RESERVE_TTL) total += size
+  }
+  return total
+}
+
+// The bucket keys the orphan sweep may delete: tusd uploads at the root (with
+// their .info and .part), thumbnails and uploaded avatars, when nothing points
+// at them and they're over a day old. Any other key (a backup sharing the
+// bucket, say) is never touched.
+export function orphans<T extends { key: string; lastModified: number }>(
+  objects: T[],
+  used: { files: Set<string>; avatars: Set<string> },
+  now = Date.now()
+) {
+  return objects.filter(({ key, lastModified }) => {
+    if (now - lastModified < DAY) return false
+    if (!key.includes("/"))
+      return !used.files.has(key.replace(/\.(info|part)$/, ""))
+    const thumb = /^thumbs\/([^/]+)\.webp$/.exec(key)
+    if (thumb) return !used.files.has(thumb[1])
+    const avatar = /^avatars\/([^/]+)\.jpg$/.exec(key)
+    if (avatar) return !used.avatars.has(avatar[1])
+    return false
+  })
+}

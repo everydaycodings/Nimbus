@@ -333,6 +333,8 @@ export function View({
       return <SheetView {...props} />
     case "docx":
       return <DocxView {...props} />
+    case "pptx":
+      return <PptxView {...props} />
     case "zip":
       return <ZipView {...props} />
   }
@@ -899,6 +901,95 @@ function DocxView({ data, item, size, href }: ViewProps) {
         className="[&_.docx-wrapper]:bg-transparent [&_.docx-wrapper]:p-0 [&_.docx-wrapper>section]:mb-4 [&_.docx-wrapper>section]:rounded-sm"
       />
     </div>
+  )
+}
+
+// The deck as an outline: one numbered card per slide.
+function PptxView({ data, item, size, href }: ViewProps) {
+  const loaded = useLoad(async () => {
+    if (size > OFFICE_MAX)
+      throw new Error("This presentation is too big to preview.")
+    const { readPptx } = await import("@/lib/pptx")
+    return readPptx(await readRange(data, 0, size))
+  })
+  if (!loaded) return <Loading />
+  if (loaded.error || !loaded.value)
+    return (
+      <Failed
+        item={item}
+        href={href}
+        error={loaded.error ?? "Couldn't read this presentation."}
+      />
+    )
+  return (
+    <ol className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col gap-3 overflow-auto">
+      {loaded.value.map((slide, i) => (
+        <li
+          key={i}
+          className="flex shrink-0 gap-4 rounded-xl border bg-card p-4 text-sm"
+        >
+          <span className="w-6 shrink-0 text-right text-muted-foreground tabular-nums">
+            {i + 1}
+          </span>
+          <div className="flex min-w-0 flex-1 flex-col gap-2">
+            <p
+              className={cn(
+                "font-medium",
+                !slide.title && "text-muted-foreground"
+              )}
+            >
+              {slide.title || "Untitled slide"}
+            </p>
+            {slide.paragraphs.length > 0 && (
+              <ul className="flex list-disc flex-col gap-1 pl-5 text-muted-foreground">
+                {slide.paragraphs.map((p, j) => (
+                  <li key={j} className="break-words">
+                    {p}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {slide.images.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {slide.images.map((img) => (
+                  <SlideImage key={img.name} name={img.name} get={img.blob} />
+                ))}
+              </div>
+            )}
+          </div>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+// Its own blob URL, revoked when it unmounts.
+function SlideImage({ name, get }: { name: string; get: () => Promise<Blob> }) {
+  const [url, setUrl] = useState<string | null>(null)
+  useEffect(() => {
+    let live = true
+    let made: string | undefined
+    get().then(
+      (b) => {
+        if (!live) return
+        made = URL.createObjectURL(b)
+        setUrl(made)
+      },
+      () => {}
+    )
+    return () => {
+      live = false
+      if (made) URL.revokeObjectURL(made)
+    }
+  }, [get])
+  if (!url) return null
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- a blob URL
+    <img
+      src={url}
+      alt={name}
+      className="max-h-48 max-w-full rounded-md border bg-muted/40 object-contain"
+    />
   )
 }
 

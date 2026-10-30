@@ -1,13 +1,14 @@
 // Runs Admin → Health's checks on the interval the admin picked, and the
 // background jobs the app queues (lib/redis.ts enqueue). For the health checks
 // and most jobs it only keeps time and retries: the app does the work
-// (POST /api/health/run, /api/jobs). The search indexer runs here, since
-// reading text out of images is heavy.
+// (POST /api/health/run, /api/jobs). The search indexer and server-made
+// thumbnails (scripts/derive.ts) run here, since they're heavy and native.
 // Run: npm run worker
 import { Worker } from "bullmq"
 import postgres from "postgres"
 
 import {
+  DERIVE_QUEUE,
   HEALTH_QUEUE,
   HEARTBEAT_KEY,
   INDEXER_KEY,
@@ -18,7 +19,8 @@ import {
   workerConnection,
 } from "../lib/redis.ts"
 import { signToken } from "../lib/upload-rules.ts"
-import { sweep } from "./indexer.ts"
+import { derive, deriveMisses } from "./derive.ts"
+import { sql as indexSql, sweep } from "./indexer.ts"
 
 const app = process.env.BETTER_AUTH_URL ?? "http://localhost:3000"
 
@@ -60,10 +62,26 @@ worker.on("failed", (_, e) =>
   console.error(`${new Date().toISOString()} run failed: ${e.message}`)
 )
 
+const derives = new Worker(DERIVE_QUEUE, (job) => derive(job.data.versionId), {
+  connection: workerConnection(),
+  concurrency: 1,
+})
+derives.on("failed", (job, e) =>
+  console.error(
+    `${new Date().toISOString()} derive ${job?.data.versionId} failed: ${e.message}`
+  )
+)
+
 // A sweep longer than a minute meets the next one; that one waits on the first.
 let sweeping: Promise<unknown> | undefined
 async function index() {
-  await (sweeping ??= sweep().finally(() => (sweeping = undefined)))
+  await (sweeping ??= (async () => {
+    await sweep()
+    await deriveMisses()
+    // Admin → System: how many derive jobs run at once.
+    const [{ n }] = await indexSql`select derive_concurrency as n from settings`
+    derives.concurrency = Math.max(1, n)
+  })().finally(() => (sweeping = undefined)))
   // Admin → Health shows the indexer as running while this key lives.
   await redis.set(INDEXER_KEY, Date.now(), "PX", 3 * 60_000)
 }

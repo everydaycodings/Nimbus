@@ -9,10 +9,13 @@ import {
   type Tip,
 } from "@/components/admin/setting-client"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
 import { isModified, type SettingKey, type Settings } from "@/lib/signup"
 import { cn } from "@/lib/utils"
 
-export { SELECT } from "./setting-styles"
+import { SELECT } from "./setting-styles"
+
+export { SELECT }
 
 export const UNIT_BYTES = { MB: 2 ** 20, GB: 2 ** 30, TB: 2 ** 40 }
 type Unit = keyof typeof UNIT_BYTES
@@ -22,6 +25,42 @@ export function sizeField(bytes: number | null, small: Unit, big: Unit) {
   if (bytes === null) return { value: "", unit: big }
   const unit = bytes < UNIT_BYTES[big] ? small : big
   return { value: String(+(bytes / UNIT_BYTES[unit]).toFixed(2)), unit }
+}
+
+// KB/s below 1 MB/s, else MB/s.
+export function speedField(bytes: number | null) {
+  if (bytes === null) return { value: "", unit: "MB" }
+  const unit = bytes < 2 ** 20 ? "KB" : "MB"
+  return {
+    value: String(+(bytes / (unit === "KB" ? 2 ** 10 : 2 ** 20)).toFixed(2)),
+    unit,
+  }
+}
+
+// An upload speed cap as a number and KB/s or MB/s (admin uploads page, member page).
+export function SpeedInput({ value, unit }: { value: string; unit: string }) {
+  return (
+    <div className="grid grid-cols-[1fr_6rem] gap-2">
+      <Input
+        id="speed"
+        name="speed"
+        type="number"
+        min={0.01}
+        step="any"
+        defaultValue={value}
+        placeholder="No cap"
+      />
+      <select
+        aria-label="Unit"
+        name="unit"
+        defaultValue={unit}
+        className={SELECT}
+      >
+        <option value="KB">KB/s</option>
+        <option value="MB">MB/s</option>
+      </select>
+    </div>
+  )
 }
 
 // Rows that can go back to their default: `const reset = resettable(s)`,

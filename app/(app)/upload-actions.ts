@@ -6,10 +6,10 @@ import { refresh } from "next/cache"
 import { db } from "@/lib/db"
 import { fileVersions, nodes } from "@/lib/db/schema"
 import { accessOne, atLeast, folderOwner, viewable } from "@/lib/access"
-import { markOpened, openableFile, UUID } from "@/lib/files"
+import { getPath, markOpened, openableFile, UUID } from "@/lib/files"
 import { formatBytes, zipName } from "@/lib/file-rules"
 import { officeAction, signWopi } from "@/lib/office"
-import { spaceLeft } from "@/lib/quota"
+import { checkStorage, spaceLeft } from "@/lib/quota"
 import { presignGet } from "@/lib/s3"
 import { freeName, signUploadToken, splitPath } from "@/lib/upload-rules"
 import {
@@ -251,9 +251,17 @@ export async function createFolders(
 
 // Idempotent: turns a finished tus upload into a node or a new version. The
 // tusd post-finish hook calls the same logic, so whichever runs first wins.
+// `sha256` is what the browser hashed while sending; it's stored on the version
+// and names another of the uploader's files with the same bytes, if any.
 export async function finishUpload(
-  uploadUrl: string
-): Promise<{ error?: string; nodeId?: string; versionId?: string }> {
+  uploadUrl: string,
+  sha256?: string | null
+): Promise<{
+  error?: string
+  nodeId?: string
+  versionId?: string
+  duplicateOf?: { id: string; path: string }
+}> {
   const me = await requireMember()
   let id = ""
   try {
@@ -268,8 +276,51 @@ export async function finishUpload(
   if (done.nodeId && !done.vault) {
     await markOpened(me.id, done.nodeId)
     refresh()
+    if (
+      done.versionId &&
+      typeof sha256 === "string" &&
+      /^[0-9a-f]{64}$/.test(sha256)
+    ) {
+      const duplicateOf = await sameBytes(
+        me.id,
+        done.nodeId,
+        done.versionId,
+        sha256
+      )
+      if (duplicateOf) return { ...done, duplicateOf }
+    }
   }
   return done
+}
+
+// Only among the uploader's own files: in someone else's folder the path could
+// name files they can't see. Versions of the same file and vaults don't count.
+async function sameBytes(
+  me: string,
+  nodeId: string,
+  versionId: string,
+  sha: string
+) {
+  await db
+    .update(fileVersions)
+    .set({ sha256: sha })
+    .where(
+      and(
+        eq(fileVersions.id, versionId),
+        eq(fileVersions.uploadedBy, me),
+        isNull(fileVersions.sha256)
+      )
+    )
+  const [hit] = await db.execute<{ id: string }>(sql`
+    select n.id from nodes n
+    join file_versions v on v.id = n.current_version_id
+    where v.sha256 = ${sha} and n.owner_id = ${me} and n.id <> ${nodeId}
+      and n.trashed_at is null and n.vault_id is null
+      and exists (select 1 from nodes where id = ${nodeId} and owner_id = ${me})
+    limit 1`)
+  if (!hit) return null
+  const path = (await getPath(hit.id)).map((p) => p.name).join("/")
+  return { id: hit.id, path }
 }
 
 export type Version = {
@@ -338,8 +389,27 @@ export async function deleteVersion(
     return { error: "Make another version current before deleting this one." }
   await db.delete(fileVersions).where(eq(fileVersions.id, v.id))
   await deleteUnreferenced([v.s3Key])
+  await checkStorage(v.ownerId)
   refresh()
   return {}
+}
+
+// Storage report: every older version of a file, except ones kept forever.
+export async function deleteOlderVersions(
+  nodeId: string
+): Promise<{ error?: string; count?: number }> {
+  const me = await requireMember()
+  if (!(await editsFile(me.id, nodeId)))
+    return { error: "That file is gone. Refresh and try again." }
+  const gone = await db.execute<{ s3_key: string; owner_id: string }>(sql`
+    delete from file_versions v using nodes n
+    where v.node_id = n.id and n.id = ${nodeId}
+      and v.id <> n.current_version_id and not v.keep
+    returning v.s3_key, n.owner_id`)
+  await deleteUnreferenced(gone.map((g) => g.s3_key))
+  if (gone[0]) await checkStorage(gone[0].owner_id)
+  refresh()
+  return { count: gone.length }
 }
 
 export async function setVersionNote(

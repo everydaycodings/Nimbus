@@ -36,7 +36,8 @@ import { db } from "@/lib/db"
 import { fileVersions, nodes } from "@/lib/db/schema"
 import { isDropped, isJunk, mimeOf } from "@/lib/file-rules"
 import { notifyEdit } from "@/lib/notify"
-import { getUsage, spaceLeft } from "@/lib/quota"
+import { checkStorage, getUsage, spaceLeft } from "@/lib/quota"
+import { enqueueDerive } from "@/lib/redis"
 import { getRange, putObject, putStream } from "@/lib/s3"
 import {
   CLASH,
@@ -292,7 +293,9 @@ async function store(
   } else {
     await pruneVersions(saved.nodeId)
     if (at.ownerId !== c.me.id) await notifyEdit(c.me.id, saved.nodeId)
+    await enqueueDerive(saved.versionId!)
   }
+  await checkStorage(at.ownerId)
   return say(existing ? 204 : 201, undefined, { ETag: `"${saved.versionId}"` })
 }
 
@@ -430,7 +433,7 @@ async function saveOver(me: string, src: Row, old: Row, move: boolean) {
     .from(fileVersions)
     .where(eq(fileVersions.id, src.currentVersionId!))
   if (!v) return say(409)
-  await db.transaction(async (tx) => {
+  const added = await db.transaction(async (tx) => {
     const added = await addVersion(tx, old.id, {
       s3Key: v.key,
       size: v.size,
@@ -441,6 +444,7 @@ async function saveOver(me: string, src: Row, old: Row, move: boolean) {
       .update(nodes)
       .set({ s3Key: v.key, size: v.size, mime: v.mime, currentVersionId: added.id, updatedAt: new Date() })
       .where(eq(nodes.id, old.id))
+    return added
   })
   if (move) {
     await deleteNodes(eq(nodes.id, src.id))
@@ -449,6 +453,7 @@ async function saveOver(me: string, src: Row, old: Row, move: boolean) {
   if (isJunk(old.name)) return say(204)
   await pruneVersions(old.id)
   if (old.ownerId !== me) await notifyEdit(me, old.id)
+  await enqueueDerive(added.id)
   return say(204)
 }
 
@@ -485,6 +490,7 @@ async function copyTree(
     const left = await spaceLeft(at.ownerId)
     if (left !== null && total > left) return say(507, "Storage is full.")
   }
+  const versions: string[] = []
   await db.transaction(async (tx) => {
     const ids = new Map<string, string>()
     for (const [i, r] of rows.entries()) {
@@ -509,10 +515,13 @@ async function copyTree(
           uploadedBy: me,
         })
         await tx.update(nodes).set({ currentVersionId: v.id }).where(eq(nodes.id, n.id))
+        if (!isJunk(i === 0 ? name : r.name)) versions.push(v.id)
       }
     }
   })
   if (at.ownerId !== me && at.parentId) await notifyEdit(me, at.parentId)
+  if (at.ownerId !== src.ownerId) await checkStorage(at.ownerId)
+  for (const id of versions) await enqueueDerive(id)
   return null
 }
 

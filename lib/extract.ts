@@ -1,7 +1,7 @@
 // The words inside a file, for search. No app imports: the browser runs it
 // after uploads and on tiles, and scripts/indexer.ts runs it in Node.
 
-export type Source = "text" | "pdf" | "docx" | "sheet" | "ocr"
+export type Source = "text" | "pdf" | "docx" | "sheet" | "pptx" | "ocr"
 
 // Kept per file. ponytail: longer texts are cut off; index pages separately if
 // people search deep into long books.
@@ -21,6 +21,7 @@ export function sourceOf(kind: string | null): Source | null {
     case "pdf":
     case "docx":
     case "sheet":
+    case "pptx":
       return kind
     case "image":
       return "ocr"
@@ -118,6 +119,14 @@ async function sheet(bytes: Uint8Array) {
   ).join("\n")
 }
 
+// Every slide's title and text, in slide order.
+async function pptx(bytes: Uint8Array) {
+  const { readPptx } = await import("./pptx.ts")
+  return (await readPptx(bytes))
+    .map((s) => [s.title, ...s.paragraphs].join("\n"))
+    .join("\n")
+}
+
 // One Tesseract worker per language set, kept for the page's (or process's) life.
 const ocrWorkers = new Map<string, Promise<import("tesseract.js").Worker>>()
 async function ocr(bytes: Uint8Array, langs: string) {
@@ -161,7 +170,9 @@ export async function extractText(
           ? await docx(bytes)
           : source === "sheet"
             ? await sheet(bytes)
-            : await ocr(bytes, langs)
+            : source === "pptx"
+              ? await pptx(bytes)
+              : await ocr(bytes, langs)
   return raw
     .replace(/[\u0000-\u0008\u000b-\u001f]/g, " ")
     .replace(/[ \t ]+/g, " ")

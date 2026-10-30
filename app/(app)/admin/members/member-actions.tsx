@@ -9,11 +9,13 @@ export function MemberActions({
   me,
   p,
   fallback,
+  speedFallback,
   vaults,
 }: {
   me: { id: string; role: string }
   p: typeof user.$inferSelect
   fallback: number | null
+  speedFallback: number | null
   vaults: VaultSummary[]
 }) {
   const locked = p.role === "owner" || p.id === me.id
@@ -54,6 +56,8 @@ export function MemberActions({
           twoFactor={Boolean(p.twoFactorEnabled)}
           quota={p.quotaBytes}
           fallback={fallback}
+          speed={p.uploadSpeedBytes}
+          speedFallback={speedFallback}
           vaults={vaults}
         />
       )}

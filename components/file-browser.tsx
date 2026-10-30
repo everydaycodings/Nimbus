@@ -85,6 +85,7 @@ import {
   MENU_POPUP,
 } from "@/components/overlay-styles"
 import { SubmitButton } from "@/components/submit-button"
+import { TagColors, useTagEditor } from "@/components/tag-edit"
 import {
   pastedFiles,
   readDrop,
@@ -102,7 +103,14 @@ import { resetThumb, thumbFromFrame, thumbFromImage } from "@/lib/thumbs"
 import { cn } from "@/lib/utils"
 
 export type View =
-  "folder" | "recent" | "starred" | "shared" | "sharedByMe" | "trash" | "search"
+  | "folder"
+  | "recent"
+  | "starred"
+  | "tag"
+  | "shared"
+  | "sharedByMe"
+  | "trash"
+  | "search"
 type Layout = "grid" | "list"
 type Tiles = "small" | "medium" | "large"
 type Act = {
@@ -259,6 +267,7 @@ export function FileBrowser({
   const [tagTargets, setTagTargets] = useState<string[]>([])
   const [tagOpen, setTagOpen] = useState(false)
   const [tagError, setTagError] = useState<string | null>(null)
+  const tagEditor = useTagEditor(tags)
   const [pending, start] = useTransition()
   const dragging = useRef<string[]>([])
   const chip = useRef<HTMLDivElement>(null)
@@ -539,26 +548,34 @@ export function FileBrowser({
     return (
       <>
         {tags.map((tag) => (
-          <Menu.CheckboxItem
-            key={tag.id}
-            checked={t.every((i) => i.tags.includes(tag.id))}
-            onCheckedChange={(on) =>
-              run(() => tagItems(ids, tag.id, on), tagNotice(t, tag.name, on))
-            }
-            closeOnClick={false}
-            className={cn(MENU_ITEM, "relative pr-8")}
-          >
-            <span
-              className={cn(
-                "size-2.5 shrink-0 rounded-full",
-                TAG_DOT[tag.color]
-              )}
-            />
-            <span className="truncate">{tag.name}</span>
-            <Menu.CheckboxItemIndicator className="absolute right-2">
-              <CheckIcon />
-            </Menu.CheckboxItemIndicator>
-          </Menu.CheckboxItem>
+          <div key={tag.id} className="flex">
+            <Menu.CheckboxItem
+              checked={t.every((i) => i.tags.includes(tag.id))}
+              onCheckedChange={(on) =>
+                run(() => tagItems(ids, tag.id, on), tagNotice(t, tag.name, on))
+              }
+              closeOnClick={false}
+              className={cn(MENU_ITEM, "relative min-w-0 flex-1 pr-8")}
+            >
+              <span
+                className={cn(
+                  "size-2.5 shrink-0 rounded-full",
+                  TAG_DOT[tag.color]
+                )}
+              />
+              <span className="truncate">{tag.name}</span>
+              <Menu.CheckboxItemIndicator className="absolute right-2">
+                <CheckIcon />
+              </Menu.CheckboxItemIndicator>
+            </Menu.CheckboxItem>
+            <Menu.Item
+              aria-label={`Edit tag “${tag.name}”`}
+              onClick={() => tagEditor.edit(tag)}
+              className={cn(MENU_ITEM, "w-8 shrink-0 justify-center px-0")}
+            >
+              <DotsThreeIcon />
+            </Menu.Item>
+          </div>
         ))}
         {tags.length > 0 && (
           <Menu.Separator className="-mx-1 my-1 h-px bg-border" />
@@ -908,7 +925,9 @@ export function FileBrowser({
         if (item) open(item)
         break
       case " ":
-        if (item) toggle(item.id)
+        // Quick Look: previews a file, unless checkboxes are out.
+        if (item && selecting) toggle(item.id)
+        else if (item?.kind === "file") showPreview(item.id)
         break
       case "Escape":
         clear()
@@ -1931,6 +1950,8 @@ export function FileBrowser({
         onClose={() => setTagOpen(false)}
       />
 
+      {tagEditor.dialogs}
+
       <NameDialog
         key={naming.item?.id ?? "new"}
         open={nameOpen}
@@ -2032,28 +2053,7 @@ function TagDialog({
                 </p>
               )}
             </div>
-            <fieldset className="flex flex-wrap gap-2">
-              <legend className="sr-only">Color</legend>
-              {(Object.keys(TAG_DOT) as TagColor[]).map((c) => (
-                <label
-                  key={c}
-                  className="cursor-pointer rounded-full p-0.5 has-checked:ring-2 has-checked:ring-foreground has-focus-visible:ring-[3px] has-focus-visible:ring-ring/50"
-                >
-                  <input
-                    type="radio"
-                    name="color"
-                    value={c}
-                    defaultChecked={c === "blue"}
-                    className="sr-only"
-                  />
-                  <span
-                    aria-hidden
-                    className={cn("block size-6 rounded-full", TAG_DOT[c])}
-                  />
-                  <span className="sr-only">{c}</span>
-                </label>
-              ))}
-            </fieldset>
+            <TagColors initial="blue" />
             <div className="flex justify-end gap-2">
               <Dialog.Close
                 disabled={pending}

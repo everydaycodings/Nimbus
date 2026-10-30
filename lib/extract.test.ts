@@ -13,6 +13,7 @@ test("sourceOf maps preview kinds to readers", () => {
   assert.equal(sourceOf("markdown"), "text")
   assert.equal(sourceOf("image"), "ocr")
   assert.equal(sourceOf("docx"), "docx")
+  assert.equal(sourceOf("pptx"), "pptx")
   assert.equal(sourceOf("video"), null)
   assert.equal(sourceOf(null), null)
   assert.equal(tooBig("ocr", 21 * 1024 * 1024), true)

@@ -32,7 +32,7 @@ image `#f27fb2`, video `#b08cff`, doc `#6ea8ff`, pdf `#ff6f6f`, audio `#4fd1a5`,
 archive `#b5b5b5`. These hues never appear on chrome.
 
 Tags are user-chosen labels with their own `--tag-*` hues (red, orange, yellow, green, blue,
-purple, gray; `TAG_DOT` in `lib/file-types.ts`), shown only as small dots: after an item's
+purple, pink, teal, indigo, brown, gray; `TAG_DOT` in `lib/file-types.ts`), shown only as small dots: after an item's
 name, in menus and on the Tags filter.
 
 ## Type

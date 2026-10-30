@@ -5,6 +5,7 @@ import {
   LockIcon,
 } from "@phosphor-icons/react/dist/ssr"
 import { and, desc, eq, gt, isNotNull, sql } from "drizzle-orm"
+import Link from "next/link"
 import { notFound } from "next/navigation"
 
 import { AdminPage, FRAME } from "@/components/admin/setting"
@@ -84,14 +85,28 @@ function Stat({
   label,
   value,
   note,
+  href,
 }: {
   label: string
   value: string
   note?: string
+  // Opens the details behind the number.
+  href?: string
 }) {
   return (
     <li className="grid content-start gap-1 px-4 py-3">
-      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="text-xs text-muted-foreground">
+        {href ? (
+          <Link
+            href={href}
+            className="rounded-sm underline underline-offset-4 outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          >
+            {label}
+          </Link>
+        ) : (
+          label
+        )}
+      </span>
       <span className="text-lg font-semibold tabular-nums">{value}</span>
       {note && (
         <span className="text-xs text-muted-foreground tabular-nums">
@@ -268,6 +283,7 @@ export default async function MemberPage({
             me={me}
             p={p}
             fallback={settings.defaultQuotaBytes}
+            speedFallback={settings.uploadSpeedBytes}
             vaults={vaults}
           />
         </div>
@@ -278,6 +294,7 @@ export default async function MemberPage({
       >
         <Stat
           label="Storage"
+          href={`/admin/members/${p.id}/storage`}
           value={formatBytes(stored)}
           note={
             quota === null

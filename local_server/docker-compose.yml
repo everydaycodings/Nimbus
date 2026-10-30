@@ -41,8 +41,8 @@ services:
       S3_BUCKET: ${S3_BUCKET:-nimbus}
     restart: "no"
 
-  # Hooks: pre-create checks the upload token, post-finish turns the upload into a
-  # file. With TUS_HOOK_SECRET set in the app, add it to the URL:
+  # Hooks: pre-create checks the upload token and reserves its space, post-finish
+  # turns the upload into a file, post-terminate frees a cancelled one's space. With TUS_HOOK_SECRET set in the app, add it to the URL:
   # TUS_HOOK_URL=http://host.docker.internal:3000/api/tus-hooks?secret=<TUS_HOOK_SECRET>
   tusd:
     image: tusproject/tusd:latest
@@ -52,7 +52,7 @@ services:
       -host 0.0.0.0 -port 1080 -base-path /files/
       -s3-bucket ${S3_BUCKET:-nimbus} -s3-endpoint http://minio:9000
       -hooks-http ${TUS_HOOK_URL:-http://host.docker.internal:3000/api/tus-hooks}
-      -hooks-enabled-events pre-create,post-finish
+      -hooks-enabled-events pre-create,post-finish,post-terminate
       -cors-allow-origin ${APP_ORIGIN:-http://localhost:3000}
     environment:
       AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-nimbus}

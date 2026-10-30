@@ -11,8 +11,8 @@ import {
 import { setSessionCookie } from "better-auth/cookies"
 import { drizzleAdapter } from "better-auth/adapters/drizzle"
 import { nextCookies } from "better-auth/next-js"
-import { multiSession, twoFactor } from "better-auth/plugins"
-import type { BetterAuthPlugin } from "better-auth"
+import { genericOAuth, multiSession, twoFactor } from "better-auth/plugins"
+import type { BetterAuthOptions, BetterAuthPlugin } from "better-auth"
 import { and, count, eq, inArray } from "drizzle-orm"
 
 import {
@@ -32,6 +32,14 @@ import { savedOnBrowser, touchSavedLogin } from "./saved-logins"
 import { db } from "./db"
 import * as schema from "./db/schema"
 import { message, sendInBackground } from "./email"
+import {
+  OIDC_ID,
+  discoveryUrl,
+  getOidcConfig,
+  oidcOnly,
+  oidcReady,
+  type OidcConfig,
+} from "./oidc"
 import { POLICY_MAX, POLICY_MIN, passwordProblem } from "./password-policy"
 import {
   INVITE_COOKIE,
@@ -53,10 +61,35 @@ function provider(id: "GOOGLE" | "GITHUB") {
 const google = provider("GOOGLE")
 const github = provider("GITHUB")
 
-export const enabledProviders = {
-  google: Boolean(google),
-  github: Boolean(github),
+// What the sign-in and sign-up forms offer.
+export async function enabledProviders() {
+  const oidc = await getOidcConfig()
+  return {
+    google: Boolean(google),
+    github: Boolean(github),
+    oidc: oidcReady(oidc) ? { name: oidc.name } : null,
+    only: oidcOnly(oidc),
+  }
 }
+
+const isOwnerEmail = async (email: unknown) =>
+  typeof email === "string" &&
+  (
+    await db
+      .select({ id: schema.user.id })
+      .from(schema.user)
+      .where(
+        and(
+          eq(schema.user.email, email.trim().toLowerCase()),
+          eq(schema.user.role, "owner")
+        )
+      )
+  ).length > 0
+
+const onlyOidcError = (c: OidcConfig) =>
+  new APIError("FORBIDDEN", {
+    message: `This Nimbus signs in with ${c.name} only.`,
+  })
 
 // Remembers who signed in on this browser for the account menu, and logs an
 // account added on top of another. Listed after twoFactor, whose hook clears
@@ -100,6 +133,14 @@ const accountMemory = {
             message:
               "This saved login doesn't work anymore. Sign in with your password.",
           })
+        }
+        const oidc = await getOidcConfig()
+        if (oidcOnly(oidc)) {
+          const [u] = await db
+            .select({ role: schema.user.role })
+            .from(schema.user)
+            .where(eq(schema.user.id, saved.userId))
+          if (u?.role !== "owner") throw onlyOidcError(oidc)
         }
         await touchSavedLogin(id)
         ctx.setCookie(name, secret, {
@@ -197,7 +238,8 @@ const accountMemory = {
   },
 } satisfies BetterAuthPlugin
 
-export const auth = betterAuth({
+// Everything but the OIDC provider, which build() adds.
+const options = {
   database: drizzleAdapter(db, { provider: "pg", schema }),
   emailAndPassword: {
     enabled: true,
@@ -297,6 +339,10 @@ export const auth = betterAuth({
               message: "Sign-ups are closed on this Nimbus.",
             })
 
+          // The admin's own identity provider vouches for them: no approval or invite.
+          if (ctx?.path.startsWith("/callback/") && ctx.params?.id === OIDC_ID)
+            return { data: { ...user, role: "member", status: "active" } }
+
           // Only provider-verified emails count; password emails aren't verified yet.
           const trusted =
             user.emailVerified && isTrustedEmail(user.email, trustedDomains)
@@ -386,6 +432,21 @@ export const auth = betterAuth({
         throw new APIError("FORBIDDEN", {
           message: "Your admin requires two-factor on this Nimbus.",
         })
+      // OIDC only: the owner keeps their password, everyone else uses the provider.
+      if (
+        /^\/(sign-up\/email|sign-in\/email|sign-in\/social)$/.test(ctx.path)
+      ) {
+        const oidc = await getOidcConfig()
+        if (
+          oidcOnly(oidc) &&
+          !(ctx.path === "/sign-in/social" && ctx.body?.provider === OIDC_ID) &&
+          !(
+            ctx.path === "/sign-in/email" &&
+            (await isOwnerEmail(ctx.body?.email))
+          )
+        )
+          throw onlyOidcError(oidc)
+      }
     }),
   },
   plugins: [
@@ -395,6 +456,79 @@ export const auth = betterAuth({
     accountMemory,
     nextCookies(),
   ],
-})
+} satisfies BetterAuthOptions
 
-export type Session = typeof auth.$Infer.Session
+// The OIDC provider is read once per instance (genericOAuth's config is
+// static), so Admin → Authentication calls reloadAuth() after a save and the
+// next request builds a fresh instance. It signs in through the core
+// /sign-in/social and /callback/oidc, like Google. It has no after-hooks, so
+// sitting behind nextCookies() is fine.
+const build = (oidc: OidcConfig | null) =>
+  betterAuth({
+    ...options,
+    plugins: [
+      ...options.plugins,
+      genericOAuth({
+        config: oidc
+          ? [
+              {
+                providerId: OIDC_ID,
+                name: oidc.name,
+                discoveryUrl: discoveryUrl(oidc.issuer),
+                clientId: oidc.clientId,
+                clientSecret: oidc.clientSecret,
+                scopes: ["openid", "email", "profile"],
+                pkce: true,
+              },
+            ]
+          : [],
+      }),
+    ],
+  })
+
+type Auth = ReturnType<typeof build>
+
+// Bumped on globalThis, since route handlers and server actions can each load
+// their own copy of this module; each copy rebuilds when it sees a new number.
+const g = globalThis as unknown as { nimbusAuthGen?: number }
+let current: { gen: number; auth: Promise<Auth> } | undefined
+
+export function getAuth() {
+  const gen = g.nimbusAuthGen ?? 0
+  if (current?.gen !== gen) {
+    const auth = getOidcConfig()
+      .then((c) => build(oidcReady(c) ? c : null))
+      .catch((e) => {
+        current = undefined
+        throw e
+      })
+    current = { gen, auth }
+  }
+  return current.auth
+}
+
+export function reloadAuth() {
+  g.nimbusAuthGen = (g.nimbusAuthGen ?? 0) + 1
+}
+
+// `auth.api.x(...)` and `auth.$context` use the current instance. `options` is
+// for the Better Auth CLI (npx auth generate), which reads the schema from it.
+export const auth = {
+  api: new Proxy({} as Auth["api"], {
+    get:
+      (_, name) =>
+      async (...args: unknown[]) => {
+        const api = (await getAuth()).api as unknown as Record<
+          string | symbol,
+          (...a: unknown[]) => unknown
+        >
+        return api[name](...args)
+      },
+  }),
+  get $context() {
+    return getAuth().then((a) => a.$context)
+  },
+  options,
+}
+
+export type Session = Auth["$Infer"]["Session"]

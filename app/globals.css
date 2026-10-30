@@ -22,6 +22,10 @@
     --color-tag-green: var(--tag-green);
     --color-tag-blue: var(--tag-blue);
     --color-tag-purple: var(--tag-purple);
+    --color-tag-pink: var(--tag-pink);
+    --color-tag-teal: var(--tag-teal);
+    --color-tag-indigo: var(--tag-indigo);
+    --color-tag-brown: var(--tag-brown);
     --color-tag-gray: var(--tag-gray);
     --spacing-row: var(--row);
     --spacing-gap-ui: var(--gap-ui);
@@ -129,6 +133,10 @@
     --tag-green: #69db7c;
     --tag-blue: #4dabf7;
     --tag-purple: #b197fc;
+    --tag-pink: #f783ac;
+    --tag-teal: #38d9a9;
+    --tag-indigo: #748ffc;
+    --tag-brown: #c8a27c;
     --tag-gray: #adb5bd;
 
     /* Density: rows and gaps shrink when the user picks compact */

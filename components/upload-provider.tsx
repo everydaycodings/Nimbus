@@ -17,8 +17,10 @@ import {
   useState,
   useSyncExternalStore,
 } from "react"
+import type { IHasher } from "hash-wasm"
 import { Upload, type DetailedError } from "tus-js-client"
 
+import { restoreItems, trashItems } from "@/app/(app)/file-actions"
 import {
   createFolders,
   finishUpload,
@@ -29,6 +31,7 @@ import { ConflictDialog, type Answers } from "@/components/conflict-dialog"
 import type { Conflict } from "@/app/(app)/upload-actions"
 import { MENU_ITEM, MENU_POPUP } from "@/components/overlay-styles"
 import { useSidebar } from "@/components/sidebar-shell"
+import { useNotice } from "@/components/toaster"
 import { UploadPanel } from "@/components/upload-panel"
 import { Button } from "@/components/ui/button"
 import {
@@ -147,6 +150,9 @@ export type Job = {
   final?: boolean
   // Went into this vault (parentId is a folder in it).
   vault?: string
+  // The file it became, and another of the owner's files with the same bytes.
+  nodeId?: string
+  duplicateOf?: { id: string; path: string }
 }
 
 type Data = {
@@ -160,6 +166,16 @@ type Data = {
   vault?: VaultData
   // Runs once the file has landed.
   onDone?: () => void
+  // SHA-256 of the bytes sent so far (see hashSlice); null once it can't be known.
+  sha?: Sha | null
+}
+
+type Sha = {
+  h: IHasher
+  at: number
+  // The state before the last slice, for when tus sends that slice again.
+  last?: { start: number; state: Uint8Array }
+  hex?: string
 }
 
 // A vault upload: encrypted on the way out, under a file key that's picked
@@ -221,6 +237,55 @@ const lazyReader = {
     }
   },
 }
+
+// Hashes what tus sends, slice by slice in order, for spotting duplicates. A
+// slice sent again (a retried PATCH) rewinds to the state saved before it;
+// anything else out of order (resuming an earlier visit's upload) drops it.
+async function hashSlice(d: Data, start: number, end: number, blob: Blob) {
+  if (d.sha === null) return
+  if (!d.sha) {
+    if (start !== 0) return void (d.sha = null)
+    const { createSHA256 } = await import("hash-wasm")
+    d.sha = { h: await createSHA256(), at: 0 }
+  }
+  const s = d.sha
+  if (s.last && start === s.last.start) {
+    s.h.load(s.last.state)
+    s.at = start
+  }
+  if (start !== s.at) return void (d.sha = null)
+  s.last = { start, state: s.h.save() }
+  s.h.update(new Uint8Array(await blob.arrayBuffer()))
+  s.at = end
+}
+
+// When the shared speed cap next has room. Every running upload books its
+// slices here, so together they stay under the cap however many run.
+let capFree = 0
+
+async function pace(bytes: number, cap: number) {
+  const now = performance.now()
+  const at = Math.max(now, capFree)
+  capFree = at + (bytes / cap) * 1000
+  if (at > now) await new Promise((r) => setTimeout(r, at - now))
+}
+
+// Plain files go through this to be hashed and, with a speed cap, paced.
+const plainReader = (d: Data, cap: number | null) => ({
+  async openFile(file: File) {
+    return {
+      size: file.size,
+      async slice(start: number, end: number) {
+        end = Math.min(end, file.size)
+        const value = file.slice(start, end)
+        await hashSlice(d, start, end, value).catch(() => (d.sha = null))
+        if (cap) await pace(end - start, cap)
+        return { value, done: end >= file.size }
+      },
+      close() {},
+    }
+  },
+})
 
 async function sha256(s: string) {
   const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s))
@@ -300,6 +365,8 @@ class Engine {
   listen(fn: () => void) {
     this.onFinished = fn
   }
+  // Bytes a second for the web uploader, or null (see UploadProvider).
+  cap: number | null = null
 
   constructor(private tusUrl: string) {
     if (typeof window !== "undefined")
@@ -364,13 +431,21 @@ class Engine {
     const v = d.vault
     // A Lazy source can't be picked again after a reload, so it isn't resumable.
     const lazy = !(d.file instanceof Blob)
+    // Under a cap, parts of about two seconds each so progress keeps moving.
+    // ponytail: parts under 5 MB make tusd rewrite its .part buffer in S3 each
+    // time; fine at the low speeds that need them.
+    const part = this.cap
+      ? Math.min(LAZY_PART, Math.max(256 * 1024, this.cap * 2))
+      : LAZY_PART
     const up = new Upload(d.file as File, {
       // Every upload goes in parts: one long PATCH for a big file dies on the
       // first network blip and has to be retried as a whole.
-      chunkSize: v ? VAULT_PART : LAZY_PART,
-      ...(v
-        ? { fileReader: vaultReader(v) }
-        : lazy && { fileReader: lazyReader }),
+      chunkSize: v ? VAULT_PART : Math.round(part),
+      fileReader: v
+        ? vaultReader(v)
+        : lazy
+          ? lazyReader
+          : plainReader(d, this.cap),
       endpoint: this.tusUrl,
       // ~3.5 min of retries, so a dropped Wi-Fi or a server restart doesn't fail it.
       retryDelays: [0, 1000, 3000, 5000, 10000, 20000, 30000, 60000, 90000],
@@ -411,10 +486,13 @@ class Engine {
   private async finish(id: string) {
     const d = this.data.get(id)!
     const file = d.file
-    const res = await finishUpload(d.upload!.url!).catch(() => ({
-      error: "Uploaded, but Nimbus couldn't save it. Retry.",
-      nodeId: undefined,
-    }))
+    const sha = d.sha
+    if (sha && !sha.hex && file && sha.at === file.size)
+      sha.hex = sha.h.digest("hex")
+    const res: Awaited<ReturnType<typeof finishUpload>> = await finishUpload(
+      d.upload!.url!,
+      sha?.hex ?? null
+    ).catch(() => ({ error: "Uploaded, but Nimbus couldn't save it. Retry." }))
     // A nodeId means it landed, even alongside an error (the tusd hook won).
     if (!res.nodeId) {
       this.patch(id, {
@@ -422,7 +500,12 @@ class Engine {
         error: res.error ?? "Couldn't save it. Retry.",
       })
     } else {
-      this.patch(id, { status: "done", sent: this.job(id)?.size ?? 0 })
+      this.patch(id, {
+        status: "done",
+        sent: this.job(id)?.size ?? 0,
+        nodeId: res.nodeId,
+        duplicateOf: res.duplicateOf,
+      })
       this.data.set(id, {})
       d.onDone?.()
       // Drawn and indexed from the local copy while it's at hand; failures just
@@ -508,6 +591,9 @@ class Engine {
     this.data.delete(id)
     this.patch(id, error ? { status: "error", error } : { status: "done" })
   }
+  keep(id: string) {
+    this.patch(id, { duplicateOf: undefined })
+  }
   drop(id: string) {
     this.data.delete(id)
     this.set({ jobs: this.state.jobs.filter((j) => j.id !== id) })
@@ -566,15 +652,22 @@ const parentFromPath = (path: string) =>
 export function UploadProvider({
   tusUrl,
   zipMode,
+  speedCap,
   children,
 }: {
   tusUrl: string
   zipMode: "server" | "client"
+  // The member's upload speed cap in bytes a second; null for none.
+  speedCap: number | null
   children: React.ReactNode
 }) {
   const router = useRouter()
   const pathname = usePathname()
   const [engine] = useState(() => new Engine(tusUrl))
+  // Read when each upload starts.
+  useEffect(() => {
+    engine.cap = speedCap
+  }, [engine, speedCap])
   const askQueue = useRef(Promise.resolve())
   const [asking, setAsking] = useState<{
     n: number
@@ -807,8 +900,7 @@ export function UploadProvider({
       form.remove()
       return
     }
-    const name =
-      zipName(items.length === 1 ? items[0].name : undefined)
+    const name = zipName(items.length === 1 ? items[0].name : undefined)
     zipJob(name, (progress, signal) =>
       clientZipDownload(
         items.map((i) => i.id),
@@ -966,6 +1058,33 @@ function Panel({
 
   // Stable, so the panel's auto-dismiss timer isn't restarted by re-renders.
   const close = useCallback(() => engine.clear(), [engine])
+  const setNotice = useNotice()
+  const router = useRouter()
+
+  // "Same as …" → Remove: the new copy goes to the trash, with Undo.
+  async function removeDuplicate(j: Job) {
+    if (!j.nodeId) return
+    const res = await trashItems([j.nodeId]).catch(() => ({
+      error: "Couldn't move it to the trash. Try again.",
+    }))
+    if (res.error) return setNotice({ text: res.error, error: true })
+    engine.drop(j.id)
+    router.refresh()
+    setNotice({
+      text: `Moved “${j.name}” to the trash.`,
+      undo: async () => {
+        const back = await restoreItems([j.nodeId!]).catch(() => ({
+          error: "Couldn't bring it back. Try again.",
+        }))
+        setNotice(
+          back.error
+            ? { text: back.error, error: true }
+            : { text: `Restored “${j.name}”.` }
+        )
+        router.refresh()
+      },
+    })
+  }
 
   if (!jobs.length && !stale.length) return null
   return (
@@ -983,6 +1102,8 @@ function Panel({
       onResumeStale={onResumeStale}
       onDismissStale={() => engine.dismissStale()}
       onOpen={onOpen}
+      onKeep={(id) => engine.keep(id)}
+      onRemove={removeDuplicate}
     />
   )
 }

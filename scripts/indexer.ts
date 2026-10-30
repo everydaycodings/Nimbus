@@ -10,7 +10,7 @@ import { extractText, MAX_BODY, sourceOf, tooBig } from "../lib/extract.ts"
 import { previewKind } from "../lib/file-rules.ts"
 
 const env = process.env
-const sql = postgres(env.DATABASE_URL!)
+export const sql = postgres(env.DATABASE_URL!)
 const s3 = new S3Client({
   endpoint: env.S3_ENDPOINT || undefined,
   region: env.S3_REGION || "us-east-1",
@@ -24,7 +24,7 @@ const s3 = new S3Client({
 // ponytail: forgotten on restart; costs one cheap row scan per sweep.
 const skip = new Set<string>()
 
-async function read(key: string, end: number) {
+export async function read(key: string, end: number) {
   const r = await s3.send(
     new GetObjectCommand({
       Bucket: env.S3_BUCKET!,
@@ -35,18 +35,54 @@ async function read(key: string, end: number) {
   return r.Body!.transformToByteArray()
 }
 
+export type IndexFile = {
+  id: string
+  v: string
+  name: string
+  mime: string | null
+  size: string
+  key: string
+}
+
+// Reads one version's text into node_content. False when it has none or
+// couldn't be read, so later sweeps skip it. `bytes`: the whole file, already read.
+export async function indexFile(
+  f: IndexFile,
+  langs: string,
+  bytes?: Uint8Array
+) {
+  const source = sourceOf(previewKind(f.mime, f.name))
+  const size = Number(f.size)
+  if (!source || tooBig(source, size)) return false
+  const end = Math.min(size, source === "text" ? MAX_BODY * 4 : size)
+  let body = ""
+  try {
+    if (end) {
+      bytes ??= await read(f.key, end)
+      body = await extractText(bytes, source, langs).catch((e: Error) => {
+        console.error(`${f.name}: unreadable (${e.message})`)
+        return ""
+      })
+    }
+  } catch (e) {
+    console.error(`${f.name}: ${(e as Error).message}`)
+    return false
+  }
+  // The version may have changed while we read; then the browser or the next sweep has it.
+  await sql`
+    insert into node_content (node_id, version_id, body, source)
+    select ${f.id}, ${f.v}, ${body}, ${source}
+    where exists (select 1 from nodes where id = ${f.id} and current_version_id = ${f.v})
+    on conflict (node_id) do update set
+      version_id = excluded.version_id, body = excluded.body,
+      source = excluded.source, indexed_at = now()`
+  console.log(`${source.padEnd(5)} ${f.name} (${body.length} chars)`)
+  return true
+}
+
 export async function sweep() {
   const [{ langs }] = await sql`select ocr_langs as langs from settings`
-  const rows = await sql<
-    {
-      id: string
-      v: string
-      name: string
-      mime: string | null
-      size: string
-      key: string
-    }[]
-  >`
+  const rows = await sql<IndexFile[]>`
     select n.id, n.current_version_id as v, n.name, n.mime, n.size, n.s3_key as key
     from nodes n
     left join node_content c on c.node_id = n.id and c.version_id = n.current_version_id
@@ -56,37 +92,8 @@ export async function sweep() {
   let done = 0
   for (const f of rows) {
     if (skip.has(f.v)) continue
-    const source = sourceOf(previewKind(f.mime, f.name))
-    const size = Number(f.size)
-    if (!source || tooBig(source, size)) {
-      skip.add(f.v)
-      continue
-    }
-    const end = Math.min(size, source === "text" ? MAX_BODY * 4 : size)
-    let body = ""
-    try {
-      if (end) {
-        const bytes = await read(f.key, end)
-        body = await extractText(bytes, source, langs).catch((e: Error) => {
-          console.error(`${f.name}: unreadable (${e.message})`)
-          return ""
-        })
-      }
-    } catch (e) {
-      console.error(`${f.name}: ${(e as Error).message}`)
-      skip.add(f.v)
-      continue
-    }
-    // The version may have changed while we read; then the browser or the next sweep has it.
-    await sql`
-      insert into node_content (node_id, version_id, body, source)
-      select ${f.id}, ${f.v}, ${body}, ${source}
-      where exists (select 1 from nodes where id = ${f.id} and current_version_id = ${f.v})
-      on conflict (node_id) do update set
-        version_id = excluded.version_id, body = excluded.body,
-        source = excluded.source, indexed_at = now()`
-    done++
-    console.log(`${source.padEnd(5)} ${f.name} (${body.length} chars)`)
+    if (await indexFile(f, langs)) done++
+    else skip.add(f.v)
   }
   return done
 }

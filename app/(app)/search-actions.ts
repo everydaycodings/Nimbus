@@ -9,7 +9,7 @@ import { MAX_BODY, type Source } from "@/lib/extract"
 import { searchItems, UUID, type Hit } from "@/lib/files"
 import { requireMember } from "@/lib/session"
 
-const SOURCES = new Set<Source>(["text", "pdf", "docx", "sheet", "ocr"])
+const SOURCES = new Set<Source>(["text", "pdf", "docx", "sheet", "pptx", "ocr"])
 
 // The search box's dropdown.
 export async function quickSearch(q: string): Promise<Hit[]> {

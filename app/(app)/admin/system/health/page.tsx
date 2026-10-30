@@ -16,6 +16,7 @@ import {
 } from "@/components/admin/setting"
 import { SubmitButton } from "@/components/submit-button"
 import { Input } from "@/components/ui/input"
+import { formatBytes } from "@/lib/file-rules"
 import { RANGES, healthOverview, type Range } from "@/lib/health"
 import {
   DEFAULT_SLOW_MS,
@@ -24,10 +25,12 @@ import {
   SERVICE_LABEL,
   ago,
 } from "@/lib/health-rules"
+import { lastSweep } from "@/lib/orphan-sweep"
 import { getSettings } from "@/lib/signup"
 import { cn } from "@/lib/utils"
 import {
   runHealthChecks,
+  runOrphanSweep,
   setHealthSchedule,
   setHealthServices,
 } from "./actions"
@@ -46,7 +49,11 @@ export default async function HealthPage({
   searchParams: Promise<{ range?: string }>
 }) {
   const range: Range = (await searchParams).range === "7d" ? "7d" : "24h"
-  const [s, h] = await Promise.all([getSettings(), healthOverview(range)])
+  const [s, h, sweep] = await Promise.all([
+    getSettings(),
+    healthOverview(range),
+    lastSweep(),
+  ])
   const reset = resettable(s)
 
   const named = (pick: (x: (typeof h.services)[number]) => boolean) =>
@@ -155,6 +162,34 @@ export default async function HealthPage({
       </section>
 
       <HealthList services={h.services} from={h.from} to={h.to} range={range} />
+
+      <section
+        aria-labelledby="orphans-title"
+        className={cn(
+          FRAME,
+          "flex max-w-3xl flex-wrap items-center gap-x-6 gap-y-3 px-5 py-4"
+        )}
+      >
+        <div className="grid min-w-0 flex-1 gap-0.5">
+          <h2 id="orphans-title" className="text-sm font-semibold">
+            Orphaned objects
+          </h2>
+          <p className="text-sm text-pretty text-muted-foreground">
+            {sweep
+              ? `Last swept ${ago(sweep.at, h.to)}: ${
+                  sweep.count
+                    ? `removed ${sweep.count} object${sweep.count === 1 ? "" : "s"} (${formatBytes(sweep.bytes)})`
+                    : "nothing to remove"
+                }.`
+              : "Not swept yet."}{" "}
+            Weekly, the worker deletes stored files, thumbnails and avatars
+            nothing points at any more.
+          </p>
+        </div>
+        <form action={runOrphanSweep}>
+          <SubmitButton variant="outline">Run now</SubmitButton>
+        </form>
+      </section>
 
       <div className="flex max-w-3xl flex-col gap-10">
         <SettingsForm

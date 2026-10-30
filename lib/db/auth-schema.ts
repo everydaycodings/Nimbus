@@ -42,6 +42,10 @@ export const user = pgTable(
     vaultLockMinutes: integer("vault_lock_minutes").default(15).notNull(),
     // An admin turned WebDAV off for this account.
     webdavDisabled: boolean("webdav_disabled").default(false).notNull(),
+    // Web uploader speed cap for this account; null falls back to settings.upload_speed_bytes.
+    uploadSpeedBytes: bigint("upload_speed_bytes", { mode: "number" }),
+    // When the 90% storage warning went out; cleared once usage drops back.
+    storageWarnedAt: timestamp("storage_warned_at", { withTimezone: true }),
   },
   (table) => [
     check(

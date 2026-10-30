@@ -177,6 +177,7 @@ async function describe(userId: string, ids?: string[]) {
       service_health: `${SERVICE_LABEL[d.service as Service] ?? "A service"} ${d.state === "up" ? "is working again" : "is down"}`,
       app_password: `A new app password “${d.name ?? "unnamed"}” was made for your account${d.ip ? ` from ${d.ip}` : ""}. Revoke it in Account if it wasn't you.`,
       backup: `${KIND_LABEL[d.backup as Kind] ?? "A"} backup ${d.event === "stale" ? "hasn't succeeded in a while" : d.event === "warning" ? "finished with a warning" : "failed"}`,
+      storage_low: `${r.actor ? `${who} reminded you: your` : "Your"} storage is ${d.percent ?? 90}% full. See what's using it.`,
     }[r.kind]
     const seen = r.nodeId ? access.get(r.nodeId) : undefined
     const href =
@@ -188,6 +189,8 @@ async function describe(userId: string, ids?: string[]) {
             ? `/admin/system/backups/history?run=${d.run}`
           : r.kind === "app_password"
             ? "/account#connect"
+          : r.kind === "storage_low"
+            ? "/storage"
           : !seen
             ? "/shared"
             : r.kindOf === "folder"

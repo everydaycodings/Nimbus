@@ -10,7 +10,7 @@ import {
   FolderIcon,
 } from "@phosphor-icons/react"
 
-import { DOC, mimeOf } from "@/lib/file-rules"
+import { AUDIO, DOC, IMAGE, VIDEO, mimeOf } from "@/lib/file-rules"
 
 export { DOC, formatBytes } from "@/lib/file-rules"
 
@@ -77,14 +77,20 @@ export function fileType(
   name: string
 ) {
   if (kind === "folder") return TYPES.folder
+  // Known extensions first, the stored mime type only for the rest (as getUsage).
+  if (IMAGE.test(name)) return TYPES.image
+  if (VIDEO.test(name)) return TYPES.video
+  if (AUDIO.test(name)) return TYPES.audio
+  if (/\.pdf$/i.test(name)) return TYPES.pdf
+  if (CODE.test(name)) return TYPES.code
+  if (ARCHIVE.test(name)) return TYPES.archive
+  if (DOC.test(name)) return TYPES.doc
   const m = mimeOf(mime, name)
   if (m.startsWith("image/")) return TYPES.image
   if (m.startsWith("video/")) return TYPES.video
   if (m.startsWith("audio/")) return TYPES.audio
   if (m === "application/pdf") return TYPES.pdf
-  if (CODE.test(name)) return TYPES.code
-  if (ARCHIVE.test(name)) return TYPES.archive
-  if (DOC.test(name) || m.startsWith("text/")) return TYPES.doc
+  if (m.startsWith("text/")) return TYPES.doc
   return TYPES.other
 }
 
@@ -95,5 +101,9 @@ export const TAG_DOT = {
   green: "bg-tag-green",
   blue: "bg-tag-blue",
   purple: "bg-tag-purple",
+  pink: "bg-tag-pink",
+  teal: "bg-tag-teal",
+  indigo: "bg-tag-indigo",
+  brown: "bg-tag-brown",
   gray: "bg-tag-gray",
 }

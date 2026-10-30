@@ -194,6 +194,7 @@ export default async function MembersPage({
                   me={me}
                   p={p}
                   fallback={settings.defaultQuotaBytes}
+                  speedFallback={settings.uploadSpeedBytes}
                   vaults={vaults?.get(p.id) ?? []}
                 />
               </li>

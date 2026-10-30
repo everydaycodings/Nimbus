@@ -161,6 +161,17 @@ export async function setUploadLimit(form: FormData) {
   revalidatePath("/admin", "layout")
 }
 
+export async function setUploadSpeed(form: FormData) {
+  await requireAdmin()
+  const n = limit(form, "speed")
+  const unit = String(form.get("unit")) === "KB" ? 2 ** 10 : 2 ** 20
+  await db.update(settings).set({
+    uploadSpeedBytes: n === null ? null : Math.max(1024, Math.round(n * unit)),
+    updatedAt: new Date(),
+  })
+  revalidatePath("/", "layout")
+}
+
 export async function setDefaultQuota(form: FormData) {
   await requireAdmin()
   const n = limit(form, "quota")
@@ -244,6 +255,21 @@ export async function setOcrLangs(form: FormData) {
   revalidatePath("/admin", "layout")
 }
 
+// The worker picks these up within a minute. Blank size: the 200 MB default.
+export async function setDerive(form: FormData) {
+  await requireAdmin()
+  const jobs = limit(form, "deriveJobs")
+  const n = limit(form, "deriveMax")
+  const unit = UNITS[String(form.get("unit"))] ?? UNITS.MB
+  await db.update(settings).set({
+    deriveConcurrency: Math.min(Math.round(jobs ?? 1), 8) || 1,
+    deriveMaxBytes:
+      n === null ? 200 * 2 ** 20 : Math.max(2 ** 20, Math.round(n * unit)),
+    updatedAt: new Date(),
+  })
+  revalidatePath("/admin", "layout")
+}
+
 // Off stops new vaults; existing ones keep working for their owners.
 export async function setVaultPolicy(form: FormData) {
   await requireAdmin()
@@ -303,6 +329,7 @@ const RESETTABLE: SettingKey[] = [
   "savedLoginsAdmins",
   "defaultQuotaBytes",
   "maxUploadBytes",
+  "uploadSpeedBytes",
   "blockedExtensions",
   "versionKeepLast",
   "versionMaxAgeDays",
@@ -315,6 +342,8 @@ const RESETTABLE: SettingKey[] = [
   "officeUrl",
   "webdav",
   "ocrLangs",
+  "deriveConcurrency",
+  "deriveMaxBytes",
   "toastPosition",
   "healthIntervalMin",
   "healthFailures",

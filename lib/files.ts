@@ -26,6 +26,7 @@ import {
   authEvents,
   linkEvents,
   nodeOpens,
+  nodeTags,
   nodes,
   settings,
   shares,
@@ -372,6 +373,23 @@ export async function listStarred(viewer: string) {
     .where(
       and(
         eq(stars.userId, viewer),
+        isNull(nodes.trashedAt),
+        isNull(nodes.vaultId)
+      )
+    )
+    .orderBy(...foldersFirst)
+  return withAccess(viewer, rows)
+}
+
+// Items carrying one of the viewer's tags that they can still see.
+export async function listByTag(viewer: string, tagId: string) {
+  const rows = await db
+    .select(cols(viewer))
+    .from(nodeTags)
+    .innerJoin(nodes, eq(nodes.id, nodeTags.nodeId))
+    .where(
+      and(
+        eq(nodeTags.tagId, tagId),
         isNull(nodes.trashedAt),
         isNull(nodes.vaultId)
       )

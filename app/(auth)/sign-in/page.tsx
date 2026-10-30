@@ -63,7 +63,7 @@ export default async function SignInPage({
         <SavedLogins accounts={email ? [] : saved} />
         <AuthForm
           mode="sign-in"
-          providers={enabledProviders}
+          providers={await enabledProviders()}
           initialError={error}
           initialEmail={email}
           allowSignUp={signupMode !== "closed"}

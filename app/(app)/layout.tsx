@@ -30,6 +30,7 @@ import { ResendVerification } from "@/components/resend-verification"
 import { SaveLoginPrompt } from "@/components/save-login-prompt"
 import { NotificationBell, SharedBadge } from "@/components/notification-bell"
 import { SidebarShell } from "@/components/sidebar-shell"
+import { SidebarTags } from "@/components/sidebar-tags"
 import { Toaster } from "@/components/toaster"
 import { TwoFactorSetup } from "@/components/two-factor"
 import { NewMenu, UploadProvider } from "@/components/upload-provider"
@@ -41,7 +42,8 @@ import { db } from "@/lib/db"
 import { notifications, shares, user } from "@/lib/db/schema"
 import { emailEnabled } from "@/lib/email"
 import { healthAlarm } from "@/lib/health"
-import { getUsage } from "@/lib/quota"
+import { listTags } from "@/lib/files"
+import { getUsage, speedCap } from "@/lib/quota"
 import {
   deviceAccounts,
   getSession,
@@ -307,10 +309,12 @@ export default async function AppLayout({
           )}
           <NavLink href="/trash" icon={<TrashIcon />} label="Trash" />
         </div>
+        <SidebarTags tags={await listTags(me.id)} fade={label} />
       </nav>
       <div className="mt-auto flex flex-col gap-3">
         <StorageMeter
           usage={await cached(`usage:${me.id}`, 30, () => getUsage(me.id))}
+          href="/storage"
         />
         {navUser}
       </div>
@@ -348,6 +352,7 @@ export default async function AppLayout({
       <UploadProvider
         tusUrl={process.env.TUS_URL ?? ""}
         zipMode={process.env.VERCEL ? "client" : "server"}
+        speedCap={await speedCap(me.id)}
       >
         <SidebarShell
           sidebar={sidebar}
