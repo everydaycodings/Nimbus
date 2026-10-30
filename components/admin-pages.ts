@@ -10,6 +10,7 @@ import {
   HeartbeatIcon,
   HardDrivesIcon,
   LinkSimpleIcon,
+  ListChecksIcon,
   LockIcon,
   PaletteIcon,
   ScanIcon,
@@ -49,6 +50,7 @@ export const ADMIN_GROUPS: { title: string; pages: AdminPage[] }[] = [
         label: "Authentication",
         icon: FingerprintIcon,
       },
+      { href: "/admin/audit", label: "Audit log", icon: ListChecksIcon },
     ],
   },
   {
@@ -364,7 +366,8 @@ export const ADMIN_SETTINGS: {
     id: "allow-webdav",
     label: "Allow WebDAV",
     href: "/admin/system/webdav",
-    keywords: "webdav dav mount drive app password rclone davfs finder explorer",
+    keywords:
+      "webdav dav mount drive app password rclone davfs finder explorer",
   },
   {
     id: "ocr-languages",

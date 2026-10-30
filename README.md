@@ -64,6 +64,14 @@ compromised server sending tampered JavaScript to the browser.
 - `npm run db:migrate` applies migrations
 - `npm run db:studio` opens Drizzle Studio
 
+## End-to-end tests
+
+`npm run test:e2e` runs a small Playwright suite (`e2e/`) for upload, sharing, public links and
+vaults against a Nimbus that's already running (`npm run dev`, the worker and tusd). It signs in
+as two existing, approved members without two-factor; set `E2E_URL`, `E2E_EMAIL`, `E2E_EMAIL2`
+and `E2E_PASSWORD` to point it elsewhere. Each test makes its own `e2e …` folder or vault and
+trashes or deletes it at the end. The first run needs `npx playwright install chromium`.
+
 ## Deploy to production
 
 Nimbus runs on one Linux server with Docker. [docker-compose.yml](docker-compose.yml) always runs

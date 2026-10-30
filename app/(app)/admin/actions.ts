@@ -5,6 +5,7 @@ import { and, eq, ilike, isNotNull, or, sql } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 
 import { MAX_SESSIONS } from "@/lib/accounts"
+import { audit, saveSettings } from "@/lib/audit"
 import { db } from "@/lib/db"
 import {
   SIGNUP_MODES,
@@ -28,7 +29,7 @@ export async function setSignupMode(form: FormData) {
   await requireAdmin()
   const mode = form.get("mode") as SignupMode
   if (!SIGNUP_MODES.includes(mode)) return
-  await db.update(settings).set({ signupMode: mode, updatedAt: new Date() })
+  await saveSettings({ signupMode: mode, updatedAt: new Date() })
   revalidatePath("/admin", "layout")
 }
 
@@ -37,7 +38,7 @@ export async function setRequire2fa(form: FormData) {
   const actor = await requireAdmin()
   const on = form.get("require2fa") === "on"
   if (on && !actor.twoFactorEnabled && (await hasPassword(actor.id))) return
-  await db.update(settings).set({ require2fa: on, updatedAt: new Date() })
+  await saveSettings({ require2fa: on, updatedAt: new Date() })
   revalidatePath("/", "layout")
 }
 
@@ -45,7 +46,7 @@ export async function setRequire2fa(form: FormData) {
 export async function setMultiAccount(form: FormData) {
   await requireAdmin()
   const max = Math.round(Number(form.get("maxAccounts")))
-  await db.update(settings).set({
+  await saveSettings({
     multiAccount: form.get("multiAccount") === "on",
     maxAccounts: max >= 2 && max <= MAX_SESSIONS ? max : 5,
     updatedAt: new Date(),
@@ -56,7 +57,7 @@ export async function setMultiAccount(form: FormData) {
 // One-tap saved logins. Turning either switch off makes existing ones stop working.
 export async function setSavedLogins(form: FormData) {
   await requireAdmin()
-  await db.update(settings).set({
+  await saveSettings({
     savedLogins: form.get("savedLogins") === "on",
     savedLoginsAdmins: form.get("savedLoginsAdmins") === "on",
     updatedAt: new Date(),
@@ -67,7 +68,7 @@ export async function setSavedLogins(form: FormData) {
 // Off makes every app password stop working; they come back when it's on.
 export async function setWebdav(form: FormData) {
   await requireAdmin()
-  await db.update(settings).set({
+  await saveSettings({
     webdav: form.get("webdav") === "on",
     updatedAt: new Date(),
   })
@@ -78,9 +79,7 @@ export async function setToastPosition(form: FormData) {
   await requireAdmin()
   const position = form.get("position") as ToastPosition
   if (!TOAST_POSITIONS.includes(position)) return
-  await db
-    .update(settings)
-    .set({ toastPosition: position, updatedAt: new Date() })
+  await saveSettings({ toastPosition: position, updatedAt: new Date() })
   revalidatePath("/", "layout")
 }
 
@@ -89,7 +88,7 @@ const RETENTION = [7, 30, 90]
 export async function setTrashRetention(form: FormData) {
   await requireAdmin()
   const days = Number(form.get("retention"))
-  await db.update(settings).set({
+  await saveSettings({
     trashRetentionDays: RETENTION.includes(days) ? days : null,
     updatedAt: new Date(),
   })
@@ -103,19 +102,17 @@ export async function addTrustedDomain(form: FormData) {
     .toLowerCase()
     .replace(/^@/, "")
   if (!DOMAIN.test(domain)) return
-  await db
-    .update(settings)
-    .set({
-      trustedDomains: sql`array_append(${settings.trustedDomains}, ${domain})`,
-      updatedAt: new Date(),
-    })
-    .where(sql`not (${domain} = any(${settings.trustedDomains}))`)
+  await saveSettings({
+    // Removed first, so adding one that's there already changes nothing.
+    trustedDomains: sql`array_append(array_remove(${settings.trustedDomains}, ${domain}), ${domain})`,
+    updatedAt: new Date(),
+  })
   revalidatePath("/admin", "layout")
 }
 
 export async function removeTrustedDomain(domain: string) {
   await requireAdmin()
-  await db.update(settings).set({
+  await saveSettings({
     trustedDomains: sql`array_remove(${settings.trustedDomains}, ${domain})`,
     updatedAt: new Date(),
   })
@@ -132,12 +129,17 @@ export async function createInvite(form: FormData) {
     expiresAt: days > 0 ? new Date(Date.now() + days * DAY) : null,
     maxUses: Number.isInteger(maxUses) && maxUses > 0 ? maxUses : null,
   })
+  await audit("invite_create")
   revalidatePath("/admin", "layout")
 }
 
 export async function revokeInvite(id: string) {
   await requireAdmin()
-  await db.delete(invites).where(eq(invites.id, id))
+  const gone = await db
+    .delete(invites)
+    .where(eq(invites.id, id))
+    .returning({ id: invites.id })
+  if (gone.length) await audit("invite_revoke")
   revalidatePath("/admin", "layout")
 }
 
@@ -154,7 +156,7 @@ export async function setUploadLimit(form: FormData) {
   await requireAdmin()
   const n = limit(form, "maxSize")
   const unit = UNITS[String(form.get("unit"))] ?? UNITS.GB
-  await db.update(settings).set({
+  await saveSettings({
     maxUploadBytes: n === null ? null : Math.round(n * unit),
     updatedAt: new Date(),
   })
@@ -165,7 +167,7 @@ export async function setUploadSpeed(form: FormData) {
   await requireAdmin()
   const n = limit(form, "speed")
   const unit = String(form.get("unit")) === "KB" ? 2 ** 10 : 2 ** 20
-  await db.update(settings).set({
+  await saveSettings({
     uploadSpeedBytes: n === null ? null : Math.max(1024, Math.round(n * unit)),
     updatedAt: new Date(),
   })
@@ -176,7 +178,7 @@ export async function setDefaultQuota(form: FormData) {
   await requireAdmin()
   const n = limit(form, "quota")
   const unit = UNITS[String(form.get("unit"))] ?? UNITS.GB
-  await db.update(settings).set({
+  await saveSettings({
     defaultQuotaBytes: n === null ? null : Math.round(n * unit),
     updatedAt: new Date(),
   })
@@ -190,19 +192,17 @@ export async function addBlockedExtension(form: FormData) {
     .toLowerCase()
     .replace(/^\*?\./, "")
   if (!/^[a-z0-9_-]{1,20}$/.test(ext)) return
-  await db
-    .update(settings)
-    .set({
-      blockedExtensions: sql`array_append(${settings.blockedExtensions}, ${ext})`,
-      updatedAt: new Date(),
-    })
-    .where(sql`not (${ext} = any(${settings.blockedExtensions}))`)
+  await saveSettings({
+    // Removed first, so adding one that's there already changes nothing.
+    blockedExtensions: sql`array_append(array_remove(${settings.blockedExtensions}, ${ext}), ${ext})`,
+    updatedAt: new Date(),
+  })
   revalidatePath("/admin", "layout")
 }
 
 export async function removeBlockedExtension(ext: string) {
   await requireAdmin()
-  await db.update(settings).set({
+  await saveSettings({
     blockedExtensions: sql`array_remove(${settings.blockedExtensions}, ${ext})`,
     updatedAt: new Date(),
   })
@@ -213,7 +213,7 @@ export async function setVersionRetention(form: FormData) {
   await requireAdmin()
   const keep = limit(form, "keepLast")
   const days = limit(form, "maxAgeDays")
-  await db.update(settings).set({
+  await saveSettings({
     versionKeepLast: keep && Math.floor(keep),
     versionMaxAgeDays: days && Math.floor(days),
     updatedAt: new Date(),
@@ -237,7 +237,7 @@ export async function setOfficeUrl(form: FormData) {
       return
     }
   }
-  await db.update(settings).set({ officeUrl: url, updatedAt: new Date() })
+  await saveSettings({ officeUrl: url, updatedAt: new Date() })
   revalidatePath("/admin", "layout")
 }
 
@@ -249,9 +249,10 @@ export async function setOcrLangs(form: FormData) {
     .split(/[\s,+]+/)
     .filter((l) => /^[a-z]{3}(_[a-z]+)?$/.test(l))
     .slice(0, 5)
-  await db
-    .update(settings)
-    .set({ ocrLangs: langs.join("+") || "eng", updatedAt: new Date() })
+  await saveSettings({
+    ocrLangs: langs.join("+") || "eng",
+    updatedAt: new Date(),
+  })
   revalidatePath("/admin", "layout")
 }
 
@@ -261,7 +262,7 @@ export async function setDerive(form: FormData) {
   const jobs = limit(form, "deriveJobs")
   const n = limit(form, "deriveMax")
   const unit = UNITS[String(form.get("unit"))] ?? UNITS.MB
-  await db.update(settings).set({
+  await saveSettings({
     deriveConcurrency: Math.min(Math.round(jobs ?? 1), 8) || 1,
     deriveMaxBytes:
       n === null ? 200 * 2 ** 20 : Math.max(2 ** 20, Math.round(n * unit)),
@@ -274,7 +275,7 @@ export async function setDerive(form: FormData) {
 export async function setVaultPolicy(form: FormData) {
   await requireAdmin()
   const cap = limit(form, "maxVaults")
-  await db.update(settings).set({
+  await saveSettings({
     vaultsEnabled: form.get("enabled") === "on",
     maxVaultsPerMember: cap && Math.min(Math.ceil(cap), 1000),
     updatedAt: new Date(),
@@ -302,14 +303,14 @@ export async function setPasswordPolicy(form: FormData) {
             .slice(0, 64),
         }
       : null
-  await db.update(settings).set({ passwordPolicy, updatedAt: new Date() })
+  await saveSettings({ passwordPolicy, updatedAt: new Date() })
   revalidatePath("/", "layout")
 }
 
 export async function setLinkPolicy(form: FormData) {
   await requireAdmin()
   const days = limit(form, "maxLinkDays")
-  await db.update(settings).set({
+  await saveSettings({
     publicLinksEnabled: form.get("enabled") === "on",
     maxLinkDays: days && Math.min(Math.floor(days), 3650),
     requireLinkPassword: form.get("requirePassword") === "on",
@@ -374,7 +375,7 @@ export async function resetSetting(keys: SettingKey[]) {
       .map((k) => [k, settingDefault(k)])
   )
   if (!Object.keys(set).length) return
-  await db.update(settings).set({ ...set, updatedAt: new Date() })
+  await saveSettings({ ...set, updatedAt: new Date() })
   if ("healthIntervalMin" in set)
     await scheduleHealth(set.healthIntervalMin as number | null)
   if (
@@ -386,9 +387,11 @@ export async function resetSetting(keys: SettingKey[]) {
 
 export async function revokeLink(id: string) {
   await requireAdmin()
-  await db
+  const gone = await db
     .delete(shares)
     .where(and(eq(shares.id, String(id)), isNotNull(shares.token)))
+    .returning({ by: shares.createdBy })
+  if (gone[0]) await audit("link_revoke", { targetId: gone[0].by ?? undefined })
   revalidatePath("/admin", "layout")
 }
 

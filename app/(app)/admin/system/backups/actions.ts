@@ -5,6 +5,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 import { and, eq } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 
+import { audit, saveSettings } from "@/lib/audit"
 import {
   INTERVALS,
   KINDS,
@@ -19,7 +20,7 @@ import { requireUnlocked, sendCode, verify } from "@/lib/backup/reauth"
 import { destOf } from "@/lib/backup/status"
 import { encrypt } from "@/lib/crypto"
 import { db } from "@/lib/db"
-import { backupNotes, backupRuns, settings } from "@/lib/db/schema"
+import { backupNotes, backupRuns } from "@/lib/db/schema"
 import { enqueueBackup, scheduleBackups } from "@/lib/redis"
 import { requireAdmin } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
@@ -164,14 +165,13 @@ export async function downloadUrl(
     }),
     { expiresIn: 300 }
   )
-  await db
-    .insert(backupNotes)
-    .values({
-      runId,
-      userId: me.id,
-      kind: "note",
-      body: "Downloaded the file.",
-    })
+  await db.insert(backupNotes).values({
+    runId,
+    userId: me.id,
+    kind: "note",
+    body: "Downloaded the file.",
+  })
+  await audit("backup_download", { detail: run.s3Key })
   done()
   return { url }
 }
@@ -185,7 +185,7 @@ async function reschedule() {
 
 export async function setPaused(paused: boolean) {
   await requireAdmin()
-  await db.update(settings).set({ backupPaused: paused, updatedAt: new Date() })
+  await saveSettings({ backupPaused: paused, updatedAt: new Date() })
   await reschedule()
   done()
 }
@@ -203,7 +203,7 @@ export async function saveSchedules(form: FormData) {
     return TIME.test(v) ? v : fallback
   }
   const tz = field(form, "tz")
-  await db.update(settings).set({
+  await saveSettings({
     backupDbEnabled: form.get("dbEnabled") === "on",
     backupDbIntervalH: hours("dbInterval", 6),
     backupDbStart: time("dbStart", "03:00"),
@@ -229,13 +229,13 @@ export async function saveRetention(form: FormData) {
           weeks: whole(form, "weeks", 0, 520, 12),
           months: whole(form, "months", 0, 240, 12),
         }
-  await db.update(settings).set({ backupRetention: r, updatedAt: new Date() })
+  await saveSettings({ backupRetention: r, updatedAt: new Date() })
   done()
 }
 
 export async function saveFiles(form: FormData) {
   await requireAdmin()
-  await db.update(settings).set({
+  await saveSettings({
     backupFilesEncrypt: form.get("encrypt") === "on",
     backupFilesGraceDays: whole(form, "grace", 1, 3650, 30),
     backupFilesConcurrency: whole(form, "concurrency", 1, 32, 4),
@@ -248,7 +248,7 @@ export async function saveFiles(form: FormData) {
 export async function saveAlerts(form: FormData) {
   await requireAdmin()
   const shrink = field(form, "shrink")
-  await db.update(settings).set({
+  await saveSettings({
     backupAlerts: (["failure", "warning", "stale"] as const).filter(
       (e) => form.get(`alert:${e}`) === "on"
     ),
@@ -342,7 +342,7 @@ export async function saveStorage(
   } catch (e) {
     return { error: `Not saved. ${s3Error(e)}` }
   }
-  await db.update(settings).set({
+  await saveSettings({
     backupProvider: d.provider,
     backupEndpoint: d.endpoint,
     backupRegion: d.region,

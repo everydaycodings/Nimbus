@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto"
 import { and, eq, ne } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 
+import { audit } from "@/lib/audit"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import {
@@ -41,6 +42,7 @@ export async function setStatus(targetId: string, status: Status) {
       )
     )
     .returning({ email: user.email, name: user.name })
+  if (changed) await audit("status", { targetId, detail: status })
   if (changed && status === "rejected") await forgetSavedLogins(targetId)
   if (changed && status === "active")
     sendInBackground(
@@ -66,10 +68,14 @@ export async function setStatusMany(status: Status, form: FormData) {
 export async function setRole(targetId: string, role: Role) {
   const actor = await requireAdmin()
   if (actor.role !== "owner" || !ASSIGNABLE_ROLES.includes(role)) return
-  await db
+  const changed = await db
     .update(user)
     .set({ role })
-    .where(and(eq(user.id, targetId), ne(user.role, "owner")))
+    .where(
+      and(eq(user.id, targetId), ne(user.role, "owner"), ne(user.role, role))
+    )
+    .returning({ id: user.id })
+  if (changed.length) await audit("role", { targetId, detail: role })
   await forgetSavedLogins(targetId)
   revalidatePath("/", "layout")
 }
@@ -95,6 +101,7 @@ export async function setMemberQuota(targetId: string, bytes: number | null) {
     .update(user)
     .set({ quotaBytes: bytes === null ? null : Math.round(bytes) })
     .where(eq(user.id, target.id))
+  await audit("quota", { targetId, detail: String(bytes ?? "default") })
   revalidatePath("/admin/members", "layout")
   return { ok: true }
 }
@@ -112,6 +119,7 @@ export async function setMemberSpeed(targetId: string, bytes: number | null) {
         bytes === null ? null : Math.max(1024, Math.round(bytes)),
     })
     .where(eq(user.id, target.id))
+  await audit("upload_speed", { targetId, detail: String(bytes ?? "default") })
   revalidatePath("/admin/members", "layout")
   return { ok: true }
 }
@@ -140,6 +148,7 @@ export async function resetTwoFactor(targetId: string) {
   })
   // A saved login skips the password; without two-factor it would be all it takes.
   await forgetSavedLogins(target.id)
+  await audit("reset_2fa", { targetId })
   revalidatePath("/admin/members", "layout")
   return { ok: true }
 }
@@ -178,6 +187,7 @@ export async function setTemporaryPassword(targetId: string) {
     await tx.delete(session).where(eq(session.userId, target.id))
     await tx.delete(savedLogins).where(eq(savedLogins.userId, target.id))
   })
+  await audit("temp_password", { targetId })
   revalidatePath("/admin/members", "layout")
   return { password }
 }
@@ -189,6 +199,7 @@ export async function deleteMemberVault(targetId: string, vaultId: string) {
   const vault = target && (await getVault(target.id, vaultId))
   if (!vault) return { error: "That vault is already gone." }
   await destroyVault(vault.id)
+  await audit("delete_vault", { targetId, detail: vault.name })
   revalidatePath("/admin/members", "layout")
   return { ok: true }
 }
@@ -201,6 +212,7 @@ export async function setMemberWebdav(targetId: string, on: boolean) {
     .update(user)
     .set({ webdavDisabled: !on })
     .where(eq(user.id, target.id))
+  await audit("webdav", { targetId, detail: on ? "on" : "off" })
   revalidatePath("/admin/members", "layout")
   return { ok: true }
 }
@@ -209,9 +221,12 @@ export async function setMemberWebdav(targetId: string, on: boolean) {
 export async function revokeMemberAppPassword(targetId: string, id: string) {
   const target = await recoverable(targetId)
   if (!target) return { error: "You can't change this person's app passwords." }
-  await db
+  const gone = await db
     .delete(appPasswords)
     .where(and(eq(appPasswords.id, id), eq(appPasswords.userId, target.id)))
+    .returning({ name: appPasswords.name })
+  if (gone[0])
+    await audit("revoke_app_password", { targetId, detail: gone[0].name })
   revalidatePath("/admin/members", "layout")
   return { ok: true }
 }

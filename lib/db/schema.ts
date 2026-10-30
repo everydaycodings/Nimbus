@@ -346,6 +346,30 @@ export const authEvents = pgTable(
   (t) => [index("auth_events_user_at_idx").on(t.userId, t.at)]
 )
 
+// What admins did: role and status changes, recovery, vault deletes, settings.
+// Names are copied so the log still reads after an account is deleted. Kept a year.
+export const auditEvents = pgTable(
+  "audit_events",
+  {
+    id: id(),
+    actorId: text("actor_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    actorName: text("actor_name").notNull(),
+    action: text("action").notNull(),
+    targetId: text("target_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    targetName: text("target_name"),
+    detail: text("detail"),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("audit_events_at_idx").on(t.at),
+    index("audit_events_target_at_idx").on(t.targetId, t.at),
+  ]
+)
+
 // "Save your login info" on one browser: the cookie nimbus_saved_<id> holds a
 // secret whose SHA-256 is stored here. Works for 90 days after its last use,
 // and only while it's newer than the account's last password change.

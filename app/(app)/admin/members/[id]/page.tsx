@@ -277,6 +277,12 @@ export default async function MemberPage({
           </Badge>
           <span className="tabular-nums">Joined {day.format(p.createdAt)}</span>
           {p.id === me.id && <span>· This is you</span>}
+          <Link
+            href={`/admin/audit?member=${p.id}`}
+            className="underline-offset-4 hover:text-foreground hover:underline"
+          >
+            Audit log
+          </Link>
         </div>
         <div className="ml-auto">
           <MemberActions

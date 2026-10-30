@@ -2,8 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 
-import { db } from "@/lib/db"
-import { settings } from "@/lib/db/schema"
+import { saveSettings } from "@/lib/audit"
 import { runChecks } from "@/lib/health"
 import {
   DEFAULT_SLOW_MS,
@@ -45,7 +44,7 @@ export async function setHealthSchedule(form: FormData) {
   const minutes = INTERVALS.includes(raw as (typeof INTERVALS)[number])
     ? raw
     : null
-  await db.update(settings).set({
+  await saveSettings({
     healthIntervalMin: minutes,
     healthFailures: whole(form, "failures", 1, 10) ?? 2,
     healthRetentionDays: whole(form, "retention", 1, 365) ?? 30,
@@ -66,7 +65,7 @@ export async function setHealthServices(form: FormData) {
       if (n && n !== DEFAULT_SLOW_MS[x]) slow[x] = n
     }
   }
-  await db.update(settings).set({
+  await saveSettings({
     healthDisabled: SERVICES.filter((x) => form.get(`check:${x}`) !== "on"),
     healthSlowMs: slow,
     updatedAt: new Date(),

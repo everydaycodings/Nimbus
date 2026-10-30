@@ -41,3 +41,5 @@ next-env.d.ts
 
 # Playwright MCP session output
 /.playwright-mcp/
+/test-results/
+/playwright-report/

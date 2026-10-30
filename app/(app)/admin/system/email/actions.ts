@@ -2,8 +2,8 @@
 
 import { revalidatePath } from "next/cache"
 
+import { saveSettings } from "@/lib/audit"
 import { encrypt } from "@/lib/crypto"
-import { db } from "@/lib/db"
 import {
   EMAIL_TRANSPORTS,
   settings,
@@ -35,9 +35,7 @@ export async function saveEmail(
     return { error: "Pick how Nimbus sends email." }
 
   if (transport === "none") {
-    await db
-      .update(settings)
-      .set({ emailTransport: "none", updatedAt: new Date() })
+    await saveSettings({ emailTransport: "none", updatedAt: new Date() })
     revalidatePath("/", "layout")
     return { ok: true }
   }
@@ -78,7 +76,7 @@ export async function saveEmail(
       return { error: "Enter your Resend API key." }
   }
 
-  await db.update(settings).set(update)
+  await saveSettings(update)
   revalidatePath("/", "layout")
   return { ok: true }
 }

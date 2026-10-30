@@ -3,10 +3,11 @@
 import { and, eq, inArray } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 
+import { saveSettings } from "@/lib/audit"
 import { reloadAuth } from "@/lib/auth"
 import { encrypt } from "@/lib/crypto"
 import { db } from "@/lib/db"
-import { account, settings, user } from "@/lib/db/schema"
+import { account, user } from "@/lib/db/schema"
 import { OIDC_ID, discoveryUrl, getOidcConfig } from "@/lib/oidc"
 import { requireAdmin } from "@/lib/session"
 
@@ -41,9 +42,11 @@ export async function saveOidc(
 
   const raw = field(form, "issuer")
   if (!raw) {
-    await db
-      .update(settings)
-      .set({ oidcIssuer: null, oidcOnly: false, updatedAt: new Date() })
+    await saveSettings({
+      oidcIssuer: null,
+      oidcOnly: false,
+      updatedAt: new Date(),
+    })
     reloadAuth()
     revalidatePath("/", "layout")
     return { ok: true }
@@ -77,7 +80,7 @@ export async function saveOidc(
       }
   }
 
-  await db.update(settings).set({
+  await saveSettings({
     oidcName: field(form, "name").slice(0, 40) || null,
     oidcIssuer: issuer,
     oidcClientId: clientId,

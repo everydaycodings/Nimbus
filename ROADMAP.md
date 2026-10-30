@@ -390,5 +390,17 @@ password accounts must set it up. Google and GitHub sign-ins rely on the provide
 - Left for later: shared-bucket backup prefixes are never swept (by design), video thumbnails
   on the server, Connect/remove for passwords on the Account page.
 
+## Polish and hardening ✓ done
+- **Admin audit log** (Admin → Security → Audit log, `/admin/audit`): approvals and rejections,
+  role changes, storage and upload-speed limits, two-factor resets, temporary passwords, vault
+  deletes, WebDAV switches and app-password revokes, invite links, public-link revokes, database
+  backup downloads, and every settings change with its old and new value (secrets only say
+  "changed"). Each row names the admin and the member, copied so it still reads after an account
+  is deleted. A member's page links to their entries (`?member=`). Kept a year. All admin settings
+  writes go through `saveSettings()` in `lib/audit.ts`, which logs only what really changed.
+- **End-to-end tests**: `npm run test:e2e` runs Playwright against a running instance: upload,
+  preview, trash + Undo; share a folder with a member who opens it; a public link opened signed
+  out; a vault made, filled, locked, unlocked and deleted. Each test cleans up after itself.
+
 ## Phase 8: Ship
 - Production Dockerfile and compose, Vercel guide, backups
