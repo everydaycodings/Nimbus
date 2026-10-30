@@ -235,7 +235,7 @@ if confirm "Set up nginx and HTTPS for you?" y; then
 fi
 
 # --- Ports and old data -------------------------------------------------------
-ports=(3400 3401 6340)
+ports=(3400 3401 3404 6340)
 has_profile postgres && ports+=(54340)
 has_profile minio && ports+=(3402 3403)
 if [ -z "$(docker compose ps -q 2>/dev/null || true)" ] && command -v ss >/dev/null; then
