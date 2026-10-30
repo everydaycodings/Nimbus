@@ -19,6 +19,7 @@ Privacy and ownership. Files live in the user's own S3-compatible bucket, the co
 
 ## Operating Context
 - Daily file management in a browser: upload, organise, find, preview and share.
+- Files mounted as a drive over WebDAV (`/dav`) from Linux, Windows, macOS, rclone and phone apps, signed in with per-device app passwords. Vaults stay browser-only.
 - Self-hosted via Docker Compose, or deployed to Vercel with external Postgres and S3.
 - Sign-in with Google or GitHub OAuth.
 

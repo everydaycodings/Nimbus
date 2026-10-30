@@ -44,7 +44,7 @@ compromised server sending tampered JavaScript to the browser.
 ## Deploy to production
 
 Nimbus runs on one Linux server with Docker. [docker-compose.yml](docker-compose.yml) always runs
-the app, the background worker, Redis and tusd (resumable uploads). Postgres and file storage can
+the app, the background worker, the WebDAV proxy, Redis and tusd (resumable uploads). Postgres and file storage can
 run there too, or you can bring your own. nginx on the server sits in front with HTTPS from
 Let's Encrypt.
 
@@ -63,6 +63,7 @@ Nimbus binds only to 127.0.0.1, on ports chosen to stay clear of other apps:
 |---------|-----------|-----------|
 | App | 3400 | always |
 | tusd | 3401 | always |
+| WebDAV proxy | 3404 | always |
 | Redis | 6340 | always |
 | Postgres | 54340 | `postgres` profile |
 | MinIO API / console | 3402 / 3403 | `minio` profile |
@@ -237,7 +238,8 @@ Everything secret lives in `.env` at the repo root:
    from the templates in [production_script/nginx/](production_script/nginx/), with the storage
    site only when `S3_DOMAIN` is set. Then it gets certificates and turns on the HTTP → HTTPS
    redirect. Certbot renews them on its own. Run it again any time: if everything already works,
-   it says so and changes nothing. It stops if another nginx site already uses one of the
+   it says so and changes nothing. After an update that changes the templates (like `/dav`), it
+   rewrites the site and keeps the existing certificate. It stops if another nginx site already uses one of the
    domains, and it removes nginx's `default` site.
 
 ### After the first start
@@ -279,7 +281,8 @@ git pull
 ./setup.sh                    # keep the existing .env; or just: docker compose up -d --build
 ```
 
-Migrations run on every start, before the app.
+Migrations run on every start, before the app. Browser tabs left open from before the update
+fail with "This page couldn't load" (the log says `Failed to find Server Action`) until reloaded.
 
 ### Useful commands
 
@@ -297,3 +300,13 @@ The MinIO console login is your `S3_ACCESS_KEY` (`nimbus`) and `S3_SECRET_KEY`.
 To open Word, Excel and PowerPoint files, run a Collabora Online server on its own HTTPS name.
 Set its URL in **Admin → System → Office**, and set `WOPI_BASE_URL=https://<DOMAIN>` in `.env`.
 Without it, Nimbus uses its built-in document and spreadsheet viewers.
+
+### WebDAV (mount as a drive)
+
+Members can mount their files at `https://<DOMAIN>/dav` from GNOME Files (`davs://<DOMAIN>/dav`),
+Dolphin (`webdavs://`), rclone, Windows' "Map network drive", macOS Finder and phone apps. They
+sign in with their email and an app password from **Account → Connect a device**; the guide there
+has the steps for each. nginx forwards `/dav` to the `webdav` service, so there's nothing to set
+up. Turn it off for everyone in **Admin → System → WebDAV**, or for one member on their page.
+
+davfs2 can't list folders on Linux 7 kernels; use rclone there to mount it as a folder.

@@ -303,7 +303,7 @@ chmod 600 .env
 
 # --- Start --------------------------------------------------------------------
 bold "Starting Nimbus (the first build takes a few minutes)"
-echo "Services: app, worker, tusd, redis${PROFILES:+, ${PROFILES//,/, }}"
+echo "Services: app, worker, webdav, tusd, redis${PROFILES:+, ${PROFILES//,/, }}"
 docker compose up -d --build --remove-orphans
 
 printf "Waiting for the app"
