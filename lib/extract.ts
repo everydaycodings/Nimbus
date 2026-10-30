@@ -50,7 +50,13 @@ async function pdf(bytes: Uint8Array) {
       "pdfjs-dist/build/pdf.worker.min.mjs",
       import.meta.url
     ).toString()
-  const task = pdfjs.getDocument({ data: bytes })
+  const task = pdfjs.getDocument({
+    data: bytes,
+    // Node reads these from disk; without them every non-embedded font warns.
+    standardFontDataUrl: browser
+      ? undefined
+      : `${process.cwd()}/node_modules/pdfjs-dist/standard_fonts/`,
+  })
   try {
     const doc = await task.promise
     const out: string[] = []
