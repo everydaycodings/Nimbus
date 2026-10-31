@@ -2,7 +2,7 @@
 
 import { Dialog } from "@base-ui/react/dialog"
 import { PlusIcon } from "@phosphor-icons/react"
-import { useState, useTransition } from "react"
+import { useState, useSyncExternalStore, useTransition } from "react"
 
 import {
   createAppPassword,
@@ -199,96 +199,212 @@ export function AppPasswords({
 const CODE =
   "block overflow-x-auto rounded bg-input/20 p-2 font-mono text-xs whitespace-pre"
 
+const Steps = ({ children }: { children: React.ReactNode }) => (
+  <ol className="flex list-decimal flex-col gap-1.5 pl-5">{children}</ol>
+)
+
+const Way = ({
+  title,
+  tag,
+  children,
+}: {
+  title: string
+  tag?: string
+  children: React.ReactNode
+}) => (
+  <div className="flex flex-col gap-2">
+    <p className="flex items-center gap-2 font-medium text-foreground">
+      {title}
+      {tag && <Badge variant="outline">{tag}</Badge>}
+    </p>
+    {children}
+  </div>
+)
+
+// Built-in clients drop the connection when the device sleeps; the
+// recommended apps keep the password and reconnect on their own.
 function guides(url: string, email: string) {
   const secure = url.startsWith("https:")
   const host = url.replace(/^https?:\/\//, "")
+  const signIn = (
+    <li>
+      Username <b>{email}</b>, password: a new app password from above (one per
+      device). Tick <b>Remember</b> if asked.
+    </li>
+  )
   return [
-    {
-      id: "linux",
-      label: "Linux",
-      body: (
-        <>
-          <p>
-            <b>GNOME Files:</b> Other Locations → Connect to Server, then{" "}
-            <code>{`${secure ? "davs" : "dav"}://${host}`}</code>
-          </p>
-          <p>
-            <b>KDE Dolphin:</b> type{" "}
-            <code>{`${secure ? "webdavs" : "webdav"}://${host}`}</code> in the
-            location bar.
-          </p>
-          <p>
-            <b>As a folder:</b> use rclone (see its tab) with{" "}
-            <code>rclone mount nimbus: ~/Nimbus --vfs-cache-mode writes</code>.
-            davfs2 works on older systems but can&apos;t list folders on
-            Linux 7 kernels.
-          </p>
-        </>
-      ),
-    },
-    {
-      id: "rclone",
-      label: "rclone",
-      body: (
-        <>
-          <p>Sync, back up or mount from any OS, and from scripts.</p>
-          <code className={CODE}>
-            {`rclone config create nimbus webdav url=${url} vendor=other user=${email} pass=$(rclone obscure 'APP-PASSWORD')\nrclone mount nimbus: ~/Nimbus --vfs-cache-mode writes\nrclone sync ~/Photos nimbus:Photos`}
-          </code>
-        </>
-      ),
-    },
     {
       id: "windows",
       label: "Windows",
       body: (
         <>
-          <p>
-            File Explorer → This PC → <b>Map network drive</b>. Folder:{" "}
-            <code>{url}</code>, tick <b>Connect using different credentials</b>
-            , then sign in.
-          </p>
-          <p>
-            Windows only signs in over HTTPS{secure ? "" : ", which this address isn't, so use rclone instead"}.
-            It also refuses files over 50 MB until{" "}
-            <code>FileSizeLimitInBytes</code> under{" "}
-            <code>HKLM\SYSTEM\CurrentControlSet\Services\WebClient\Parameters</code>{" "}
-            is raised.
-          </p>
+          <Way title="RaiDrive" tag="Recommended">
+            <Steps>
+              <li>Install RaiDrive (free) from raidrive.com.</li>
+              <li>
+                Click <b>Add</b>, choose <b>NAS → WebDAV</b>, untick{" "}
+                <b>Address</b> autodetect and paste <code>{url}</code>
+                {secure ? ", keep Secure connection ticked" : ", untick Secure connection"}.
+              </li>
+              {signIn}
+              <li>Click <b>Connect</b>. Nimbus shows up as a drive in File Explorer and reconnects after sleep or restart.</li>
+            </Steps>
+          </Way>
+          <Way title="Built into Windows">
+            <Steps>
+              <li>Open File Explorer, right-click <b>This PC</b> → <b>Map network drive</b>.</li>
+              <li>
+                Folder: <code>{url}</code>. Tick <b>Reconnect at sign-in</b> and{" "}
+                <b>Connect using different credentials</b>.
+              </li>
+              {signIn}
+            </Steps>
+            <p>
+              {secure ? "" : "Windows only signs in over HTTPS, which this address isn't, so use RaiDrive. "}
+              It may disconnect after sleep (open the drive again to reconnect)
+              and refuses files over 50 MB until <code>FileSizeLimitInBytes</code>{" "}
+              under <code>HKLM\SYSTEM\CurrentControlSet\Services\WebClient\Parameters</code>{" "}
+              is raised.
+            </p>
+          </Way>
         </>
       ),
     },
     {
       id: "mac",
-      label: "macOS",
+      label: "Mac",
       body: (
-        <p>
-          Finder → Go → <b>Connect to Server</b> (⌘K), enter{" "}
-          <code>{url}</code>, choose Registered User, then sign in. It shows up
-          under Locations.
-        </p>
+        <>
+          <Way title="Mountain Duck" tag="Recommended">
+            <Steps>
+              <li>Install Mountain Duck from mountainduck.io (paid, free trial).</li>
+              <li>
+                Open it from the menu bar → <b>Open Connection</b>, choose{" "}
+                <b>WebDAV ({secure ? "HTTPS" : "HTTP"})</b> and paste <code>{url}</code>.
+              </li>
+              {signIn}
+              <li>Click <b>Connect</b>. It stays in Finder and reconnects after sleep.</li>
+            </Steps>
+          </Way>
+          <Way title="Built into macOS">
+            <Steps>
+              <li>In Finder press <b>⌘K</b> (Go → Connect to Server) and enter <code>{url}</code>.</li>
+              <li>Choose <b>Registered User</b>, then sign in:</li>
+              {signIn}
+              <li>
+                To connect at login, open System Settings → General → <b>Login
+                Items</b> and drag the Nimbus drive in.
+              </li>
+            </Steps>
+            <p>After sleep, click Nimbus under Locations in Finder to reconnect.</p>
+          </Way>
+        </>
       ),
     },
     {
-      id: "phone",
-      label: "Phones",
+      id: "linux",
+      label: "Linux",
       body: (
-        <p>
-          Use an app with WebDAV, like Solid Explorer or Material Files on
-          Android, or Documents by Readdle or FE File Explorer on iPhone and
-          iPad (the Files app can&apos;t). Add a WebDAV server with{" "}
-          <code>{url}</code>, your email and an app password.
-        </p>
+        <>
+          <Way title="GNOME (Ubuntu, Fedora)" tag="Recommended">
+            <Steps>
+              <li>Open Settings → <b>Online Accounts</b> → <b>WebDAV</b> (GNOME 46 or newer).</li>
+              <li>Server: <code>{url}</code></li>
+              {signIn}
+              <li>Nimbus appears in the Files sidebar and reconnects by itself.</li>
+            </Steps>
+            <p>
+              Older GNOME: Files → Other Locations → Connect to Server,{" "}
+              <code>{`${secure ? "davs" : "dav"}://${host}`}</code>. Reconnect after sleep by
+              clicking it in the sidebar.
+            </p>
+          </Way>
+          <Way title="KDE (Dolphin)">
+            <Steps>
+              <li>
+                Type <code>{`${secure ? "webdavs" : "webdav"}://${host}`}</code> in the
+                location bar and press Enter.
+              </li>
+              {signIn}
+              <li>Right-click the folder in Places → <b>Add to Places</b>.</li>
+            </Steps>
+          </Way>
+        </>
+      ),
+    },
+    {
+      id: "ios",
+      label: "iPhone & iPad",
+      body: (
+        <Way title="Documents by Readdle" tag="Recommended">
+          <Steps>
+            <li>Install <b>Documents by Readdle</b> (free) from the App Store. FE File Explorer works too.</li>
+            <li>Tap <b>+</b> → <b>Connection</b> → <b>WebDAV server</b>.</li>
+            <li>URL: <code>{url}</code></li>
+            {signIn}
+          </Steps>
+          <p>Apple&apos;s Files app can&apos;t connect to WebDAV on its own.</p>
+        </Way>
+      ),
+    },
+    {
+      id: "android",
+      label: "Android",
+      body: (
+        <Way title="Material Files" tag="Recommended">
+          <Steps>
+            <li>Install <b>Material Files</b> (free) from Google Play or F-Droid. Solid Explorer works too.</li>
+            <li>Open the menu → <b>Add storage</b> → <b>WebDAV server</b>.</li>
+            <li>
+              Host: <code>{host.split("/")[0]}</code>, path:{" "}
+              <code>/{host.split("/").slice(1).join("/")}</code>, protocol{" "}
+              {secure ? "HTTPS" : "HTTP"}.
+            </li>
+            {signIn}
+          </Steps>
+        </Way>
+      ),
+    },
+    {
+      id: "rclone",
+      label: "Advanced",
+      body: (
+        <Way title="rclone">
+          <p>Sync, back up or mount from any OS, and from scripts.</p>
+          <code className={CODE}>
+            {`rclone config create nimbus webdav url=${url} vendor=other user=${email} pass=$(rclone obscure 'APP-PASSWORD')\nrclone mount nimbus: ~/Nimbus --vfs-cache-mode writes\nrclone sync ~/Photos nimbus:Photos`}
+          </code>
+          <p>
+            Run the mount as a service with <code>Restart=always</code> so it
+            comes back after sleep. davfs2 can&apos;t list folders on Linux 7
+            kernels.
+          </p>
+        </Way>
       ),
     },
   ]
 }
 
+const noop = () => () => {}
+
+function detect() {
+  const ua = navigator.userAgent
+  if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1))
+    return "ios"
+  if (/Android/.test(ua)) return "android"
+  if (/Windows/.test(ua)) return "windows"
+  if (/Macintosh/.test(ua)) return "mac"
+  if (/Linux|X11/.test(ua)) return "linux"
+}
+
 function ConnectGuide({ url, email }: { url: string; email: string }) {
   const all = guides(url, email)
-  const [tab, setTab] = useState(all[0].id)
+  // The visitor's own device, read after hydration so the server render matches.
+  const os = useSyncExternalStore(noop, detect, () => undefined)
+  const [picked, setTab] = useState<string>()
+  const tab = picked ?? os ?? all[0].id
   return (
-    <div className="flex flex-col gap-3 rounded-lg border p-3 text-sm [&_code]:font-mono [&_code]:text-xs">
+    <div className="flex flex-col gap-3 rounded-lg border p-3 text-sm [&_code]:font-mono [&_code]:text-xs [&_code]:break-all">
       <p className="font-medium">How to connect</p>
       <div role="tablist" aria-label="Connection guide" className="flex flex-wrap gap-1">
         {all.map((g) => (
@@ -310,7 +426,7 @@ function ConnectGuide({ url, email }: { url: string; email: string }) {
         id="guide-panel"
         role="tabpanel"
         aria-labelledby={`guide-${tab}`}
-        className="flex flex-col gap-3 text-muted-foreground [&_b]:font-medium [&_b]:text-foreground"
+        className="flex flex-col gap-5 text-muted-foreground [&_b]:font-medium [&_b]:text-foreground"
       >
         {all.find((g) => g.id === tab)!.body}
       </div>
