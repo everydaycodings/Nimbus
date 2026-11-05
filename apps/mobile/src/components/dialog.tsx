@@ -4,7 +4,7 @@ import { KeyboardAvoidingView, Modal, Pressable, View } from "react-native"
 import { Button, Field, Text } from "@/components/ui"
 import { c, radius } from "@/lib/theme"
 
-function Frame({ onClose, title, children }: { onClose: () => void; title: string; children: ReactNode }) {
+export function Frame({ onClose, title, children }: { onClose: () => void; title: string; children: ReactNode }) {
   return (
     <Modal transparent statusBarTranslucent navigationBarTranslucent animationType="fade" onRequestClose={onClose}>
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1, justifyContent: "center", padding: 24, backgroundColor: "rgba(0,0,0,0.6)" }}>
@@ -21,7 +21,7 @@ function Frame({ onClose, title, children }: { onClose: () => void; title: strin
   )
 }
 
-const Actions = ({ children }: { children: ReactNode }) => (
+export const Actions = ({ children }: { children: ReactNode }) => (
   <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 8 }}>{children}</View>
 )
 
@@ -68,6 +68,7 @@ export function PromptDialog({
   initial = "",
   confirm,
   selectEnd,
+  secret,
   children,
   canSubmit,
   onSubmit,
@@ -78,6 +79,7 @@ export function PromptDialog({
   initial?: string
   confirm: string
   selectEnd?: number
+  secret?: boolean
   children?: ReactNode
   canSubmit?: (value: string) => boolean
   onSubmit: (value: string) => Promise<string | void>
@@ -103,6 +105,7 @@ export function PromptDialog({
         label={label}
         value={value}
         autoFocus
+        secret={secret}
         error={error}
         selection={selection}
         returnKeyType="done"

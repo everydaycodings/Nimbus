@@ -11,6 +11,8 @@ export type Prefs = {
   compact: boolean
   // Where downloads go: a folder the person picked in Android's picker.
   downloadDir?: string
+  // Newest first, on this phone only.
+  recentSearches?: string[]
 }
 
 const DEFAULTS: Prefs = { layout: "grid", sort: "name", order: "asc", tiles: "medium", compact: false }

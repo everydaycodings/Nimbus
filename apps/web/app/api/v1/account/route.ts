@@ -3,6 +3,7 @@ import { desc, eq } from "drizzle-orm"
 import { withMember } from "@/lib/api"
 import { db } from "@/lib/db"
 import { account, appPasswords, user } from "@/lib/db/schema"
+import { appUrl } from "@/lib/email"
 import { channelPrefs } from "@/lib/notify"
 import { prefKinds } from "@/lib/services/account"
 import { getSettings } from "@/lib/signup"
@@ -43,6 +44,8 @@ export const GET = () =>
       linkedProviders: linked.map((l) => l.providerId),
       hasPassword: linked.some((l) => l.providerId === "credential"),
       twoFactor: Boolean(me.twoFactorEnabled),
+      require2fa: settings.require2fa,
+      webdavUrl: process.env.WEBDAV_URL ?? `${appUrl()}/dav`,
       notificationPrefs: prefs.filter((p) => kinds.has(p.kind)),
       vaultLockMinutes: row?.lock ?? 15,
       // App passwords are for WebDAV; the section is hidden when it's off.

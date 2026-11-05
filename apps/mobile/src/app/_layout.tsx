@@ -1,10 +1,11 @@
 import { Geist_400Regular, Geist_500Medium, Geist_600SemiBold, useFonts } from "@expo-google-fonts/geist"
 import { GeistMono_400Regular } from "@expo-google-fonts/geist-mono"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { QueryClient, QueryClientProvider, focusManager } from "@tanstack/react-query"
 import { Stack } from "expo-router"
 import * as SplashScreen from "expo-splash-screen"
 import { StatusBar } from "expo-status-bar"
 import { useEffect } from "react"
+import { AppState } from "react-native"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 
 import { LockGate } from "@/components/lock"
@@ -16,6 +17,11 @@ import { c } from "@/lib/theme"
 SplashScreen.preventAutoHideAsync()
 const queries = new QueryClient({
   defaultOptions: { queries: { staleTime: 15_000, retry: 1 } },
+})
+// React Native has no window focus: polling stops in the background, and what's stale refreshes on return.
+focusManager.setEventListener((set) => {
+  const sub = AppState.addEventListener("change", (s) => set(s === "active"))
+  return () => sub.remove()
 })
 
 function Root() {

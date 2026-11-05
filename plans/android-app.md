@@ -23,8 +23,8 @@ API checks: `cd apps/web && node --env-file=.env.local scripts/api-check.ts` (ru
 | 1 | `/api/v1`, sign-in, gates, accounts, app lock | Mostly done, see below |
 | 2 | Files home and file actions | Built and checked on the emulator, see below. Waiting on the user's phone check |
 | 3 | Previews | Built and checked on the emulator, see below. Waiting on the user's phone check |
-| 4 | Sharing, search, notifications, versions, account settings | **Next** |
-| 5 | Uploader, share into Nimbus, camera backup | Not started |
+| 4 | Sharing, search, notifications, versions, account settings | Built and checked on the emulator, see below. Waiting on the user's phone check |
+| 5 | Uploader, share into Nimbus, camera backup | **Next** |
 | 6 | Offline, Android Files integration | Not started |
 | 7 | Vault | Not started |
 | 8 | Push, release APK, docs, finish review | Not started |
@@ -33,9 +33,9 @@ API checks: `cd apps/web && node --env-file=.env.local scripts/api-check.ts` (ru
 
 - Verified: 179 of 179 API checks; native password and TOTP sign-in over HTTP; QR sign-in flow with a
   simulated device (8 of 8); QR sign-in on a real phone in Expo Go, reported by the user.
-- Web checks: web typecheck, eslint, 47 unit tests, `next build` and 4 of 4 e2e tests passed before
-  QR sign-in was added. **Rerun the build and e2e**; they haven't run since.
-- Written but not tested on a device: gate screens, sign-up, app lock, brand icons.
+- Web checks rerun with Phase 4 (see there).
+- Written but not tested on a device: gate screens, sign-up, app lock, brand icons. The gate's password and two-factor
+  steps had a real bug, found in Phase 4: they didn't save the replaced session token. Fixed, but not run on a device.
 - Not tested: Google, GitHub and OIDC sign-in (needs real provider keys or a mock).
 - The installed APK predates the camera and crashes at launch on the current JS. The next native build must
   include it. Until then, test in Expo Go.
@@ -76,6 +76,41 @@ API checks: `cd apps/web && node --env-file=.env.local scripts/api-check.ts` (ru
 - The first launch in Expo Go after an emulator boot failed again (`globalThis.expo` undefined, also seen as the ExpoSQLite
   error above). A force-stop and relaunch fixes it. It looks specific to Expo Go; watch for it on the phone.
 - Dev data: `browser-test` has a "Preview test" folder with one file per type, shared with `newbie` as viewer.
+
+**Phase 4 detail (2026-11-05)**
+
+- Checks: 182 of 182 API checks, 22 mobile unit tests, 59 web unit tests, web and mobile typecheck, `next build`, 4 of 4 e2e.
+  Start the worker for e2e, and don't run `next dev` straight after `next build` without clearing `.next`: `/sign-in` reloaded in a loop.
+- Checked on the emulator in Expo Go, confirming results through the API:
+  - Sharing: add a member, change role, viewer sees no Share, reshare off shows "You can't share this", ownership offered and
+    accepted in the bell (old owner becomes editor).
+  - Links: New link opens Android's share menu; download switch, expiry presets and date picker, password (the link page then asks
+    for it), access log with "Chrome on Android", delete; Copy link creates then reuses, from ⋯ and the selection bar.
+  - Details avatars and link count. Previewer Share button.
+  - Versions from ⋯ and Storage: make current with Undo, keep forever, note, save as separate file.
+  - Search: recents per account, chip with no text, snippet, results as a list.
+  - Bell and Shared badge; opening clears them; a notification opens its folder and the app-password screen.
+  - Account: 2FA on, backup codes, new codes, off; password change. **The app stays signed in through each token change.** App
+    password create, shown once, revoke. Notification switches, vault lock, preset and gallery avatars with crop.
+  - Font scale 1.3, tablet width with the rail, connection loss with Try again.
+- Second emulator pass, on a throwaway account: temporary-password gate stays signed in; backup-code sign-in; Delete version and
+  Delete older; file-drop switches and upload limit; required link password and `maxLinkDays`; public links off; admin alert opens
+  the browser, admin row and admin-only settings show; app password over WebDAV (list, download, wrong password refused);
+  remove-animations; "can't send email" message on an email share.
+- That pass fixed two bugs: the link name and upload limit were lost on Back (now Save buttons and the keyboard's ✓), and Copy link
+  copied an existing link while public links were off.
+- The user tried it on a real phone and said the UI feels great. The full checklist hasn't been reported step by step.
+- Not run: an email invite actually being delivered, and the gate's two-factor step. Both need a server-wide setting (email, or
+  `require_2fa`) that would have disturbed the phone in use. With the keyboard up, the Save limit button sits under it; ✓ saves.
+- Provider connect and disconnect: built, unverified. Needs the next native build and a mock OIDC server, or real keys.
+- Departures from the plan, all smaller: the QR uses `uqr`, already used by the web, not `react-native-qrcode-svg`. A single shareable
+  selection swaps Star for Copy link in the bar, because five icons squeezed out the count; Star stays under ⋮. The access log loads the
+  server's maximum of 500 at once instead of paging. "How to connect" opens the web's per-OS guide rather than copying it. No password
+  strength meter: the policy shows as a hint and the server enforces it.
+- The server's Set-Cookie is how a password change returns its new token (`newToken` in `lib/api.ts`), and Expo's `fetch` takes
+  form parts with `bytes()`, not React Native's `{ uri }`. Phase 5 uploads should remember the second one.
+- The next native build also adds the date picker's config plugin and `expo-image-picker`.
+- Seen again: Expo Go's "Cannot find native module 'ExpoSQLite'", this time right after a forced screen size change.
 
 ## Working rules for this machine
 
@@ -147,9 +182,9 @@ Dev addresses, with `192.168.0.108` as this computer's address at the time of wr
 | Previews | All in-app, swipe between files, "Open with" as the escape. Answers in Claude's project memory (Phase 3 decisions) |
 | Files integration | Read and write; Vaults hidden |
 | Notifications | Self-hosted push through UnifiedPush/ntfy, polling fallback |
-| Sharing | Native Nimbus sheet, then Android's share menu for links |
-| Search | Full screen: recents, filter chips, server content search |
-| Account | All settings native: avatars, password, 2FA, app passwords, prefs, Vault lock |
+| Sharing | Native full-screen Share page with drill-downs, then Android's share menu for links. Answers in Claude's project memory (Phase 4 decisions) |
+| Search | Full screen: recents, filter chips that work with no text, server content search, results always a list |
+| Account | All settings native, as a hub with sub-pages: avatars, password, 2FA, app passwords, prefs, Vault lock |
 | API | Private `/api/v1` in `apps/web`, logic shared with web, with a version check |
 | Code sharing | `packages/shared`, with tests that lock Vault format compatibility |
 | Build | Local Android SDK and emulator; no EAS |
@@ -245,7 +280,7 @@ phase is scheduled, never dropped. Checked against the web's pages, `components/
 | Shortcuts: add and remove (the row in the ⋯ menu; the shared-folder flow comes with sharing) | 2 |
 | Tags: apply, create, tag page, rename, recolour, merge, delete with Undo | 2 |
 | Details, storage meter, storage report and its folder drill-down | 2 |
-| Search by name and contents | 2 (simple), 4 (recents, chips) |
+| Search by name and contents | 2 (simple), 4 (recents, chips). The palette's commands don't carry over: every destination is a tab or a row |
 | Multi-account: saved logins and the browser's switcher become native accounts | 2 |
 | Previewer: all types, zoom, swipe, older versions, Open with, Collabora view-only. Trash deliberately keeps Details, unlike the web (user, 2026-11-05) | 3 |
 | Download, zip download of several items, Reset thumbnail, video "Use this frame" | 3 |

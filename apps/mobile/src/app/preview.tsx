@@ -2,7 +2,7 @@ import type { Item, Version } from "@nimbus/shared/api"
 import { router, useFocusEffect } from "expo-router"
 import { StatusBar } from "expo-status-bar"
 import type { VideoPlayer } from "expo-video"
-import { DownloadSimple, DotsThreeVertical, X } from "phosphor-react-native"
+import { DownloadSimple, DotsThreeVertical, ShareNetwork, X } from "phosphor-react-native"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { BackHandler, FlatList, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native"
 import Animated, { useAnimatedStyle, useReducedMotion, withTiming } from "react-native-reanimated"
@@ -13,7 +13,7 @@ import { AudioPage, CollaboraView, ImagePage, NoPreview, VideoPage, WebPage, typ
 import { useSnack } from "@/components/snackbar"
 import { IconButton, Text } from "@/components/ui"
 import { errorText } from "@/lib/api"
-import { useApi, useDetails, useFileActions, type FileSheet } from "@/lib/files"
+import { shareable, useApi, useDetails, useFileActions, type FileSheet } from "@/lib/files"
 import { planFor } from "@/lib/preview-rules"
 import { previewSession } from "@/lib/preview-session"
 import { useTransfers } from "@/lib/transfers"
@@ -278,6 +278,9 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
             </Text>
           )}
         </View>
+        {!version && shareable(item, session.role) && (
+          <IconButton icon={ShareNetwork} label="Share" onPress={() => router.push({ pathname: "/share/[id]", params: { id: item.id, name: item.name } })} />
+        )}
         <IconButton icon={DownloadSimple} label="Download" onPress={() => download([item], version)} />
         <IconButton icon={DotsThreeVertical} label="More actions" onPress={() => setSheet({ kind: "actions", items: [item] })} />
       </Animated.View>

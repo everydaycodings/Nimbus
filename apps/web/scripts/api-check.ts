@@ -383,6 +383,10 @@ async function main() {
     await call(A, "PUT", `/items/${fileId}/content`, { versionId: cur.id, body: "zebra crossing unique-api-check-word", source: "text" })
     const full = await call(A, "GET", "/search?q=unique-api-check-word&type=doc")
     check("full search finds file text, with filters", full.body.items?.[0]?.id === fileId && full.body.items[0].snippet, full.body)
+    const browse = await call(A, "GET", "/search?type=doc&limit=1000")
+    check("a filter with no text lists matches", browse.body.items?.some((i: any) => i.id === fileId) && browse.body.items.every((i: any) => !i.snippet), browse.body)
+    check("...with where it is", typeof browse.body.items?.[0]?.where === "string", browse.body)
+    check("...and no filter and no text finds nothing", (await call(A, "GET", "/search")).body.items?.length === 0)
     check("search langs", typeof (await call(A, "GET", "/search/langs")).body.langs === "string")
   })
 

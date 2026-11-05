@@ -502,6 +502,10 @@ export type AccountResponse = {
   linkedProviders: string[]
   hasPassword: boolean
   twoFactor: boolean
+  /** The admin requires two-factor, so it can't be turned off. */
+  require2fa: boolean
+  /** The address app passwords sign in to. */
+  webdavUrl: string
   notificationPrefs: NotificationPref[]
   vaultLockMinutes: number
   appPasswordsEnabled: boolean

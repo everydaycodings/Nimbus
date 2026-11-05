@@ -7,9 +7,11 @@ import {
   ArrowCounterClockwise,
   ArrowLeft,
   ArrowUp,
+  Bell,
   CaretDown,
   CaretRight,
   DotsThreeVertical,
+  Link as LinkIcon,
   MagnifyingGlass,
   Plus,
   Rows,
@@ -49,8 +51,11 @@ import {
   editable,
   keepsServerOrder,
   label as itemsLabel,
+  shareable,
   useApi,
+  useCounts,
   useFileActions,
+  useLinks,
   useList,
   useMe,
   useRestart,
@@ -148,13 +153,28 @@ function emptyCopy(source: Source): [string, string?] {
   }
 }
 
-export function Browser({ source: given, top, name }: { source: Source; top?: ReactNode; name?: string }) {
+export function Browser({
+  source: given,
+  top,
+  name,
+  idle,
+  onOpened,
+}: {
+  source: Source
+  top?: ReactNode
+  name?: string
+  // Search, before there's any text or filter.
+  idle?: (setFilters: (f: Filters) => void) => ReactNode
+  onOpened?: () => void
+}) {
   const api = useApi()
   const me = useMe()
+  const counts = useCounts()
   const inset = useSafeAreaInsets()
   const tab = useTab()
   const restart = useRestart()
   const actions = useFileActions()
+  const links = useLinks()
   const snack = useSnack()
   const { width: screen } = useWindowDimensions()
   const [prefs, setPrefs] = usePrefs(api.id)
@@ -204,6 +224,14 @@ export function Browser({ source: given, top, name }: { source: Source; top?: Re
   }, [filters, clearSelection])
   // Leaving the screen drops the selection.
   useFocusEffect(useCallback(() => clearSelection, [clearSelection]))
+  // Looking at Shared with me clears its badge, as on the web.
+  const unseen = given.kind === "shared" && !by ? (counts.data?.shared ?? 0) : 0
+  useFocusEffect(
+    useCallback(() => {
+      if (unseen) api.post("/notifications/shared-seen").then(() => counts.refetch(), () => {})
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- counts is rebuilt each render
+    }, [unseen, api])
+  )
 
   // ---- Taps ----
   // The name rides along so the title shows while the folder loads or fails.
@@ -215,7 +243,10 @@ export function Browser({ source: given, top, name }: { source: Source; top?: Re
         if (!next.delete(item.id)) next.add(item.id)
         return next
       })
-    } else if (item.kind === "folder" && !isTrash) open(item)
+      return
+    }
+    onOpened?.()
+    if (item.kind === "folder" && !isTrash) open(item)
     else if (isTrash) setSheet({ kind: "details", item })
     else {
       const files = items.filter((i) => i.kind === "file")
@@ -330,6 +361,7 @@ export function Browser({ source: given, top, name }: { source: Source; top?: Re
         )
       return <Centered title={failure.message} action={<Button variant="outlined" label="Try again" busy={list.isFetching} onPress={() => list.refetch()} />} />
     }
+    if (isSearch && idle && !source.q && !filtered) return idle(setFilters)
     if (filtered)
       return <Centered title="Nothing matches these filters." action={<Button variant="outlined" label="Clear filters" onPress={() => setFilters({})} />} />
     const [title, body] = emptyCopy(source)
@@ -418,14 +450,26 @@ export function Browser({ source: given, top, name }: { source: Source; top?: Re
           </>
         ) : (
           <>
-            <IconButton
-              icon={Star}
-              label={selected.every((i) => i.starred) ? "Remove from starred" : "Add to starred"}
-              onPress={() => {
-                actions.star(selected)
-                clearSelection()
-              }}
-            />
+            {/* One shareable item swaps Star (still under ⋮) for Copy link, so the count keeps its room. */}
+            {selected.length === 1 && shareable(selected[0], role) ? (
+              <IconButton
+                icon={LinkIcon}
+                label="Copy link"
+                onPress={() => {
+                  links.copyFor(selected[0])
+                  clearSelection()
+                }}
+              />
+            ) : (
+              <IconButton
+                icon={Star}
+                label={selected.every((i) => i.starred) ? "Remove from starred" : "Add to starred"}
+                onPress={() => {
+                  actions.star(selected)
+                  clearSelection()
+                }}
+              />
+            )}
             {editable(selected, role) && (
               <>
                 <IconButton icon={ArrowBendUpRight} label="Move" onPress={() => setSheet({ kind: "move", items: selected })} />
@@ -516,6 +560,18 @@ export function Browser({ source: given, top, name }: { source: Source; top?: Re
             <Text color={c.mutedForeground} numberOfLines={1}>
               Search in Nimbus
             </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => router.push("/notifications")}
+            android_ripple={{ color: c.ripple, borderless: true, radius: 24 }}
+            accessibilityRole="button"
+            accessibilityLabel={counts.data?.unread ? `Notifications, ${counts.data.unread} unread` : "Notifications"}
+            style={{ width: 48, height: 48, alignItems: "center", justifyContent: "center" }}
+          >
+            <Bell size={22} color={c.mutedForeground} />
+            {!!counts.data?.unread && (
+              <View style={{ position: "absolute", top: 12, right: 12, width: 8, height: 8, borderRadius: 4, backgroundColor: c.brand, borderWidth: 1, borderColor: c.card }} />
+            )}
           </Pressable>
           <Pressable
             onPress={() => setAccount(true)}

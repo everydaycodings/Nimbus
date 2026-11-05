@@ -1,14 +1,19 @@
 import type {
+  AccountResponse,
+  CreateLinkResponse,
   Details,
   FolderResponse,
   Hit,
+  Instance,
   Item,
+  LinkInfo,
   ListQuery,
   ListResponse,
   Me,
   PickerResponse,
   PreviewResponse,
   Role,
+  ShareState,
   StorageReport,
   Tag,
   TagColor,
@@ -17,14 +22,18 @@ import type {
   TagsResponse,
   TrashResponse,
   UpdateTagResponse,
+  VersionsResponse,
 } from "@nimbus/shared/api"
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query"
+import * as Clipboard from "expo-clipboard"
 import { router } from "expo-router"
 import { useCallback, useMemo } from "react"
+import { Share } from "react-native"
 
 import { useSnack } from "@/components/snackbar"
 import { useAccounts } from "./accounts"
-import { errorText, json, send } from "./api"
+import { ApiError, errorText, json, newToken, send } from "./api"
+import { linkUrl, pickLink } from "./share"
 import { firstFrameToWebp } from "./thumbs"
 
 // ---- Calling the API as the active account ----
@@ -105,7 +114,8 @@ export function useList(source: Source, query: ListQuery) {
   }
   const list = useInfiniteQuery({
     queryKey: [api.id, "list", pathOf(source), extra, query],
-    enabled: source.kind !== "search" || !!source.q,
+    // Search asks once there's text or a filter.
+    enabled: source.kind !== "search" || !!(source.q || query.type || query.modified || query.size || query.tag),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last: ListPage) => last.nextCursor ?? undefined,
     queryFn: ({ pageParam }) =>
@@ -140,6 +150,49 @@ export function useTags() {
   })
 }
 
+// The bell and the Shared badge. React Query pauses the interval while the app is
+// in the background (focusManager in app/_layout.tsx).
+export function useCounts() {
+  const api = useApi()
+  return useQuery({
+    queryKey: [api.id, "counts"],
+    enabled: !!api.account,
+    refetchInterval: 60_000,
+    queryFn: () =>
+      json<{ unread: number; shared: number }>(api.account.server, "/api/notifications", { token: api.account.token }),
+  })
+}
+
+export const useShareState = (id: string, enabled = true) => {
+  const api = useApi()
+  return useQuery({
+    queryKey: [api.id, "shares", id],
+    enabled,
+    retry: false,
+    queryFn: () => api.get<ShareState>(`/items/${id}/shares`),
+  })
+}
+
+export function useAccountData() {
+  const api = useApi()
+  return useQuery({ queryKey: [api.id, "account"], queryFn: () => api.get<AccountResponse>("/account") })
+}
+
+export function useInstance() {
+  const api = useApi()
+  return useQuery({ queryKey: [api.id, "instance"], queryFn: () => api.get<Instance>("/instance") })
+}
+
+export function useVersions(id: string, enabled = true) {
+  const api = useApi()
+  return useQuery({
+    queryKey: [api.id, "versions", id],
+    enabled,
+    queryFn: () => api.get<VersionsResponse>(`/items/${id}/versions`),
+    select: (d) => d.versions,
+  })
+}
+
 export function useStorage(folder: string | null) {
   const api = useApi()
   return useQuery({
@@ -165,6 +218,8 @@ export type FileSheet =
 export const roleOf = (item: Item, context: Role = "owner"): Role => item.role ?? context
 export const editable = (items: Item[], context?: Role) =>
   items.length > 0 && items.every((i) => roleOf(i, context) !== "viewer" && !i.shortcut)
+// The server has the last word: an owner can turn sharing off for editors.
+export const shareable = (item: Item, context?: Role) => !item.shortcut && roleOf(item, context) !== "viewer"
 
 export const label = (items: Pick<Item, "name">[]) =>
   items.length === 1 ? `“${items[0].name}”` : `${items.length} items`
@@ -326,6 +381,78 @@ export function useFileActions() {
       },
     }
   }, [api, attempt, refresh, run, snack])
+}
+
+// ---- Links ----
+
+export function useLinks() {
+  const api = useApi()
+  const actions = useFileActions()
+  const snack = useSnack()
+
+  return useMemo(() => {
+    const url = (link: LinkInfo) => linkUrl(api.account.server, link)
+    const state = (id: string) => api.get<ShareState>(`/items/${id}/shares`)
+    // Answers only the id, and the URL's token is in the share state.
+    const create = async (id: string, password?: string) => {
+      const made = await api.post<CreateLinkResponse>(`/items/${id}/links`, { password })
+      const link = (await state(id)).links.find((l) => l.id === made.id)
+      if (!link) throw new Error("The link was made, but it couldn't be loaded. Try again.")
+      actions.refresh()
+      return link
+    }
+    return {
+      url,
+      create,
+      copy: async (link: LinkInfo) => {
+        await Clipboard.setStringAsync(url(link))
+        snack({ text: `Copied “${link.name}”.` })
+      },
+      sendTo: (link: LinkInfo) => Share.share({ message: url(link) }).catch(() => {}),
+      // ⋯ → Copy link. A server that insists on a password sends you to the Share screen to give one.
+      copyFor: async (item: Item) => {
+        try {
+          const s = await state(item.id)
+          // Checked first: with links off, an existing one wouldn't open.
+          if (!s.publicLinks) return snack({ text: "Your admin turned public links off.", error: true })
+          const have = pickLink(s.links)
+          if (have) {
+            await Clipboard.setStringAsync(url(have))
+            return snack({ text: `Copied “${have.name}”.` })
+          }
+          if (s.requireLinkPassword) return router.push({ pathname: "/share/[id]", params: { id: item.id, newLink: "1" } })
+          const made = await create(item.id)
+          await Clipboard.setStringAsync(url(made))
+          snack({ text: `Made a new link and copied it.` })
+        } catch (e) {
+          snack({ text: errorText(e), error: true })
+        }
+      },
+    }
+  }, [api, actions, snack])
+}
+
+// ---- Better Auth's own endpoints, for account changes ----
+
+// Saves any session token the answer brings, so the next call already uses it.
+// `add` replaces this account's entry, and refreshes its name and picture too.
+export function useAuthCall() {
+  const { active, add } = useAccounts()
+  return useCallback(
+    async <T = Record<string, unknown>,>(path: string, body: unknown = {}, method = "POST") => {
+      const r = await send(active!.server, path, {
+        method,
+        token: active!.token,
+        body: method === "GET" ? undefined : JSON.stringify(body),
+      })
+      const data = await r.json().catch(() => null)
+      if (!r.ok) throw new ApiError(r.status, data?.code ?? data?.error ?? "error", data?.message ?? "Something went wrong. Try again.")
+      const token = newToken(r)
+      if (token && token !== active!.token) await add(active!.server, token)
+      return data as T
+    },
+    [active, add]
+  )
 }
 
 // After a 401 or a gate: forget what's known about this account, and let the

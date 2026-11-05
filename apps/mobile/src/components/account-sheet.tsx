@@ -1,5 +1,5 @@
 import { router } from "expo-router"
-import { Plus, SignOut } from "phosphor-react-native"
+import { GearSix, Plus, SignOut } from "phosphor-react-native"
 import { useState } from "react"
 import { View } from "react-native"
 
@@ -56,6 +56,7 @@ export function AccountSheet({ onClose }: { onClose: () => void }) {
             />
           ))}
           <SheetDivider />
+          <SheetRow label="Account settings" icon={<GearSix size={24} color={c.foreground} />} onPress={() => router.push("/account")} />
           <SheetRow label="Add account" icon={<Plus size={24} color={c.foreground} />} onPress={() => router.push("/connect")} />
           <SheetRow
             label="Sign out"

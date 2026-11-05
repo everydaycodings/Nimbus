@@ -1,10 +1,11 @@
 import { router, useFocusEffect } from "expo-router"
 import { formatBytes } from "@nimbus/shared/file-rules"
-import { ArrowSquareOut, Broom, CaretRight, FolderOpen, Tag, Trash } from "phosphor-react-native"
-import { useCallback, useState, type ReactNode } from "react"
+import { ArrowSquareOut, Broom, CaretRight, FolderOpen, GearSix, Tag, Trash } from "phosphor-react-native"
+import { useCallback, useState } from "react"
 import { ActivityIndicator, Linking, Pressable, ScrollView, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
+import { Group, Row } from "@/components/page"
 import { StorageMeter } from "@/components/storage-meter"
 import { Button, Text } from "@/components/ui"
 import { useSnack } from "@/components/snackbar"
@@ -13,23 +14,6 @@ import { useApi, useMe } from "@/lib/files"
 import { usePrefs } from "@/lib/prefs"
 import { useTransfers } from "@/lib/transfers"
 import { c, radius } from "@/lib/theme"
-
-function Row({ label, icon, trailing, onPress }: { label: string; icon?: ReactNode; trailing: ReactNode; onPress: () => void }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      android_ripple={{ color: c.ripple }}
-      onPress={onPress}
-      style={{ minHeight: 56, flexDirection: "row", alignItems: "center", gap: 16, paddingHorizontal: 16, paddingVertical: 8 }}
-    >
-      {icon}
-      <Text style={{ flex: 1 }}>{label}</Text>
-      {trailing}
-    </Pressable>
-  )
-}
-
-const Hairline = () => <View style={{ height: 1, backgroundColor: c.border }} />
 
 export default function More() {
   const inset = useSafeAreaInsets()
@@ -69,19 +53,18 @@ export default function More() {
             </Pressable>
         )
       )}
-          <View style={{ borderWidth: 1, borderColor: c.border, borderRadius: radius.card, overflow: "hidden" }}>
+          <Group>
             <Row label="Trash" icon={<Trash size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/trash")} />
-            <Hairline />
             <Row label="Tags" icon={<Tag size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/tags")} />
-          </View>
-          <View style={{ borderWidth: 1, borderColor: c.border, borderRadius: radius.card, overflow: "hidden" }}>
+            <Row label="Account settings" icon={<GearSix size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/account")} />
+          </Group>
+          <Group>
             <Row
               label={prefs.downloadDir ? "Change download folder" : "Choose download folder"}
               icon={<FolderOpen size={24} color={c.mutedForeground} />}
               trailing={caret}
               onPress={() => chooseFolder()}
             />
-            <Hairline />
             <Row
               label="Clear cache"
               icon={<Broom size={24} color={c.mutedForeground} />}
@@ -96,16 +79,16 @@ export default function More() {
                 snack({ text: "Cleared recently opened files from this phone." })
               }}
             />
-          </View>
+          </Group>
           {/* Only admins are told it exists; members never see this row. */}
           {me.data?.canAdmin && (
-            <View style={{ borderWidth: 1, borderColor: c.border, borderRadius: radius.card, overflow: "hidden" }}>
+            <Group>
               <Row
                 label="Open admin on web"
                 trailing={<ArrowSquareOut size={20} color={c.mutedForeground} />}
                 onPress={() => Linking.openURL(`${account.server}/admin`)}
               />
-            </View>
+            </Group>
           )}
     </ScrollView>
   )

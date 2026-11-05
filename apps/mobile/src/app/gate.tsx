@@ -7,6 +7,7 @@ import { Linking, View } from "react-native"
 import { Button, ErrorText, Field, FormScreen, Spinner, Text } from "@/components/ui"
 import { useAccounts } from "@/lib/accounts"
 import { errorText, json, type Account, type Me } from "@/lib/api"
+import { useAuthCall } from "@/lib/files"
 import { c } from "@/lib/theme"
 
 const useMe = (a: Account | null) =>
@@ -29,6 +30,7 @@ function TemporaryPassword({ account, refetch }: { account: Account; refetch: ()
   const [next, setNext] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const auth = useAuthCall()
   return (
     <>
       <Text color={c.mutedForeground}>An admin set a temporary password for {account.email}. Replace it with one only you know to continue.</Text>
@@ -38,7 +40,7 @@ function TemporaryPassword({ account, refetch }: { account: Account; refetch: ()
       </View>
       <Button label="Save password" busy={busy} disabled={!current || !next} onPress={async () => {
         setBusy(true); setError(null)
-        try { await post(account, "/api/v1/account/password", { current, next }); refetch() }
+        try { await auth("/api/v1/account/password", { current, next }); refetch() }
         catch (e) { setError(errorText(e)) } finally { setBusy(false) }
       }} />
     </>
@@ -47,7 +49,8 @@ function TemporaryPassword({ account, refetch }: { account: Account; refetch: ()
 
 // A QR code is no use on the phone that holds the authenticator, so this hands
 // the secret straight to the app, with the key to copy as the fallback.
-function TwoFactorSetup({ account, refetch }: { account: Account; refetch: () => void }) {
+function TwoFactorSetup({ refetch }: { refetch: () => void }) {
+  const auth = useAuthCall()
   const [password, setPassword] = useState("")
   const [uri, setUri] = useState<string | null>(null)
   const [codes, setCodes] = useState<string[]>([])
@@ -63,7 +66,7 @@ function TwoFactorSetup({ account, refetch }: { account: Account; refetch: () =>
       <>
         <Field label="Your password" value={password} onChangeText={setPassword} secret autoComplete="current-password" error={error} />
         <Button label="Continue" busy={busy} disabled={!password} onPress={() => run(async () => {
-          const r = await post<{ totpURI: string; backupCodes: string[] }>(account, "/api/auth/two-factor/enable", { password })
+          const r = await auth<{ totpURI: string; backupCodes: string[] }>("/api/auth/two-factor/enable", { password })
           setUri(r.totpURI); setCodes(r.backupCodes)
         })} />
       </>
@@ -85,7 +88,7 @@ function TwoFactorSetup({ account, refetch }: { account: Account; refetch: () =>
       </View>
       <Field label="6-digit code" value={code} onChangeText={setCode} keyboardType="number-pad" autoComplete="one-time-code" maxLength={6} error={error} />
       <Button label="Turn on two-factor" busy={busy} disabled={code.length !== 6} onPress={() => run(async () => {
-        await post(account, "/api/auth/two-factor/verify-totp", { code })
+        await auth("/api/auth/two-factor/verify-totp", { code })
         refetch()
       })} />
     </>
@@ -117,7 +120,7 @@ export default function Gate() {
       {gate === "two-factor" && (
         <>
           <Text color={c.mutedForeground}>Your admin requires two-factor on this Nimbus. After your password, you'll also enter a code from an authenticator app.</Text>
-          <TwoFactorSetup account={active} refetch={refetch} />
+          <TwoFactorSetup refetch={refetch} />
         </>
       )}
       {gate === "confirm-email" && (

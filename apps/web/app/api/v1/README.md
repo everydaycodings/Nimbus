@@ -53,7 +53,7 @@ server's order (`rank`); trash is newest-trashed first. Date/size default to des
 
 Paging is by offset: pass `nextCursor` back as `cursor` until it is `null`. The
 underlying queries return whole lists, so the server filters, sorts and slices
-in memory (fine for thousands of items per list). Recent is capped at 50, search at 50.
+in memory (fine for thousands of items per list). Recent is capped at 50, search with text at 50.
 An item's `role` is set when it isn't mine (`editor`|`viewer`); viewers can't change it.
 
 ## Routes
@@ -73,7 +73,7 @@ nothing to return answers `200 {}`.
 | GET | `/shared` | `?by=me` for shared-by-me, `ListQuery` | `ListResponse` |
 | GET | `/trash` | `ListQuery` | `TrashResponse` (adds `retentionDays`) |
 | GET | `/tags/{tagId}` | `ListQuery` | `TagResponse` (items with that tag) |
-| GET | `/search` | `?q=`, `ListQuery` | `SearchResponse` (`Hit`: adds `where`, `byName`, `snippet`) |
+| GET | `/search` | `?q=`, `ListQuery`. With a filter and no `q`: everything I can see that matches, newest first | `SearchResponse` (`Hit`: adds `where`, `byName`, `snippet`) |
 | GET | `/search?q=&quick=1` | | `QuickSearchResponse` (12 hits) |
 | GET | `/search/langs` | | `OcrLangsResponse` |
 | PUT | `/items/{id}/content` | `SaveContentRequest` (search text the app extracted) | `{}` |

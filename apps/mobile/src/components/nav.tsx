@@ -5,6 +5,7 @@ import { Pressable, useWindowDimensions, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { Text } from "@/components/ui"
+import { useCounts } from "@/lib/files"
 import { c, radius } from "@/lib/theme"
 
 type BarProps = Parameters<NonNullable<ComponentProps<typeof Tabs>["tabBar"]>>[0]
@@ -25,6 +26,7 @@ export function NavBar({ state, emitter, navigateToTab }: BarProps) {
   const inset = useSafeAreaInsets()
   const { width } = useWindowDimensions()
   const wide = isWide(width)
+  const counts = useCounts()
   return (
     <View
       accessibilityRole="tablist"
@@ -52,6 +54,8 @@ export function NavBar({ state, emitter, navigateToTab }: BarProps) {
         const tab = TABS[route.name]
         if (!tab) return null
         const focused = state.index === i
+        // New shares; the Shared tab clears them when it's looked at.
+        const badge = route.name === "(shared)" && !focused ? (counts.data?.shared ?? 0) : 0
         const press = () => {
           const event = emitter.emit({ type: "tabPress", target: route.key, canPreventDefault: true })
           if (!focused && !event.defaultPrevented) navigateToTab(route.key)
@@ -61,7 +65,7 @@ export function NavBar({ state, emitter, navigateToTab }: BarProps) {
             key={route.key}
             accessibilityRole="tab"
             accessibilityState={{ selected: focused }}
-            accessibilityLabel={tab.label}
+            accessibilityLabel={badge ? `${tab.label}, ${badge} new` : tab.label}
             onPress={press}
             android_ripple={{ color: c.ripple }}
             style={{ flex: wide ? 0 : 1, minHeight: 72, alignItems: "center", justifyContent: "center", gap: 4, paddingVertical: 8 }}
@@ -77,6 +81,13 @@ export function NavBar({ state, emitter, navigateToTab }: BarProps) {
               }}
             >
               <tab.icon size={22} color={focused ? c.foreground : c.mutedForeground} weight={focused ? "fill" : "regular"} />
+              {badge > 0 && (
+                <View style={{ position: "absolute", top: -2, right: 6, minWidth: 18, height: 18, paddingHorizontal: 4, borderRadius: 9, alignItems: "center", justifyContent: "center", backgroundColor: c.brand }}>
+                  <Text variant="caption" color={c.primaryForeground} allowFontScaling={false} style={{ fontSize: 11, lineHeight: 14, fontVariant: ["tabular-nums"] }}>
+                    {badge}
+                  </Text>
+                </View>
+              )}
             </View>
             <Text variant="caption" color={focused ? c.foreground : c.mutedForeground} numberOfLines={1}>
               {tab.label}

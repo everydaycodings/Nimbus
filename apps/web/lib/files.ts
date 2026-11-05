@@ -281,6 +281,51 @@ export type Hit = Item & {
   snippet: string | null
 }
 
+// Everything the viewer can see, newest first, for search's filters with no text.
+// The list route filters and pages it in memory, like its other lists.
+export async function browseItems(viewer: string): Promise<Hit[]> {
+  const found = await db.execute<{ id: string; where: string | null }>(sql`
+    with recursive shared as (
+      select n.id from nodes n
+      join shares s on s.node_id = n.id and s.grantee_id = ${viewer}
+      where n.trashed_at is null and n.vault_id is null
+      union
+      select c.id from nodes c join shared on c.parent_id = shared.id
+      where c.trashed_at is null
+    )
+    select n.id,
+      case
+        when n.owner_id = ${viewer} then coalesce(p.name, 'My files')
+        when exists (select 1 from shares
+          where node_id = n.id and grantee_id = ${viewer}) then 'Shared with me'
+        else p.name
+      end as where
+    from nodes n
+    left join nodes p on p.id = n.parent_id
+    where n.trashed_at is null and n.vault_id is null and n.name !~* ${JUNK}
+      and (n.owner_id = ${viewer} or n.id in (select id from shared))
+    order by n.updated_at desc`)
+  if (!found.length) return []
+  const order = new Map(found.map((f, i) => [f.id, { where: f.where, i }]))
+  const rows = await db
+    .select(cols(viewer))
+    .from(nodes)
+    .where(
+      inArray(
+        nodes.id,
+        found.map((f) => f.id)
+      )
+    )
+  return (await withAccess(viewer, rows))
+    .sort((a, b) => order.get(a.id)!.i - order.get(b.id)!.i)
+    .map((item) => ({
+      ...item,
+      where: order.get(item.id)!.where ?? "",
+      byName: true,
+      snippet: null,
+    }))
+}
+
 // Names (substring or close spelling) and file text, across the viewer's own
 // files and everything shared with them. Trash and vaults stay out.
 // ponytail: word_similarity scans every visible name; switch to the %> operator

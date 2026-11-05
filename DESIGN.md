@@ -162,12 +162,19 @@ hex in `src/lib/theme.ts`; components are in `src/components`.
 - **Top of the file screens:** a 56dp full-pill search with the avatar in its right end, or a back bar in folders.
   A breadcrumb of ancestors sits below the bar. Chips and the sort row scroll with the content.
 - **Selection:** long-press with one light haptic. A 64dp bar replaces the search pill, with count, Star, Move, Trash
-  and ⋮, and the trash icon in `--destructive`. System Back clears it first.
+  and ⋮, and the trash icon in `--destructive`. One shareable item swaps Star for Copy link, so the count keeps its
+  room. System Back clears it first.
+- **Bell and badge:** the bell sits in the pill beside the avatar, with an 8dp teal dot when anything is unread. New
+  shares show as a teal count on the Shared tab.
+- **Pushed pages (`page.tsx`):** Share, Versions, Notifications and Account use one shape: a back bar with an optional
+  caption naming the file, titled sections, outlined groups with hairline rows. Settings save as you change them.
+  Account is a hub of rows opening one page each, and Share drills down from a link to its settings to its activity.
 - **Tiles:** outlined, 12dp radius, three sizes and Compact. Folder tiles put star, sharing, tag dots and owner on
   their own line under the name; file cards put them on line 2 beside date and size, and never on the thumbnail.
 - **Overlays:** bottom sheets (`sheet.tsx`) for actions, filters, sort, tags, details, move and accounts, dragged by
   the handle and header only, so lists inside scroll freely. A row closes its sheet before opening what's next, so
-  sheets never stack. Dialogs (`dialog.tsx`) only for text entry and for deleting forever.
+  sheets never stack. Dialogs (`dialog.tsx`) for text entry, show-once secrets, and anything that can't be undone:
+  deleting forever, deleting a link or version, revoking an app password.
 - **Feedback:** one snackbar slot, above the FAB, for every action's result; trash adds Undo. It takes the place of
   the web's toasts.
 - **Ownership:** the account sheet always names the server. A plain-http server shows "Not encrypted" in `--warning`,

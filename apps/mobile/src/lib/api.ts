@@ -38,7 +38,8 @@ export async function send(
   const { token, ...rest } = init
   const headers = new Headers(rest.headers)
   headers.set("origin", "nimbus://")
-  if (rest.body && !headers.has("content-type"))
+  // A form's boundary is set by fetch.
+  if (rest.body && !(rest.body instanceof FormData) && !headers.has("content-type"))
     headers.set("content-type", "application/json")
   if (token) headers.set("authorization", `Bearer ${token}`)
   try {
@@ -115,6 +116,11 @@ export function tokenFromCookies(cookies: string) {
   const m = /(?:^|[;,]\s*)(?:__Secure-)?[\w.-]*session_token=([^;,\s]+)/.exec(cookies)
   return m ? decodeURIComponent(m[1]) : null
 }
+
+// A password or two-factor change replaces the session. The new token comes as
+// Better Auth's header, or as the session cookie from a route of ours.
+export const newToken = (r: Response) =>
+  r.headers.get("set-auth-token") ?? tokenFromCookies(cookiesFrom(r.headers.get("set-cookie")))
 
 // Password rejected, code wrong and so on: Better Auth's own messages read fine.
 export const errorText = (e: unknown) =>

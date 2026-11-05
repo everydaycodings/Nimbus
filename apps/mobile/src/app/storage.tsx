@@ -159,7 +159,7 @@ export default function Storage() {
                       key={f.id}
                       row={f}
                       detail={`${plural(f.versions ?? 0, "older version")}${f.keep ? `, ${f.keep} kept forever` : ""} · ${where(f)}`}
-                      onPress={() => open(f)}
+                      onPress={() => router.push({ pathname: "/versions/[id]", params: { id: f.id, name: f.name } })}
                     >
                       <Pressable
                         accessibilityRole="button"

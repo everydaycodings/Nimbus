@@ -10,6 +10,7 @@ test("make a public link that opens without an account", async ({
   const folder = unique("link")
   await newFolder(page, folder)
   await row(page, folder).dblclick()
+  await page.waitForURL(/\/folders\//)
   await upload(page, "public.txt", "anyone can read this")
 
   await menu(page, "public.txt", "Share…")

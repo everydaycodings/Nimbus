@@ -10,6 +10,7 @@ test("share a folder with a member, who can open it", async ({
   const folder = unique("share")
   await newFolder(page, folder)
   await row(page, folder).dblclick()
+  await page.waitForURL(/\/folders\//)
   await upload(page, "notes.txt", "shared notes")
   await page.goto("/")
 
