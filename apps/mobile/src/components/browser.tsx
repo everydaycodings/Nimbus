@@ -39,6 +39,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { AccountSheet } from "@/components/account-sheet"
 import { Avatar, serverName } from "@/components/avatar"
+import { BackupRing, useBackupLabel } from "@/components/backup-ring"
 import { ConfirmDialog } from "@/components/dialog"
 import { FILTER_LABELS, FileSheets } from "@/components/file-sheets"
 import { isWide } from "@/components/nav"
@@ -170,6 +171,7 @@ export function Browser({
   const api = useApi()
   const me = useMe()
   const counts = useCounts()
+  const backupLabel = useBackupLabel(api.account.id)
   const inset = useSafeAreaInsets()
   const tab = useTab()
   const restart = useRestart()
@@ -577,10 +579,12 @@ export function Browser({
             onPress={() => setAccount(true)}
             android_ripple={{ color: c.ripple, borderless: true, radius: 24 }}
             accessibilityRole="button"
-            accessibilityLabel={`Account, ${name}, ${serverName(api.account.server)}`}
+            accessibilityLabel={`Account, ${name}, ${serverName(api.account.server)}${backupLabel}`}
             style={{ width: 48, height: 48, marginRight: 4, alignItems: "center", justifyContent: "center" }}
           >
-            <Avatar account={api.account} name={name} image={me.data ? me.data.image : api.account.image} size={32} />
+            <BackupRing accountId={api.account.id}>
+              <Avatar account={api.account} name={name} image={me.data ? me.data.image : api.account.image} size={32} />
+            </BackupRing>
           </Pressable>
         </View>
         {given.kind === "shared" && (

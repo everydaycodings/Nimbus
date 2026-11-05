@@ -13,6 +13,8 @@ export type Prefs = {
   downloadDir?: string
   // Newest first, on this phone only.
   recentSearches?: string[]
+  // Where Share into Nimbus last saved; null id is My files.
+  saveTo?: { id: string | null; name: string }
 }
 
 const DEFAULTS: Prefs = { layout: "grid", sort: "name", order: "asc", tiles: "medium", compact: false }

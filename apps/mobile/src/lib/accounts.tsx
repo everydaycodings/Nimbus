@@ -3,6 +3,9 @@ import * as SecureStore from "expo-secure-store"
 import { createContext, use, useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 
 import { json, send, type Account, type Me } from "./api"
+import { backupAvailable, readSettings, saveSettings } from "./backup"
+import { native } from "./native"
+import { engine } from "./uploads"
 
 const KEY = "accounts.v1"
 type Saved = { accounts: Account[]; activeId: string | null }
@@ -17,18 +20,27 @@ type Ctx = Saved & {
 
 const Accounts = createContext<Ctx | null>(null)
 
+// Kotlin's uploader and backup call the server while the app is closed, so they keep their own copy.
+const mirror = (s: Saved) => native?.setAccounts(JSON.stringify(s.accounts.map(({ id, server, token }) => ({ id, server, token }))))
+
 export function AccountsProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<Saved>({ accounts: [], activeId: null })
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
     SecureStore.getItemAsync(KEY)
-      .then((s) => s && setState(JSON.parse(s)))
+      .then((s) => {
+        if (!s) return
+        const saved: Saved = JSON.parse(s)
+        setState(saved)
+        mirror(saved)
+      })
       .finally(() => setReady(true))
   }, [])
 
   const save = useCallback(async (next: Saved) => {
     setState(next)
+    mirror(next)
     await SecureStore.setItemAsync(KEY, JSON.stringify(next))
   }, [])
 
@@ -69,6 +81,9 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
           body: "{}",
         }).catch(() => {})
       clearCache(id)
+      engine.cancelAccount(id)
+      // Backup can't carry on into an account that's gone; More says so on the backup screen.
+      if (backupAvailable && readSettings().accountId === id) saveSettings({ enabled: false, accountId: null })
       const accounts = state.accounts.filter((a) => a.id !== id)
       await save({
         accounts,

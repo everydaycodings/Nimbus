@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from "expo-router"
 import { formatBytes } from "@nimbus/shared/file-rules"
-import { ArrowSquareOut, Broom, CaretRight, FolderOpen, GearSix, Tag, Trash } from "phosphor-react-native"
+import { ArrowSquareOut, Broom, CaretRight, CloudArrowUp, FolderOpen, GearSix, Tag, Trash, UploadSimple } from "phosphor-react-native"
 import { useCallback, useState } from "react"
 import { ActivityIndicator, Linking, Pressable, ScrollView, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
@@ -10,6 +10,8 @@ import { StorageMeter } from "@/components/storage-meter"
 import { Button, Text } from "@/components/ui"
 import { useSnack } from "@/components/snackbar"
 import { cacheSize, clearCache } from "@/lib/file-cache"
+import { backupAvailable, useBackup } from "@/lib/backup"
+import { describe } from "@/lib/backup-rules"
 import { useApi, useMe } from "@/lib/files"
 import { usePrefs } from "@/lib/prefs"
 import { useTransfers } from "@/lib/transfers"
@@ -23,6 +25,7 @@ export default function More() {
   const [prefs] = usePrefs(id)
   const { chooseFolder } = useTransfers()
   const [cached, setCached] = useState(0)
+  const backup = useBackup()
   useFocusEffect(useCallback(() => setCached(cacheSize(id)), [id]))
   const caret = <CaretRight size={16} color={c.mutedForeground} />
 
@@ -54,6 +57,8 @@ export default function More() {
         )
       )}
           <Group>
+            {backupAvailable && <Row label="Camera backup" detail={backup.settings.enabled ? describe(backup.status).title : "Off"} icon={<CloudArrowUp size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/backup")} />}
+            <Row label="Uploads" icon={<UploadSimple size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/uploads")} />
             <Row label="Trash" icon={<Trash size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/trash")} />
             <Row label="Tags" icon={<Tag size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/tags")} />
             <Row label="Account settings" icon={<GearSix size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/account")} />

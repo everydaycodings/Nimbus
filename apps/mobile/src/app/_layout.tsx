@@ -10,8 +10,10 @@ import { GestureHandlerRootView } from "react-native-gesture-handler"
 
 import { LockGate } from "@/components/lock"
 import { SnackbarProvider } from "@/components/snackbar"
+import { UploaderProvider } from "@/components/uploader"
 import { TransferBar } from "@/lib/transfers"
 import { AccountsProvider, useAccounts } from "@/lib/accounts"
+import { useShareIntake } from "@/lib/share-in"
 import { c } from "@/lib/theme"
 
 SplashScreen.preventAutoHideAsync()
@@ -35,17 +37,25 @@ function Root() {
   return (
     <LockGate>
       <SnackbarProvider>
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: c.background },
-            animation: "fade_from_bottom",
-          }}
-        />
-        <TransferBar />
+        <UploaderProvider>
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: c.background },
+              animation: "fade_from_bottom",
+            }}
+          />
+          <TransferBar />
+          <ShareIntake />
+        </UploaderProvider>
       </SnackbarProvider>
     </LockGate>
   )
+}
+
+function ShareIntake() {
+  useShareIntake()
+  return null
 }
 
 export default function RootLayout() {

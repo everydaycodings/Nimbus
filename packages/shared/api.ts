@@ -102,6 +102,8 @@ export type Me = {
   /** The step this account must finish first, or null. */
   gate: Gate | null
   usage: Usage | null
+  /** The upload speed cap in bytes a second, which clients keep to; null: none. Missing on older servers. */
+  uploadSpeedBytes?: number | null
 }
 
 // ---- Items and lists ----

@@ -1,7 +1,8 @@
 import { Redirect, Tabs } from "expo-router"
-import { useWindowDimensions } from "react-native"
+import { useWindowDimensions, View } from "react-native"
 
 import { isWide, NavBar } from "@/components/nav"
+import { UploadStrip } from "@/components/upload-strip"
 import { useAccounts } from "@/lib/accounts"
 import { c } from "@/lib/theme"
 
@@ -10,14 +11,16 @@ export default function TabsLayout() {
   const { active } = useAccounts()
   const { width } = useWindowDimensions()
   if (!active) return <Redirect href="/connect" />
+  const wide = isWide(width)
   return (
+    <View style={{ flex: 1 }}>
     <Tabs
       key={active.id}
       backBehavior="firstRoute"
-      tabBar={(props) => <NavBar {...props} />}
+      tabBar={(props) => (wide ? <NavBar {...props} /> : <View><UploadStrip /><NavBar {...props} /></View>)}
       screenOptions={{
         headerShown: false,
-        tabBarPosition: isWide(width) ? "left" : "bottom",
+        tabBarPosition: wide ? "left" : "bottom",
         sceneStyle: { backgroundColor: c.background },
       }}
     >
@@ -27,5 +30,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="(starred)" />
       <Tabs.Screen name="more" />
     </Tabs>
+    {wide && <View style={{ position: "absolute", bottom: 16, left: 96, width: 360 }}><UploadStrip floating /></View>}
+    </View>
   )
 }

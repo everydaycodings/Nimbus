@@ -1,5 +1,5 @@
 import { fail } from "@/lib/api"
-import { getUsage } from "@/lib/quota"
+import { getUsage, speedCap } from "@/lib/quota"
 import { gateOf, getSession, hasPassword, isAdmin } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
 
@@ -10,10 +10,11 @@ export async function GET() {
   if (!session) return fail(401, "signed-out", "Sign in first.")
   const me = session.user
   const gate = await gateOf(me)
-  const [password, settings, usage] = await Promise.all([
+  const [password, settings, usage, uploadSpeedBytes] = await Promise.all([
     hasPassword(me.id),
     getSettings(),
     me.status === "active" ? getUsage(me.id) : null,
+    speedCap(me.id),
   ])
   return Response.json(
     {
@@ -28,6 +29,7 @@ export async function GET() {
       vaultsEnabled: settings.vaultsEnabled,
       gate,
       usage,
+      uploadSpeedBytes,
     },
     { headers: { "Cache-Control": "no-store" } }
   )

@@ -7,6 +7,8 @@ import { Avatar, serverName } from "@/components/avatar"
 import { ConfirmDialog } from "@/components/dialog"
 import { Sheet, SheetDivider, SheetRow } from "@/components/sheet"
 import { Text } from "@/components/ui"
+import { useSnack } from "@/components/snackbar"
+import { backupAvailable, readSettings } from "@/lib/backup"
 import { useAccounts } from "@/lib/accounts"
 import { useMe } from "@/lib/files"
 import { c } from "@/lib/theme"
@@ -15,6 +17,7 @@ import { c } from "@/lib/theme"
 // sheet is unmounted while it shows; onClose runs once the dialog is done.
 export function AccountSheet({ onClose }: { onClose: () => void }) {
   const { accounts, active, switchTo, remove } = useAccounts()
+  const snack = useSnack()
   const me = useMe()
   const [signingOut, setSigningOut] = useState(false)
   const [sheet, setSheet] = useState(true)
@@ -25,7 +28,10 @@ export function AccountSheet({ onClose }: { onClose: () => void }) {
   const email = me.data?.email ?? active.email
 
   const signOut = async () => {
+    const backingUp = backupAvailable && readSettings().enabled && readSettings().accountId === active.id
     await remove(active.id)
+    // Signing out stops camera backup into that account; say so rather than let it go quiet.
+    if (backingUp) snack({ text: `Camera backup stopped, because it was backing up to ${active.email}. Turn it on again in More.` })
     // Another account is now active; with none left the tabs layout goes to /connect.
     if (accounts.length > 1) router.replace("/")
   }

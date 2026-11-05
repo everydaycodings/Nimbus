@@ -1,0 +1,19 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'org.nimbus'
+version = '0.0.1'
+
+android {
+  namespace "org.nimbus.android"
+}
+
+dependencies {
+  implementation "androidx.work:work-runtime-ktx:2.10.5"
+  implementation "com.squareup.okhttp3:okhttp:4.9.2"
+  implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2"
+  implementation "com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1"
+  testImplementation "junit:junit:4.13.2"
+}

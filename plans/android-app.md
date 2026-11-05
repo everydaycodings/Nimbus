@@ -24,7 +24,7 @@ API checks: `cd apps/web && node --env-file=.env.local scripts/api-check.ts` (ru
 | 2 | Files home and file actions | Built and checked on the emulator, see below. Waiting on the user's phone check |
 | 3 | Previews | Built and checked on the emulator, see below. Waiting on the user's phone check |
 | 4 | Sharing, search, notifications, versions, account settings | Built and checked on the emulator, see below. Waiting on the user's phone check |
-| 5 | Uploader, share into Nimbus, camera backup | **Next** |
+| 5 | Uploader, share into Nimbus, camera backup | Built and checked on the emulator, see below. Waiting on the user's phone check |
 | 6 | Offline, Android Files integration | Not started |
 | 7 | Vault | Not started |
 | 8 | Push, release APK, docs, finish review | Not started |
@@ -37,8 +37,7 @@ API checks: `cd apps/web && node --env-file=.env.local scripts/api-check.ts` (ru
 - Written but not tested on a device: gate screens, sign-up, app lock, brand icons. The gate's password and two-factor
   steps had a real bug, found in Phase 4: they didn't save the replaced session token. Fixed, but not run on a device.
 - Not tested: Google, GitHub and OIDC sign-in (needs real provider keys or a mock).
-- The installed APK predates the camera and crashes at launch on the current JS. The next native build must
-  include it. Until then, test in Expo Go.
+- The APK was rebuilt in Phase 5 with everything pending (camera, date picker, image picker, Kotlin module); it runs the current JS.
 
 **Phase 2 detail (2026-11-05)**
 
@@ -112,6 +111,37 @@ API checks: `cd apps/web && node --env-file=.env.local scripts/api-check.ts` (ru
 - The next native build also adds the date picker's config plugin and `expo-image-picker`.
 - Seen again: Expo Go's "Cannot find native module 'ExpoSQLite'", this time right after a forced screen size change.
 
+**Phase 5 detail (2026-11-06)**
+
+Decisions are in Claude's project memory (Phase 5 decisions). The plan was `~/.claude/plans/start-buiding-phase-5-partitioned-sifakis.md`.
+
+- Checks: 182 of 182 API checks (with `uploadSpeedBytes` on `/me`), 33 mobile unit tests (`upload-plan`, `backup-rules`), 6 Kotlin
+  JUnit tests (`modules/nimbus-android/android/src/test`, run with `./gradlew :nimbus-android:testDebugUnitTest`), web and mobile typecheck.
+- **Expo Go (tus-js-client):** New menu; files, folder (tree, empty folder) and photo pickers; each conflict choice against the
+  server (Keep both gives `clip (1).mp4`, New version adds v2 with the right SHA-256); blocked extension shows the server's reason;
+  1 MB/s cap held; pause and resume; over 100 MB on mobile data asks, Wait for Wi-Fi holds then starts; Change thumbnail.
+- **Installed APK (Kotlin, WorkManager):** a 300 MB upload survived airplane mode and a `kill -9` of the app mid-upload, resuming
+  from its offset; three copies byte-identical with the hash stored. Share from the Files app: right name and size, Save returns to
+  the sender, hash matches.
+- **Camera backup:** a geotagged JPEG backed up byte-identical (so GPS kept); a photo already elsewhere in My files skipped by hash;
+  a same-named file with other bytes in `Camera/2026/11` got `(1)` and no version; Wi-Fi off shows "Waiting for Wi-Fi", charging-only
+  shows "Waiting to charge"; the ring is whole teal; albums list; Free up space left out a photo trashed on the server, and Android's
+  own dialog removed exactly the others.
+- Found and fixed: tus-js-client reads a part's Blob-style `size` (bytes need it attached); the strip's auto-clear removed
+  "Same as…" rows before anyone could decide (now the strip says "1 file already in Nimbus" until opened); a wait-for-Wi-Fi job that
+  ran just before Wi-Fi became the active network re-queued itself with KEEP and was dropped, so backup sat waiting (now APPEND,
+  and opening the app also runs backup once; rechecked: a waiting photo went up 8 s after Wi-Fi returned, nothing forced).
+- Final APK pass: a 300 MB upload resumed and finished about 150 s after a reboot without opening the app; the first-sign-in offer
+  shows, its second step counts older items; signing out of the backup account turns backup off and says so; TalkBack hears the
+  backup state as part of the account button.
+- Expo Go only: picked videos get no thumbnail, because expo-video can't open files under Expo Go's cache folder (its name holds a `%`).
+- Photo picker names: Android's picker reports `1000000048.jpg`, which is the library's ID; the installed app asks the media library
+  for the real name when it has photo access (checked: `IMG_20261106_013500.jpg`). Without that access, and in Expo Go, the numbered name stays.
+- Needs the phone: Scan document (the AVD has no Play Store, so Play services shows "Something went wrong"; Cancel returns cleanly),
+  manufacturer background limits, reliable backup's foreground service on a real battery, and the feel of the strip and ring.
+- Not done: the tile morph retry (left for Phase 8's build); provider sign-in still unverified.
+- Dev data: `browser-test2` has `Camera/2026/11` and `v300*.bin` from these tests.
+
 ## Working rules for this machine
 
 - 15 GB of RAM, and the load has already crashed Cursor. **One heavy job at a time**: emulator, Gradle,
@@ -153,7 +183,7 @@ Dev addresses, with `192.168.0.108` as this computer's address at the time of wr
   fail from a phone. For a phone check set `S3_ENDPOINT=http://192.168.0.108:9100` (and `TUS_URL` from Phase 5), then
   restart the web server. The emulator doesn't need this: `adb reverse` covers it.
 - If a phone can't connect, `ufw` may be blocking it:
-  `sudo ufw allow from 192.168.0.0/24 to any port 3000,8081,9100 proto tcp`
+  `sudo ufw allow from 192.168.0.0/24 to any port 3000,8081,9100,1080 proto tcp`
 
 ## Decisions
 
@@ -241,8 +271,8 @@ apps/mobile/modules/nimbus-android/   Kotlin, from Phase 5: uploader, DocumentsP
 
 ### Traps to handle deliberately
 
-- **Same-name uploads become versions.** Backup must not turn a new phone's `IMG_0001.jpg` into a version of
-  an old photo. Check with `POST /api/v1/uploads/exists` by hash; on a real collision use "Keep both".
+- **Same-name uploads become versions only when asked** (`onConflict: "version"`). Backup always sends `"rename"`
+  and checks `POST /api/v1/uploads/exists` first: same bytes anywhere, or same name and size in the month folder, is skipped.
 - **Photo GPS:** request `ACCESS_MEDIA_LOCATION`, or Android strips location. Backup must be byte-identical.
 - **Android 15 caps `dataSync` services at 6 hours a day.** Save offsets and resume in the next window.
 - **Free up space** deletes only after the server confirms, through Android's `createDeleteRequest` dialog.

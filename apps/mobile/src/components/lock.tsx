@@ -6,6 +6,7 @@ import { AppState, View } from "react-native"
 
 import { BrandMark } from "./brand"
 import { Button, Text } from "./ui"
+import { backupAvailable } from "@/lib/backup"
 import { c } from "@/lib/theme"
 
 const KEY = "lock.v1" // "on" | "off"; missing means it hasn't been offered yet
@@ -25,10 +26,16 @@ export async function offerLockIfNew() {
   else enterApp()
 }
 
+const BACKUP_OFFER = "backupOffer.v1"
+
 // Clears connect and sign-in out of the history, so Back from Files leaves the
-// app instead of returning to them.
+// app instead of returning to them. The very first time, camera backup is offered on the way.
 export function enterApp() {
   if (router.canDismiss()) router.dismissAll()
+  if (backupAvailable && !SecureStore.getItem(BACKUP_OFFER)) {
+    SecureStore.setItem(BACKUP_OFFER, "shown")
+    return router.replace("/backup-offer")
+  }
   router.replace("/")
 }
 

@@ -1,6 +1,8 @@
 import type { Item, Role, Tag, Version } from "@nimbus/shared/api"
 import { OFFICE_EXT, TYPE_KEYS, formatBytes, previewKind } from "@nimbus/shared/file-rules"
+import { useQuery } from "@tanstack/react-query"
 import { router } from "expo-router"
+import * as ImagePicker from "expo-image-picker"
 import {
   ArrowBendUpRight,
   ArrowCounterClockwise,
@@ -9,6 +11,7 @@ import {
   ArrowSquareOut,
   ArrowUp,
   ArrowsClockwise,
+  Camera as CameraIcon,
   CaretRight,
   Check,
   ClockCounterClockwise,
@@ -18,19 +21,25 @@ import {
   FilmStrip,
   FolderOpen,
   FolderPlus,
+  Image as ImageIcon,
+  ImagesSquare,
   Info,
   Link as LinkIcon,
   Minus,
   PencilSimple,
   Plus,
+  Scan,
   SelectionAll,
   ShareNetwork,
   Star,
   Tag as TagIcon,
   Trash,
+  UploadSimple,
+  VideoCamera,
   X,
+  type Icon,
 } from "phosphor-react-native"
-import { useState, type ReactNode } from "react"
+import { createElement, useState, type ReactNode } from "react"
 import { ActivityIndicator, Pressable, Switch, View } from "react-native"
 
 import { Avatar } from "@/components/avatar"
@@ -38,10 +47,17 @@ import { ConfirmDialog, PromptDialog } from "@/components/dialog"
 import { FILE_TYPES, FileIcon } from "@/components/file-icon"
 import { useOffice } from "@/components/preview-pages"
 import { Sheet, SheetDivider, SheetRow, useDismiss } from "@/components/sheet"
+import { useSnack } from "@/components/snackbar"
 import { TagDialog } from "@/components/tag-dialog"
+import { useUploader } from "@/components/uploader"
 import { Button, Text } from "@/components/ui"
 import { editable, label, roleOf, shareable, useApi, useDetails, useFileActions, useFolders, useLinks, useShareState, useTags, useVersions, type FileSheet, type Filters } from "@/lib/files"
+import { errorText } from "@/lib/api"
+import { native } from "@/lib/native"
 import { usePrefs, type Prefs } from "@/lib/prefs"
+import { imageToWebp } from "@/lib/thumbs"
+import type { Entry } from "@/lib/upload-plan"
+import { pick } from "@/lib/uploads"
 import { useTransfers } from "@/lib/transfers"
 import type { Tiles } from "@/lib/rows"
 import { c } from "@/lib/theme"
@@ -228,6 +244,7 @@ function CollaboraRow({ item, onClose, icon }: { item: Item; onClose: () => void
 function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectAll, onDone, onTrashed, onUseFrame, previewing, ask }: Props & { items: Item[]; onClose: () => void; ask: (d: Dialog) => void }) {
   const actions = useFileActions()
   const transfers = useTransfers()
+  const snack = useSnack()
   const links = useLinks()
   const one = items.length === 1 ? items[0] : null
   const file = one?.kind === "file" ? one : null
@@ -369,6 +386,22 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
           onPress={() => {
             onUseFrame()
             onClose()
+          }}
+        />
+      )}
+      {file && edit && (
+        <SheetRow
+          label="Change thumbnail"
+          icon={ic(ImageIcon)}
+          onPress={async () => {
+            try {
+              const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 1 })
+              if (r.canceled) return
+              await actions.setThumb(file, await imageToWebp(r.assets[0].uri))
+              snack({ text: "Thumbnail changed." })
+            } catch (e) {
+              snack({ text: errorText(e), error: true })
+            }
           }}
         />
       )}
@@ -703,9 +736,36 @@ function MoveFooter({ onMove }: { onMove: () => void }) {
 // ---- New ----
 
 function NewSheet({ parentId, onClose, ask }: Props & { parentId: string | null; onClose: () => void; ask: (d: Dialog) => void }) {
+  const { account } = useApi()
+  const { send, scan } = useUploader()
+  const snack = useSnack()
+  const canScan = useQuery({ queryKey: ["scanAvailable"], queryFn: () => native?.scanAvailable() ?? false, staleTime: Infinity }).data
+  const row = (label: string, icon: Icon, chosen: () => Promise<Entry[] | null>) => (
+    <SheetRow
+      label={label}
+      icon={createElement(icon, { size: ICON, color: mute })}
+      onPress={async () => {
+        try {
+          const entries = await chosen()
+          if (entries === null) snack({ text: "Nimbus needs camera access for that. You can allow it in Android's settings.", error: true })
+          else send(account, parentId, entries)
+        } catch (e) {
+          snack({ text: errorText(e), error: true })
+        }
+      }}
+    />
+  )
   return (
     <Sheet onClose={onClose} header={<Header title="New" />}>
       <SheetRow label="New folder" icon={<FolderPlus size={ICON} color={mute} />} onPress={() => ask({ kind: "folder", parentId })} />
+      <SheetDivider />
+      {row("Upload files", UploadSimple, pick.files)}
+      {row("Upload folder", FolderOpen, pick.folder)}
+      {row("Upload photos or videos", ImagesSquare, pick.media)}
+      <SheetDivider />
+      {row("Take a photo", CameraIcon, () => pick.camera("images"))}
+      {row("Record a video", VideoCamera, () => pick.camera("videos"))}
+      {canScan && row("Scan a document", Scan, scan)}
     </Sheet>
   )
 }

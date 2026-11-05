@@ -148,7 +148,7 @@ async function main() {
     const r = await call(null, "GET", "/instance")
     instance = r.body
     check("GET /instance is public", r.status === 200 && r.body.app === "nimbus" && typeof r.body.tusUrl === "string")
-    check("GET /me", me.id && me.gate === null && me.usage, me)
+    check("GET /me", me.id && me.gate === null && me.usage && me.uploadSpeedBytes !== undefined, me)
     for (const [m, p] of [
       ["GET", "/files"],
       ["GET", "/tags"],
