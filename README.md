@@ -7,7 +7,7 @@ Open-source, self-hosted file storage you own. See [PRODUCT.md](PRODUCT.md) for 
 
 ```bash
 cd local_server && docker compose up -d && cd ..   # Postgres, MinIO, tusd, Redis
-cp .env.example .env.local                          # then set BETTER_AUTH_SECRET
+cp apps/web/.env.example apps/web/.env.local        # then set BETTER_AUTH_SECRET
 npm install
 npm run db:migrate
 npm run dev
@@ -60,13 +60,13 @@ compromised server sending tampered JavaScript to the browser.
 
 ## Database
 
-- `npm run db:generate` creates a migration after changing `lib/db/schema.ts`
+- `npm run db:generate` creates a migration after changing `apps/web/lib/db/schema.ts`
 - `npm run db:migrate` applies migrations
 - `npm run db:studio` opens Drizzle Studio
 
 ## End-to-end tests
 
-`npm run test:e2e` runs a small Playwright suite (`e2e/`) for upload, sharing, public links and
+`npm run test:e2e` runs a small Playwright suite (`apps/web/e2e/`) for upload, sharing, public links and
 vaults against a Nimbus that's already running (`npm run dev`, the worker and tusd). It signs in
 as two existing, approved members without two-factor; set `E2E_URL`, `E2E_EMAIL`, `E2E_EMAIL2`
 and `E2E_PASSWORD` to point it elsewhere. Each test makes its own `e2e …` folder or vault and
@@ -295,8 +295,8 @@ server, so it's opt-in: say yes in `setup.sh`, or add `backup` to `COMPOSE_PROFI
 Then choose where and when under **Admin → System → Backups**. Use storage somewhere other
 than this server.
 
-To restore, read the notes at the top of `scripts/backup-restore.ts` (database) and
-`scripts/backup-restore-files.ts` (files), and run them inside the image, which has the keys
+To restore, read the notes at the top of `apps/web/scripts/backup-restore.ts` (database) and
+`apps/web/scripts/backup-restore-files.ts` (files), and run them inside the image, which has the keys
 from `.env`:
 
 ```bash

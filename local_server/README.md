@@ -21,7 +21,7 @@ docker compose up -d
 
 Ports clash with something else? Override `*_PORT` in `.env`.
 
-## App env (`.env.local` at the repo root)
+## App env (`apps/web/.env.local`)
 
 ```sh
 DATABASE_URL=postgres://nimbus:nimbus@localhost:5432/nimbus

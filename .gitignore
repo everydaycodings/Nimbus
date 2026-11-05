@@ -1,5 +1,5 @@
 # dependencies
-/node_modules
+node_modules
 /.pnp
 .pnp.*
 .yarn/*
@@ -9,14 +9,17 @@
 !.yarn/versions
 
 # testing
-/coverage
+coverage
+
+# turborepo
+.turbo
 
 # next.js
-/.next/
-/out/
+.next/
+out/
 
 # production
-/build
+build
 
 # misc
 .DS_Store
@@ -41,5 +44,5 @@ next-env.d.ts
 
 # Playwright MCP session output
 /.playwright-mcp/
-/test-results/
-/playwright-report/
+test-results/
+playwright-report/

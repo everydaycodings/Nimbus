@@ -1,10 +1,11 @@
 .git
-node_modules
-.next
-.env*
-!.env.example
+**/node_modules
+**/.next
+**/.turbo
+**/.env*
+!**/.env.example
 local_server
 production_script
 .playwright-mcp
 graphify-out
-tsconfig.tsbuildinfo
+**/tsconfig.tsbuildinfo

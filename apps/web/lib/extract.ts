@@ -56,7 +56,7 @@ async function pdf(bytes: Uint8Array) {
     // Node reads these from disk; without them every non-embedded font warns.
     standardFontDataUrl: browser
       ? undefined
-      : `${process.cwd()}/node_modules/pdfjs-dist/standard_fonts/`,
+      : `${process.cwd()}/../../node_modules/pdfjs-dist/standard_fonts/`,
   })
   try {
     const doc = await task.promise

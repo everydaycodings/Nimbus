@@ -103,7 +103,7 @@ services:
 
   migrate:
     <<: *nimbus
-    build: .
+    build: { context: ., dockerfile: apps/web/Dockerfile }
     pull_policy: build
     command: ["node", "scripts/migrate.ts"]
     restart: "no"

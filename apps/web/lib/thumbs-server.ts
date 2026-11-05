@@ -7,7 +7,7 @@ import sharp from "sharp"
 import type { PreviewKind } from "./file-rules.ts"
 
 const SIZE = 480
-const FONTS = `${process.cwd()}/node_modules/pdfjs-dist/standard_fonts/`
+const FONTS = `${process.cwd()}/../../node_modules/pdfjs-dist/standard_fonts/`
 // The Docker image has no system fonts; pdfjs ships a Courier look-alike.
 GlobalFonts.registerFromPath(`${FONTS}FoxitFixed.pfb`, "Thumb Mono")
 
