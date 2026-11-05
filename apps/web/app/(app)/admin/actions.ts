@@ -65,6 +65,16 @@ export async function setSavedLogins(form: FormData) {
   revalidatePath("/", "layout")
 }
 
+// QR and short-code sign-in for phones, from Account.
+export async function setDeviceLinks(form: FormData) {
+  await requireAdmin()
+  await saveSettings({
+    deviceLinks: form.get("deviceLinks") === "on",
+    updatedAt: new Date(),
+  })
+  revalidatePath("/", "layout")
+}
+
 // Off makes every app password stop working; they come back when it's on.
 export async function setWebdav(form: FormData) {
   await requireAdmin()
@@ -328,6 +338,7 @@ const RESETTABLE: SettingKey[] = [
   "maxAccounts",
   "savedLogins",
   "savedLoginsAdmins",
+  "deviceLinks",
   "defaultQuotaBytes",
   "maxUploadBytes",
   "uploadSpeedBytes",

@@ -6,6 +6,7 @@ import { sweepJunk } from "@/lib/dav/locks"
 import { sendNow, type Message } from "@/lib/email"
 import { purgeExpiredTrash } from "@/lib/files"
 import { sweepOrphans } from "@/lib/orphan-sweep"
+import { sendPush } from "@/lib/push"
 import { recheckWarned } from "@/lib/quota"
 import { removeObjects } from "@/lib/s3"
 import { readToken } from "@/lib/upload-rules"
@@ -21,6 +22,7 @@ const jobs: Record<string, (data: never) => Promise<unknown>> = {
   email: (m: Message) => sendNow(m),
   "delete-keys": ({ keys }: { keys: string[] }) => removeObjects(keys),
   "backup-alert": backupAlert,
+  push: ({ userId, id }: { userId: string; id: string }) => sendPush(userId, id),
   // An error here (not ours, gone) won't fix itself; only a throw is retried.
   "tus-finish": async ({ id }: { id: string }) => {
     const done = await finishTusUpload(id)

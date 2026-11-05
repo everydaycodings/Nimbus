@@ -51,6 +51,7 @@ const EVENT_LABEL = {
   switched: "Switched to from another account",
   signed_out: "Signed out",
   saved_login_used: "Signed in with a saved login",
+  device_linked: "Signed in a device with a QR or code",
 } satisfies Record<AuthEventKind, string>
 
 const day = new Intl.DateTimeFormat("en", { dateStyle: "medium" })

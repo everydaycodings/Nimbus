@@ -10,7 +10,7 @@ import {
   FolderIcon,
 } from "@phosphor-icons/react"
 
-import { AUDIO, DOC, IMAGE, VIDEO, mimeOf } from "@/lib/file-rules"
+import { typeKeyOf } from "@/lib/file-rules"
 
 export { DOC, formatBytes } from "@/lib/file-rules"
 
@@ -67,31 +67,12 @@ const TYPES = {
   },
 }
 
-const CODE =
-  /\.(c|cpp|cs|css|go|h|html|java|js|json|jsx|kt|md|php|py|rb|rs|sh|sql|swift|toml|ts|tsx|xml|ya?ml)$/i
-const ARCHIVE = /\.(zip|tar|gz|tgz|bz2|xz|7z|rar)$/i
-
 export function fileType(
   kind: "file" | "folder",
   mime: string | null,
   name: string
 ) {
-  if (kind === "folder") return TYPES.folder
-  // Known extensions first, the stored mime type only for the rest (as getUsage).
-  if (IMAGE.test(name)) return TYPES.image
-  if (VIDEO.test(name)) return TYPES.video
-  if (AUDIO.test(name)) return TYPES.audio
-  if (/\.pdf$/i.test(name)) return TYPES.pdf
-  if (CODE.test(name)) return TYPES.code
-  if (ARCHIVE.test(name)) return TYPES.archive
-  if (DOC.test(name)) return TYPES.doc
-  const m = mimeOf(mime, name)
-  if (m.startsWith("image/")) return TYPES.image
-  if (m.startsWith("video/")) return TYPES.video
-  if (m.startsWith("audio/")) return TYPES.audio
-  if (m === "application/pdf") return TYPES.pdf
-  if (m.startsWith("text/")) return TYPES.doc
-  return TYPES.other
+  return TYPES[typeKeyOf(kind, mime, name)]
 }
 
 export const TAG_DOT = {

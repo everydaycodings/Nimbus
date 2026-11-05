@@ -70,7 +70,7 @@ export async function scheduleHealth(minutes: number | null) {
 }
 
 export type JobName =
-  "email" | "delete-keys" | "tus-finish" | "backup-alert" | "orphan-sweep"
+  "email" | "delete-keys" | "tus-finish" | "backup-alert" | "orphan-sweep" | "push"
 
 // Work the request shouldn't wait for, retried by `npm run worker` until it lands.
 // Failed jobs stay a week for a look; done ones go, since emails carry file names.

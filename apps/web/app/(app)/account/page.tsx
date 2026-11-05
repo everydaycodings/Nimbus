@@ -9,6 +9,7 @@ import { redirect } from "next/navigation"
 import { AppPasswords } from "@/components/app-passwords"
 import { AvatarPicker } from "@/components/avatar-picker"
 import { DeviceAccounts } from "@/components/device-accounts"
+import { DeviceLink } from "@/components/device-link"
 import { PasswordForm } from "@/components/password-form"
 import { SignInMethods } from "@/components/sign-in-methods"
 import { SubmitButton } from "@/components/submit-button"
@@ -280,6 +281,21 @@ export default async function AccountPage() {
           </form>
         </CardContent>
       </Card>
+
+      {settings.deviceLinks && (
+        <Card id="sign-in-device">
+          <CardHeader>
+            <CardTitle className="text-base">Sign in on your phone</CardTitle>
+            <CardDescription>
+              Add the Nimbus app without typing your password on it. You&apos;ll
+              approve the device here.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <DeviceLink />
+          </CardContent>
+        </Card>
+      )}
 
       {settings.webdav && !lock?.webdavOff && (
         <Card id="connect">

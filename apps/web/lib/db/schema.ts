@@ -326,6 +326,7 @@ export const AUTH_EVENT_KINDS = [
   "switched",
   "signed_out",
   "saved_login_used",
+  "device_linked",
 ] as const
 export type AuthEventKind = (typeof AUTH_EVENT_KINDS)[number]
 
@@ -344,6 +345,32 @@ export const authEvents = pgTable(
     at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("auth_events_user_at_idx").on(t.userId, t.at)]
+)
+
+// One-time QR and short-code sign-ins for phones (lib/device-link.ts). Secrets
+// are stored hashed; a row lasts minutes.
+export const deviceLinks = pgTable(
+  "device_links",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull().unique(),
+    codeHash: text("code_hash").notNull().unique(),
+    pollHash: text("poll_hash").unique(),
+    status: text("status")
+      .$type<"waiting" | "pending-approval" | "approved" | "denied" | "used">()
+      .notNull()
+      .default("waiting"),
+    deviceName: text("device_name"),
+    ip: text("ip"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("device_links_user_idx").on(t.userId)]
 )
 
 // What admins did: role and status changes, recovery, vault deletes, settings.
@@ -412,6 +439,22 @@ export const appPasswords = pgTable(
     index("app_passwords_user_idx").on(t.userId),
     check("app_passwords_scope_check", sql`${t.scope} in ('rw', 'ro')`),
   ]
+)
+
+// Where the Android app wants its pushes: a UnifiedPush endpoint is a plain URL
+// the server POSTs to. One row per endpoint; registering again moves it.
+export const pushEndpoints = pgTable(
+  "push_endpoints",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    endpoint: text("endpoint").notNull().unique(),
+    createdAt: createdAt(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  },
+  (t) => [index("push_endpoints_user_idx").on(t.userId)]
 )
 
 // Stars are per person, so shared items can be starred too.
@@ -606,6 +649,8 @@ export const settings = pgTable(
     // get it when the second switch is on.
     savedLogins: boolean("saved_logins").notNull().default(true),
     savedLoginsAdmins: boolean("saved_logins_admins").notNull().default(false),
+    // Signing in phones by QR or short code from Account (lib/device-link.ts).
+    deviceLinks: boolean("device_links").notNull().default(true),
     // Mounting files over WebDAV at /dav with app passwords.
     webdav: boolean("webdav").notNull().default(true),
     // Rules for new passwords and vault passphrases. Null: the owner hasn't

@@ -1,4 +1,4 @@
-// Run: node --test lib/vault-crypto.test.ts
+// Run: node --test packages/shared/vault-crypto.test.ts
 import assert from "node:assert/strict"
 import { test } from "node:test"
 

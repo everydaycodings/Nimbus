@@ -152,3 +152,28 @@ Text selection is tinted teal, the caret is teal, and scrollbars use `--muted` o
 ## Motion
 Kept quiet. Motion only answers actions (open, expand, progress). No entrance animations.
 Respect `prefers-reduced-motion`.
+
+## Mobile (Android, `apps/mobile`)
+Same world, with Material 3 structure themed through these tokens: Drive's layout, Nimbus's finish. Tokens are
+hex in `src/lib/theme.ts`; components are in `src/components`.
+- **Navigation:** five tabs (Files, Recent, Shared, Starred, More) on a bar with a pill indicator on phones, and a
+  rail from 600dp (`nav.tsx`). Tabs stay visible inside folders and each keeps its own history. Back from any tab
+  goes to Files, then leaves the app. Trash, Tags, Storage and Search open above the tabs.
+- **Top of the file screens:** a 56dp full-pill search with the avatar in its right end, or a back bar in folders.
+  A breadcrumb of ancestors sits below the bar. Chips and the sort row scroll with the content.
+- **Selection:** long-press with one light haptic. A 64dp bar replaces the search pill, with count, Star, Move, Trash
+  and ⋮, and the trash icon in `--destructive`. System Back clears it first.
+- **Tiles:** outlined, 12dp radius, three sizes and Compact. Folder tiles put star, sharing, tag dots and owner on
+  their own line under the name; file cards put them on line 2 beside date and size, and never on the thumbnail.
+- **Overlays:** bottom sheets (`sheet.tsx`) for actions, filters, sort, tags, details, move and accounts, dragged by
+  the handle and header only, so lists inside scroll freely. A row closes its sheet before opening what's next, so
+  sheets never stack. Dialogs (`dialog.tsx`) only for text entry and for deleting forever.
+- **Feedback:** one snackbar slot, above the FAB, for every action's result; trash adds Undo. It takes the place of
+  the web's toasts.
+- **Ownership:** the account sheet always names the server. A plain-http server shows "Not encrypted" in `--warning`,
+  the one use outside Health, because it's a real risk to the user's files.
+- **Storage meter:** solid segments, not hatched: Vault in `--foreground`, versions and trash in `c.dim`.
+- **Motion:** slide for folder depth, sheets slide and fade, the FAB shrinks to its icon on scroll. All of it follows
+  the system's remove-animations setting.
+- **Later phases:** the avatar's backup ring arrives with backup in Phase 5; until then no ring, so it never implies
+  a backup that doesn't exist. Rows for unbuilt actions stay hidden rather than greyed out.

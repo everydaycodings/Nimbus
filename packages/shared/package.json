@@ -1,0 +1,17 @@
+{
+  "name": "@nimbus/shared",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./file-rules": "./file-rules.ts",
+    "./vault-crypto": "./vault-crypto.ts",
+    "./api": "./api.ts"
+  },
+  "scripts": {
+    "test": "node --test *.test.ts"
+  },
+  "dependencies": {
+    "hash-wasm": "^4.12.0"
+  }
+}

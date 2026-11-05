@@ -46,6 +46,7 @@ import { listTags } from "@/lib/files"
 import { getUsage, speedCap } from "@/lib/quota"
 import {
   deviceAccounts,
+  gateOf,
   getSession,
   hasPassword,
   isAdmin,
@@ -140,7 +141,8 @@ export default async function AppLayout({
 
   // Gates, in order: a temporary password, an unconfirmed email, approval, then
   // the admin's two-factor rule. Each one is a full screen with a way forward.
-  if (me.passwordTemporary)
+  const gate = await gateOf(me)
+  if (gate === "temporary-password")
     return (
       <StatusScreen icon={KeyIcon} title="Choose your own password">
         <p>
@@ -159,18 +161,11 @@ export default async function AppLayout({
       </StatusScreen>
     )
 
-  // Email confirmation only applies while email works, and two-factor replaces it.
-  // Admins skip it so a broken email setup can't lock out the people who fix it.
   const [password, settings] = await Promise.all([
     hasPassword(me.id),
     getSettings(),
   ])
-  if (
-    !me.emailVerified &&
-    !me.twoFactorEnabled &&
-    !admin &&
-    (await emailEnabled())
-  )
+  if (gate === "confirm-email")
     return (
       <StatusScreen icon={EnvelopeSimpleIcon} title="Confirm your email" wide>
         <p>
@@ -194,7 +189,7 @@ export default async function AppLayout({
       </StatusScreen>
     )
 
-  if (me.status === "pending")
+  if (gate === "pending")
     return (
       <StatusScreen icon={HourglassIcon} title="Waiting for approval">
         <p>
@@ -206,7 +201,7 @@ export default async function AppLayout({
       </StatusScreen>
     )
 
-  if (me.status === "rejected")
+  if (gate === "rejected")
     return (
       <StatusScreen icon={XCircleIcon} title="Your request was declined">
         <p>
@@ -217,7 +212,7 @@ export default async function AppLayout({
       </StatusScreen>
     )
 
-  if (settings.require2fa && password && !me.twoFactorEnabled)
+  if (gate === "two-factor")
     return (
       <StatusScreen
         icon={ShieldIcon}

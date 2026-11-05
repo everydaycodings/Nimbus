@@ -17,6 +17,7 @@ import { hasPassword, requireAdmin } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
 import { MAX_SESSIONS } from "@/lib/accounts"
 import {
+  setDeviceLinks,
   setMultiAccount,
   setPasswordPolicy,
   setRequire2fa,
@@ -229,6 +230,34 @@ export default async function AuthenticationPage() {
             id="savedLoginsAdmins"
             name="savedLoginsAdmins"
             defaultChecked={s.savedLoginsAdmins}
+            className={`${CHECK} self-start sm:self-end`}
+          />
+        </SettingRow>
+      </SettingsForm>
+
+      <SettingsForm
+        action={setDeviceLinks}
+        title="Sign in with a QR code"
+        description="People can sign in to the Android app by scanning a QR code or typing a short code from their Account page, then approving the device in their browser."
+      >
+        <SettingRow
+          id="device-links"
+          label="Allow QR and code sign-in"
+          htmlFor="deviceLinks"
+          hint="Off hides it everywhere. Devices already signed in stay signed in."
+          tip={{
+            does: "Lets a signed-in person add a phone without typing their password on it.",
+            affects:
+              "Everyone on this Nimbus. Each code works once, lasts 2 minutes and needs approval in the browser.",
+            default: "On",
+          }}
+          reset={reset("deviceLinks")}
+        >
+          <input
+            type="checkbox"
+            id="deviceLinks"
+            name="deviceLinks"
+            defaultChecked={s.deviceLinks}
             className={`${CHECK} self-start sm:self-end`}
           />
         </SettingRow>

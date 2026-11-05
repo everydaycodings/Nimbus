@@ -183,6 +183,20 @@
       "when": 1793384374465,
       "tag": "0025_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1793865603338,
+      "tag": "0026_push_endpoints",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1793868587234,
+      "tag": "0027_fearless_onslaught",
+      "breakpoints": true
     }
   ]
 }

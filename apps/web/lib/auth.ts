@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto"
 
+import { expo } from "@better-auth/expo"
 import { betterAuth } from "better-auth"
 import * as z from "zod"
 import {
@@ -11,7 +12,12 @@ import {
 import { setSessionCookie } from "better-auth/cookies"
 import { drizzleAdapter } from "better-auth/adapters/drizzle"
 import { nextCookies } from "better-auth/next-js"
-import { genericOAuth, multiSession, twoFactor } from "better-auth/plugins"
+import {
+  bearer,
+  genericOAuth,
+  multiSession,
+  twoFactor,
+} from "better-auth/plugins"
 import type { BetterAuthOptions, BetterAuthPlugin } from "better-auth"
 import { and, count, eq, inArray } from "drizzle-orm"
 
@@ -28,6 +34,7 @@ import {
   SAVED_MAX_AGE,
   SAVED_PREFIX,
 } from "./saved-login-rules"
+import { claimLink, collectLink, pollLink } from "./device-link"
 import { savedOnBrowser, touchSavedLogin } from "./saved-logins"
 import { db } from "./db"
 import * as schema from "./db/schema"
@@ -116,7 +123,84 @@ const FRESH_SIGN_IN =
 
 const accountMemory = {
   id: "nimbus-accounts",
+  // Plugin rules so these public endpoints are limited per IP, like sign-in.
+  rateLimit: [
+    {
+      pathMatcher: (path: string) => path === "/device-link/claim",
+      window: 60,
+      max: 10,
+    },
+    {
+      pathMatcher: (path: string) => path === "/device-link/poll",
+      window: 60,
+      max: 60,
+    },
+  ],
   endpoints: {
+    // A device presents a QR token or short code from someone's Account page.
+    claimDeviceLink: createAuthEndpoint(
+      "/device-link/claim",
+      {
+        method: "POST",
+        body: z.object({
+          token: z.string().max(100).optional(),
+          code: z.string().max(20).optional(),
+          deviceName: z.string().trim().min(1).max(80),
+        }),
+      },
+      async (ctx) => {
+        const { deviceLinks } = await getSettings()
+        if (!deviceLinks)
+          throw new APIError("FORBIDDEN", {
+            message: "This Nimbus doesn't allow signing in with a code.",
+          })
+        const { token, code, deviceName } = ctx.body
+        const pollSecret = await claimLink(
+          { token, code },
+          deviceName,
+          requestIp(ctx.headers)
+        )
+        if (!pollSecret)
+          throw new APIError("BAD_REQUEST", {
+            message:
+              "That code didn't work. It may have expired or been used. Get a new one from your Account page.",
+          })
+        return ctx.json({ pollSecret })
+      }
+    ),
+    pollDeviceLink: createAuthEndpoint(
+      "/device-link/poll",
+      {
+        method: "POST",
+        body: z.object({ pollSecret: z.string().max(100) }),
+      },
+      async (ctx) => ctx.json({ status: await pollLink(ctx.body.pollSecret) })
+    ),
+    // Approved in the browser: start this device's own session. The bearer
+    // plugin returns its token, and it appears in the account's sessions.
+    finishDeviceLink: createAuthEndpoint(
+      "/device-link/finish",
+      {
+        method: "POST",
+        body: z.object({ pollSecret: z.string().max(100) }),
+      },
+      async (ctx) => {
+        const userId = await collectLink(ctx.body.pollSecret)
+        const user = userId
+          ? await ctx.context.internalAdapter.findUserById(userId)
+          : null
+        const session = user
+          ? await ctx.context.internalAdapter.createSession(user.id)
+          : null
+        if (!user || !session)
+          throw new APIError("BAD_REQUEST", {
+            message: "That sign-in has expired. Get a new code and try again.",
+          })
+        await setSessionCookie(ctx, { session, user })
+        await logEvent(ctx.headers, user.id, "device_linked")
+        return ctx.json({ ok: true })
+      }
+    ),
     // One tap on a saved login (sign-in page). The secret never leaves its
     // httpOnly cookie. Two-factor accounts still go through /two-factor.
     signInSaved: createAuthEndpoint(
@@ -241,6 +325,8 @@ const accountMemory = {
 // Everything but the OIDC provider, which build() adds.
 const options = {
   database: drizzleAdapter(db, { provider: "pg", schema }),
+  // The Android app's scheme, for its OAuth return and the origin it sends.
+  trustedOrigins: ["nimbus://"],
   emailAndPassword: {
     enabled: true,
     // The floor an owner can choose; the before-hook applies their actual policy.
@@ -454,6 +540,10 @@ const options = {
     // The admin's lower limit is checked before adding (app/(app)/actions.ts).
     multiSession({ maximumSessions: MAX_SESSIONS }),
     accountMemory,
+    // The Android app signs in with these: a deep link back from OAuth, then a
+    // signed bearer token instead of cookies.
+    expo(),
+    bearer({ requireSignature: true }),
     nextCookies(),
   ],
 } satisfies BetterAuthOptions

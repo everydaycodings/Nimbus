@@ -17,8 +17,10 @@ import {
   type Role,
   type Status,
 } from "@/lib/db/schema"
+import { emailEnabled } from "@/lib/email"
 import { clientIp } from "@/lib/links"
 import { savedOnBrowser } from "@/lib/saved-logins"
+import { getSettings } from "@/lib/signup"
 
 export const getSession = cache(async () => {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -30,7 +32,33 @@ export const getSession = cache(async () => {
   return { ...session, user }
 })
 
+// The signed-in member, as services take it.
+export type Me = NonNullable<Awaited<ReturnType<typeof getSession>>>["user"]
+
 export const isAdmin = (role: Role) => role === "owner" || role === "admin"
+
+// The full-screen step this account must finish before it sees the app, in the
+// order they apply. Null when there's none. Shared by the web layout and the API.
+export async function gateOf(
+  me: NonNullable<Awaited<ReturnType<typeof getSession>>>["user"]
+) {
+  if (me.passwordTemporary) return "temporary-password" as const
+  // Email confirmation only applies while email works, and two-factor replaces it.
+  // Admins skip it so a broken email setup can't lock out the people who fix it.
+  if (
+    !me.emailVerified &&
+    !me.twoFactorEnabled &&
+    !isAdmin(me.role) &&
+    (await emailEnabled())
+  )
+    return "confirm-email" as const
+  if (me.status === "pending") return "pending" as const
+  if (me.status === "rejected") return "rejected" as const
+  const { require2fa } = await getSettings()
+  if (require2fa && !me.twoFactorEnabled && (await hasPassword(me.id)))
+    return "two-factor" as const
+  return null
+}
 
 // Guard for admin-only pages and actions. Re-checks the database on every call,
 // so a demoted or rejected admin loses access immediately.

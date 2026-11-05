@@ -1,0 +1,60 @@
+{
+  "expo": {
+    "name": "Nimbus",
+    "slug": "nimbus",
+    "scheme": "nimbus",
+    "version": "0.0.1",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0a0a0a",
+    "platforms": [
+      "android"
+    ],
+    "android": {
+      "package": "org.nimbus.drive",
+      "adaptiveIcon": {
+        "backgroundColor": "#1b1b1b",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": true
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-secure-store",
+      "expo-web-browser",
+      "expo-sqlite",
+      "expo-image",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0a0a0a",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 120
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {}
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Nimbus uses the camera to scan sign-in QR codes.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ]
+    ]
+  }
+}

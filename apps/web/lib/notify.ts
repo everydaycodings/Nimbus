@@ -19,6 +19,7 @@ import {
 } from "@/lib/db/schema"
 import { appUrl, message, sendInBackground } from "@/lib/email"
 import { KIND_LABEL, type Kind } from "@/lib/backup-rules"
+import { enqueue } from "@/lib/redis"
 import { SERVICE_LABEL, type Service } from "@/lib/health-rules"
 
 type Event = {
@@ -75,6 +76,8 @@ export async function notify(
   // ponytail: with nothing unread to fold into, edits and file drops then email every time.
   if (pref && !pref.bell)
     await db.delete(notifications).where(eq(notifications.id, row.id))
+  // The phone gets it when the bell would.
+  else await enqueue("push", { userId, id: row.id }).catch(() => {})
 }
 
 // An editor changed something in a folder shared with them: tell the owner,
