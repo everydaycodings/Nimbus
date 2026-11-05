@@ -1,5 +1,7 @@
-import type { Item, Role, Tag } from "@nimbus/shared/api"
-import { TYPE_KEYS, formatBytes } from "@nimbus/shared/file-rules"
+import type { Item, Role, Tag, Version, VersionsResponse } from "@nimbus/shared/api"
+import { OFFICE_EXT, TYPE_KEYS, formatBytes, previewKind } from "@nimbus/shared/file-rules"
+import { useQuery } from "@tanstack/react-query"
+import { router } from "expo-router"
 import {
   ArrowBendUpRight,
   ArrowCounterClockwise,
@@ -7,9 +9,13 @@ import {
   ArrowLeft,
   ArrowSquareOut,
   ArrowUp,
+  ArrowsClockwise,
   CaretRight,
   Check,
   DotsThreeVertical,
+  DownloadSimple,
+  FileText,
+  FilmStrip,
   FolderOpen,
   FolderPlus,
   Info,
@@ -27,11 +33,14 @@ import { ActivityIndicator, Pressable, Switch, View } from "react-native"
 
 import { ConfirmDialog, PromptDialog } from "@/components/dialog"
 import { FILE_TYPES, FileIcon } from "@/components/file-icon"
+import { useOffice } from "@/components/preview-pages"
 import { Sheet, SheetDivider, SheetRow, useDismiss } from "@/components/sheet"
 import { TagDialog } from "@/components/tag-dialog"
 import { Button, Text } from "@/components/ui"
 import { editable, label, roleOf, useApi, useDetails, useFileActions, useFolders, useTags, type FileSheet, type Filters } from "@/lib/files"
 import { usePrefs, type Prefs } from "@/lib/prefs"
+import { openPreview } from "@/lib/preview-session"
+import { useTransfers } from "@/lib/transfers"
 import type { Tiles } from "@/lib/rows"
 import { c } from "@/lib/theme"
 
@@ -67,6 +76,11 @@ type Props = {
   onOpen: (item: Item) => void
   onSelectAll?: () => void
   onDone?: () => void
+  // From the previewer: what to do when the file on screen goes, and the frame on screen.
+  onTrashed?: (items: Item[]) => void
+  onUseFrame?: () => void
+  // The older version on screen, which Download and Open with then act on.
+  previewing?: Version
 }
 
 export function FileSheets(props: Props) {
@@ -193,9 +207,27 @@ const itemsHeader = (items: Item[], trailing?: ReactNode) =>
 
 // ---- Actions ----
 
-function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectAll, onDone, ask }: Props & { items: Item[]; onClose: () => void; ask: (d: Dialog) => void }) {
+// Only asks the server about Collabora for files it could open.
+function CollaboraRow({ item, onClose, icon }: { item: Item; onClose: () => void; icon: ReactNode }) {
+  const office = useOffice(item)
+  if (!office.data?.office) return null
+  return (
+    <SheetRow
+      label="Open in Collabora"
+      icon={icon}
+      onPress={() => {
+        onClose()
+        router.push({ pathname: "/collabora", params: { id: item.id } })
+      }}
+    />
+  )
+}
+
+function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectAll, onDone, onTrashed, onUseFrame, previewing, ask }: Props & { items: Item[]; onClose: () => void; ask: (d: Dialog) => void }) {
   const actions = useFileActions()
+  const transfers = useTransfers()
   const one = items.length === 1 ? items[0] : null
+  const file = one?.kind === "file" ? one : null
   const done = () => onDone?.()
   const ic = (I: typeof Info) => <I size={ICON} color={mute} />
 
@@ -216,12 +248,56 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
       </Sheet>
     )
 
+  // Changes apply to the whole file, so looking at an older version offers only what's about that version.
+  if (previewing && file)
+    return (
+      <Sheet onClose={onClose} header={itemsHeader([{ ...file, size: previewing.size, updatedAt: previewing.createdAt }])}>
+        <SheetRow
+          label="Download"
+          icon={ic(DownloadSimple)}
+          onPress={() => {
+            transfers.download([file], previewing)
+            onClose()
+          }}
+        />
+        <SheetRow
+          label="Open with"
+          icon={ic(ArrowSquareOut)}
+          onPress={() => {
+            transfers.openWith(file, previewing)
+            onClose()
+          }}
+        />
+        <SheetRow label="Details" icon={ic(Info)} onPress={() => onChange({ kind: "details", item: file })} />
+      </Sheet>
+    )
+
   const edit = editable(items, role)
   const starred = items.every((i) => i.starred)
   return (
     <Sheet onClose={onClose} header={itemsHeader(items)}>
       {one?.kind === "folder" && <SheetRow label="Open" icon={ic(FolderOpen)} onPress={() => onOpen(one)} />}
       {onSelectAll && <SheetRow label="Select all" icon={ic(SelectionAll)} onPress={onSelectAll} />}
+      <SheetRow
+        label={file ? "Download" : "Download as ZIP"}
+        icon={ic(DownloadSimple)}
+        onPress={() => {
+          transfers.download(items)
+          done()
+          onClose()
+        }}
+      />
+      {file && (
+        <SheetRow
+          label="Open with"
+          icon={ic(ArrowSquareOut)}
+          onPress={() => {
+            transfers.openWith(file)
+            onClose()
+          }}
+        />
+      )}
+      {file && OFFICE_EXT.test(file.name) && <CollaboraRow item={file} onClose={onClose} icon={ic(FileText)} />}
       {one && edit && <SheetRow label="Rename" icon={ic(PencilSimple)} onPress={() => ask({ kind: "rename", item: one })} />}
       {edit && <SheetRow label="Move" icon={ic(ArrowBendUpRight)} onPress={() => onChange({ kind: "move", items })} />}
       <SheetRow
@@ -253,6 +329,26 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
         />
       )}
       <SheetRow label="Tags" icon={ic(TagIcon)} onPress={() => onChange({ kind: "tags", items })} />
+      {file && edit && onUseFrame && (
+        <SheetRow
+          label="Use this frame as thumbnail"
+          icon={ic(FilmStrip)}
+          onPress={() => {
+            onUseFrame()
+            onClose()
+          }}
+        />
+      )}
+      {file && edit && !!file.thumb && (
+        <SheetRow
+          label="Reset thumbnail"
+          icon={ic(ArrowsClockwise)}
+          onPress={() => {
+            actions.resetThumb(file, previewKind(file.mime, file.name) === "video")
+            onClose()
+          }}
+        />
+      )}
       {one && (
         <>
           <SheetDivider />
@@ -269,6 +365,7 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
             onPress={() => {
               actions.trash(items)
               done()
+              onTrashed?.(items)
             }}
           />
         </>
@@ -279,7 +376,43 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
 
 // ---- Details ----
 
-function DetailsSheet({ item, trash, tags, onChange, onClose }: Props & { item: Item; onClose: () => void }) {
+// Read-only here; making one current, renaming and deleting come with the Versions dialog in Phase 4.
+function OlderVersions({ item, role, onClose }: { item: Item; role: Role; onClose: () => void }) {
+  const api = useApi()
+  const q = useQuery({
+    queryKey: [api.id, "versions", item.id],
+    queryFn: () => api.get<VersionsResponse>(`/items/${item.id}/versions`),
+  })
+  const older = (q.data?.versions ?? []).filter((v) => v.id !== item.version)
+  if (!older.length) return null
+  return (
+    <View style={{ paddingTop: 16 }}>
+      <Text variant="label" color={mute} style={{ paddingHorizontal: 20, paddingBottom: 4 }}>
+        Older versions
+      </Text>
+      {older.map((v) => (
+        <Pressable
+          key={v.id}
+          onPress={() => {
+            onClose()
+            openPreview({ items: [item], index: 0, role, version: v })
+          }}
+          android_ripple={{ color: c.ripple }}
+          accessibilityRole="button"
+          accessibilityLabel={`Open version ${v.number}, ${day(v.createdAt)}`}
+          style={{ minHeight: 56, paddingHorizontal: 20, paddingVertical: 8, justifyContent: "center" }}
+        >
+          <Text>v{v.number} · {day(v.createdAt)}</Text>
+          <Text variant="caption" color={mute} numberOfLines={1} style={{ fontVariant: ["tabular-nums"] }}>
+            {[formatBytes(v.size), v.uploadedBy, v.note].filter(Boolean).join(" · ")}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  )
+}
+
+function DetailsSheet({ item, role, trash, tags, onChange, onClose }: Props & { item: Item; onClose: () => void }) {
   const q = useDetails(item.id)
   const actions = useFileActions()
   const mine = useTags().data ?? tags
@@ -337,6 +470,7 @@ function DetailsSheet({ item, trash, tags, onChange, onClose }: Props & { item: 
           {v}
         </View>
       ))}
+      {!trash && item.kind === "file" && <OlderVersions item={item} role={role} onClose={onClose} />}
       {!trash && (
         <View style={{ paddingHorizontal: 20, paddingVertical: 8, gap: 8 }}>
           <Text variant="caption" color={mute}>

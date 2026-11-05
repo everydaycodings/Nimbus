@@ -22,8 +22,8 @@ API checks: `cd apps/web && node --env-file=.env.local scripts/api-check.ts` (ru
 | 0 | SDK, Expo app, `packages/shared` | Done, except the Docker image build, which hasn't been run |
 | 1 | `/api/v1`, sign-in, gates, accounts, app lock | Mostly done, see below |
 | 2 | Files home and file actions | Built and checked on the emulator, see below. Waiting on the user's phone check |
-| 3 | Previews | **Next** |
-| 4 | Sharing, search, notifications, versions, account settings | Not started |
+| 3 | Previews | Built and checked on the emulator, see below. Waiting on the user's phone check |
+| 4 | Sharing, search, notifications, versions, account settings | **Next** |
 | 5 | Uploader, share into Nimbus, camera backup | Not started |
 | 6 | Offline, Android Files integration | Not started |
 | 7 | Vault | Not started |
@@ -57,7 +57,25 @@ API checks: `cd apps/web && node --env-file=.env.local scripts/api-check.ts` (ru
 - Mobile has no ESLint config, so `expo lint` wasn't run. Adding one means a new dev dependency.
 - `tsconfig.json` and `.expo/` at the repo root are strays from running Expo in the wrong folder (see Running it).
 
-Nothing is committed yet.
+**Phase 3 detail (2026-11-05)**
+
+- Checked on the emulator in Expo Go against a real server: image (double-tap zoom, pan, swipe out), video, audio,
+  PDF, Word, xlsx and CSV, slides, Markdown, code, zip listing. Corrupt, too-big and unknown files each show a real error.
+- Also checked: swipe across mixed types and from a sheet's edge; download with matching SHA-256, name clash, cancel with
+  no partial file, ZIP; Open with; older version opens labelled with a reduced menu; Use this frame and Reset thumbnail,
+  confirmed on the server; trash from the previewer with Undo; a viewer's menu; 30 MB PDF behind the mobile data warning;
+  separate caches, wiped on sign-out; font scale 1.3; remove-animations; rotation. A `<script>` planted in Markdown doesn't run.
+- Unit tests cover viewer choice, limits, the data warning, cache eviction and base64.
+- Built but not run: the Collabora WebView, because memory was short (the "no Collabora on this server" path was seen);
+  eviction past 500 MB on a device (unit test only); pinch, which `adb` can't do. Feel needs a real phone.
+- Tile morph deferred: Reanimated's shared transitions need a static flag and a native rebuild, so not in Expo Go. The
+  app uses the Stack's quiet transition. Retry at the next native build.
+- The next native build also adds background audio with lock-screen controls and picture-in-picture (`app.json` plugins).
+- `File.createFile` adds " (1)" after the extension when a file has no mime type (`huge.docx (1)`). Harmless; files uploaded
+  with a type are fine (`clip (1).mp4`).
+- The first launch in Expo Go after an emulator boot failed again (`globalThis.expo` undefined, also seen as the ExpoSQLite
+  error above). A force-stop and relaunch fixes it. It looks specific to Expo Go; watch for it on the phone.
+- Dev data: `browser-test` has a "Preview test" folder with one file per type, shared with `newbie` as viewer.
 
 ## Working rules for this machine
 
@@ -73,9 +91,12 @@ Nothing is committed yet.
 
 ```bash
 npm run dev                                                   # web, from the repo root
-cd apps/mobile && unset NODE_ENV && npx expo start --go       # Expo Go
-cd apps/mobile && unset NODE_ENV && npx expo start --dev-client   # Nimbus APK
+cd apps/mobile && unset NODE_ENV && npm run go      # Expo Go
+cd apps/mobile && unset NODE_ENV && npm start       # Nimbus APK
 ```
+
+Both first run `npm run viewers`, which builds `viewer/*.ts` into `src/lib/viewers/` (generated, not committed). The app,
+`npm run typecheck` and any native or release build need that folder, so run it first on a fresh clone, or after editing `viewer/`.
 
 Run Expo from `apps/mobile`, never the repo root: at the root it generates a stray `tsconfig.json` and `.expo/`.
 Use `--go` for Expo Go and `--dev-client` for the APK: Expo Go on a `--dev-client` Metro kept running a stale bundle.
@@ -93,10 +114,11 @@ Dev addresses, with `192.168.0.108` as this computer's address at the time of wr
 - Computer's browser: `http://localhost:3000`. Other origins get a 403 from sign-in.
 - Phone, and the "Address your phone can reach" field: `http://192.168.0.108:3000`.
 - Metro for the APK: `http://192.168.0.108:8081`.
-- Files on a phone: `TUS_URL` and `S3_ENDPOINT` in `.env.local` say `localhost`, so previews and uploads
-  fail from a phone until they use the network address. Sort this out when Phase 2 or 3 needs it.
+- Files on a phone: `TUS_URL` and `S3_ENDPOINT` in `apps/web/.env.local` say `localhost`, so previews and uploads
+  fail from a phone. For a phone check set `S3_ENDPOINT=http://192.168.0.108:9100` (and `TUS_URL` from Phase 5), then
+  restart the web server. The emulator doesn't need this: `adb reverse` covers it.
 - If a phone can't connect, `ufw` may be blocking it:
-  `sudo ufw allow from 192.168.0.0/24 to any port 3000,8081 proto tcp`
+  `sudo ufw allow from 192.168.0.0/24 to any port 3000,8081,9100 proto tcp`
 
 ## Decisions
 
@@ -122,7 +144,7 @@ Dev addresses, with `192.168.0.108` as this computer's address at the time of wr
 | Backup engine | Periodic by default, "reliable backup" toggle uses a foreground service |
 | Backup target | `Camera/YYYY/MM` in My files; originals stay until "Free up space" |
 | Offline | Marked items auto-refresh on Wi-Fi, size cap. Browse cached lists, queue changes |
-| Previews | All in-app, swipe between files, "Open with" as the escape |
+| Previews | All in-app, swipe between files, "Open with" as the escape. Answers in Claude's project memory (Phase 3 decisions) |
 | Files integration | Read and write; Vaults hidden |
 | Notifications | Self-hosted push through UnifiedPush/ntfy, polling fallback |
 | Sharing | Native Nimbus sheet, then Android's share menu for links |
@@ -174,8 +196,10 @@ apps/mobile/modules/nimbus-android/   Kotlin, from Phase 5: uploader, DocumentsP
     service for reliable backup. All non-Vault uploads use it.
   - **DocumentsProvider:** each account is a root. Open downloads to cache; close-after-write uploads.
   - **UnifiedPush receiver:** registers the endpoint, shows notifications.
-- **Previews:** native for images, video (`expo-video`) and audio (`expo-audio`). PDF, Word, sheets, slides,
-  Markdown and code use one local WebView bundle built from the web's existing parsers.
+- **Previews:** native for images, video (`expo-video`) and audio (`expo-audio`). PDF, Word, sheets, slides, Markdown,
+  code and zip use one small page per viewer (`apps/mobile/viewer/`), built from the web's parsers. The pages have no
+  network or file access and a hash-based CSP; the app fetches the bytes and sends them over a bridge. A page tells the
+  app when it scrolls sideways, so the pager steps aside and a swipe from its edge changes file.
 - **Vault:** Hermes has no WebAssembly or WebCrypto, so inject `crypto.subtle` from
   `react-native-quick-crypto` and a native Argon2id in place of `hash-wasm`. Vault uploads reuse the web's
   `vaultReader` with `tus-js-client` while the app is open.
@@ -223,7 +247,7 @@ phase is scheduled, never dropped. Checked against the web's pages, `components/
 | Details, storage meter, storage report and its folder drill-down | 2 |
 | Search by name and contents | 2 (simple), 4 (recents, chips) |
 | Multi-account: saved logins and the browser's switcher become native accounts | 2 |
-| Previewer: all types, zoom, swipe, older versions, Open with, Collabora view-only | 3 |
+| Previewer: all types, zoom, swipe, older versions, Open with, Collabora view-only. Trash deliberately keeps Details, unlike the web (user, 2026-11-05) | 3 |
 | Download, zip download of several items, Reset thumbnail, video "Use this frame" | 3 |
 | Share dialog, links, access log, ownership transfer | 4 |
 | Versions dialog, including from the storage report and Details | 4 |

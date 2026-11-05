@@ -26,7 +26,15 @@ import { Thumb } from "@/components/thumb"
 import { VideoPlayer } from "@/components/video-player"
 import { parseCsv } from "@/lib/csv"
 import { fileType, formatBytes } from "@/lib/file-types"
-import { OFFICE_EXT, previewKind } from "@/lib/file-rules"
+import {
+  CSV_MAX,
+  HIGHLIGHT_MAX,
+  OFFICE_EXT,
+  OFFICE_MAX,
+  PREVIEW_ROWS as ROWS,
+  TEXT_MAX,
+  previewKind,
+} from "@/lib/file-rules"
 import type { Item } from "@/lib/files"
 import { SHIKI_THEME, langOf, readRange } from "@/lib/thumbs"
 import { cn } from "@/lib/utils"
@@ -41,11 +49,6 @@ export type Shown = {
   version?: { id: string; number: number; size: number; mime: string | null }
 }
 
-const TEXT_MAX = 2 * 1024 ** 2
-// Past this, code shows plain: highlighting megabytes stalls the page.
-const HIGHLIGHT_MAX = 256 * 1024
-const OFFICE_MAX = 50 * 1024 ** 2
-const ROWS = 1000
 const OPEN_FAILED = "Couldn't open this file."
 // fetch() rejects with a TypeError when the bucket's CORS rule blocks it.
 const CORS_FAILED =
@@ -803,7 +806,7 @@ const rowsNote = (shown: number, more: boolean) =>
 
 function CsvView({ data, item, size, href }: ViewProps) {
   const loaded = useLoad(async () => {
-    const bytes = await readRange(data, 0, Math.min(size, 5 * TEXT_MAX))
+    const bytes = await readRange(data, 0, Math.min(size, CSV_MAX))
     const sep = /\.tsv$/i.test(item.name) ? "\t" : ","
     return parseCsv(new TextDecoder().decode(bytes), sep, ROWS + 2)
   })
@@ -816,7 +819,7 @@ function CsvView({ data, item, size, href }: ViewProps) {
       rows={rows}
       note={rowsNote(
         ROWS,
-        loaded.value.length > ROWS + 1 || size > 5 * TEXT_MAX
+        loaded.value.length > ROWS + 1 || size > CSV_MAX
       )}
     />
   )

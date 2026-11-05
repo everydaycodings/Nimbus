@@ -23,6 +23,14 @@ export function formatBytes(n: number) {
 export const TEXT =
   /\.(txt|log|ini|conf|cfg|env|properties|c|h|cc|cpp|hpp|cs|css|scss|less|go|html?|java|js|mjs|cjs|json|jsx|kt|lua|php|pl|py|r|rb|rs|scala|sh|bash|zsh|sql|swift|toml|ts|tsx|vue|svelte|xml|ya?ml|graphql|proto|tf|dart|gradle|bat|ps1|diff|patch)$|(^|\/)(dockerfile|makefile|readme|license)$/i
 
+// How much of a file a preview reads. Past HIGHLIGHT_MAX, code shows plain:
+// highlighting megabytes stalls the page.
+export const TEXT_MAX = 2 * 1024 ** 2
+export const HIGHLIGHT_MAX = 256 * 1024
+export const CSV_MAX = 5 * TEXT_MAX
+export const OFFICE_MAX = 50 * 1024 ** 2
+export const PREVIEW_ROWS = 1000
+
 export type PreviewKind =
   | "image"
   | "video"

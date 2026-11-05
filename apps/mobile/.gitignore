@@ -46,3 +46,6 @@ yarn-error.*
 # design scratch
 .impeccable/mocks/
 .impeccable/review/
+
+# Built from viewer/ by scripts/build-viewers.mjs
+src/lib/viewers/

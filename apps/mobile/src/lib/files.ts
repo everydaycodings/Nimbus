@@ -7,6 +7,7 @@ import type {
   ListResponse,
   Me,
   PickerResponse,
+  PreviewResponse,
   Role,
   StorageReport,
   Tag,
@@ -23,7 +24,8 @@ import { useCallback, useMemo } from "react"
 
 import { useSnack } from "@/components/snackbar"
 import { useAccounts } from "./accounts"
-import { errorText, json } from "./api"
+import { errorText, json, send } from "./api"
+import { firstFrameToWebp } from "./thumbs"
 
 // ---- Calling the API as the active account ----
 
@@ -239,6 +241,36 @@ export function useFileActions() {
         run(() => api.post("/shortcuts", { nodeId: item.id }), `Added a shortcut to “${item.name}” in My files.`),
       removeShortcut: (item: Item) =>
         run(() => api.del(`/shortcuts/${item.id}`), `Removed the shortcut to “${item.name}”.`),
+      // Throws: the caller is holding a frame and says how it went.
+      setThumb: async (item: Item, webp: Uint8Array) => {
+        const r = await send(api.account.server, `/api/files/${item.id}/thumb?v=${item.version}`, {
+          method: "POST",
+          token: api.account.token,
+          headers: { "content-type": "image/webp" },
+          body: webp as unknown as BodyInit,
+        })
+        if (!r.ok) throw new Error("The server didn't accept that thumbnail. Try again.")
+        refresh()
+      },
+      // The server redraws other types itself after a couple of minutes, but never video.
+      resetThumb: (item: Item, isVideo: boolean) =>
+        run(async () => {
+          const { server, token } = api.account
+          const r = await send(server, `/api/files/${item.id}/thumb`, { method: "DELETE", token })
+          if (!r.ok) throw new Error("Couldn't reset the thumbnail. Try again.")
+          if (!isVideo) return
+          let body: Uint8Array | undefined
+          try {
+            const { url } = await api.get<PreviewResponse>(`/items/${item.id}/preview`)
+            body = await firstFrameToWebp(url)
+          } catch {} // An empty post tells the server not to wait for one.
+          await send(server, `/api/files/${item.id}/thumb?v=${item.version}`, {
+            method: "POST",
+            token,
+            headers: body ? { "content-type": "image/webp" } : undefined,
+            body: body as unknown as BodyInit | undefined,
+          })
+        }, "Thumbnail reset."),
       deleteOlderVersions: (id: string, name: string) =>
         run(() => api.del(`/items/${id}/versions`), `Deleted the older versions of “${name}”.`),
 

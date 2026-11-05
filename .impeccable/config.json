@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "apps/mobile/viewer/viewer.css"
+        ],
+        "createdAt": "2026-11-05T13:53:06.175Z",
+        "reason": "Claude triage: neutral grey 2px rule on Markdown blockquote, the standard quote convention, not a coloured card accent"
+      }
+    ]
+  }
+}

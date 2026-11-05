@@ -54,7 +54,10 @@
           "microphonePermission": false,
           "recordAudioAndroid": false
         }
-      ]
+      ],
+      "expo-video",
+      "expo-audio",
+      "expo-sharing"
     ]
   }
 }

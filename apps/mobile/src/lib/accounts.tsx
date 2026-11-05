@@ -1,3 +1,4 @@
+import { clearCache } from "./file-cache"
 import * as SecureStore from "expo-secure-store"
 import { createContext, use, useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 
@@ -67,6 +68,7 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
           token: gone.token,
           body: "{}",
         }).catch(() => {})
+      clearCache(id)
       const accounts = state.accounts.filter((a) => a.id !== id)
       await save({
         accounts,

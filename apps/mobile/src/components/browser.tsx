@@ -59,6 +59,7 @@ import {
   type Source,
 } from "@/lib/files"
 import { usePrefs } from "@/lib/prefs"
+import { openPreview } from "@/lib/preview-session"
 import { columnsFor, toRows, type Row } from "@/lib/rows"
 import { folderHref, homeHref, useTab, type TabGroup } from "@/lib/tab"
 import { c, radius, type } from "@/lib/theme"
@@ -215,7 +216,20 @@ export function Browser({ source: given, top, name }: { source: Source; top?: Re
         return next
       })
     } else if (item.kind === "folder" && !isTrash) open(item)
-    else setSheet({ kind: "details", item })
+    else if (isTrash) setSheet({ kind: "details", item })
+    else {
+      const files = items.filter((i) => i.kind === "file")
+      openPreview({
+        items: files,
+        index: files.findIndex((i) => i.id === item.id),
+        role,
+        more: async () => {
+          if (!list.hasNextPage) return null
+          const next = await list.fetchNextPage()
+          return next.data?.pages.flatMap((p) => p.items).filter((i) => i.kind === "file") ?? null
+        },
+      })
+    }
   }
   const longPress = (item: Item) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {})

@@ -13,6 +13,8 @@
     "**/*.tsx"
   ],
   "exclude": [
-    "**/*.test.ts"
+    "**/*.test.ts",
+    "viewer",
+    "scripts"
   ]
 }

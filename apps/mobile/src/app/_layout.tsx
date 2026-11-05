@@ -9,6 +9,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler"
 
 import { LockGate } from "@/components/lock"
 import { SnackbarProvider } from "@/components/snackbar"
+import { TransferBar } from "@/lib/transfers"
 import { AccountsProvider, useAccounts } from "@/lib/accounts"
 import { c } from "@/lib/theme"
 
@@ -35,6 +36,7 @@ function Root() {
             animation: "fade_from_bottom",
           }}
         />
+        <TransferBar />
       </SnackbarProvider>
     </LockGate>
   )
