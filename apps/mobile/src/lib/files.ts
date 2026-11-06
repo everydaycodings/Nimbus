@@ -84,9 +84,10 @@ export type Filters = Pick<ListQuery, "type" | "modified" | "size" | "tag">
 
 const PAGE = 100
 
-const qs = (params: Record<string, string | number | undefined>) => {
+// null too: a list restored from disk has its first page's cursor saved as null, not undefined.
+const qs = (params: Record<string, string | number | null | undefined>) => {
   const parts = Object.entries(params)
-    .filter(([, v]) => v !== undefined && v !== "")
+    .filter(([, v]) => v != null && v !== "")
     .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
   return parts.length ? `?${parts.join("&")}` : ""
 }
@@ -129,9 +130,10 @@ export function useList(source: Source, query: ListQuery) {
   return { ...list, items, first: list.data?.pages[0] }
 }
 
-export function useDetails(id: string) {
+export function useDetails(id: string, enabled = true) {
   const api = useApi()
   return useQuery({
+    enabled,
     queryKey: [api.id, "item", id],
     queryFn: () => api.get<{ item: Item | null; details: Details }>(`/items/${id}`),
   })
@@ -233,6 +235,7 @@ export type FileSheet =
   | { kind: "details"; item: Item }
   | { kind: "tags"; items: Item[] }
   | { kind: "move"; items: Item[] }
+  | { kind: "vault"; items: Item[] }
   | { kind: "new"; parentId: string | null }
   | { kind: "filter"; filter: "type" | "modified" | "size" | "tag" }
   | { kind: "sort" }

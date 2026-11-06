@@ -7,12 +7,14 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import android.view.WindowManager
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import org.json.JSONArray
 import org.json.JSONObject
+import java.security.GeneralSecurityException
 
 class NimbusAndroidModule : Module() {
   private val context get() = appContext.reactContext!!.applicationContext
@@ -23,9 +25,11 @@ class NimbusAndroidModule : Module() {
 
   override fun definition() = ModuleDefinition {
     Name("NimbusAndroid")
-    Events("uploads", "share", "backup")
+    Events("uploads", "share", "backup", "vault")
 
     OnCreate {
+      // Decrypted previews never outlive the process.
+      VaultKeys.wipeCache(context)
       Uploads.listener = { sendEvent("uploads", mapOf("json" to store.rows().toString())) }
       Backup.listener = { sendEvent("backup", mapOf<String, Any>()) }
       // Anything left from before the app was closed carries on.
@@ -89,6 +93,14 @@ class NimbusAndroidModule : Module() {
     // Off the JS thread: a shared file Android won't let us keep is copied first.
     AsyncFunction("addUploads") { json: String ->
       val jobs = JSONArray(json)
+      // A vault upload needs its vault open now: the file key comes from the vault key.
+      for (i in 0 until jobs.length()) {
+        val v = jobs.getJSONObject(i).optJSONObject("vault") ?: continue
+        val vk = VaultKeys.get(jobs.getJSONObject(i).getString("accountId"), v.getString("vaultId")) ?: throw CodedException("Unlock the vault first.")
+        val (fk, wrapped) = Vault.newFileKey(vk)
+        v.put("encKey", wrapped).put("fkSealed", JobKey.seal(fk))
+        fk.fill(0)
+      }
       for (i in 0 until jobs.length()) {
         val job = jobs.getJSONObject(i)
         job.put("uri", Share.keep(context, job.getString("uri")))
@@ -152,6 +164,95 @@ class NimbusAndroidModule : Module() {
       Backup.runNow(context)
     }
 
+    // ---- Vault: keys stay here; JS gets names, handles and results ----
+
+    AsyncFunction("vaultCreate") { passphrase: String ->
+      val v = Vault.newVault(passphrase)
+      JSONObject().put("handle", VaultKeys.hold(v.vk)).put("salt", v.salt).put("kdf", JSONObject().put("t", v.t).put("m", v.m))
+        .put("wrapped", v.wrapped).put("recoveryWrapped", v.recoveryWrapped).put("recoveryCode", v.recoveryCode).toString()
+    }
+    Function("vaultAdopt") { handle: String, accountId: String, vaultId: String ->
+      if (!VaultKeys.adopt(handle, accountId, vaultId)) throw CodedException("That new vault was lost. Try again.")
+    }
+    AsyncFunction("vaultUnlock") { accountId: String, vaultId: String, keysJson: String, secret: String, kind: String ->
+      val keys = JSONObject(keysJson)
+      val kdf = keys.getJSONObject("kdf")
+      try {
+        val vk = if (kind == "recovery") Vault.unlockWithRecovery(keys.getString("recoveryWrapped"), secret)
+        else Vault.unlockWithPassphrase(keys.getString("salt"), keys.getString("wrapped"), kdf.getInt("t"), kdf.getInt("m"), secret)
+        VaultKeys.put(accountId, vaultId, vk)
+        true
+      } catch (_: GeneralSecurityException) { false } catch (_: IllegalArgumentException) { false } // wrong secret or a mistyped code
+    }
+    AsyncFunction("vaultRewrap") { accountId: String, vaultId: String, passphrase: String ->
+      val w = Vault.rewrap(vaultKey(accountId, vaultId), passphrase)
+      JSONObject().put("salt", w.salt).put("kdf", JSONObject().put("t", w.t).put("m", w.m)).put("wrapped", w.wrapped).toString()
+    }
+    Function("vaultLock") { accountId: String, vaultId: String -> VaultKeys.lock(context, accountId, vaultId) }
+    Function("vaultLockAll") { accountId: String? -> VaultKeys.lockAll(context, accountId) }
+    Function("vaultIsOpen") { accountId: String, vaultId: String -> VaultKeys.isOpen(accountId, vaultId) }
+    AsyncFunction("vaultOpenNames") { accountId: String, vaultId: String, sealed: List<String> ->
+      val vk = vaultKey(accountId, vaultId)
+      val out = JSONArray()
+      for (name in sealed) out.put(try {
+        Vault.decName(vk, name).let { JSONObject().put("n", it.first).put("t", it.second ?: JSONObject.NULL) }
+      } catch (_: Exception) { JSONObject.NULL })
+      out.toString()
+    }
+    AsyncFunction("vaultSealName") { accountId: String, vaultId: String, name: String, mime: String? ->
+      val vk = vaultKey(accountId, vaultId)
+      JSONObject().put("sealed", Vault.encName(vk, name, mime)).put("tag", Vault.nameTag(vk, name)).toString()
+    }
+    AsyncFunction("vaultNameTags") { accountId: String, vaultId: String, names: List<String> ->
+      val vk = vaultKey(accountId, vaultId)
+      JSONArray(names.map { Vault.nameTag(vk, it) }).toString()
+    }
+    Function("vaultCacheDir") { accountId: String, vaultId: String -> VaultKeys.cacheDir(context, accountId, vaultId).absolutePath }
+    AsyncFunction("vaultDecrypt") { jobId: String, accountId: String, vaultId: String, url: String, encKey: String, dest: String, promise: Promise ->
+      val fk = try { Vault.openFileKey(vaultKey(accountId, vaultId), encKey) } catch (e: GeneralSecurityException) { return@AsyncFunction promise.reject(CodedException("This file's key doesn't open.")) }
+      VaultFiles.decrypt(context, jobId, VaultKeys.scope(accountId, vaultId), fk, url, dest, promise) { done, total -> vaultProgress(jobId, done, total) }
+    }
+    AsyncFunction("vaultZip") { jobId: String, accountId: String, vaultId: String, itemsJson: String, dest: String, promise: Promise ->
+      val vk = vaultKey(accountId, vaultId)
+      val list = JSONArray(itemsJson)
+      val items = ArrayList<VaultFiles.ZipItem>()
+      try {
+        for (i in 0 until list.length()) {
+          val it = list.getJSONObject(i)
+          items.add(VaultFiles.ZipItem(it.getString("url"), Vault.openFileKey(vk, it.getString("encKey")), it.getString("path"), if (it.has("size")) it.getLong("size") else null))
+        }
+      } catch (e: GeneralSecurityException) {
+        items.forEach { it.fk.fill(0) }
+        return@AsyncFunction promise.reject(CodedException("A file's key doesn't open."))
+      }
+      VaultFiles.zip(context, jobId, VaultKeys.scope(accountId, vaultId), items, dest, promise) { done, total -> vaultProgress(jobId, done, total) }
+    }
+    Function("vaultCancel") { jobId: String -> VaultFiles.cancel(jobId) }
+
+    AsyncFunction("vaultBioAvailable") { VaultBio.available(context) }
+    Function("vaultBioEnabled") { accountId: String, vaultId: String -> VaultBio.enabled(context, accountId, vaultId) }
+    AsyncFunction("vaultBioEnable") { accountId: String, vaultId: String, promise: Promise -> VaultBio.enable(appContext.currentActivity, accountId, vaultId, promise) }
+    AsyncFunction("vaultBioUnlock") { accountId: String, vaultId: String, promise: Promise -> VaultBio.unlock(appContext.currentActivity, accountId, vaultId, promise) }
+    Function("vaultBioDisable") { accountId: String, vaultId: String -> VaultBio.disable(context, accountId, vaultId) }
+    // Sign-out, or the vault is gone: close it, drop its fingerprint key and its queued uploads.
+    Function("vaultForget") { accountId: String, vaultId: String? ->
+      if (vaultId == null) {
+        VaultKeys.lockAll(context, accountId)
+        VaultBio.dropAccount(context, accountId)
+        cancel("account = ? and vault_id is not null", arrayOf(accountId))
+      } else {
+        VaultKeys.lock(context, accountId, vaultId)
+        VaultBio.disable(context, accountId, vaultId)
+        cancel("account = ? and vault_id = ?", arrayOf(accountId, vaultId))
+      }
+    }
+    // Keeps vault screens out of screenshots and the recents view.
+    Function("setSecure") { on: Boolean ->
+      appContext.currentActivity?.let { a ->
+        a.runOnUiThread { if (on) a.window.addFlags(WindowManager.LayoutParams.FLAG_SECURE) else a.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
+      }
+    }
+
     AsyncFunction("freeUpCandidates") { days: Int ->
       val items = Backup.freeable(context, days)
       JSONObject().put("count", items.size).put("bytes", items.sumOf { it.size }).toString()
@@ -167,6 +268,11 @@ class NimbusAndroidModule : Module() {
       activity.startIntentSenderForResult(request.intentSender, FREE_UP, null, 0, 0, 0)
     }
   }
+
+  private fun vaultKey(accountId: String, vaultId: String) = VaultKeys.get(accountId, vaultId) ?: throw CodedException("This vault is locked.")
+
+  private fun vaultProgress(jobId: String, done: Long, total: Long) =
+    sendEvent("vault", mapOf("jobId" to jobId, "done" to done.toDouble(), "total" to total.toDouble()))
 
   // Stops it, forgets it, and tells the server to drop what it had.
   private fun cancel(where: String, args: Array<String>) {

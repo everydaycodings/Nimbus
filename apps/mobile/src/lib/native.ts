@@ -16,6 +16,8 @@ export type NativeJob = {
   onConflict: "version" | "rename"
   wifiOnly: boolean
   speedCap: number | null
+  // Phase 7: set for a vault upload. planToken is then the vault plan token; Kotlin seals the file key.
+  vault?: { vaultId: string; sealedName: string; nameTag: string; replaces?: string }
 }
 
 export type NimbusAndroid = {
@@ -57,8 +59,37 @@ export type NimbusAndroid = {
   viewDocument?(accountId: string, itemId: string, mime: string): boolean
   // Tell open Files screens to reload this account's lists.
   notifyFilesChanged?(accountId: string): void
-  // `json`: the queue as UploadRow[].
-  addListener(event: "uploads" | "share" | "backup", listener: (e: { json?: string }) => void): EventSubscription
+  // Phase 7, Vault. Optional: older APKs don't have them. Keys never reach JS; see the contract in plans/android-app.md.
+  // JSON {handle, salt, kdf:{t,m}, wrapped, recoveryWrapped, recoveryCode}; the new key waits under `handle`.
+  vaultCreate?(passphrase: string): Promise<string>
+  vaultAdopt?(handle: string, accountId: string, vaultId: string): void
+  // False: wrong secret.
+  vaultUnlock?(accountId: string, vaultId: string, keysJson: string, secret: string, kind: "passphrase" | "recovery"): Promise<boolean>
+  // JSON UpdateVaultKeyRequest; the vault must be open.
+  vaultRewrap?(accountId: string, vaultId: string, passphrase: string): Promise<string>
+  vaultLock?(accountId: string, vaultId: string): void
+  vaultLockAll?(accountId: string | null): void
+  vaultIsOpen?(accountId: string, vaultId: string): boolean
+  // JSON ({n, t} | null)[] in the order given; null: can't be opened.
+  vaultOpenNames?(accountId: string, vaultId: string, sealedJson: string[]): Promise<string>
+  // JSON {sealed, tag}.
+  vaultSealName?(accountId: string, vaultId: string, name: string, mime: string | null): Promise<string>
+  // JSON string[] of name tags, in the order given.
+  vaultNameTags?(accountId: string, vaultId: string, namesJson: string[]): Promise<string>
+  vaultCacheDir?(accountId: string, vaultId: string): string
+  // Streams url -> decrypt -> dest (a path or a content:// URI). Progress comes as "vault" events.
+  vaultDecrypt?(jobId: string, accountId: string, vaultId: string, url: string, encKey: string, dest: string): Promise<void>
+  vaultZip?(jobId: string, accountId: string, vaultId: string, itemsJson: string, dest: string): Promise<void>
+  vaultCancel?(jobId: string): void
+  vaultBioAvailable?(): Promise<boolean>
+  vaultBioEnabled?(accountId: string, vaultId: string): boolean
+  vaultBioEnable?(accountId: string, vaultId: string): Promise<"ok" | "cancel">
+  vaultBioUnlock?(accountId: string, vaultId: string): Promise<"ok" | "cancel" | "invalidated" | "none">
+  vaultBioDisable?(accountId: string, vaultId: string): void
+  vaultForget?(accountId: string, vaultId: string | null): void
+  setSecure?(on: boolean): void
+  // `json`: the queue as UploadRow[]. "vault" events carry a decrypt job's progress in plaintext bytes.
+  addListener(event: "uploads" | "share" | "backup" | "vault", listener: (e: { json?: string; jobId?: string; done?: number; total?: number }) => void): EventSubscription
 }
 
 export type SharedFile = { uri: string; name: string; size: number; mime: string }

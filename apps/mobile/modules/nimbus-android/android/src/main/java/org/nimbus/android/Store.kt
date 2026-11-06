@@ -10,7 +10,7 @@ import org.json.JSONObject
 import java.util.UUID
 
 // The upload queue. It outlives the app, so a killed or rebooted phone carries on where it stopped.
-class Store private constructor(context: Context) : SQLiteOpenHelper(context, "nimbus-uploads.db", null, 3) {
+class Store private constructor(context: Context) : SQLiteOpenHelper(context, "nimbus-uploads.db", null, 4) {
   override fun onCreate(db: SQLiteDatabase) {
     media(db)
     db.execSQL(
@@ -21,7 +21,8 @@ class Store private constructor(context: Context) : SQLiteOpenHelper(context, "n
         wifi_only integer not null, speed_cap integer, source text not null, media_id text,
         status text not null, sent integer not null default 0, upload_url text, sha text,
         node_id text, version_id text, dup_id text, dup_path text, error text, created integer not null,
-        base_node text, base_version text)"""
+        base_node text, base_version text,
+        vault_id text, sealed_name text, name_tag text, enc_key text, fk_sealed text, replaces text)"""
     )
   }
 
@@ -31,6 +32,7 @@ class Store private constructor(context: Context) : SQLiteOpenHelper(context, "n
       db.execSQL("alter table uploads add column base_node text")
       db.execSQL("alter table uploads add column base_version text")
     }
+    if (old < 4) for (c in listOf("vault_id", "sealed_name", "name_tag", "enc_key", "fk_sealed", "replaces")) db.execSQL("alter table uploads add column $c text")
   }
 
   // What camera backup has done with each photo, per account: queued, done, skipped (already on the
@@ -48,6 +50,9 @@ class Store private constructor(context: Context) : SQLiteOpenHelper(context, "n
     val planned: Long, val parentId: String?, val onConflict: String, val wifiOnly: Boolean,
     val speedCap: Long?, val source: String, val mediaId: String?, val status: String, val sent: Long,
     val uploadUrl: String?, val sha: String?, val baseNode: String? = null, val baseVersion: String? = null,
+    // Vault uploads: the name and its tag are sealed, encKey is the file key under the vault key, and
+    // fkSealed is the same key under a keystore key so the worker can use it. Deleted when the upload ends.
+    val vaultId: String? = null, val sealedName: String? = null, val nameTag: String? = null, val encKey: String? = null, val fkSealed: String? = null, val replaces: String? = null,
   )
 
   private fun Cursor.str(c: String) = getColumnIndexOrThrow(c).let { if (isNull(it)) null else getString(it) }
@@ -58,6 +63,7 @@ class Store private constructor(context: Context) : SQLiteOpenHelper(context, "n
     str("mime")!!, str("path")!!, str("plan_token")!!, long("planned")!!, str("parent_id"), str("on_conflict")!!,
     long("wifi_only") == 1L, long("speed_cap"), str("source")!!, str("media_id"), str("status")!!, long("sent")!!,
     str("upload_url"), str("sha"), str("base_node"), str("base_version"),
+    str("vault_id"), str("sealed_name"), str("name_tag"), str("enc_key"), str("fk_sealed"), str("replaces"),
   )
 
   fun add(jobs: JSONArray, source: String = "manual"): Int {
@@ -72,12 +78,16 @@ class Store private constructor(context: Context) : SQLiteOpenHelper(context, "n
           put("mime", j.optString("mime")); put("path", j.getString("path")); put("plan_token", j.getString("planToken"))
           // An empty plan token (a save from the Files app) means "plan when it sends".
           put("planned", if (j.getString("planToken").isEmpty()) 0L else now); put("parent_id", if (j.isNull("parentId")) null else j.getString("parentId"))
-          put("on_conflict", j.getString("onConflict")); put("wifi_only", if (j.optBoolean("wifiOnly")) 1 else 0)
+          put("on_conflict", j.optString("onConflict", "rename")); put("wifi_only", if (j.optBoolean("wifiOnly")) 1 else 0)
           if (!j.isNull("speedCap") && j.has("speedCap")) put("speed_cap", j.getLong("speedCap"))
           put("source", source); put("media_id", j.optString("mediaId").ifEmpty { null })
           put("status", "queued"); put("created", now)
           // Set by saves from the Files app: the file this replaces and the version the edit started from.
           put("base_node", j.optString("baseNode").ifEmpty { null }); put("base_version", j.optString("baseVersion").ifEmpty { null })
+          j.optJSONObject("vault")?.let { v ->
+            put("vault_id", v.getString("vaultId")); put("sealed_name", v.getString("sealedName")); put("name_tag", v.getString("nameTag"))
+            put("enc_key", v.getString("encKey")); put("fk_sealed", v.getString("fkSealed")); put("replaces", v.optString("replaces").ifEmpty { null })
+          }
         })
       }
     }
@@ -214,6 +224,7 @@ class Store private constructor(context: Context) : SQLiteOpenHelper(context, "n
           // "waiting" is also how the JS strip says Wi-Fi; a row held for any other reason is still just queued.
           put("status", status)
           c.str("error")?.let { put("error", it) }
+          c.str("vault_id")?.let { put("vaultId", it) }
           c.str("node_id")?.let { put("nodeId", it) }
           if (c.str("on_conflict") == "version") put("asVersion", true)
           c.str("dup_id")?.let { put("duplicateOf", JSONObject().put("id", it).put("path", c.str("dup_path"))) }

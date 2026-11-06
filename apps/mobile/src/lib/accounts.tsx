@@ -84,6 +84,8 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
       clearCache(id)
       forgetAccount(id)
       engine.cancelAccount(id)
+      // Keys, fingerprint keys and queued vault uploads go with the account.
+      if (typeof native?.vaultForget === "function") native.vaultForget(id, null)
       // Backup can't carry on into an account that's gone; More says so on the backup screen.
       if (backupAvailable && readSettings().accountId === id) saveSettings({ enabled: false, accountId: null })
       const accounts = state.accounts.filter((a) => a.id !== id)

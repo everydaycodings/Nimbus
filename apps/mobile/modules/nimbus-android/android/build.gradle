@@ -15,5 +15,9 @@ dependencies {
   implementation "com.squareup.okhttp3:okhttp:4.9.2"
   implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2"
   implementation "com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1"
+  implementation "org.bouncycastle:bcprov-jdk18on:1.78.1"
+  implementation "androidx.biometric:biometric:1.1.0"
   testImplementation "junit:junit:4.13.2"
+  // The android.jar one is stubbed in unit tests.
+  testImplementation "org.json:json:20240303"
 }

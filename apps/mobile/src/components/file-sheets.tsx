@@ -27,6 +27,7 @@ import {
   ImagesSquare,
   Info,
   Link as LinkIcon,
+  Lock,
   Minus,
   PencilSimple,
   Plus,
@@ -53,6 +54,7 @@ import { SwitchRow } from "@/components/page"
 import { Sheet, SheetDivider, SheetRow, useDismiss } from "@/components/sheet"
 import { useSnack } from "@/components/snackbar"
 import { TagDialog } from "@/components/tag-dialog"
+import { VaultPickSheet, canVault } from "@/components/vault-sheets"
 import { useUploader } from "@/components/uploader"
 import { Button, Text } from "@/components/ui"
 import { editable, label, roleOf, shareable, useApi, useDetails, useFileActions, useFolders, useLinks, useShareState, useTags, useVersions, type FileSheet, type Filters } from "@/lib/files"
@@ -176,6 +178,8 @@ function SheetFor(props: Props & { sheet: FileSheet; ask: (d: Dialog) => void })
       return <TagsSheet {...props} items={sheet.items} onClose={onClose} />
     case "move":
       return <MoveSheet {...props} items={sheet.items} onClose={onClose} />
+    case "vault":
+      return <VaultPickSheet title={`Move ${plural(sheet.items.length, "item")} to a vault`} intake={{ items: sheet.items }} onClose={onClose} />
     case "new":
       return <NewSheet {...props} parentId={sheet.parentId} onClose={onClose} />
     case "filter":
@@ -366,6 +370,7 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
       {file && OFFICE_EXT.test(file.name) && <CollaboraRow item={file} onClose={onClose} icon={ic(FileText)} />}
       {one && edit && <SheetRow label="Rename" icon={ic(PencilSimple)} onPress={() => ask({ kind: "rename", item: one })} />}
       {edit && <SheetRow label="Move" icon={ic(ArrowBendUpRight)} onPress={() => onChange({ kind: "move", items })} />}
+      {edit && canVault && items.every((i) => !i.role && !i.shortcut) && <SheetRow label="Move to vault" needsNet icon={ic(Lock)} onPress={() => onChange({ kind: "vault", items })} />}
       <SheetRow
         label={starred ? "Remove from starred" : "Add to starred"}
         icon={<Star size={ICON} color={mute} weight={starred ? "fill" : "regular"} />}

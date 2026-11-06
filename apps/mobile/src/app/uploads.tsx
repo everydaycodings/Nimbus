@@ -14,6 +14,7 @@ import { useApi } from "@/lib/files"
 import { c } from "@/lib/theme"
 import type { UploadRow } from "@/lib/upload-plan"
 import { engine, useUploadRows } from "@/lib/uploads"
+import { needsReplan, retryVaultRow, vaultNative } from "@/lib/vault"
 
 export default function Uploads() {
   const inset = useSafeAreaInsets()
@@ -65,6 +66,11 @@ function UploadItem({ row: r }: { row: UploadRow }) {
     enabled: r.status === "done" && !!r.asVersion && !!r.nodeId,
   })
   const version = versions.data?.versions.find((v) => v.current)?.number
+  const retry = async () => {
+    if (!vaultNative || !needsReplan(r)) return engine.retry(r.id)
+    const problem = await retryVaultRow(api, vaultNative, r)
+    if (problem) snack({ text: problem, error: true })
+  }
   const bad = r.status === "failed" || r.status === "refused"
   const pct = r.size ? Math.min(100, Math.round((r.sent / r.size) * 100)) : 0
 
@@ -97,7 +103,7 @@ function UploadItem({ row: r }: { row: UploadRow }) {
         </View>
         {r.status === "uploading" && <IconButton icon={Pause} label={`Pause ${r.name}`} onPress={() => engine.pause(r.id)} />}
         {r.status === "paused" && <IconButton icon={Play} label={`Resume ${r.name}`} onPress={() => engine.resume(r.id)} />}
-        {r.status === "failed" && <IconButton icon={ArrowClockwise} label={`Retry ${r.name}`} onPress={() => engine.retry(r.id)} />}
+        {r.status === "failed" && <IconButton icon={ArrowClockwise} label={`Retry ${r.name}`} onPress={retry} />}
         {r.status === "done" && !r.duplicateOf && <View accessible accessibilityLabel="Uploaded" style={{ width: 48, alignItems: "center" }}><CheckCircle size={24} color={c.brand} weight="fill" /></View>}
         {r.status === "refused" && <View style={{ width: 48, alignItems: "center" }}><Warning size={24} color={c.destructive} /></View>}
         {r.status !== "done" && <IconButton icon={X} label={`${r.status === "refused" ? "Dismiss" : "Cancel"} ${r.name}`} onPress={() => engine.cancel(r.id)} />}

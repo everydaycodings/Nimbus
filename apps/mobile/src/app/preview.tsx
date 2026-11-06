@@ -2,11 +2,13 @@ import type { Item, Version } from "@nimbus/shared/api"
 import { router, useFocusEffect } from "expo-router"
 import { StatusBar } from "expo-status-bar"
 import type { VideoPlayer } from "expo-video"
-import { DownloadSimple, DotsThreeVertical, ShareNetwork, X } from "phosphor-react-native"
+import { ArrowSquareOut, DownloadSimple, DotsThreeVertical, ShareNetwork, X } from "phosphor-react-native"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { BackHandler, FlatList, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native"
 import Animated, { useAnimatedStyle, useReducedMotion, withTiming } from "react-native-reanimated"
 import { useSafeAreaFrame, useSafeAreaInsets } from "react-native-safe-area-context"
+
+import { Directory } from "expo-file-system"
 
 import { FileSheets } from "@/components/file-sheets"
 import { AudioPage, CollaboraView, ImagePage, NoPreview, VideoPage, WebPage, type PageProps } from "@/components/preview-pages"
@@ -14,9 +16,12 @@ import { useSnack } from "@/components/snackbar"
 import { IconButton, Text } from "@/components/ui"
 import { errorText } from "@/lib/api"
 import { shareable, useApi, useDetails, useFileActions, type FileSheet } from "@/lib/files"
-import { planFor } from "@/lib/preview-rules"
-import { previewSession } from "@/lib/preview-session"
+import { planFor, type Plan } from "@/lib/preview-rules"
+import { clearPreview, previewSession } from "@/lib/preview-session"
 import { useTransfers } from "@/lib/transfers"
+import { Secure, useVaultLock } from "@/components/vault-lock"
+import { useVaultItem } from "@/components/vault-item"
+import { vaultDirUri, vaultNative } from "@/lib/vault"
 import { frameToWebp } from "@/lib/thumbs"
 import { c } from "@/lib/theme"
 
@@ -25,9 +30,17 @@ const LOAD_MORE_WITHIN = 3
 const COUNTS_AS_OPENED_MS = 800
 const HIDE_WHILE_PLAYING_MS = 3000
 
+// A vault file is decrypted whole to a temp copy, so every viewer reads it locally; Collabora can't see it.
+function planOf(name: string, mime: string | null, size: number): Plan {
+  const plan = planFor(name, mime, size)
+  if (!previewSession()?.vault) return plan
+  if (plan.show === "collabora") return { show: "none", reason: "This type can't be previewed in a vault. Use Open with." }
+  return plan.show === "web" ? { ...plan, fetch: "cache" } : plan
+}
+
 function Page(props: PageProps & { near: boolean }) {
   const { item, version, near, active, top } = props
-  const plan = planFor(item.name, version ? version.mime : item.mime, version?.size ?? item.size)
+  const plan = planOf(item.name, version ? version.mime : item.mime, version?.size ?? item.size)
   switch (plan.show) {
     case "image":
       return <ImagePage {...props} />
@@ -78,20 +91,42 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
 
   const shown = items[index]
   // Fresh details keep the name, star and thumbnail right after an action in the ⋯ menu.
-  const details = useDetails(shown?.id ?? "")
+  const vaultId = session.vault
+  const vaultItem = useVaultItem(vaultId)
+  const { touch, isOpen } = useVaultLock()
+  // Locked while showing (idle, background, sign-out): the decrypted page goes with it.
+  const locked = !!vaultId && !isOpen(vaultId)
+  useEffect(() => {
+    if (locked) router.back()
+  }, [locked])
+  const details = useDetails(shown?.id ?? "", !vaultId)
   const item: Item = (details.data?.item?.id === shown?.id ? details.data?.item : null) ?? shown
-  const plan = shown ? planFor(item.name, version ? version.mime : item.mime, version?.size ?? item.size) : null
+  const plan = shown ? planOf(item.name, version ? version.mime : item.mime, version?.size ?? item.size) : null
   const immersive = plan?.show === "image" || plan?.show === "video"
   const top = inset.top + BAR
 
   // Counts as opened once it's been looked at, so swiping past doesn't fill Recent.
   useEffect(() => {
-    if (!shown || version) return
+    if (!shown || version || vaultId) return
     const t = setTimeout(() => {
       api.get(`/items/${shown.id}/preview?open=1`).catch(() => {})
     }, COUNTS_AS_OPENED_MS)
     return () => clearTimeout(t)
-  }, [shown, version, api])
+  }, [shown, version, api, vaultId])
+
+  // A vault's temp copies go when the previewer closes.
+  useEffect(
+    () => () => {
+      if (!vaultId) return
+      try {
+        const dir = new Directory(vaultDirUri(vaultNative!, api.id, vaultId))
+        if (dir.exists) dir.delete()
+      } catch {}
+      clearPreview()
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- on close only
+    []
+  )
 
   // Every new file starts with the bars showing, so its name is seen.
   useEffect(() => {
@@ -223,7 +258,8 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
   if (!shown) return <View style={{ flex: 1, backgroundColor: c.background }} />
 
   return (
-    <View style={{ flex: 1, backgroundColor: immersive ? "#000" : c.background }}>
+    <View style={{ flex: 1, backgroundColor: immersive ? "#000" : c.background }} onTouchStartCapture={vaultId ? touch : undefined}>
+      {vaultId && <Secure />}
       <StatusBar hidden={immersive && !bars} style="light" />
       <FlatList
         ref={listRef}
@@ -278,14 +314,21 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
             </Text>
           )}
         </View>
-        {!version && shareable(item, session.role) && (
+        {vaultItem && (
+          <>
+            <IconButton icon={ArrowSquareOut} label="Open with" onPress={() => vaultItem.openWith(item)} />
+            <IconButton icon={DownloadSimple} label="Download" onPress={() => vaultItem.download(item)} />
+          </>
+        )}
+        {!vaultId && !version && shareable(item, session.role) && (
           <IconButton icon={ShareNetwork} label="Share" onPress={() => router.push({ pathname: "/share/[id]", params: { id: item.id, name: item.name } })} />
         )}
-        <IconButton icon={DownloadSimple} label="Download" onPress={() => download([item], version)} />
-        <IconButton icon={DotsThreeVertical} label="More actions" onPress={() => setSheet({ kind: "actions", items: [item] })} />
+        {!vaultId && <IconButton icon={DownloadSimple} label="Download" onPress={() => download([item], version)} />}
+        {!vaultId && <IconButton icon={DotsThreeVertical} label="More actions" onPress={() => setSheet({ kind: "actions", items: [item] })} />}
       </Animated.View>
 
-      <FileSheets
+      {vaultItem?.dialog}
+      {!vaultId && <FileSheets
         sheet={sheet}
         onChange={setSheet}
         role={session.role}
@@ -300,7 +343,7 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
         onTrashed={onTrashed}
         onUseFrame={hasPlayer && !version ? useFrame : undefined}
         previewing={version}
-      />
+      />}
     </View>
   )
 }

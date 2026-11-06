@@ -50,7 +50,8 @@ export async function fetchTo(
       signal: options.signal,
       onProgress: ({ bytesWritten, totalBytes }) => options.onProgress?.(bytesWritten, totalBytes),
     })
-    part.move(file)
+    // Async in SDK 58: reading `file` before this settles sees nothing there.
+    await part.move(file)
   } catch (e) {
     if (part.exists) part.delete()
     throw e

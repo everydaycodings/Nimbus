@@ -20,7 +20,7 @@ class Sender(context: Context, private val stopped: () -> Boolean) {
   enum class Outcome { DONE, FAILED, HALTED, OFFLINE, AUTH, FULL }
 
   private fun fail(row: Store.Row, message: String): Outcome {
-    store.set(row.id, "status" to "failed", "error" to message)
+    store.set(row.id, "status" to "failed", "error" to message, "fk_sealed" to null)
     Uploads.release(ctx, row.uri)
     return Outcome.FAILED
   }
@@ -98,6 +98,61 @@ class Sender(context: Context, private val stopped: () -> Boolean) {
     return got
   }
 
+  // A vault upload sends ciphertext made on the way out from the plaintext file: no hash, no replan
+  // (only the JS can plan one, with the vault open), no thumbnail. Parts are whole cipher chunks, so
+  // it resumes from wherever the server got to, with the same file key.
+  private fun sendVault(account: Accounts.Account, first: Store.Row): Outcome {
+    var row = first
+    val stale = "Open the vault and try again."
+    val fk = row.fkSealed?.let { JobKey.open(it) } ?: return fail(row, stale)
+    try {
+      val total = Vault.cipherSize(row.size)
+      for (attempt in 0..1) {
+        var url = row.uploadUrl
+        var offset = url?.let { Tus.offset(it) }
+        if (url == null || offset == null) {
+          if (url != null || System.currentTimeMillis() - row.planned >= 23 * 3600_000L) return fail(row, stale)
+          val meta = mutableMapOf("filename" to row.sealedName!!, "nameTag" to row.nameTag!!, "token" to row.planToken, "encKey" to row.encKey!!)
+          row.replaces?.let { meta["replaces"] = it }
+          url = Tus.create(row.tusUrl, total, meta)
+          offset = 0L
+          store.set(row.id, "upload_url" to url, "sent" to 0L)
+        }
+        var at: Long = offset
+        var lost = false
+        while (at < total) {
+          checkHalt(row.id)
+          val start = at
+          val end = minOf(start + VAULT_PART, total)
+          var inPart = 0L
+          val next = Tus.patchStream(url, start, end - start, { Vault.encryptRange(fk, row.size, { open(row.uri) }, start, end, it) }) { bytes ->
+            checkHalt(row.id)
+            row.speedCap?.let { Uploads.pace(bytes, it) }
+            inPart += bytes
+            val now = System.currentTimeMillis()
+            if (now - (lastWrite[row.id] ?: 0) > 500) {
+              lastWrite[row.id] = now
+              store.set(row.id, "sent" to minOf(start + inPart, row.size))
+            }
+          }
+          if (next == null) { lost = true; break }
+          at = next
+          store.set(row.id, "sent" to minOf(next, row.size))
+        }
+        if (!lost) break
+        store.set(row.id, "upload_url" to null, "sent" to 0L)
+        row = store.get(row.id) ?: return Outcome.HALTED
+        if (attempt == 1) return fail(row, "The server lost this upload twice. Try again later.")
+      }
+      val done = Net.api(account, "POST", "/api/v1/uploads/finish", JSONObject().put("uploadUrl", store.get(row.id)?.uploadUrl))
+      store.set(row.id, "status" to "done", "sent" to row.size, "node_id" to done.optString("nodeId").ifEmpty { null }, "version_id" to done.optString("versionId").ifEmpty { null }, "error" to null, "fk_sealed" to null)
+      Uploads.release(ctx, row.uri)
+      return Outcome.DONE
+    } finally {
+      fk.fill(0)
+    }
+  }
+
   fun send(first: Store.Row): Outcome {
     var row = first
     val account = Accounts.get(ctx, row.account) ?: run {
@@ -105,6 +160,7 @@ class Sender(context: Context, private val stopped: () -> Boolean) {
       return Outcome.AUTH
     }
     try {
+      if (row.vaultId != null) return sendVault(account, row)
       val sha = row.sha ?: hash(Uri.parse(row.uri), row.id).also { store.set(row.id, "sha" to it) }
       for (attempt in 0..1) {
         var url = row.uploadUrl
@@ -205,5 +261,7 @@ class Sender(context: Context, private val stopped: () -> Boolean) {
 
   companion object {
     const val PART = 8 * 1024 * 1024
+    // 16 cipher chunks, as on the web.
+    const val VAULT_PART = 16L * Vault.CIPHER_CHUNK
   }
 }

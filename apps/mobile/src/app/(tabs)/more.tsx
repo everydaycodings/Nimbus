@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from "expo-router"
 import { formatBytes } from "@nimbus/shared/file-rules"
-import { ArrowCircleDown, ArrowSquareOut, Broom, CaretRight, CloudArrowUp, FolderOpen, GearSix, Tag, Trash, UploadSimple } from "phosphor-react-native"
+import { ArrowCircleDown, ArrowSquareOut, Broom, CaretRight, CloudArrowUp, FolderOpen, GearSix, Lock, Tag, Trash, UploadSimple } from "phosphor-react-native"
 import { useCallback, useState } from "react"
 import { ActivityIndicator, Linking, Pressable, ScrollView, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
@@ -16,6 +16,7 @@ import { useApi, useMe } from "@/lib/files"
 import { useOffline } from "@/lib/offline"
 import { useQueue } from "@/lib/offline-queue"
 import { usePrefs } from "@/lib/prefs"
+import { vaultNative } from "@/lib/vault"
 import { useTransfers } from "@/lib/transfers"
 import { c, radius } from "@/lib/theme"
 
@@ -76,6 +77,7 @@ export default function More() {
             />
             <Row label="Trash" icon={<Trash size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/trash")} />
             <Row label="Tags" icon={<Tag size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/tags")} />
+            <Row label="Vaults" detail={vaultNative ? "Encrypted on this phone" : "Needs the installed app"} icon={<Lock size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/vault")} />
             <Row label="Account settings" icon={<GearSix size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/account")} />
           </Group>
           <Group>

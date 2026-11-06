@@ -10,11 +10,15 @@ export type PreviewSession = {
   version?: Version
   // The list's next page, for swiping past what's loaded.
   more?: () => Promise<Item[] | null>
+  // Set when the files are in this vault: they open from decrypted copies and nothing asks the server about them.
+  vault?: string
 }
 
 let current: PreviewSession | null = null
 
 export const previewSession = () => current
+
+export const clearPreview = () => void (current = null)
 
 export function openPreview(session: PreviewSession) {
   current = session

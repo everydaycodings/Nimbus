@@ -30,7 +30,7 @@ const subscribe = (fn: () => void) => {
 }
 let nextId = 1
 
-async function track<T>(name: string, total: number, task: (progress: (bytes: number, total?: number) => void, signal: AbortSignal) => Promise<T>) {
+export async function track<T>(name: string, total: number, task: (progress: (bytes: number, total?: number) => void, signal: AbortSignal) => Promise<T>) {
   const stop = new AbortController()
   const id = nextId++
   transfers = [...transfers, { id, name, bytes: 0, total, cancel: () => stop.abort() }]
@@ -123,6 +123,7 @@ export function useTransfers() {
 
     return {
       chooseFolder,
+      destination,
       // One file saves as itself. Several, or any folder, come as one ZIP from the server.
       download: async (items: Item[], version?: Version) => {
         const dir = await destination()

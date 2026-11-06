@@ -1,7 +1,7 @@
 # Nimbus for Android (Expo)
 
 Native Android app with every member feature and no admin panel, for any self-hoster to point at
-their own server. Apple is dropped for now. Last updated 2026-11-05.
+their own server. Apple is dropped for now. Last updated 2026-11-06.
 
 ## Starting a new session
 
@@ -26,7 +26,7 @@ API checks: `cd apps/web && node --env-file=.env.local scripts/api-check.ts` (ru
 | 4 | Sharing, search, notifications, versions, account settings | Built and checked on the emulator, see below. Waiting on the user's phone check |
 | 5 | Uploader, share into Nimbus, camera backup | Built and checked on the emulator, see below. Waiting on the user's phone check |
 | 6 | Offline, Android Files integration | Built and checked on the emulator (Expo Go and the APK), see below. Waiting on the user's phone check |
-| 7 | Vault | Not started |
+| 7 | Vault | Built and checked on the emulator (APK), see below. Waiting on the user's phone check |
 | 8 | Push, release APK, docs, finish review | Not started |
 
 **Phase 1 detail**
@@ -193,6 +193,53 @@ Decisions are in Claude's project memory (Phase 6 decisions). The plan was `~/.c
 - **Server change:** `parentId` was added to item details.
 - **New dependencies:** `expo-background-task` and `expo-task-manager`, with the new `apps/mobile/index.js` entry.
 - **Dev data:** `browser-test2` has `FilesAppTest` (p6-*.txt) and offline marks on the emulator. Preview test was restored.
+
+**Phase 7 detail (2026-11-06)**
+
+Decisions are in Claude's project memory (Phase 7 decisions). The plan, with the JS–Kotlin contract, was
+`~/.claude/plans/start-building-phase-7-tidy-shell.md`. Built by two builder agents (Kotlin, JS) against that contract.
+
+- **Crypto in Kotlin** (`Vault.kt`, BouncyCastle Argon2id, javax.crypto). Keys never reach JS: they stay in `VaultKeys` until the vault locks.
+  `packages/shared/scripts/vault-vectors.ts` writes fixed vectors from the web's own code, and `VaultTest` (11 tests) checks them byte for byte.
+- **Checks:**
+  - 182 of 182 API checks.
+  - 47 mobile unit tests (8 new `vault-rules`).
+  - 21 Kotlin JUnit tests.
+  - 6 shared crypto tests.
+  - Mobile and web typecheck, and an APK build.
+- **Emulator (APK), each result confirmed by a Node script using `packages/shared/vault-crypto.ts`, playing the web's part:**
+  - **Web-made vault on the phone:** it unlocks with the passphrase (real `{t:3, m:64 MB}` Argon2id). Names decrypt, including `notes – é.txt`. Preview temp files match the SHA-256 of the originals.
+  - **Phone-made vault on the web:** its passphrase and its recovery code open it with the web's code. Uploads decrypt there byte-identical.
+  - **Recovery unlock** opens Change passphrase, and the web then opens the vault with the new one.
+  - **Fingerprint:** on, unlock, wrong finger refused. Enrolling a new finger gives "Fingerprints changed, use your passphrase."
+  - **Locking:**
+    - 30 s in the background locks ("Vaults locked."). So does the 5-minute idle setting (still open at 4 min, locked by 5.5).
+    - Lock and closing the previewer delete the decrypted temp files.
+    - Screenshots of vault screens come out black (FLAG_SECURE).
+  - **Uploads:**
+    - A 300 MB vault upload survived Lock, airplane mode and `kill -9`. It resumed from a 16-chunk boundary with the app never reopened, and its hash matches.
+    - Its file key row was gone afterwards.
+    - Replace from the conflict sheet left one file.
+  - **Ways out:** decrypted Download (with the warning), a ZIP of two items, and Open with (the other app sees the real name). Move out lands in My files byte-identical and leaves the vault.
+  - **Ways in:** Move to vault. Share from the Files app into a locked vault unlocks it, uploads, and returns to the sender.
+  - **Housekeeping:** trash with Undo, restore and delete forever in the vault's trash. Delete vault refuses a wrong passphrase, then deletes.
+- **Found and fixed:**
+  - **Data loss in Move to vault:** `fetchTo` didn't await `File.move`, which is async in SDK 58. The copy read 0 bytes, an empty file was encrypted, and the original was deleted. Now awaited. Move to vault also refuses to continue when a download's size is off.
+  - **Phase 6 regression:** lists restored from disk sent `cursor=null` and got a 400, so My files showed stale data. `qs` now skips null.
+  - Vault previews crashed on a plain path where expo-file-system wants a `file://` URI. Kotlin wants the reverse; both are converted in `vault.ts`.
+  - Undo of a vault trash matched the item against itself as a name clash and restored nothing.
+  - The vault browser didn't refresh after changes on the trash screen. It now reloads on focus.
+  - A share arriving as the vault locked was replaced off the stack. Vault screens now replace only their own route, and the previewer closes itself when its vault locks.
+  - Move out didn't refresh My files.
+  - Pickers and the camera don't count toward the 30 s background lock.
+  - A JS reload left keys open in Kotlin. The provider now locks all on mount.
+- **Not run:** Expo Go's "needs the installed app" screen (code path only); Scan document and Take photo into a vault (no Play services or camera on
+  the AVD); BouncyCastle Argon2 speed on a real phone (the emulator took a few seconds); tablet width and font scale 1.3 on the new screens;
+  the Store v3→v4 upgrade on a phone that still has Phase 6 rows (the emulator upgraded silently).
+- **Settled with the user:** Move to vault deletes the originals for good once uploaded, as the web does. Plaintext copies from Move to
+  vault and Move out are deleted at app start unless an upload is still pending. `eslint-config-expo`, installed by a builder, was pruned.
+- **New dependencies:** `bcprov-jdk18on`, `androidx.biometric` (Gradle). No new JS dependencies.
+- **Dev data:** `newbie` has the "Web made" vault (passphrase `phone changed this pass`, plus `p7-mid.bin` from share-in). The emulator has fingerprints 1 and 2 and PIN 1111.
 
 ## Working rules for this machine
 

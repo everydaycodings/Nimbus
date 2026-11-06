@@ -21,12 +21,14 @@ type Ctx = {
   // True once something is queued.
   send: (account: Account, parentId: string | null, entries: Entry[]) => Promise<boolean>
   scan: () => Promise<Entry[]>
+  // The conflict sheet on its own, for a vault, which finds its own clashes. `replace`: Replace in place of New version.
+  ask: (conflicts: Conflict[], replace?: boolean) => Promise<Answers | null>
 }
 const Uploader = createContext<Ctx | null>(null)
 export const useUploader = () => use(Uploader)!
 
 type Prompt =
-  | { kind: "conflicts"; conflicts: Conflict[]; done: (a: Answers | null) => void }
+  | { kind: "conflicts"; conflicts: Conflict[]; replace?: boolean; done: (a: Answers | null) => void }
   | { kind: "data"; bytes: number; done: (wifiOnly: boolean) => void }
 
 export function UploaderProvider({ children }: { children: ReactNode }) {
@@ -117,18 +119,25 @@ export function UploaderProvider({ children }: { children: ReactNode }) {
     return [{ path: name, size: new File(uri).size ?? 0, uri, mime: "application/pdf" }]
   }, [])
 
-  const value = useMemo(() => ({ send, scan }), [send, scan])
+  const ask = useCallback<Ctx["ask"]>(async (conflicts, replace) => {
+    if (!conflicts.length) return new Map<string, Choice>()
+    const answers = await new Promise<Answers | null>((done) => setPrompt({ kind: "conflicts", conflicts, replace, done }))
+    setPrompt(null)
+    return answers
+  }, [])
+
+  const value = useMemo(() => ({ send, scan, ask }), [send, scan, ask])
   return (
     <Uploader value={value}>
       {children}
-      {prompt?.kind === "conflicts" && <ConflictSheet conflicts={prompt.conflicts} onDone={prompt.done} />}
+      {prompt?.kind === "conflicts" && <ConflictSheet conflicts={prompt.conflicts} replace={prompt.replace} onDone={prompt.done} />}
       {prompt?.kind === "data" && <DataDialog bytes={prompt.bytes} onDone={prompt.done} />}
     </Uploader>
   )
 }
 
 // Back or the scrim cancels the upload, like the web's dialog.
-function ConflictSheet({ conflicts, onDone }: { conflicts: Conflict[]; onDone: (a: Answers | null) => void }) {
+function ConflictSheet({ conflicts, replace, onDone }: { conflicts: Conflict[]; replace?: boolean; onDone: (a: Answers | null) => void }) {
   const [answers, setAnswers] = useState<Answers>(new Map())
   const left = pendingConflicts(conflicts, answers)
   const finish = useRef<Answers | null>(null)
@@ -139,6 +148,7 @@ function ConflictSheet({ conflicts, onDone }: { conflicts: Conflict[]; onDone: (
         key={left[0].path}
         current={left[0]}
         remaining={left.length - 1}
+        replace={replace}
         onAnswer={(choice, all) => {
           const next = new Map(answers)
           next.set(left[0].path, choice)
@@ -152,7 +162,7 @@ function ConflictSheet({ conflicts, onDone }: { conflicts: Conflict[]; onDone: (
   )
 }
 
-function Question({ current, remaining, onAnswer }: { current: Conflict; remaining: number; onAnswer: (c: Choice, all: boolean) => boolean }) {
+function Question({ current, remaining, replace, onAnswer }: { current: Conflict; remaining: number; replace?: boolean; onAnswer: (c: Choice, all: boolean) => boolean }) {
   const dismiss = useDismiss()
   const [all, setAll] = useState(false)
   const folder = current.kind === "folder"
@@ -170,7 +180,9 @@ function Question({ current, remaining, onAnswer }: { current: Conflict; remaini
           {where ? `In ${where}. ` : ""}
           {folder
             ? `Merge adds what you're uploading to the existing folder. Keep both uploads it as “${current.freeName}”.`
-            : `New version keeps the current file in its version history. Keep both uploads it as “${current.freeName}”.`}
+            : replace
+              ? `Replace puts the new file in place of the current one. Keep both uploads it as “${current.freeName}”.`
+              : `New version keeps the current file in its version history. Keep both uploads it as “${current.freeName}”.`}
         </Text>
       </View>
       {remaining > 0 && (
@@ -187,7 +199,7 @@ function Question({ current, remaining, onAnswer }: { current: Conflict; remaini
         </Pressable>
       )}
       <View style={{ gap: 8 }}>
-        <Button label={folder ? "Merge" : "New version"} onPress={() => answer("version")} />
+        <Button label={folder ? "Merge" : replace ? "Replace" : "New version"} onPress={() => answer("version")} />
         <Button variant="outlined" label="Keep both" onPress={() => answer("keep")} />
         <Button variant="outlined" label="Skip" onPress={() => answer("skip")} />
         <Button variant="text" label="Cancel upload" onPress={() => dismiss()} />

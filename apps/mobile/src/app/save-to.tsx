@@ -1,6 +1,6 @@
 import { formatBytes } from "@nimbus/shared/file-rules"
 import { router } from "expo-router"
-import { ArrowLeft, CaretRight, X } from "phosphor-react-native"
+import { ArrowLeft, CaretRight, Lock, X } from "phosphor-react-native"
 import { useState } from "react"
 import { ActivityIndicator, BackHandler, FlatList, Pressable, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
@@ -10,6 +10,7 @@ import { FileIcon } from "@/components/file-icon"
 import { Sheet, SheetRow } from "@/components/sheet"
 import { Bar, Button, IconButton, Text } from "@/components/ui"
 import { useUploader } from "@/components/uploader"
+import { VaultPickSheet, canVault } from "@/components/vault-sheets"
 import { useAccounts } from "@/lib/accounts"
 import { useFolders } from "@/lib/files"
 import { usePrefs } from "@/lib/prefs"
@@ -58,6 +59,7 @@ function Chooser() {
   const [stack, setStack] = useState<Place[]>(prefs.saveTo?.id ? [ROOT, prefs.saveTo] : [ROOT])
   const [accountsOpen, setAccountsOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [vaults, setVaults] = useState(false)
   const { send } = useUploader()
   const here = stack[stack.length - 1]
   const q = useFolders(here.id)
@@ -103,6 +105,20 @@ function Chooser() {
         style={{ flex: 1 }}
         data={q.data?.folders ?? []}
         keyExtractor={(f) => f.id}
+        ListHeaderComponent={
+          canVault && stack.length === 1 && files.length > 0 ? (
+            <Pressable
+              accessibilityRole="button"
+              android_ripple={{ color: c.ripple }}
+              onPress={() => setVaults(true)}
+              style={{ minHeight: 56, flexDirection: "row", alignItems: "center", gap: 16, paddingHorizontal: 20 }}
+            >
+              <Lock size={24} color={c.brand} />
+              <Text style={{ flex: 1 }}>Save to a vault</Text>
+              <CaretRight size={20} color={c.mutedForeground} />
+            </Pressable>
+          ) : undefined
+        }
         ListEmptyComponent={
           q.isPending ? (
             <ActivityIndicator color={c.mutedForeground} accessibilityLabel="Loading" style={{ margin: 24 }} />
@@ -127,6 +143,13 @@ function Chooser() {
       <View style={{ padding: 16, paddingBottom: inset.bottom + 16, borderTopWidth: 1, borderTopColor: c.border }}>
         <Button label={`Save to ${here.name}`} busy={busy} disabled={!files.length} onPress={save} />
       </View>
+      {vaults && (
+        <VaultPickSheet
+          title="Save to a vault"
+          intake={{ files: files.map((f) => ({ path: f.name, size: f.size, uri: f.uri, mime: f.mime })), exit: true }}
+          onClose={() => setVaults(false)}
+        />
+      )}
       {accountsOpen && (
         <Sheet onClose={() => setAccountsOpen(false)}>
           {accounts.map((a) => (

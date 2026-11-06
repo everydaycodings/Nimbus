@@ -56,6 +56,8 @@ export type UploadRow = {
   error?: string
   nodeId?: string
   asVersion?: boolean
+  // Set for a vault upload; `name` is then the plain name, for this screen only.
+  vaultId?: string
   duplicateOf?: { id: string; path: string }
 }
 

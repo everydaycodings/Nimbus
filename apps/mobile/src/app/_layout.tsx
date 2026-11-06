@@ -12,6 +12,7 @@ import { LockGate } from "@/components/lock"
 import { OfflineWatcher } from "@/components/offline-bar"
 import { SnackbarProvider } from "@/components/snackbar"
 import { UploaderProvider } from "@/components/uploader"
+import { VaultLockProvider } from "@/components/vault-lock"
 import { TransferBar } from "@/lib/transfers"
 import { AccountsProvider, useAccounts } from "@/lib/accounts"
 import { ApiError } from "@/lib/api"
@@ -45,6 +46,7 @@ function Root() {
     <LockGate>
       <SnackbarProvider>
         <UploaderProvider>
+         <VaultLockProvider>
           <Stack
             screenOptions={{
               headerShown: false,
@@ -55,6 +57,7 @@ function Root() {
           <TransferBar />
           <ShareIntake />
           <OfflineWatcher />
+         </VaultLockProvider>
         </UploaderProvider>
       </SnackbarProvider>
     </LockGate>

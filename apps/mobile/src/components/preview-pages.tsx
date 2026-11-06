@@ -19,6 +19,9 @@ import { Button, IconButton, Text } from "@/components/ui"
 import { errorText } from "@/lib/api"
 import { cachedFile, fetchToCache, offlineFile } from "@/lib/file-cache"
 import { useApi } from "@/lib/files"
+import { previewSession } from "@/lib/preview-session"
+import { decryptTemp, useVaultFile, vaultNative, vaultTemp } from "@/lib/vault"
+import { useVaultItem } from "@/components/vault-item"
 import { needsDataWarning, toBase64, type Plan, type Viewer } from "@/lib/preview-rules"
 import { useTransfers } from "@/lib/transfers"
 import { c, radius } from "@/lib/theme"
@@ -56,6 +59,8 @@ const versionId = (item: Item, version?: Version) => version?.id ?? item.version
 // Signed URLs last an hour, and a stale one is refetched on a load error.
 export function usePreviewUrl(item: Item, version: Version | undefined, enabled: boolean) {
   const api = useApi()
+  const vault = previewSession()?.vault
+  const local = useVaultFile(vault, item, enabled)
   // A copy kept offline plays from the phone, with or without a connection.
   const kept = useMemo(() => {
     const f = version ? null : offlineFile(api.id, item.id, item.version)
@@ -63,10 +68,11 @@ export function usePreviewUrl(item: Item, version: Version | undefined, enabled:
   }, [api.id, item.id, item.version, version])
   const query = useQuery({
     queryKey: [api.id, "preview", item.id, version?.id],
-    enabled: enabled && !kept,
+    enabled: enabled && !kept && !vault,
     staleTime: 50 * 60_000,
     queryFn: () => api.get<PreviewResponse>(`/items/${item.id}/preview${version ? `?v=${version.id}` : ""}`),
   })
+  if (vault) return local
   return { url: kept ?? query.data?.url, error: kept ? null : query.error, refetch: query.refetch }
 }
 
@@ -74,6 +80,7 @@ export function usePreviewUrl(item: Item, version: Version | undefined, enabled:
 
 export function NoPreview({ item, version, reason, onRetry }: { item: Item; version?: Version; reason: string; onRetry?: () => void }) {
   const { download, openWith } = useTransfers()
+  const vault = useVaultItem(previewSession()?.vault)
   return (
     <ScrollView contentContainerStyle={{ flexGrow: 1, alignItems: "center", justifyContent: "center", padding: 24, gap: 8 }}>
       <FileIcon item={item} size={56} />
@@ -88,9 +95,10 @@ export function NoPreview({ item, version, reason, onRetry }: { item: Item; vers
       </Text>
       <View style={{ gap: 8, marginTop: 16, alignSelf: "stretch", maxWidth: 320, width: "100%", alignItems: "stretch", marginHorizontal: "auto" }}>
         {onRetry && <Button label="Try again" onPress={onRetry} />}
-        <Button variant={onRetry ? "outlined" : "filled"} label="Open with" onPress={() => openWith(item, version)} />
-        <Button variant="outlined" label="Download" onPress={() => download([item], version)} />
+        <Button variant={onRetry ? "outlined" : "filled"} label="Open with" onPress={() => (vault ? vault.openWith(item) : openWith(item, version))} />
+        <Button variant="outlined" label="Download" onPress={() => (vault ? vault.download(item) : download([item], version))} />
       </View>
+      {vault?.dialog}
     </ScrollView>
   )
 }
@@ -400,7 +408,11 @@ export function WebPage({ item, version, plan, active, top, bottom, onScrollDown
   const [error, setError] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
 
-  const cached = plan.fetch === "cache" && cachedFile(api.id, item.id, ver).exists
+  const vault = previewSession()?.vault
+  const vn = vault ? vaultNative : null
+  // A vault file is decrypted to a temp copy first; the viewer then reads that like any cached file.
+  const localFile = () => (vault && vn ? vaultTemp(vn, api, vault, item) : cachedFile(api.id, item.id, ver))
+  const cached = plan.fetch === "cache" && localFile().exists
   const warn = needsDataWarning(plan, net.type === NetworkStateType.CELLULAR, cached) && !allowed
 
   const url = useCallback(
@@ -411,6 +423,16 @@ export function WebPage({ item, version, plan, active, top, bottom, onScrollDown
   // Fetches the whole file first when that's the plan. Swiping away cancels it.
   useEffect(() => {
     if (!active || warn || ready || plan.fetch !== "cache") return
+    if (vault && vn) {
+      let live = true
+      decryptTemp(api, vn, vault, item, (d, t) => live && setProgress(t ? d / t : 0)).then(
+        () => live && setReady(true),
+        (e) => live && setError(errorText(e))
+      )
+      return () => {
+        live = false
+      }
+    }
     const stop = new AbortController()
     fetchToCache(api.id, item.id, ver, url, { signal: stop.signal, onProgress: (b, t) => setProgress(t ? b / t : 0) }).then(
       () => setReady(true),
@@ -452,7 +474,7 @@ export function WebPage({ item, version, plan, active, top, bottom, onScrollDown
   const readBytes = useCallback(
     (offset: number, length: number) => {
       if (plan.fetch === "range") return readRange(offset, length)
-      handle.current ??= cachedFile(api.id, item.id, ver).open()
+      handle.current ??= localFile().open()
       handle.current.offset = offset
       return Promise.resolve(handle.current.readBytesSync(length))
     },

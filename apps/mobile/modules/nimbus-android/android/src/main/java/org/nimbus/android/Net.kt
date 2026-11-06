@@ -9,6 +9,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okio.BufferedSink
 import org.json.JSONObject
 import java.io.IOException
+import java.io.OutputStream
 import java.util.concurrent.TimeUnit
 
 // A server answer that isn't a network failure: retrying the same request won't help.
@@ -82,19 +83,29 @@ object Tus {
   }
 
   // Null as above. `onBytes` hears each slice as it goes, for progress and pacing.
-  fun patch(url: String, offset: Long, bytes: ByteArray, length: Int, onBytes: (Int) -> Unit): Long? {
+  fun patch(url: String, offset: Long, bytes: ByteArray, length: Int, onBytes: (Int) -> Unit): Long? =
+    patchStream(url, offset, length.toLong(), { it.write(bytes, 0, length) }, onBytes)
+
+  // Same, with the body made as it is sent (vault parts are encrypted on the way out).
+  // `produce` may run again if OkHttp retries the request, so it must start from the beginning each time.
+  fun patchStream(url: String, offset: Long, length: Long, produce: (OutputStream) -> Unit, onBytes: (Int) -> Unit): Long? {
     val body = object : RequestBody() {
       override fun contentType() = OCTETS
-      override fun contentLength() = length.toLong()
+      override fun contentLength() = length
       override fun writeTo(sink: BufferedSink) {
-        var at = 0
-        while (at < length) {
-          val n = minOf(SLICE, length - at)
-          sink.write(bytes, at, n)
-          sink.flush()
-          at += n
-          onBytes(n)
-        }
+        produce(object : OutputStream() {
+          override fun write(b: Int) = write(byteArrayOf(b.toByte()), 0, 1)
+          override fun write(b: ByteArray, off: Int, len: Int) {
+            var at = 0
+            while (at < len) {
+              val n = minOf(SLICE, len - at)
+              sink.write(b, off + at, n)
+              sink.flush()
+              at += n
+              onBytes(n)
+            }
+          }
+        })
       }
     }
     val req = Request.Builder().url(url)

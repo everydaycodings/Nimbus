@@ -1,0 +1,72 @@
+{
+ "kdf": {
+  "password": "pässword ünïcode 日本語",
+  "salt": "AAECAwQFBgcICQoLDA0ODw==",
+  "real": {
+   "t": 3,
+   "m": 65536,
+   "out": "hbKevImTeUdERIbTRqDrz8sa0CG8dlUwFm7NAkVK4QU="
+  },
+  "fast": {
+   "t": 1,
+   "m": 1024,
+   "out": "L878e4fJ6NJ49PYlKv2p7YIWP1gibJbP22nWSH/1aPQ="
+  }
+ },
+ "vault": {
+  "passphrase": "correct horse battery stápled",
+  "recoveryCode": "V77A-JYWZ-U9NS-7VDX-J3YQ-XWQZ-JVBS-9FH9-45YT-TA9X-H6NJ-HRAE-LRYS",
+  "keys": {
+   "salt": "xS5TushIqUqLXkHTRM0G5g==",
+   "kdf": {
+    "t": 1,
+    "m": 1024
+   },
+   "wrapped": "jtJAw4KVZ5akJD4goxsuF+d4/pMQkqGFfjFE7CytH+JXMfBgcCXOxP+Wql3s2tJy9K1eoqhNRuUvf4Cg",
+   "recoveryWrapped": "C5QB7H1YYwUI56QlKTJkB439MdLWB+SpqUZ+lPpZ/xR3p+jxSPM3U2J+peS3isnWIY+TQb5TXF/0Hz4k"
+  },
+  "vk": "CfiDywHjQmQPLm8pHciaRPflxrEHTm6hyZaesyUQhjo="
+ },
+ "names": [
+  {
+   "n": "report.pdf",
+   "t": "application/pdf",
+   "sealed": "MErSpR6Mc2ngKxXZvQDe3R9LVBvYHj0DfQw/Bm0ZBkOAqAL/SMs15W0KkGp5O6/spxV/gs+SSb95qls1UpqbjQhSwEs="
+  },
+  {
+   "n": "Ünïcode 日本語 🙂.txt",
+   "t": null,
+   "sealed": "rHJdjizX+BC+BuzVTqrslCLobFij9dRd7Fgsvd7A9/7RRsGw3/PcVNlngjFAojHPVG6EheQyTvj6CMbmriiVqJBF3GVyVSH7+Q=="
+  }
+ ],
+ "tags": [
+  {
+   "name": "Report.PDF",
+   "tag": "zHBMJI18Oa04nobxVo/P0w=="
+  },
+  {
+   "name": "Résumé.DOCX",
+   "tag": "oWq58ZPnHB6LnYClqjm8Ew=="
+  },
+  {
+   "name": "Résumé.DOCX",
+   "tag": "oWq58ZPnHB6LnYClqjm8Ew=="
+  },
+  {
+   "name": "İstanbul.txt",
+   "tag": "AZZiqtdh3JlU/m2t3FFqYQ=="
+  }
+ ],
+ "file": {
+  "fk": "YFoT5eQJJYxx6FGL1Ze5DsYKA9fUyh/DimtHpPwpIx8=",
+  "wrapped": "HTwVIs9/GXV8P0cUiX9YlB3mLTP1x8NB9wCwiOlJTcMcKrYZg8kOw2502aMWcZBjgcf6xlvTuyXFOIFJ",
+  "size": 10485760,
+  "cipherLength": 10485808,
+  "cipherSha256": "f6ddf918b237d8d221ef418b575ec025c8cb879fe6dc6cffd670a7737358a100",
+  "empty": "L03k9ohuzaKFUW7VjAkgcA==",
+  "tiny": {
+   "size": 13,
+   "cipher": "YWGVSeXmRODhBeZxGih4owvsbcXF4Tq+LkhfVxc="
+  }
+ }
+}
