@@ -8,7 +8,8 @@ import { ConfirmDialog } from "@/components/dialog"
 import { FileIcon } from "@/components/file-icon"
 import { StorageMeter } from "@/components/storage-meter"
 import { Bar, Button, IconButton, Spinner, Text } from "@/components/ui"
-import { useFileActions, useStorage } from "@/lib/files"
+import { useApi, useFileActions, useStorage } from "@/lib/files"
+import { useOffline } from "@/lib/offline"
 import { c, radius } from "@/lib/theme"
 import type { Item } from "@nimbus/shared/api"
 import { formatBytes } from "@nimbus/shared/file-rules"
@@ -96,6 +97,7 @@ export default function Storage() {
   const actions = useFileActions()
   const [ask, setAsk] = useState<Ask | null>(null)
   const r = report.data
+  const offline = useOffline(useApi().id)
 
   // Opens the folder a file is in, in the Files tab.
   const open = (f: ReportRow) =>
@@ -121,6 +123,22 @@ export default function Storage() {
           contentContainerStyle={{ padding: 16, paddingBottom: inset.bottom + 24, gap: 32 }}
         >
           <StorageMeter usage={r.usage} sizes bare />
+
+          {/* On this phone, not on the server, so it isn't part of the meter. */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityHint="Opens Offline"
+            android_ripple={{ color: c.ripple }}
+            onPress={() => router.push("/offline")}
+            style={{ minHeight: 56, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, borderWidth: 1, borderColor: c.border, borderRadius: radius.card, overflow: "hidden" }}
+          >
+            <View style={{ flex: 1 }}>
+              <Text>On this phone</Text>
+              <Text variant="caption" color={c.mutedForeground}>Offline files, kept for use with no connection</Text>
+            </View>
+            <Text variant="bodySmall" color={c.mutedForeground} style={{ fontVariant: ["tabular-nums"] }}>{formatBytes(offline.bytes)}</Text>
+            <CaretRight size={16} color={c.mutedForeground} />
+          </Pressable>
 
           <Section title="Largest files" note="The 50 biggest files outside the trash and vaults.">
             {r.largest.length === 0 ? (

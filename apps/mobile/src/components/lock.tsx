@@ -7,12 +7,27 @@ import { AppState, View } from "react-native"
 import { BrandMark } from "./brand"
 import { Button, Text } from "./ui"
 import { backupAvailable } from "@/lib/backup"
+import { native } from "@/lib/native"
 import { c } from "@/lib/theme"
 
 const KEY = "lock.v1" // "on" | "off"; missing means it hasn't been offered yet
 const AFTER_MS = 60_000
 
-export const setLock = (on: boolean) => SecureStore.setItemAsync(KEY, on ? "on" : "off")
+// The Files app provider hides its roots while the lock is on and the app hasn't been used within the
+// timeout. Optional: an installed app from before Phase 6 doesn't have these.
+type LockNative = { setUnlockedAt?: (at: number, timeoutMs: number | null) => void; lockNow?: () => void }
+const lockNative = native as LockNative | null
+const unlocked = (lockOn: boolean) => {
+  if (typeof lockNative?.setUnlockedAt === "function") lockNative.setUnlockedAt(Date.now(), lockOn ? AFTER_MS : null)
+}
+const locked_ = () => {
+  if (typeof lockNative?.lockNow === "function") lockNative.lockNow()
+}
+
+export const setLock = async (on: boolean) => {
+  await SecureStore.setItemAsync(KEY, on ? "on" : "off")
+  unlocked(on)
+}
 export const lockSetting = () => SecureStore.getItemAsync(KEY)
 
 // Every sign-in ends here: the first one offers the app lock, later ones go on.
@@ -44,29 +59,42 @@ export function enterApp() {
 export function LockGate({ children }: { children: ReactNode }) {
   const [locked, setLocked] = useState<boolean | null>(null)
   const away = useRef(0)
+  const lockedRef = useRef(true)
 
   const unlock = useCallback(async () => {
     const r = await LocalAuthentication.authenticateAsync({ promptMessage: "Unlock Nimbus" })
-    if (r.success) setLocked(false)
+    if (r.success) {
+      setLocked(false)
+      unlocked(true)
+    }
   }, [])
 
   useEffect(() => {
     lockSetting().then((s) => {
       setLocked(s === "on")
-      if (s === "on") unlock()
+      if (s === "on") {
+        locked_()
+        unlock()
+      } else unlocked(false)
     })
     const sub = AppState.addEventListener("change", async (state) => {
-      if (state === "background") away.current = Date.now()
+      if (state === "background") {
+        away.current = Date.now()
+        // The last moment of use, which the timeout counts from.
+        if (!lockedRef.current) unlocked((await lockSetting()) === "on")
+      }
       if (state !== "active" || !away.current) return
       if (Date.now() - away.current > AFTER_MS && (await lockSetting()) === "on") {
         setLocked(true)
+        locked_()
         unlock()
-      }
+      } else unlocked((await lockSetting()) === "on")
       away.current = 0
     })
     return () => sub.remove()
   }, [unlock])
 
+  lockedRef.current = locked !== false
   if (locked === null) return null
   return (
     <>

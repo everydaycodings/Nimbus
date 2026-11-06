@@ -5,6 +5,7 @@ import { router } from "expo-router"
 import * as ImagePicker from "expo-image-picker"
 import {
   ArrowBendUpRight,
+  ArrowCircleDown,
   ArrowCounterClockwise,
   ArrowDown,
   ArrowLeft,
@@ -14,6 +15,7 @@ import {
   Camera as CameraIcon,
   CaretRight,
   Check,
+  CheckCircle,
   ClockCounterClockwise,
   DotsThreeVertical,
   DownloadSimple,
@@ -46,6 +48,8 @@ import { Avatar } from "@/components/avatar"
 import { ConfirmDialog, PromptDialog } from "@/components/dialog"
 import { FILE_TYPES, FileIcon } from "@/components/file-icon"
 import { useOffice } from "@/components/preview-pages"
+import { CapDialog } from "@/components/offline-ui"
+import { SwitchRow } from "@/components/page"
 import { Sheet, SheetDivider, SheetRow, useDismiss } from "@/components/sheet"
 import { useSnack } from "@/components/snackbar"
 import { TagDialog } from "@/components/tag-dialog"
@@ -54,6 +58,7 @@ import { Button, Text } from "@/components/ui"
 import { editable, label, roleOf, shareable, useApi, useDetails, useFileActions, useFolders, useLinks, useShareState, useTags, useVersions, type FileSheet, type Filters } from "@/lib/files"
 import { errorText } from "@/lib/api"
 import { native } from "@/lib/native"
+import { useOfflineActions, type CapAsk } from "@/lib/offline-hooks"
 import { usePrefs, type Prefs } from "@/lib/prefs"
 import { imageToWebp } from "@/lib/thumbs"
 import type { Entry } from "@/lib/upload-plan"
@@ -80,6 +85,7 @@ type Dialog =
   | { kind: "forever"; items: Item[] }
   | { kind: "folder"; parentId: string | null }
   | { kind: "tag"; items: Item[] }
+  | { kind: "cap"; ask: CapAsk }
 
 type Props = {
   sheet: FileSheet | null
@@ -152,6 +158,7 @@ export function FileSheets(props: Props) {
           onSubmit={(name) => actions.newFolder(dialog.parentId, name)}
         />
       )}
+      {dialog?.kind === "cap" && <CapDialog ask={dialog.ask} onClose={close} />}
       {dialog?.kind === "tag" && <TagDialog applyTo={dialog.items.map((i) => i.id)} onClose={close} />}
     </>
   )
@@ -246,9 +253,17 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
   const transfers = useTransfers()
   const snack = useSnack()
   const links = useLinks()
+  const offline = useOfflineActions()
   const one = items.length === 1 ? items[0] : null
   const file = one?.kind === "file" ? one : null
   const done = () => onDone?.()
+  const kept = items.every((i) => offline.snap.covered.has(i.id))
+  const keptVia = one && offline.snap.covered.has(one.id) && offline.snap.rootOf.get(one.id) !== one.id ? offline.snap.roots.find((r) => r.id === offline.snap.rootOf.get(one.id)) : undefined
+  const toggleOffline = async () => {
+    const over = await offline.set(items, !kept)
+    if (over) ask({ kind: "cap", ask: over })
+    else done()
+  }
   const ic = (I: typeof Info) => <I size={ICON} color={mute} />
 
   if (trash)
@@ -264,7 +279,7 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
           }}
         />
         <SheetDivider />
-        <SheetRow label="Delete forever" icon={<Trash size={ICON} color={c.destructive} />} danger onPress={() => ask({ kind: "forever", items })} />
+        <SheetRow label="Delete forever" needsNet icon={<Trash size={ICON} color={c.destructive} />} danger onPress={() => ask({ kind: "forever", items })} />
       </Sheet>
     )
 
@@ -302,6 +317,7 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
         <>
           <SheetRow
             label="Share"
+            needsNet
             icon={ic(ShareNetwork)}
             onPress={() => {
               done()
@@ -310,6 +326,7 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
           />
           <SheetRow
             label="Copy link"
+            needsNet
             icon={ic(LinkIcon)}
             onPress={() => {
               done()
@@ -320,6 +337,7 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
       )}
       <SheetRow
         label={file ? "Download" : "Download as ZIP"}
+        needsNet
         icon={ic(DownloadSimple)}
         onPress={() => {
           transfers.download(items)
@@ -330,6 +348,7 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
       {file && (
         <SheetRow
           label="Open with"
+          needsNet={!offline.snap.files.has(file.id)}
           icon={ic(ArrowSquareOut)}
           onPress={() => {
             transfers.openWith(file)
@@ -337,6 +356,13 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
           }}
         />
       )}
+      <SheetRow
+        label={kept ? "Available offline" : "Make available offline"}
+        detail={keptVia ? `Kept by “${keptVia.name}”` : undefined}
+        icon={<ArrowCircleDown size={ICON} color={kept ? c.brand : mute} weight={kept ? "fill" : "regular"} />}
+        trailing={kept ? <CheckCircle size={ICON} color={c.brand} weight="fill" /> : undefined}
+        onPress={toggleOffline}
+      />
       {file && OFFICE_EXT.test(file.name) && <CollaboraRow item={file} onClose={onClose} icon={ic(FileText)} />}
       {one && edit && <SheetRow label="Rename" icon={ic(PencilSimple)} onPress={() => ask({ kind: "rename", item: one })} />}
       {edit && <SheetRow label="Move" icon={ic(ArrowBendUpRight)} onPress={() => onChange({ kind: "move", items })} />}
@@ -351,6 +377,7 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
       {one && roleOf(one, role) !== "owner" && !one.shortcut && (
         <SheetRow
           label="Add shortcut to My files"
+          needsNet
           icon={ic(ArrowSquareOut)}
           onPress={() => {
             actions.addShortcut(one)
@@ -361,6 +388,7 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
       {one?.shortcut && (
         <SheetRow
           label="Remove shortcut"
+          needsNet
           icon={ic(X)}
           onPress={() => {
             actions.removeShortcut(one)
@@ -372,6 +400,7 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
       {file && edit && (
         <SheetRow
           label="Versions"
+          needsNet
           icon={ic(ClockCounterClockwise)}
           onPress={() => {
             done()
@@ -392,6 +421,7 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
       {file && edit && (
         <SheetRow
           label="Change thumbnail"
+          needsNet
           icon={ic(ImageIcon)}
           onPress={async () => {
             try {
@@ -408,6 +438,7 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
       {file && edit && !!file.thumb && (
         <SheetRow
           label="Reset thumbnail"
+          needsNet
           icon={ic(ArrowsClockwise)}
           onPress={() => {
             actions.resetThumb(file, previewKind(file.mime, file.name) === "video")
@@ -503,7 +534,10 @@ function WhoHasAccess({ item, fallback }: { item: Item; fallback: ReactNode }) {
   )
 }
 
-function DetailsSheet({ item, role, trash, tags, onChange, onClose }: Props & { item: Item; onClose: () => void }) {
+function DetailsSheet({ item, role, trash, tags, onChange, onClose, ask }: Props & { item: Item; onClose: () => void; ask: (d: Dialog) => void }) {
+  const offline = useOfflineActions()
+  const isKept = offline.snap.covered.has(item.id)
+  const via = isKept && offline.snap.rootOf.get(item.id) !== item.id ? offline.snap.roots.find((r) => r.id === offline.snap.rootOf.get(item.id)) : undefined
   const q = useDetails(item.id)
   const actions = useFileActions()
   const mine = useTags().data ?? tags
@@ -562,6 +596,18 @@ function DetailsSheet({ item, role, trash, tags, onChange, onClose }: Props & { 
       )}
     >
       {rows.map(([name, v]) => row(name, v))}
+      {!trash && !item.shortcut && (
+        <SwitchRow
+          label="Available offline"
+          detail={via ? `Kept by “${via.name}”` : isKept ? (item.kind === "file" && !offline.snap.files.has(item.id) ? "Waiting to download" : "Saved on this phone") : "Keep a copy that opens with no connection"}
+          value={isKept}
+          disabled={!!via}
+          onChange={async (on) => {
+            const over = await offline.set([item], on)
+            if (over) ask({ kind: "cap", ask: over })
+          }}
+        />
+      )}
       {!trash && shareable(item, role) ? <WhoHasAccess item={item} fallback={row("Sharing", sharingLine)} /> : row("Sharing", sharingLine)}
       {!trash && item.kind === "file" && editable([item], role) && <VersionsLink item={item} />}
       {!trash && (

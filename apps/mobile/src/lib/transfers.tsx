@@ -15,6 +15,7 @@ import { Text } from "@/components/ui"
 import { ApiError, errorText } from "./api"
 import { fetchToCache } from "./file-cache"
 import { useApi } from "./files"
+import { native } from "./native"
 import { usePrefs } from "./prefs"
 import { c, radius } from "./theme"
 
@@ -145,6 +146,14 @@ export function useTransfers() {
         )
       },
       openWith: async (item: Item, version?: Version) => {
+        // The installed app hands the other app a Nimbus document, so what it saves comes back as a new version.
+        // Expo Go, an older install or an older version of the file falls through to a read-only copy.
+        const view = (native as { viewDocument?: (account: string, id: string, mime: string) => Promise<boolean> | boolean } | null)?.viewDocument
+        if (!version && typeof view === "function") {
+          try {
+            if (await view.call(native, api.id, item.id, item.mime ?? "")) return
+          } catch {}
+        }
         try {
           const file = await track(item.name, version?.size ?? item.size, (progress, signal) =>
             fetchToCache(api.id, item.id, version?.id ?? item.version, () => storageUrl(item, version), { signal, onProgress: progress })

@@ -33,6 +33,10 @@ import { Share } from "react-native"
 import { useSnack } from "@/components/snackbar"
 import { useAccounts } from "./accounts"
 import { ApiError, errorText, json, newToken, send } from "./api"
+import { isOnline } from "./connectivity"
+import { offlineChildren } from "./offline"
+import { applyOp, enqueue, queueState, showOptimistically } from "./offline-queue"
+import { newTempId, type Op } from "./offline-rules"
 import { linkUrl, pickLink } from "./share"
 import { firstFrameToWebp } from "./thumbs"
 
@@ -135,10 +139,31 @@ export function useDetails(id: string) {
 
 export function useFolders(parent: string | null) {
   const api = useApi()
+  const client = useQueryClient()
   return useQuery({
     queryKey: [api.id, "picker", parent],
-    queryFn: () => api.get<PickerResponse>(`/picker${qs({ parent: parent ?? undefined })}`),
+    queryFn: async () => {
+      try {
+        return await api.get<PickerResponse>(`/picker${qs({ parent: parent ?? undefined })}`)
+      } catch (e) {
+        if (!(e instanceof ApiError && e.status === 0)) throw e
+        return { folders: foldersOnPhone(client, api.id, parent) }
+      }
+    },
   })
+}
+
+// With no connection, the folders in `parent` that this phone already knows: saved lists and kept items,
+// with waiting changes applied, so folders made offline can be moved into.
+function foldersOnPhone(client: ReturnType<typeof useQueryClient>, account: string, parent: string | null) {
+  const path = parent ? `/folders/${parent}` : "/files"
+  const seen = new Map<string, Item>()
+  for (const q of client.getQueryCache().findAll({ queryKey: [account, "list", path] }))
+    for (const page of (q.state.data as { pages?: { items: Item[] }[] } | undefined)?.pages ?? [])
+      for (const i of page.items) seen.set(i.id, i)
+  if (parent) for (const i of offlineChildren(account, parent)) if (!seen.has(i.id)) seen.set(i.id, i)
+  const items = queueState(account).ops.reduce((all, op) => applyOp(all, path, true, op), [...seen.values()])
+  return items.filter((i) => i.kind === "folder").map((i) => ({ id: i.id, name: i.name })).sort((a, b) => a.name.localeCompare(b.name))
 }
 
 export function useTags() {
@@ -226,6 +251,8 @@ export const label = (items: Pick<Item, "name">[]) =>
 
 // ---- Changing things ----
 
+type Queued = { op: Op; label: string }
+
 // Every action says how it went in a snackbar, as on the web. The ones behind a
 // text field return their error instead, so the dialog can show it.
 export function useFileActions() {
@@ -238,39 +265,63 @@ export function useFileActions() {
     client.invalidateQueries({ queryKey: ["me", api.id] })
   }, [client, api.id])
 
+  // With no connection a plain edit waits in the queue (offline-queue.ts) and shows at once.
+  const queueIt = useCallback(
+    (q: Queued) => {
+      enqueue(api.id, q.op, q.label)
+      showOptimistically(client, api.id, q.op)
+      snack({ text: "Will sync when online." })
+    },
+    [client, api.id, snack]
+  )
+  const dropped = (e: unknown) => e instanceof ApiError && e.status === 0
+
   const run = useCallback(
-    async (task: () => Promise<unknown>, text: string, undo?: () => void) => {
+    async (task: () => Promise<unknown>, text: string, undo?: () => void, queued?: Queued) => {
+      if (queued && !isOnline()) {
+        queueIt(queued)
+        return true
+      }
       try {
         await task()
         refresh()
         snack({ text, undo })
         return true
       } catch (e) {
+        if (queued && dropped(e)) {
+          queueIt(queued)
+          return true
+        }
         snack({ text: errorText(e), error: true })
         return false
       }
     },
-    [refresh, snack]
+    [refresh, snack, queueIt]
   )
 
   // For text fields: the error to show, or nothing when it worked.
   const attempt = useCallback(
-    async (task: () => Promise<unknown>, text: string) => {
+    async (task: () => Promise<unknown>, text: string, queued?: Queued) => {
+      if (queued && !isOnline()) return queueIt(queued)
       try {
         await task()
         refresh()
         snack({ text })
       } catch (e) {
+        if (queued && dropped(e)) return queueIt(queued)
         return errorText(e)
       }
     },
-    [refresh, snack]
+    [refresh, snack, queueIt]
   )
 
   return useMemo(() => {
     const ids = (items: Item[]) => items.map((i) => i.id)
     const restore = (items: Item[]) =>
-      run(() => api.post("/items/restore", { ids: ids(items) }), `Restored ${label(items)}.`)
+      run(() => api.post("/items/restore", { ids: ids(items) }), `Restored ${label(items)}.`, undefined, {
+        op: { op: "restore", ids: ids(items) },
+        label: `Restore ${label(items)}`,
+      })
     return {
       refresh,
       restore,
@@ -278,20 +329,26 @@ export function useFileActions() {
         const on = !items.every((i) => i.starred)
         return run(
           () => api.post("/items/star", { ids: ids(items), starred: on }),
-          on ? `Added ${label(items)} to starred.` : `Removed ${label(items)} from starred.`
+          on ? `Added ${label(items)} to starred.` : `Removed ${label(items)} from starred.`,
+          undefined,
+          { op: { op: "star", ids: ids(items), starred: on }, label: `${on ? "Star" : "Unstar"} ${label(items)}` }
         )
       },
       trash: (items: Item[]) =>
         run(
           () => api.post("/items/trash", { ids: ids(items) }),
           `Moved ${label(items)} to the trash.`,
-          () => restore(items)
+          () => restore(items),
+          { op: { op: "trash", ids: ids(items) }, label: `Move ${label(items)} to the trash` }
         ),
       remove: (items: Item[]) =>
         run(() => api.post("/items/delete", { ids: ids(items) }), `Deleted ${label(items)} forever.`),
       emptyTrash: () => run(() => api.post("/trash/empty"), "Emptied the trash."),
       move: (items: Item[], parentId: string | null, to: string) =>
-        run(() => api.post("/items/move", { ids: ids(items), parentId }), `Moved ${label(items)} to “${to}”.`),
+        run(() => api.post("/items/move", { ids: ids(items), parentId }), `Moved ${label(items)} to “${to}”.`, undefined, {
+          op: { op: "move", ids: ids(items), parentId },
+          label: `Move ${label(items)} to “${to}”`,
+        }),
       addShortcut: (item: Item) =>
         run(() => api.post("/shortcuts", { nodeId: item.id }), `Added a shortcut to “${item.name}” in My files.`),
       removeShortcut: (item: Item) =>
@@ -330,16 +387,25 @@ export function useFileActions() {
         run(() => api.del(`/items/${id}/versions`), `Deleted the older versions of “${name}”.`),
 
       rename: (item: Item, name: string) =>
-        attempt(() => api.patch(`/items/${item.id}`, { name }), `Renamed to “${name}”.`),
+        attempt(() => api.patch(`/items/${item.id}`, { name }), `Renamed to “${name}”.`, {
+          op: { op: "rename", id: item.id, name, folder: item.kind === "folder" },
+          label: `Rename “${item.name}” to “${name}”`,
+        }),
       newFolder: (parentId: string | null, name: string) =>
-        attempt(() => api.post("/folders", { parentId, name }), `Created “${name}”.`),
+        attempt(() => api.post("/folders", { parentId, name }), `Created “${name}”.`, {
+          op: { op: "newFolder", parentId, name, tempId: newTempId() },
+          label: `Create folder “${name}”`,
+        }),
 
       // Quiet: the tag sheet shows the change as it happens.
       applyTag: async (items: Item[], tagId: string, on: boolean) => {
+        const queued: Queued = { op: { op: "applyTag", ids: ids(items), tagId, on }, label: `${on ? "Add" : "Remove"} a tag on ${label(items)}` }
+        if (!isOnline()) return queueIt(queued)
         try {
           await api.post("/tags/apply", { ids: ids(items), tagId, on })
           refresh()
         } catch (e) {
+          if (dropped(e)) return queueIt(queued)
           snack({ text: errorText(e), error: true })
         }
       },
@@ -380,7 +446,7 @@ export function useFileActions() {
         }
       },
     }
-  }, [api, attempt, refresh, run, snack])
+  }, [api, attempt, queueIt, refresh, run, snack])
 }
 
 // ---- Links ----

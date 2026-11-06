@@ -57,13 +57,35 @@ class Sender(context: Context, private val stopped: () -> Boolean) {
   )
 
   // A fresh plan token: the old one is over a day old, or the server forgot the upload.
-  private fun replan(account: Accounts.Account, row: Store.Row): String {
+  private fun replan(account: Accounts.Account, first: Store.Row): String {
+    checkBase(account, first)
+    val row = store.get(first.id) ?: first
     val plan = Net.api(account, "POST", "/api/v1/uploads/plan", JSONObject()
       .put("parentId", row.parentId ?: JSONObject.NULL)
       .put("entries", JSONArray().put(JSONObject().put("path", row.path).put("size", row.size))))
     plan.optString("error").takeIf { it.isNotEmpty() }?.let { throw Refused(400, it) }
     plan.optJSONArray("rejected")?.optJSONObject(0)?.let { throw Refused(400, it.optString("reason")) }
     return plan.getString("token").also { store.set(row.id, "plan_token" to it, "planned" to System.currentTimeMillis()) }
+  }
+
+  // A save from the Files app started from `baseVersion`. If the server has moved on, the edit goes
+  // beside the file as "name (conflict).ext" instead of becoming a version. A renamed file keeps its new name.
+  private fun checkBase(account: Accounts.Account, row: Store.Row) {
+    val node = row.baseNode ?: return
+    val base = row.baseVersion ?: return
+    val item = try {
+      Net.api(account, "GET", "/api/v1/items/$node").optJSONObject("item")
+    } catch (e: Refused) {
+      if (e.status == 404) null else throw e
+    } ?: return // Gone from the server: the plan below decides what happens.
+    val current = if (item.isNull("version")) null else item.getString("version")
+    val name = item.getString("name")
+    if (current != base) {
+      val beside = DocIds.conflictName(name)
+      store.set(row.id, "path" to beside, "name" to beside, "on_conflict" to "rename", "base_node" to null, "base_version" to null)
+    } else if (name != row.path) {
+      store.set(row.id, "path" to name, "name" to name)
+    }
   }
 
   private fun readFully(input: InputStream, buf: ByteArray, want: Int): Int {
@@ -90,6 +112,7 @@ class Sender(context: Context, private val stopped: () -> Boolean) {
         if (url == null || offset == null) {
           val fresh = url == null && System.currentTimeMillis() - row.planned < 23 * 3600_000L
           val token = if (fresh) row.planToken else replan(account, row)
+          if (!fresh) row = store.get(row.id) ?: return Outcome.HALTED // replan may have renamed it
           url = Tus.create(row.tusUrl, row.size, meta(row, token))
           offset = 0L
           store.set(row.id, "upload_url" to url, "sent" to 0L)
@@ -140,6 +163,17 @@ class Sender(context: Context, private val stopped: () -> Boolean) {
         val webp = Thumbs.of(ctx, Uri.parse(row.uri), row.mime)
         // An empty post tells the server not to wait for a video thumbnail; images it can draw itself.
         if (webp != null || row.mime.startsWith("video/")) Net.thumb(account, nodeId, versionId, webp)
+      }
+      // A file made in the Files app starts as an empty placeholder; once its real bytes land, drop that empty version.
+      store.get(row.id)?.let { now ->
+        val base = now.baseVersion
+        if (base != null && nodeId != null && nodeId == now.baseNode) try {
+          val vs = Net.api(account, "GET", "/api/v1/items/$nodeId/versions").getJSONArray("versions")
+          for (i in 0 until vs.length()) {
+            val v = vs.getJSONObject(i)
+            if (v.getString("id") == base && v.getLong("size") == 0L && !v.getBoolean("current")) Net.api(account, "DELETE", "/api/v1/versions/$base")
+          }
+        } catch (_: Exception) {} // only tidying; the save itself is done
       }
       val dup = done.optJSONObject("duplicateOf")
       store.set(row.id, "status" to "done", "sent" to row.size, "node_id" to nodeId, "version_id" to versionId, "dup_id" to dup?.optString("id"), "dup_path" to dup?.optString("path"), "error" to null)

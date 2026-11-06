@@ -25,7 +25,7 @@ API checks: `cd apps/web && node --env-file=.env.local scripts/api-check.ts` (ru
 | 3 | Previews | Built and checked on the emulator, see below. Waiting on the user's phone check |
 | 4 | Sharing, search, notifications, versions, account settings | Built and checked on the emulator, see below. Waiting on the user's phone check |
 | 5 | Uploader, share into Nimbus, camera backup | Built and checked on the emulator, see below. Waiting on the user's phone check |
-| 6 | Offline, Android Files integration | Not started |
+| 6 | Offline, Android Files integration | Built and checked on the emulator (Expo Go and the APK), see below. Waiting on the user's phone check |
 | 7 | Vault | Not started |
 | 8 | Push, release APK, docs, finish review | Not started |
 
@@ -141,6 +141,58 @@ Decisions are in Claude's project memory (Phase 5 decisions). The plan was `~/.c
   manufacturer background limits, reliable backup's foreground service on a real battery, and the feel of the strip and ring.
 - Not done: the tile morph retry (left for Phase 8's build); provider sign-in still unverified.
 - Dev data: `browser-test2` has `Camera/2026/11` and `v300*.bin` from these tests.
+
+**Phase 6 detail (2026-11-06)**
+
+Decisions are in Claude's project memory (Phase 6 decisions). The plan was `~/.claude/plans/start-buiding-phase-6-compiled-church.md`.
+
+- **Checks:** 182 of 182 API checks, 39 mobile unit tests (6 new `offline-rules`), 10 Kotlin JUnit (4 new `DocsTest`), web and mobile typecheck, APK build.
+- **Expo Go, with each result confirmed through the API:**
+  - **Marking:** marking a folder kept 21 files (85 MB), with the badge, the Offline screen, the More row and the chip.
+  - **In airplane mode:**
+    - Opened folders browse, and an offline-marked folder that was never opened lists its kept files.
+    - The PDF and Markdown open from the phone.
+    - Other files are greyed, and tapping one says "Not available offline".
+    - Recent comes from saved data; Starred, never opened, says so.
+  - **Cold start offline** opens into the saved data.
+  - **Queue replay:** the queue replayed a rename, a star, a new folder, a move into that new folder (picked offline), and a clashing rename (became `app (1).ts`). A move into a folder trashed on the server meanwhile went to "Couldn't sync"; Retry worked after restoring it.
+  - **Refresh:**
+    - A file trashed on the server dropped its copy.
+    - A version switched on the server was refreshed; the phone showed the new content offline.
+    - Lost access to a shared file deleted its copy, and you're told.
+  - **Accounts:** each account's offline data is separate. Sign-out deleted that account's offline files, rows and saved lists (checked on disk as root).
+- **APK:**
+  - **Files app basics:**
+    - The root shows per account with its email.
+    - My files, Shared with me, Starred and Recent list with thumbnails.
+    - New folder works.
+  - **Writes:**
+    - Copying a file in stores one version with the right SHA-256.
+    - Rename shows at once; delete goes to Trash.
+  - **App lock:** the root is hidden while locked and returns after unlock.
+  - **Open with** hands Google Photos a `content://org.nimbus.drive.documents` link with read and write grants, and the photo loads.
+  - **Refresh:** opening the app pulls a new file in a marked folder. With the process killed, the forced background task ran headless, downloaded a new file, and rescheduled itself for 6 h.
+  - **Uploader:** works through the provider path after the `Store.kt` v3 and `Sender.kt` changes.
+- **Found and fixed:**
+  - A marked folder spun forever offline. `send()` now gives up after 15 s with no response, and the folder uses kept files whenever offline.
+  - Queued edits didn't show in folders drawn from the offline store. `applyOp` is now shared.
+  - No New button in offline-store folders.
+  - The Move picker failed offline. It now builds from saved lists, kept items and folders made offline.
+  - "Refresh now" hid the lost-file notice.
+  - Provider document ids split on the first `:`, but account ids contain `http://host:port`. They now split on the last `:`, with a test.
+  - Files made in the Files app kept an empty version 1. It is now dropped after the real upload.
+  - Rename and delete in the Files app didn't refresh its list.
+- **Not run:**
+  - Saving over a file from an editor (new version), the `(conflict)` copy, and saving while offline through the provider. The AVD has no editor, and installing one from F-Droid was refused. **Check on the phone with any editor.**
+  - The cap prompt past the limit (unit-tested only; no file over 1 GB in dev).
+  - Real 6-hour background timing and manufacturer limits.
+- **Open points for the user:**
+  - The app lock offer says "You can change this later in More", but there's no such switch. This is from Phase 1.
+  - The Files app root hides 60 s after leaving Nimbus while the lock is on (the lock's own timeout), which is short for Files app sessions.
+- **Departures:** Copy isn't offered in the Files app (no copy route; it falls back to create plus write). Download stays greyed offline.
+- **Server change:** `parentId` was added to item details.
+- **New dependencies:** `expo-background-task` and `expo-task-manager`, with the new `apps/mobile/index.js` entry.
+- **Dev data:** `browser-test2` has `FilesAppTest` (p6-*.txt) and offline marks on the emulator. Preview test was restored.
 
 ## Working rules for this machine
 

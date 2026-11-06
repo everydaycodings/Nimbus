@@ -17,7 +17,7 @@ import { WebView, type WebViewMessageEvent } from "react-native-webview"
 import { FileIcon } from "@/components/file-icon"
 import { Button, IconButton, Text } from "@/components/ui"
 import { errorText } from "@/lib/api"
-import { cachedFile, fetchToCache } from "@/lib/file-cache"
+import { cachedFile, fetchToCache, offlineFile } from "@/lib/file-cache"
 import { useApi } from "@/lib/files"
 import { needsDataWarning, toBase64, type Plan, type Viewer } from "@/lib/preview-rules"
 import { useTransfers } from "@/lib/transfers"
@@ -56,13 +56,18 @@ const versionId = (item: Item, version?: Version) => version?.id ?? item.version
 // Signed URLs last an hour, and a stale one is refetched on a load error.
 export function usePreviewUrl(item: Item, version: Version | undefined, enabled: boolean) {
   const api = useApi()
+  // A copy kept offline plays from the phone, with or without a connection.
+  const kept = useMemo(() => {
+    const f = version ? null : offlineFile(api.id, item.id, item.version)
+    return f?.exists ? f.uri : undefined
+  }, [api.id, item.id, item.version, version])
   const query = useQuery({
     queryKey: [api.id, "preview", item.id, version?.id],
-    enabled,
+    enabled: enabled && !kept,
     staleTime: 50 * 60_000,
     queryFn: () => api.get<PreviewResponse>(`/items/${item.id}/preview${version ? `?v=${version.id}` : ""}`),
   })
-  return { url: query.data?.url, error: query.error, refetch: query.refetch }
+  return { url: kept ?? query.data?.url, error: kept ? null : query.error, refetch: query.refetch }
 }
 
 // ---- When there's nothing to show, or it failed: always a way forward ----

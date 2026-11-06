@@ -10,7 +10,7 @@ import org.json.JSONObject
 import java.util.UUID
 
 // The upload queue. It outlives the app, so a killed or rebooted phone carries on where it stopped.
-class Store private constructor(context: Context) : SQLiteOpenHelper(context, "nimbus-uploads.db", null, 2) {
+class Store private constructor(context: Context) : SQLiteOpenHelper(context, "nimbus-uploads.db", null, 3) {
   override fun onCreate(db: SQLiteDatabase) {
     media(db)
     db.execSQL(
@@ -20,12 +20,17 @@ class Store private constructor(context: Context) : SQLiteOpenHelper(context, "n
         plan_token text not null, planned integer not null, parent_id text, on_conflict text not null,
         wifi_only integer not null, speed_cap integer, source text not null, media_id text,
         status text not null, sent integer not null default 0, upload_url text, sha text,
-        node_id text, version_id text, dup_id text, dup_path text, error text, created integer not null)"""
+        node_id text, version_id text, dup_id text, dup_path text, error text, created integer not null,
+        base_node text, base_version text)"""
     )
   }
 
   override fun onUpgrade(db: SQLiteDatabase, old: Int, new: Int) {
     if (old < 2) media(db)
+    if (old < 3) {
+      db.execSQL("alter table uploads add column base_node text")
+      db.execSQL("alter table uploads add column base_version text")
+    }
   }
 
   // What camera backup has done with each photo, per account: queued, done, skipped (already on the
@@ -42,7 +47,7 @@ class Store private constructor(context: Context) : SQLiteOpenHelper(context, "n
     val name: String, val size: Long, val mime: String, val path: String, val planToken: String,
     val planned: Long, val parentId: String?, val onConflict: String, val wifiOnly: Boolean,
     val speedCap: Long?, val source: String, val mediaId: String?, val status: String, val sent: Long,
-    val uploadUrl: String?, val sha: String?,
+    val uploadUrl: String?, val sha: String?, val baseNode: String? = null, val baseVersion: String? = null,
   )
 
   private fun Cursor.str(c: String) = getColumnIndexOrThrow(c).let { if (isNull(it)) null else getString(it) }
@@ -52,7 +57,7 @@ class Store private constructor(context: Context) : SQLiteOpenHelper(context, "n
     str("id")!!, str("account")!!, str("server")!!, str("tus_url")!!, str("uri")!!, str("name")!!, long("size")!!,
     str("mime")!!, str("path")!!, str("plan_token")!!, long("planned")!!, str("parent_id"), str("on_conflict")!!,
     long("wifi_only") == 1L, long("speed_cap"), str("source")!!, str("media_id"), str("status")!!, long("sent")!!,
-    str("upload_url"), str("sha"),
+    str("upload_url"), str("sha"), str("base_node"), str("base_version"),
   )
 
   fun add(jobs: JSONArray, source: String = "manual"): Int {
@@ -65,11 +70,14 @@ class Store private constructor(context: Context) : SQLiteOpenHelper(context, "n
           put("account", j.getString("accountId")); put("server", j.getString("server")); put("tus_url", j.getString("tusUrl"))
           put("uri", j.getString("uri")); put("name", j.getString("name")); put("size", j.getLong("size"))
           put("mime", j.optString("mime")); put("path", j.getString("path")); put("plan_token", j.getString("planToken"))
-          put("planned", now); put("parent_id", if (j.isNull("parentId")) null else j.getString("parentId"))
+          // An empty plan token (a save from the Files app) means "plan when it sends".
+          put("planned", if (j.getString("planToken").isEmpty()) 0L else now); put("parent_id", if (j.isNull("parentId")) null else j.getString("parentId"))
           put("on_conflict", j.getString("onConflict")); put("wifi_only", if (j.optBoolean("wifiOnly")) 1 else 0)
           if (!j.isNull("speedCap") && j.has("speedCap")) put("speed_cap", j.getLong("speedCap"))
           put("source", source); put("media_id", j.optString("mediaId").ifEmpty { null })
           put("status", "queued"); put("created", now)
+          // Set by saves from the Files app: the file this replaces and the version the edit started from.
+          put("base_node", j.optString("baseNode").ifEmpty { null }); put("base_version", j.optString("baseVersion").ifEmpty { null })
         })
       }
     }

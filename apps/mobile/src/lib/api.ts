@@ -1,5 +1,7 @@
 import type { Instance } from "@nimbus/shared/api"
 
+import { setUnreachable } from "./connectivity"
+
 export type Account = {
   id: string
   server: string
@@ -43,8 +45,13 @@ export async function send(
     headers.set("content-type", "application/json")
   if (token) headers.set("authorization", `Bearer ${token}`)
   try {
-    return await fetch(server + path, { ...rest, headers, credentials: "omit" })
+    // A dead network can hang instead of failing; give up on the first byte after 15 s unless the caller manages it.
+    const signal = rest.signal ?? (typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(15_000) : undefined)
+    const r = await fetch(server + path, { ...rest, signal, headers, credentials: "omit" })
+    setUnreachable(false)
+    return r
   } catch {
+    setUnreachable(true)
     throw new ApiError(0, "offline", OFFLINE)
   }
 }

@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from "expo-router"
 import { formatBytes } from "@nimbus/shared/file-rules"
-import { ArrowSquareOut, Broom, CaretRight, CloudArrowUp, FolderOpen, GearSix, Tag, Trash, UploadSimple } from "phosphor-react-native"
+import { ArrowCircleDown, ArrowSquareOut, Broom, CaretRight, CloudArrowUp, FolderOpen, GearSix, Tag, Trash, UploadSimple } from "phosphor-react-native"
 import { useCallback, useState } from "react"
 import { ActivityIndicator, Linking, Pressable, ScrollView, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
@@ -13,6 +13,8 @@ import { cacheSize, clearCache } from "@/lib/file-cache"
 import { backupAvailable, useBackup } from "@/lib/backup"
 import { describe } from "@/lib/backup-rules"
 import { useApi, useMe } from "@/lib/files"
+import { useOffline } from "@/lib/offline"
+import { useQueue } from "@/lib/offline-queue"
 import { usePrefs } from "@/lib/prefs"
 import { useTransfers } from "@/lib/transfers"
 import { c, radius } from "@/lib/theme"
@@ -26,6 +28,8 @@ export default function More() {
   const { chooseFolder } = useTransfers()
   const [cached, setCached] = useState(0)
   const backup = useBackup()
+  const offline = useOffline(id)
+  const queue = useQueue(id)
   useFocusEffect(useCallback(() => setCached(cacheSize(id)), [id]))
   const caret = <CaretRight size={16} color={c.mutedForeground} />
 
@@ -59,6 +63,17 @@ export default function More() {
           <Group>
             {backupAvailable && <Row label="Camera backup" detail={backup.settings.enabled ? describe(backup.status).title : "Off"} icon={<CloudArrowUp size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/backup")} />}
             <Row label="Uploads" icon={<UploadSimple size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/uploads")} />
+            <Row
+              label="Offline"
+              detail={queue.failed.length ? `${queue.failed.length} couldn't sync` : queue.waiting ? `${queue.waiting} waiting to sync` : undefined}
+              icon={<ArrowCircleDown size={24} color={c.mutedForeground} />}
+              trailing={
+                <Text variant="bodySmall" color={c.mutedForeground} style={{ fontVariant: ["tabular-nums"] }}>
+                  {offline.count ? formatBytes(offline.bytes) : "Off"}
+                </Text>
+              }
+              onPress={() => router.push("/offline")}
+            />
             <Row label="Trash" icon={<Trash size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/trash")} />
             <Row label="Tags" icon={<Tag size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/tags")} />
             <Row label="Account settings" icon={<GearSix size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/account")} />

@@ -1,6 +1,10 @@
 package org.nimbus.android
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import expo.modules.kotlin.Promise
@@ -53,7 +57,34 @@ class NimbusAndroidModule : Module() {
       }
     }
 
-    Function("setAccounts") { json: String -> Accounts.save(context, json) }
+    Function("setAccounts") { json: String ->
+      Accounts.save(context, json)
+      NimbusDocumentsProvider.notifyRoots(context)
+    }
+
+    // The Files app hides Nimbus when the app lock is on and the last unlock is older than the timeout.
+    Function("setUnlockedAt") { ms: Double, timeoutMs: Double? ->
+      AppLock.set(context, ms.toLong(), timeoutMs?.toLong())
+      NimbusDocumentsProvider.notifyRoots(context)
+    }
+    Function("lockNow") {
+      AppLock.lockNow(context)
+      NimbusDocumentsProvider.notifyRoots(context)
+    }
+    Function("documentUri") { accountId: String, itemId: String -> NimbusDocumentsProvider.uri(context, accountId, itemId) }
+    // Open with: another app gets the provider URI with read and write grants, so its saves come back as versions.
+    Function("viewDocument") { accountId: String, itemId: String, mime: String ->
+      val uri = NimbusDocumentsProvider.uri(context, accountId, itemId)?.takeIf { !AppLock.hidden(context) }?.let { Uri.parse(it) }
+      if (uri == null) false else try {
+        val view = Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime.ifEmpty { "*/*" })
+          .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        view.clipData = ClipData.newRawUri("", uri) // lets the chooser pass the grants on
+        val chooser = Intent.createChooser(view, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        (appContext.currentActivity ?: context).startActivity(chooser)
+        true
+      } catch (_: ActivityNotFoundException) { false }
+    }
+    Function("notifyFilesChanged") { accountId: String -> notifyFilesChanged(context, accountId) }
 
     // Off the JS thread: a shared file Android won't let us keep is copied first.
     AsyncFunction("addUploads") { json: String ->

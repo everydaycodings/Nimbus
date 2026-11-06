@@ -214,6 +214,9 @@ export async function getDetails(me: Me, id: string) {
             ...(await visiblePath(me.id, row.parentId)).map((p) => p.name),
           ]
         : null,
+    // The folder it's in, for saving a new version from elsewhere; null at the top or when that folder isn't mine to see.
+    parentId:
+      row.parentId && (mine || (await accessOne(me.id, row.parentId))) ? row.parentId : null,
     role: access.role,
     contents: contents && {
       folders: contents.folders,

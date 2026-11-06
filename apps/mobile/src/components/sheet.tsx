@@ -5,7 +5,9 @@ import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-na
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { scheduleOnRN } from "react-native-worklets"
 
+import { useSnack } from "@/components/snackbar"
 import { Text } from "@/components/ui"
+import { useOnline } from "@/lib/connectivity"
 import { c, radius } from "@/lib/theme"
 
 // Slides the sheet away, then calls onClose, then `after`. A row uses `after` to
@@ -126,6 +128,7 @@ export function SheetRow({
   danger,
   stay,
   selected,
+  needsNet,
   onPress,
 }: {
   label: string
@@ -135,25 +138,30 @@ export function SheetRow({
   danger?: boolean
   stay?: boolean
   selected?: boolean
+  // Greyed with no connection. The reason shows on the row, and tapping closes the sheet and says it again.
+  needsNet?: boolean
   onPress: () => void
 }) {
   const dismiss = useDismiss()
+  const snack = useSnack()
+  const online = useOnline()
+  const blocked = needsNet && !online
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={selected === undefined ? undefined : { selected }}
+      accessibilityState={{ ...(selected === undefined ? {} : { selected }), disabled: blocked }}
       android_ripple={{ color: c.ripple }}
-      onPress={() => (stay ? onPress() : dismiss(onPress))}
-      style={{ minHeight: 56, flexDirection: "row", alignItems: "center", gap: 16, paddingHorizontal: 20, paddingVertical: 8 }}
+      onPress={() => (blocked ? dismiss(() => snack({ text: `${label} needs a connection.` })) : stay ? onPress() : dismiss(onPress))}
+      style={{ minHeight: 56, flexDirection: "row", alignItems: "center", gap: 16, paddingHorizontal: 20, paddingVertical: 8, opacity: blocked ? 0.5 : 1 }}
     >
       {icon}
       <View style={{ flex: 1 }}>
         <Text variant="body" color={danger ? c.destructive : c.foreground} numberOfLines={1}>
           {label}
         </Text>
-        {detail && (
+        {(blocked || detail) && (
           <Text variant="caption" color={c.mutedForeground} numberOfLines={1}>
-            {detail}
+            {blocked ? "Needs a connection" : detail}
           </Text>
         )}
       </View>

@@ -4,6 +4,7 @@ import { router, useFocusEffect } from "expo-router"
 import {
   ArrowDown,
   ArrowBendUpRight,
+  ArrowCircleDown,
   ArrowCounterClockwise,
   ArrowLeft,
   ArrowUp,
@@ -43,6 +44,7 @@ import { BackupRing, useBackupLabel } from "@/components/backup-ring"
 import { ConfirmDialog } from "@/components/dialog"
 import { FILTER_LABELS, FileSheets } from "@/components/file-sheets"
 import { isWide } from "@/components/nav"
+import { CapDialog } from "@/components/offline-ui"
 import { FileCard, FolderTile, ListRow, type TileProps } from "@/components/tiles"
 import { useSnack } from "@/components/snackbar"
 import { Bar, Button, Fab, IconButton, Text } from "@/components/ui"
@@ -64,6 +66,11 @@ import {
   type Filters,
   type Source,
 } from "@/lib/files"
+import { useOnline } from "@/lib/connectivity"
+import { offlineChildren, useOffline } from "@/lib/offline"
+import { useOfflineActions, type CapAsk } from "@/lib/offline-hooks"
+import { applyOp, useQueue } from "@/lib/offline-queue"
+import { isTemp } from "@/lib/offline-rules"
 import { usePrefs } from "@/lib/prefs"
 import { openPreview } from "@/lib/preview-session"
 import { columnsFor, toRows, type Row } from "@/lib/rows"
@@ -189,6 +196,12 @@ export function Browser({
   const [confirm, setConfirm] = useState<"empty" | "delete" | null>(null)
   const [account, setAccount] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [onlyOffline, setOnlyOffline] = useState(false)
+  const [capAsk, setCapAsk] = useState<CapAsk | null>(null)
+  const online = useOnline()
+  const offline = useOfflineActions()
+  const snap = useOffline(api.id)
+  const queue = useQueue(api.id)
 
   const query = useMemo(
     () => ({ ...filters, ...(keepsServerOrder(source) ? {} : { sort: prefs.sort, order: prefs.order }) }),
@@ -196,7 +209,19 @@ export function Browser({
     [filters, prefs.sort, prefs.order, source.kind]
   )
   const list = useList(source, query)
-  const { items, first } = list
+  const { first } = list
+  // A folder with no connection and no saved list still shows what the marks keep from it.
+  const listFailed = !first && list.isError ? (list.error as Error) : null
+  const localKids = useMemo(
+    () =>
+      (!online || (listFailed instanceof ApiError && listFailed.status === 0)) && source.kind === "folder" && !first && (snap.covered.has(source.id) || isTemp(source.id))
+        ? queue.ops.reduce((items, op) => applyOp(items, `/folders/${source.id}`, true, op), offlineChildren(api.id, source.id))
+        : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- source is rebuilt each render; its id is what matters
+    [listFailed, online, first, snap, queue, api.id, source.kind === "folder" ? source.id : null]
+  )
+  const showOffline = onlyOffline && given.kind === "files"
+  const items = showOffline ? snap.roots : (localKids ?? list.items)
   const role = first?.folder?.role ?? "owner"
   const isSearch = source.kind === "search"
   const isTrash = source.kind === "trash"
@@ -238,6 +263,8 @@ export function Browser({
   // ---- Taps ----
   // The name rides along so the title shows while the folder loads or fails.
   const open = useCallback((item: Item) => router.push({ pathname: folderHref(tab, item.id), params: { name: item.name } }), [tab])
+  // With no connection only files kept on the phone open.
+  const available = (item: Item) => online || item.kind === "folder" || snap.files.has(item.id)
   const press = (item: Item) => {
     if (selecting) {
       setSelectedIds((s) => {
@@ -247,11 +274,12 @@ export function Browser({
       })
       return
     }
+    if (!available(item)) return snack({ text: "Not available offline." })
     onOpened?.()
     if (item.kind === "folder" && !isTrash) open(item)
     else if (isTrash) setSheet({ kind: "details", item })
     else {
-      const files = items.filter((i) => i.kind === "file")
+      const files = items.filter((i) => i.kind === "file" && available(i))
       openPreview({
         items: files,
         index: files.findIndex((i) => i.id === item.id),
@@ -259,7 +287,7 @@ export function Browser({
         more: async () => {
           if (!list.hasNextPage) return null
           const next = await list.fetchNextPage()
-          return next.data?.pages.flatMap((p) => p.items).filter((i) => i.kind === "file") ?? null
+          return next.data?.pages.flatMap((p) => p.items).filter((i) => i.kind === "file" && available(i)) ?? null
         },
       })
     }
@@ -290,6 +318,9 @@ export function Browser({
     selected: selectedIds.has(item.id),
     selecting,
     compact,
+    pinned: snap.covered.has(item.id),
+    pending: queue.pending.has(item.id),
+    dim: !available(item),
     onPress,
     onLongPress,
     onMenu,
@@ -316,7 +347,7 @@ export function Browser({
   }
 
   // ---- FAB ----
-  const showFab = !top && !selecting && (source.kind === "files" || (source.kind === "folder" && !!first && role !== "viewer"))
+  const showFab = !top && !selecting && (source.kind === "files" || (source.kind === "folder" && (!!first || !!localKids) && role !== "viewer"))
   const grown = useSharedValue(1)
   const lastY = useRef(0)
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -328,7 +359,7 @@ export function Browser({
   }
 
   // ---- Errors ----
-  const failure = !first && list.isError ? (list.error as Error) : null
+  const failure = localKids || showOffline ? null : listFailed
   const status = failure instanceof ApiError ? failure.status : 0
   const gated = failure instanceof ApiError && status === 403 && failure.code === "gated"
   useEffect(() => {
@@ -346,7 +377,7 @@ export function Browser({
     }
   }
 
-  const loading = (list.isPending && list.fetchStatus !== "idle") || gated
+  const loading = !showOffline && !localKids && ((list.isPending && list.fetchStatus !== "idle") || gated)
   const filtered = Object.values(filters).some(Boolean)
 
   const empty = () => {
@@ -361,11 +392,14 @@ export function Browser({
             action={<Button variant="outlined" label="Go back" onPress={() => router.back()} />}
           />
         )
+      if (status === 0)
+        return <Centered title="You're offline" body="This hasn't been opened on this phone yet." action={<Button variant="outlined" label="Try again" busy={list.isFetching} onPress={() => list.refetch()} />} />
       return <Centered title={failure.message} action={<Button variant="outlined" label="Try again" busy={list.isFetching} onPress={() => list.refetch()} />} />
     }
     if (isSearch && idle && !source.q && !filtered) return idle(setFilters)
     if (filtered)
       return <Centered title="Nothing matches these filters." action={<Button variant="outlined" label="Clear filters" onPress={() => setFilters({})} />} />
+    if (showOffline) return <Centered title="Nothing is saved offline yet" body="Open ⋮ on a file or folder and choose Make available offline." />
     const [title, body] = emptyCopy(source)
     return <Centered title={title} body={body} />
   }
@@ -380,6 +414,15 @@ export function Browser({
       onClear={() => setFilters((f) => ({ ...f, [key]: undefined }))}
     />
   )
+  const offlineChip = given.kind === "files" && !top && (
+    <Chip
+      key="offline"
+      label="Offline"
+      value={showOffline ? "Offline" : undefined}
+      onPress={() => setOnlyOffline((on) => !on)}
+      onClear={() => setOnlyOffline(false)}
+    />
+  )
   const SortIcon = prefs.order === "asc" ? ArrowUp : ArrowDown
   const sortable = !keepsServerOrder(source)
   const header = (
@@ -390,12 +433,13 @@ export function Browser({
         style={{ marginHorizontal: -16 }}
         contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
       >
-        {chip("type", "Type", filters.type ? FILE_TYPES[filters.type].label : undefined)}
-        {chip("modified", isTrash ? "Trashed" : "Modified", filters.modified ? FILTER_LABELS.modified[filters.modified] : undefined)}
-        {chip("size", "Size", filters.size ? FILTER_LABELS.size[filters.size] : undefined)}
-        {source.kind !== "tag" && !isTrash && chip("tag", "Tags", filters.tag ? tags.get(filters.tag)?.name ?? "Tag" : undefined)}
+        {offlineChip}
+        {!showOffline && chip("type", "Type", filters.type ? FILE_TYPES[filters.type].label : undefined)}
+        {!showOffline && chip("modified", isTrash ? "Trashed" : "Modified", filters.modified ? FILTER_LABELS.modified[filters.modified] : undefined)}
+        {!showOffline && chip("size", "Size", filters.size ? FILTER_LABELS.size[filters.size] : undefined)}
+        {!showOffline && source.kind !== "tag" && !isTrash && chip("tag", "Tags", filters.tag ? tags.get(filters.tag)?.name ?? "Tag" : undefined)}
       </ScrollView>
-      {(sortable || !isSearch) && (
+      {!showOffline && (sortable || !isSearch) && (
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
           {sortable ? (
             <Pressable
@@ -448,7 +492,7 @@ export function Browser({
               }}
             />
             <IconButton icon={SelectionAll} label="Select all" onPress={selectAll} />
-            <IconButton icon={Trash} label="Delete forever" color={c.destructive} onPress={() => setConfirm("delete")} />
+            <IconButton icon={Trash} label="Delete forever" color={c.destructive} onPress={() => (online ? setConfirm("delete") : snack({ text: "Deleting forever needs a connection." }))} />
           </>
         ) : (
           <>
@@ -457,7 +501,9 @@ export function Browser({
               <IconButton
                 icon={LinkIcon}
                 label="Copy link"
+                color={online ? c.foreground : c.dim}
                 onPress={() => {
+                  if (!online) return snack({ text: "Copy link needs a connection." })
                   links.copyFor(selected[0])
                   clearSelection()
                 }}
@@ -469,6 +515,18 @@ export function Browser({
                 onPress={() => {
                   actions.star(selected)
                   clearSelection()
+                }}
+              />
+            )}
+            {screen >= 400 && (
+              <IconButton
+                icon={ArrowCircleDown}
+                label={selected.every((i) => snap.covered.has(i.id)) ? "Remove from offline" : "Make available offline"}
+                color={selected.every((i) => snap.covered.has(i.id)) ? c.brand : c.foreground}
+                onPress={async () => {
+                  const over = await offline.set(selected, !selected.every((i) => snap.covered.has(i.id)))
+                  if (over) setCapAsk(over)
+                  else clearSelection()
                 }}
               />
             )}
@@ -524,7 +582,7 @@ export function Browser({
           <Text style={[type.title, { flex: 1 }]} numberOfLines={1}>
             {isTrash ? "Trash" : first?.tag?.name ?? "Tag"}
           </Text>
-          {isTrash && items.length > 0 && <Button variant="text" danger label="Empty trash" onPress={() => setConfirm("empty")} />}
+          {isTrash && items.length > 0 && <Button variant="text" danger label="Empty trash" onPress={() => (online ? setConfirm("empty") : snack({ text: "Emptying the trash needs a connection." }))} />}
         </Bar>
         {isTrash && first?.retentionDays != null && (
           <Text variant="bodySmall" color={c.mutedForeground} style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
@@ -669,6 +727,7 @@ export function Browser({
         onDone={clearSelection}
       />
 
+      {capAsk && <CapDialog ask={capAsk} onClose={() => { setCapAsk(null); clearSelection() }} />}
       {account && <AccountSheet onClose={() => setAccount(false)} />}
 
       {confirm === "empty" && (

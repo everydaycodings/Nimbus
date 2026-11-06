@@ -1,12 +1,21 @@
 // Recently opened documents, per account. Android may also clear this folder itself when space runs short.
 import { Directory, File, Paths } from "expo-file-system"
 
+import { safeAccount } from "./offline-rules"
 import { CACHE_CAP, evictions } from "./preview-rules"
 
 const folder = (account: string) => new Directory(Paths.cache, "previews", account.replace(/[^\w-]/g, "_"))
 
-export const cachedFile = (account: string, id: string, version: string | null | undefined) =>
-  new File(folder(account), `${id}-${version ?? "current"}`)
+// Files kept offline live beside the app's own data, where Android never clears them.
+export const offlineFolder = (account: string) => new Directory(Paths.document, "offline", safeAccount(account))
+export const offlineFile = (account: string, id: string, version: string | null | undefined) =>
+  new File(offlineFolder(account), `${id}-${version ?? "current"}`)
+
+// An offline copy of that version is used before the cache is looked at.
+export const cachedFile = (account: string, id: string, version: string | null | undefined) => {
+  const kept = offlineFile(account, id, version)
+  return kept.exists ? kept : new File(folder(account), `${id}-${version ?? "current"}`)
+}
 
 const files = (account: string) => {
   const dir = folder(account)
@@ -26,16 +35,12 @@ function trim(account: string) {
 }
 
 // Downloads beside the final name and moves it into place, so a half-finished file is never read as whole.
-export async function fetchToCache(
-  account: string,
-  id: string,
-  version: string | null | undefined,
+export async function fetchTo(
+  file: File,
   url: () => Promise<string>,
   options: { onProgress?: (bytes: number, total: number) => void; signal?: AbortSignal } = {}
 ) {
-  const file = cachedFile(account, id, version)
-  if (file.exists) return file
-  const dir = folder(account)
+  const dir = file.parentDirectory
   if (!dir.exists) dir.create({ intermediates: true, idempotent: true })
   const part = new File(dir, `${file.name}.part`)
   if (part.exists) part.delete()
@@ -50,6 +55,19 @@ export async function fetchToCache(
     if (part.exists) part.delete()
     throw e
   }
+  return file
+}
+
+export async function fetchToCache(
+  account: string,
+  id: string,
+  version: string | null | undefined,
+  url: () => Promise<string>,
+  options: { onProgress?: (bytes: number, total: number) => void; signal?: AbortSignal } = {}
+) {
+  const file = cachedFile(account, id, version)
+  if (file.exists) return file
+  await fetchTo(file, url, options)
   trim(account)
   return file
 }

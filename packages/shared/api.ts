@@ -205,6 +205,8 @@ export type Details = {
   createdAt: string
   /** null inside someone else's folder where the path isn't mine to see. */
   location: string[] | null
+  /** Folder it's in; null at the top of My files or when that folder isn't visible to me. */
+  parentId: string | null
   role: Role
   contents: { folders: number; files: number; bytes: number } | null
   /** Number of shares; null unless I own it. */

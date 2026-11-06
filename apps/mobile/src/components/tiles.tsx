@@ -1,7 +1,7 @@
 import type { Hit, Item, Tag } from "@nimbus/shared/api"
 import { formatBytes } from "@nimbus/shared/file-rules"
 import { Image } from "expo-image"
-import { CheckCircle, DotsThreeVertical, Link, Star, UsersThree } from "phosphor-react-native"
+import { ArrowCircleDown, CheckCircle, Clock, DotsThreeVertical, Link, Star, UsersThree } from "phosphor-react-native"
 import { memo, type ReactNode } from "react"
 import { PixelRatio, Pressable, View } from "react-native"
 import { useReducedMotion } from "react-native-reanimated"
@@ -17,6 +17,10 @@ export type TileProps = {
   selected: boolean
   selecting: boolean
   compact: boolean
+  // Kept on this phone; waiting for a connection to sync; a file that isn't saved while there's no connection.
+  pinned?: boolean
+  pending?: boolean
+  dim?: boolean
   onPress: (item: Item) => void
   onLongPress: (item: Item) => void
   onMenu: (item: Item) => void
@@ -59,10 +63,12 @@ function Thumb({ item, style }: { item: Item; style: object }) {
 const hasThumb = (item: Item) => !!item.thumb && !!item.version
 
 // Star, who it's shared with, tag dots: small, one line, after the text.
-function Markers({ item, tags }: { item: Item; tags: Map<string, Tag> }) {
+function Markers({ item, tags, pinned, pending }: { item: Item; tags: Map<string, Tag>; pinned?: boolean; pending?: boolean }) {
   const dots = item.tags.map((id) => tags.get(id)).filter((t): t is Tag => !!t)
   return (
     <>
+      {pinned && <ArrowCircleDown size={14} weight="fill" color={c.brand} />}
+      {pending && <Clock size={14} color={c.warning} />}
       {item.starred && <Star size={14} weight="fill" color={c.mutedForeground} />}
       {item.sharedWithPeople && <UsersThree size={14} color={c.mutedForeground} />}
       {item.hasLink && <Link size={14} color={c.mutedForeground} />}
@@ -116,6 +122,7 @@ function Frame({
         borderWidth: outlined ? 1 : 0,
         borderColor: selected ? c.brand : c.border,
         backgroundColor: selected ? c.brandWash : "transparent",
+        opacity: p.dim ? 0.5 : 1,
       }}
     >
       <Pressable
@@ -123,7 +130,7 @@ function Frame({
         onLongPress={() => p.onLongPress(item)}
         android_ripple={{ color: c.ripple }}
         accessibilityRole={selecting ? "checkbox" : "button"}
-        accessibilityLabel={`${kindWord(item)}, ${item.name}`}
+        accessibilityLabel={`${kindWord(item)}, ${item.name}${p.pinned ? ", available offline" : ""}${p.pending ? ", waiting to sync" : ""}${p.dim ? ", not available offline" : ""}`}
         accessibilityState={selecting ? { checked: selected } : { selected }}
       >
         {children}
@@ -133,7 +140,7 @@ function Frame({
 }
 
 function FolderTileImpl(p: TileProps) {
-  const { item, tags, selecting, selected, compact } = p
+  const { item, tags, selecting, selected, compact, pinned, pending } = p
   return (
     <Frame p={p}>
       <View style={{ flexDirection: "row", alignItems: "center", minHeight: compact ? 48 : 56, paddingLeft: 12, paddingRight: selecting ? 12 : 0, gap: 8 }}>
@@ -144,11 +151,11 @@ function FolderTileImpl(p: TileProps) {
             {item.name}
           </Text>
           {item.owner ? (
-            <Meta item={item} tags={tags} text={item.owner} />
+            <Meta item={item} tags={tags} text={item.owner} pinned={pinned} pending={pending} />
           ) : (
-            (item.starred || item.sharedWithPeople || item.hasLink || item.tags.length > 0) && (
+            (item.starred || item.sharedWithPeople || item.hasLink || item.tags.length > 0 || pinned || pending) && (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                <Markers item={item} tags={tags} />
+                <Markers item={item} tags={tags} pinned={pinned} pending={pending} />
               </View>
             )
           )}
@@ -165,19 +172,19 @@ function FolderTileImpl(p: TileProps) {
 }
 export const FolderTile = memo(FolderTileImpl)
 
-function Meta({ item, tags, text }: { item: Item; tags: Map<string, Tag>; text: string }) {
+function Meta({ item, tags, text, pinned, pending }: { item: Item; tags: Map<string, Tag>; text: string; pinned?: boolean; pending?: boolean }) {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
       <Text variant="caption" color={c.mutedForeground} numberOfLines={1} style={[SIZE_FONT, { flexShrink: 1 }]}>
         {text}
       </Text>
-      <Markers item={item} tags={tags} />
+      <Markers item={item} tags={tags} pinned={pinned} pending={pending} />
     </View>
   )
 }
 
 function FileCardImpl(p: TileProps) {
-  const { item, tags, selecting, selected, compact } = p
+  const { item, tags, selecting, selected, compact, pinned, pending, dim } = p
   return (
     <Frame p={p}>
       <View style={{ aspectRatio: 4 / 3, backgroundColor: c.card, alignItems: "center", justifyContent: "center" }}>
@@ -192,7 +199,7 @@ function FileCardImpl(p: TileProps) {
           {!selecting && <MenuButton item={item} onMenu={p.onMenu} />}
         </View>
         <View style={{ marginTop: -8, paddingRight: 12 }}>
-          <Meta item={item} tags={tags} text={metaText(item)} />
+          <Meta item={item} tags={tags} text={dim ? "Not available offline" : metaText(item)} pinned={pinned} pending={pending} />
         </View>
       </View>
     </Frame>
@@ -222,7 +229,7 @@ function Snippet({ text }: { text: string }) {
 }
 
 function ListRowImpl(p: TileProps) {
-  const { item, tags, selecting, selected, compact } = p
+  const { item, tags, selecting, selected, compact, pinned, pending, dim } = p
   const snippet = "snippet" in item ? item.snippet : null
   return (
     <View style={{ borderBottomWidth: 1, borderBottomColor: c.border }}>
@@ -236,7 +243,7 @@ function ListRowImpl(p: TileProps) {
             <Text variant="label" numberOfLines={1} ellipsizeMode="middle">
               {item.name}
             </Text>
-            <Meta item={item} tags={tags} text={metaText(item)} />
+            <Meta item={item} tags={tags} text={dim ? "Not available offline" : metaText(item)} pinned={pinned} pending={pending} />
             {snippet ? <Snippet text={snippet} /> : null}
           </View>
           {!selecting && <MenuButton item={item} onMenu={p.onMenu} />}

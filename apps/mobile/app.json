@@ -97,7 +97,8 @@
           "cameraPermission": "Nimbus uses the camera to take photos and videos you upload.",
           "microphonePermission": false
         }
-      ]
+      ],
+      "expo-background-task"
     ]
   }
 }

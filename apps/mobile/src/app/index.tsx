@@ -35,7 +35,7 @@ export default function Index() {
         />
       </FormScreen>
     )
-  // ponytail: offline start waits on phase 6's cache; until then it says so plainly.
+  // With no network and saved data, `me.data` is the saved copy and the redirect above already ran. Only a first sign-in lands here.
   if (me.error)
     return (
       <FormScreen>

@@ -5,6 +5,7 @@ import { createContext, use, useCallback, useEffect, useMemo, useState, type Rea
 import { json, send, type Account, type Me } from "./api"
 import { backupAvailable, readSettings, saveSettings } from "./backup"
 import { native } from "./native"
+import { forgetAccount } from "./offline"
 import { engine } from "./uploads"
 
 const KEY = "accounts.v1"
@@ -81,6 +82,7 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
           body: "{}",
         }).catch(() => {})
       clearCache(id)
+      forgetAccount(id)
       engine.cancelAccount(id)
       // Backup can't carry on into an account that's gone; More says so on the backup screen.
       if (backupAvailable && readSettings().accountId === id) saveSettings({ enabled: false, accountId: null })

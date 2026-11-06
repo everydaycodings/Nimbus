@@ -47,6 +47,16 @@ export type NimbusAndroid = {
   freeUpCandidates(days: number): Promise<string>
   // How many Android removed, after its own confirmation.
   freeUp(days: number): Promise<number>
+  // Phase 6, Files app (DocumentsProvider). Optional: older APKs don't have them.
+  // The Files app lists Nimbus unless the lock is on (timeoutMs not null) and `ms` is older than the timeout, or lockNow ran.
+  setUnlockedAt?(ms: number, timeoutMs: number | null): void
+  lockNow?(): void
+  // content:// URI of one item in the Files app's provider, for another app that must save back; null if signed out.
+  documentUri?(accountId: string, itemId: string): string | null
+  // Open with: starts a chooser for another app with read+write grants on the provider URI. False when locked, signed out or no app can open it.
+  viewDocument?(accountId: string, itemId: string, mime: string): boolean
+  // Tell open Files screens to reload this account's lists.
+  notifyFilesChanged?(accountId: string): void
   // `json`: the queue as UploadRow[].
   addListener(event: "uploads" | "share" | "backup", listener: (e: { json?: string }) => void): EventSubscription
 }
