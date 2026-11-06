@@ -14,7 +14,7 @@ import javax.crypto.spec.GCMParameterSpec
 // The app's sign-ins, mirrored from JS so workers can call the server while the app is closed.
 // Encrypted with a key that never leaves Android's keystore.
 object Accounts {
-  data class Account(val id: String, val server: String, val token: String)
+  data class Account(val id: String, val server: String, val token: String, val email: String = "")
 
   private const val ALIAS = "nimbus_accounts"
   private const val PREFS = "nimbus_accounts"
@@ -46,7 +46,7 @@ object Accounts {
       val cipher = Cipher.getInstance("AES/GCM/NoPadding")
       cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, sealed, 0, 12))
       val list = JSONArray(String(cipher.doFinal(sealed, 12, sealed.size - 12)))
-      (0 until list.length()).map { list.getJSONObject(it) }.map { Account(it.getString("id"), it.getString("server"), it.getString("token")) }
+      (0 until list.length()).map { list.getJSONObject(it) }.map { Account(it.getString("id"), it.getString("server"), it.getString("token"), it.optString("email")) }
     } catch (e: Exception) {
       emptyList() // A restored backup can't open another phone's key; JS sends the accounts again at start.
     }

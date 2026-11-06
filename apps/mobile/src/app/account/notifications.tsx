@@ -1,13 +1,17 @@
 import type { AccountResponse, NotificationKind, NotificationPref } from "@nimbus/shared/api"
 import { useQueryClient } from "@tanstack/react-query"
-import { Switch, View } from "react-native"
+import { BellRinging, Check, Lightning } from "phosphor-react-native"
+import { useCallback, useEffect, useState } from "react"
+import { AppState, Linking, Switch, View } from "react-native"
 
-import { Group, Loaded, Page } from "@/components/page"
+import { Group, Loaded, Page, Row } from "@/components/page"
 import { useSnack } from "@/components/snackbar"
-import { Text } from "@/components/ui"
+import { Button, Text } from "@/components/ui"
+import { useAccounts } from "@/lib/accounts"
 import { errorText } from "@/lib/api"
 import { useAccountData, useApi, useInstance } from "@/lib/files"
-import { c } from "@/lib/theme"
+import { allowNotifications, cardDismissed, dismissCard, liveAvailable, liveOn, notificationsAllowed, pushAvailable, pushRoute, refreshPush, setDistributor, setLive, type PushState } from "@/lib/push"
+import { c, radius } from "@/lib/theme"
 
 const KIND_LABEL: Record<NotificationKind, string> = {
   shared: "Something is shared with me",
@@ -23,6 +27,93 @@ const KIND_LABEL: Record<NotificationKind, string> = {
   storage_low: "My storage is nearly full (90%)",
 }
 
+const NTFY = "https://f-droid.org/packages/io.heckel.ntfy/"
+const NTFY_PLAY = "https://play.google.com/store/apps/details?id=io.heckel.ntfy"
+
+// How notifications reach this phone, and the one-time offer of a push app.
+function Delivery() {
+  const { accounts } = useAccounts()
+  const [state, setState] = useState<PushState>(() => refreshPush())
+  const [allowed, setAllowed] = useState(true)
+  const [live, setLiveOn] = useState(liveOn)
+  const [dismissed, setDismissed] = useState(cardDismissed)
+  const look = useCallback(() => {
+    setState(refreshPush())
+    setLiveOn(liveOn())
+    notificationsAllowed().then(setAllowed)
+  }, [])
+  // Coming back from installing a push app or from system settings.
+  useEffect(() => {
+    look()
+    const sub = AppState.addEventListener("change", (s) => s === "active" && look())
+    return () => sub.remove()
+  }, [look])
+
+  return (
+    <View style={{ gap: 12 }}>
+      <Group>
+        <Row label="Delivery" detail={pushRoute(state)} icon={<BellRinging size={24} color={c.mutedForeground} />} />
+        {liveAvailable && (live || !state.saved) && (
+          <Row
+            icon={<Lightning size={24} color={c.mutedForeground} />}
+            label={state.saved ? "Use built-in instead of ntfy" : "Instant notifications"}
+            detail="Stays connected to your server. Android shows a quiet 'Connected to Nimbus' notification and it uses a little battery."
+            trailing={
+              <Switch
+                value={live}
+                onValueChange={(on) => setLive(on).then(look)}
+                accessibilityLabel={state.saved ? "Use built-in instead of ntfy" : "Instant notifications"}
+                trackColor={{ true: c.brand, false: c.mutedStrong }}
+                thumbColor={c.foreground}
+              />
+            }
+          />
+        )}
+        {!allowed && (
+          <Row
+            label="Notifications are off for Nimbus"
+            detail="Allow them to see alerts outside the app."
+            trailing={<Button variant="outlined" label="Allow" onPress={() => allowNotifications().then(setAllowed)} />}
+          />
+        )}
+      </Group>
+      {state.distributors.length > 1 && (
+        <Group>
+          {state.distributors.map((d) => (
+            <Row
+              key={d.id}
+              label={d.name}
+              detail={state.saved?.id === d.id ? "Delivering your notifications" : "Use this instead"}
+              trailing={state.saved?.id === d.id ? <Check size={20} color={c.brand} /> : undefined}
+              onPress={() => setDistributor(d.id, accounts).then(look)}
+            />
+          ))}
+        </Group>
+      )}
+      {pushAvailable && !live && !state.saved && !state.distributors.length && !dismissed && (
+        <View style={{ padding: 16, gap: 12, backgroundColor: c.brandWash, borderWidth: 1, borderColor: c.border, borderRadius: radius.card }}>
+          <Text variant="titleSmall">Get instant notifications</Text>
+          <Text variant="bodySmall" color={c.mutedForeground}>
+            {liveAvailable ? "Turn on Instant notifications above, or install ntfy. " : ""}Without either, Nimbus checks every 15 minutes. ntfy is a free app that delivers them at once; it only learns that something happened, never what.
+          </Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            <Button label="F-Droid" onPress={() => Linking.openURL(NTFY)} />
+            <Button variant="outlined" label="Google Play" onPress={() => Linking.openURL(NTFY_PLAY)} />
+            <Button
+              variant="text"
+              label="Not now"
+              onPress={() => {
+                dismissCard()
+                setDismissed(true)
+              }}
+            />
+          </View>
+        </View>
+      )}
+    </View>
+  )
+}
+
 export default function NotificationPrefs() {
   const api = useApi()
   const account = useAccountData()
@@ -34,6 +125,7 @@ export default function NotificationPrefs() {
   // Saved as you flip it, and answers at once; a refused change snaps back.
   const flip = async (p: NotificationPref, channel: "bell" | "email", on: boolean) => {
     const next = { ...p, [channel]: on }
+    if (on && channel === "bell") allowNotifications()
     client.setQueryData<AccountResponse>(key, (a) => a && { ...a, notificationPrefs: a.notificationPrefs.map((x) => (x.kind === p.kind ? next : x)) })
     try {
       await api.put("/account/notification-prefs", { prefs: { [p.kind]: { bell: next.bell, email: next.email } } })
@@ -58,6 +150,7 @@ export default function NotificationPrefs() {
 
   return (
     <Page title="Notifications">
+      <Delivery />
       <Text variant="bodySmall" color={c.mutedForeground}>
         {instance.data && !instance.data.email
           ? "Choose where each kind reaches you. This Nimbus can't send email yet, so email choices apply once an admin sets it up."

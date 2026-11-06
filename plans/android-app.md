@@ -1,7 +1,7 @@
 # Nimbus for Android (Expo)
 
 Native Android app with every member feature and no admin panel, for any self-hoster to point at
-their own server. Apple is dropped for now. Last updated 2026-11-06.
+their own server. Apple is dropped for now. Last updated 2026-11-06 (Phase 8).
 
 ## Starting a new session
 
@@ -27,7 +27,7 @@ API checks: `cd apps/web && node --env-file=.env.local scripts/api-check.ts` (ru
 | 5 | Uploader, share into Nimbus, camera backup | Built and checked on the emulator, see below. Waiting on the user's phone check |
 | 6 | Offline, Android Files integration | Built and checked on the emulator (Expo Go and the APK), see below. Waiting on the user's phone check |
 | 7 | Vault | Built and checked on the emulator (APK), see below. Waiting on the user's phone check |
-| 8 | Push, release APK, docs, finish review | Not started |
+| 8 | Push, release APK, web download, docs, finish review | Built and checked on the emulator (release APK), see below. Waiting on the user's phone check |
 
 **Phase 1 detail**
 
@@ -241,6 +241,70 @@ Decisions are in Claude's project memory (Phase 7 decisions). The plan, with the
 - **New dependencies:** `bcprov-jdk18on`, `androidx.biometric` (Gradle). No new JS dependencies.
 - **Dev data:** `newbie` has the "Web made" vault (passphrase `phone changed this pass`, plus `p7-mid.bin` from share-in). The emulator has fingerprints 1 and 2 and PIN 1111.
 
+**Phase 8 detail (2026-11-06)**
+
+Decisions are in Claude's project memory (Phase 8 decisions). The plan was `~/.claude/plans/start-building-phase-8-jaunty-taco.md`.
+Built by builder agents (web/docs, mobile, live connection, review fixes), checked by the lead.
+
+- **Push, three routes:**
+  - The user's added choice, built-in **Instant notifications**: a `specialUse` foreground service (`Live.kt`) holds `GET /api/v1/events` (SSE; Redis pub/sub fan-out, `lib/events.ts`) to each account's server, with a quiet "Connected to Nimbus" notification.
+  - **UnifiedPush** (ntfy or any distributor; connector 3.3.5).
+  - A **15-minute WorkManager poll** when neither is set up.
+  - Pushes and events carry no content: the phone fetches `/api/v1/notifications` and shows the server's text, on three channels.
+- **Checks:**
+  - 185 of 185 API checks (adds instance `version` and the events stream).
+  - 53 mobile unit tests, 26 Kotlin JUnit tests (5 new `PushRulesTest`), web unit tests, web and mobile typecheck.
+- **Emulator, release APK** (`nimbus-0.1.0-x86_64.apk`, clean install):
+  - Push through local ntfy with the app killed: the notification arrives at once with the real text, the Sharing channel and the account name.
+  - Built-in instant: a share showed within 4 s with the app in the background.
+  - Tapping a notification opens the file (previewer).
+  - Backup, vault unlock (BouncyCastle under R8), the version gate with Switch account, About, and Copy diagnostics (addresses and emails shortened) all work.
+  - The ntfy card shows when nothing instant is set up.
+  - The 15-minute poll with nothing instant set up: a share reached the killed app 14½ min later, showing the Nimbus cloud icon.
+  - The final APKs (with the review fixes) install over the earlier release keeping data. Fixes seen on screen: More's status-bar backing and App lock icon, "2 selected" fits, PPT glyph, "This file's contents are missing on the server."
+- **Server:**
+  - 600 requests a minute per user gives a 429 with a readable message. `/me` is exempt (it works while gated).
+  - Push connects to the IP it checked (`pinnedLookup`).
+  - `/instance` has `version`.
+  - APKs come from GitHub Releases (cached 1 h) with the bundled `apps/web/android/` as fallback; `/android/<file>` refuses path tricks.
+- **Web download:**
+  - `/app` (public; QR on desktop), the sign-in footer link, and Account under "Sign in on your phone".
+  - Chrome on Android doesn't report the architecture through client hints (the emulator got arm64). The page then recommends arm64, and lists every APK under Other versions. On a computer it always recommends arm64.
+- **Release:**
+  - `npm run release:android` makes the keystore once (`~/.nimbus/`, **back it up**) and builds per-ABI APKs (versionCode ×10 + ABI index) plus universal. All four are signed with one certificate (`apksigner`).
+  - `.github/workflows/android-release.yml` builds on `v*` tags when the four keystore secrets are set.
+- **Found and fixed:**
+  - Android 15's background network block made the first fetch after a push fail. It now retries inside the distributor's foreground window, with the worker as fallback.
+  - R8 stripped WorkManager's database constructor, so the release crashed at start (`consumer-rules.pro`).
+  - The release script's `umask 077` leaked into the APK copies (mode 600).
+  - The bundled APK list was cached for an hour.
+  - Desktop visitors were offered the x86_64 build.
+  - A Kotlin compile error in `Live.kt`.
+- **Finish review:** the verdict was "ship after fixes". Its eight fixes were applied:
+  - human previewer errors
+  - selection count size
+  - one instant option at a time
+  - gate "Check again" / "Get the update"
+  - a notification for a removed account
+  - More's status-bar backing and App lock icon
+  - xls/ppt/txt glyphs
+  - a Nimbus notification icon tinted teal
+  - Screens are in `apps/mobile/.impeccable/review/`. DESIGN.md's Mobile section was updated.
+- **Dropped:** the tile-to-previewer morph. Reanimated 4.7's shared transitions (static flag on) don't cross from the tab navigator into the root stack; the quiet transition stays.
+- **Not run / for the phone:**
+  - Push and live on a real battery with manufacturer limits.
+  - Live after a reboot (`LiveBoot`).
+  - The distributor picker (needs two distributors).
+  - The old-app gate on screen (same component as the old-server one).
+  - Downloading and installing an APK from `/app` on a phone.
+  - The GitHub workflow (no secrets or tag yet).
+- **Open points for the user:**
+  - Licence texts aren't shipped with the app (About lists the packages only); Apache 2.0 asks for them.
+  - Reinstalling leaves the old install's push endpoints on the server until ntfy reports them gone (harmless, untidy).
+  - Rate-limit numbers (600/min per user, 120/min per IP on `/instance`) are guesses.
+- **New dependencies:** `org.unifiedpush.android:connector` (Gradle). Optional `ntfy` compose service (profile `push`, port 3405).
+- **Dev data:** `browser-test` shared several files with `newbie` and has a public link on `app.ts`. The emulator has the release build signed in as `newbie` and `browser-test`, and ntfy is uninstalled.
+
 ## Working rules for this machine
 
 - 15 GB of RAM, and the load has already crashed Cursor. **One heavy job at a time**: emulator, Gradle,
@@ -441,5 +505,4 @@ Decisions).
 - **Real device behaviour:** background limits vary by manufacturer and an emulator can't prove them, so test
   on a real phone before any public release.
 - **Size:** phases 5 to 7 are the largest and most native-heavy.
-- **Before public release:** `/api/v1` has no rate limiting of its own, and push's SSRF check doesn't pin the
-  resolved IP between lookup and connect.
+- **Before public release:** licence texts for bundled open-source packages, and tuning the `/api/v1` rate limits.

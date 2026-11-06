@@ -1,5 +1,7 @@
+import { headers } from "next/headers"
 import { z } from "zod"
 
+import { overLimit } from "@/lib/cache"
 import { TYPE_KEYS, UUID, typeKeyOf } from "@/lib/file-rules"
 import { listTags, type Item } from "@/lib/files"
 import { getSession, type Me } from "@/lib/session"
@@ -20,7 +22,19 @@ export async function withMember(fn: (me: Me) => Promise<Response>) {
   const me = session.user
   if (me.status !== "active" || me.passwordTemporary)
     return fail(403, "gated", "Finish setting up your account first.")
+  if (await overLimit(`rl:u:${me.id}`, 600, 60)) return rateLimited()
   return fn(me)
+}
+
+const rateLimited = () =>
+  fail(429, "rate_limited", "Too many requests. Try again in a minute.")
+
+// Per-IP limit for public routes (120 a minute), or a 429 Response.
+export async function limitIp(name: string) {
+  const h = await headers()
+  const ip =
+    h.get("x-forwarded-for")?.split(",")[0].trim() || h.get("x-real-ip") || "?"
+  return (await overLimit(`rl:ip:${name}:${ip}`, 120, 60)) ? rateLimited() : null
 }
 
 // ---- Input ----

@@ -88,8 +88,23 @@ export type NimbusAndroid = {
   vaultBioDisable?(accountId: string, vaultId: string): void
   vaultForget?(accountId: string, vaultId: string | null): void
   setSecure?(on: boolean): void
-  // `json`: the queue as UploadRow[]. "vault" events carry a decrypt job's progress in plaintext bytes.
-  addListener(event: "uploads" | "share" | "backup" | "vault", listener: (e: { json?: string; jobId?: string; done?: number; total?: number }) => void): EventSubscription
+  // Phase 8, push (UnifiedPush). Optional: older APKs don't have them. Each account is one UnifiedPush instance, named by its id.
+  // Picks the only installed distributor when none is chosen, sets the 15-minute poll to match, and returns
+  // JSON {saved: {id, name} | null, distributors: {id, name}[]}.
+  pushRefresh?(): string
+  // Switches distributor (all endpoints are forgotten; register the accounts again).
+  pushSetDistributor?(id: string): void
+  // The endpoint URL the distributor gave this account, if it has one yet.
+  pushEndpoint?(accountId: string): string | null
+  // Asks the chosen distributor for an endpoint; it arrives later as a "push" event.
+  pushRegister?(accountId: string): void
+  // Forgets the endpoint, the last notification shown and the registration for this account.
+  pushUnregister?(accountId: string): void
+  // Instant notifications: Nimbus keeps its own connection to each account's server (a foreground service). Persisted.
+  liveSet?(on: boolean): void
+  liveState?(): boolean
+  // `json`: the queue as UploadRow[]. "vault" events carry a decrypt job's progress in plaintext bytes. "push" events carry a new endpoint for an account (null: it was dropped).
+  addListener(event: "uploads" | "share" | "backup" | "vault" | "push", listener: (e: { json?: string; jobId?: string; done?: number; total?: number; accountId?: string; endpoint?: string | null }) => void): EventSubscription
 }
 
 export type SharedFile = { uri: string; name: string; size: number; mime: string }

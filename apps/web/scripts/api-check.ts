@@ -147,6 +147,7 @@ async function main() {
   await group("instance, me, signed-out", async () => {
     const r = await call(null, "GET", "/instance")
     instance = r.body
+    check("GET /instance has the server version", typeof r.body.version === "string", r.body.version)
     check("GET /instance is public", r.status === 200 && r.body.app === "nimbus" && typeof r.body.tusUrl === "string")
     check("GET /me", me.id && me.gate === null && me.usage && me.uploadSpeedBytes !== undefined, me)
     for (const [m, p] of [
@@ -156,6 +157,7 @@ async function main() {
       ["GET", "/account"],
       ["GET", "/vaults"],
       ["POST", "/push"],
+      ["GET", "/events"],
     ] as const) {
       const x = await call(null, m, p, m === "POST" ? {} : undefined)
       check(`${m} ${p} without a token is 401`, x.status === 401 && x.body?.error === "signed-out", x)
@@ -560,6 +562,15 @@ async function main() {
     check("delete vault nodes", (await call(A, "POST", `/vaults/${vid}/nodes/delete`, { ids: [b] })).status === 200)
     check("B can't change A's vault", (await call(B, "POST", `/vaults/${vid}/nodes/trash`, { ids: [a] })).status === 404)
     check("delete vault", (await call(A, "DELETE", `/vaults/${vid}`)).status === 200 && (await call(A, "GET", `/vaults/${vid}`)).status === 404)
+  })
+
+  // ---- live events
+  await group("events", async () => {
+    const ac = new AbortController()
+    const res = await fetch(`${BASE}/api/v1/events`, { headers: { authorization: `Bearer ${A}` }, signal: ac.signal })
+    const first = new TextDecoder().decode((await res.body!.getReader().read()).value)
+    ac.abort()
+    check("stream opens with retry", res.status === 200 && res.headers.get("content-type") === "text/event-stream" && first.startsWith("retry: 10000"), first)
   })
 
   // ---- push

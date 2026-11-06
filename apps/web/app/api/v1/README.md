@@ -21,8 +21,10 @@ no admin route. Request and response types are in `@nimbus/shared/api`
   you can't see it; the two are never told apart), `bad-request` 400 (malformed
   input), `refused` 400 (understood but not possible, e.g. name taken). Show `message`.
 - Ids are UUIDs, except user ids (opaque strings). Dates are ISO strings, sizes bytes.
-- Rate limiting and origin checks are Better Auth's and apply only to `/api/auth/*`.
-  `/api/v1` has none of its own.
+- Rate limits: 600 requests a minute per user on every route, 120 a minute per IP
+  on `GET /instance`. Over the limit: **429** `rate_limited` (wait a minute). Redis
+  being down lifts the limit. Sign-in rate limits and origin checks are Better Auth's
+  and apply to `/api/auth/*`.
 
 ## Two-factor, sessions (Better Auth endpoints, all work with the bearer)
 
@@ -63,7 +65,7 @@ nothing to return answers `200 {}`.
 
 | Method | Path | Body / query | Response |
 |---|---|---|---|
-| GET | `/instance` | (public) | `Instance` |
+| GET | `/instance` | (public) | `Instance` (`version`: the Nimbus server's version) |
 | GET | `/me` | | `Me` |
 | **Lists** | | | |
 | GET | `/files` | `ListQuery` | `ListResponse` (My files root + shortcuts) |
@@ -168,6 +170,8 @@ nothing to return answers `200 {}`.
 | POST | `/vaults/{vid}/nodes/delete` | `VaultIdsRequest` | `{}` |
 | POST | `/vaults/{vid}/uploads/plan` | `PlanVaultUploadRequest` | `PlanVaultUploadResponse` |
 | GET | `/vaults/{vid}/files/{id}` | | `VaultFileResponse` |
+| **Events** | | | |
+| GET | `/events` | | `text/event-stream` |
 | **Push** | | | |
 | POST | `/push` | `PushRequest` (UnifiedPush endpoint URL) | `{}` |
 | DELETE | `/push` | `PushRequest` | `{}` |
@@ -240,6 +244,21 @@ ring the bell. Nothing about files is in the payload; fetch `GET /notifications`
 Endpoints answering 404 or 410 are dropped. Registration refuses private
 addresses and non-http(s) URLs unless the server runs in development. Needs the
 worker (`npm run worker`). Registering the same URL again moves it to the caller.
+
+## Live events (SSE)
+
+`GET /events` is a Server-Sent Events stream for the signed-in member (bearer
+token). It sends `retry: 10000`, then `event: notification` with `data: {"id":"<notification id>"}`
+whenever the bell gets a new row (fetch `GET /notifications` for the text), and a
+`: ping` comment every 25 seconds. The Android app's "Instant notifications" keeps
+one open per account. Fans out through Redis channel `events:<userId>`.
+
+## Android APK (not under /api/v1)
+
+Public, no token: `GET /api/android/latest` answers `{version, files: [{abi, url, size}]}`
+or `null` (abi: `arm64-v8a`, `armeabi-v7a`, `x86_64`, `universal`). The files come from
+the latest GitHub release, else from APKs bundled on the server (`GET /android/<file>`).
+`/app` is the web page for it.
 
 ## Not in /api/v1
 

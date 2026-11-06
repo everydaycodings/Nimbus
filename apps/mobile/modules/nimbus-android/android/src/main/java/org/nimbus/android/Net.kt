@@ -25,13 +25,13 @@ object Net {
   private val JSON = "application/json".toMediaType()
 
   // The app's own API, as the app calls it: bearer token, `origin: nimbus://`, no cookies.
-  fun api(account: Accounts.Account, method: String, path: String, body: JSONObject? = null): JSONObject {
+  fun api(account: Accounts.Account, method: String, path: String, body: JSONObject? = null, http: OkHttpClient = client): JSONObject {
     val req = Request.Builder().url(account.server + path)
       .header("authorization", "Bearer ${account.token}")
       .header("origin", "nimbus://")
       .method(method, body?.toString()?.toRequestBody(JSON))
       .build()
-    client.newCall(req).execute().use { res ->
+    http.newCall(req).execute().use { res ->
       val text = res.body?.string().orEmpty()
       if (!res.isSuccessful) {
         val message = runCatching { JSONObject(text).optString("message") }.getOrNull()?.ifEmpty { null }

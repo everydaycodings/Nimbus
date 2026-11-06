@@ -161,8 +161,8 @@ hex in `src/lib/theme.ts`; components are in `src/components`.
   goes to Files, then leaves the app. Trash, Tags, Storage and Search open above the tabs.
 - **Top of the file screens:** a 56dp full-pill search with the avatar in its right end, or a back bar in folders.
   A breadcrumb of ancestors sits below the bar. Chips and the sort row scroll with the content.
-- **Selection:** long-press with one light haptic. A 64dp bar replaces the search pill, with count, Star, Move, Trash
-  and ⋮, and the trash icon in `--destructive`. One shareable item swaps Star for Copy link, so the count keeps its
+- **Selection:** long-press with one light haptic. A 64dp bar replaces the search pill, with the count (16sp, so "2 selected" fits at 360dp), Star, Move, Trash
+  and ⋮ (Download lives under ⋮), and the trash icon in `--destructive`. One shareable item swaps Star for Copy link, so the count keeps its
   room. System Back clears it first.
 - **Bell and badge:** the bell sits in the pill beside the avatar, with an 8dp teal dot when anything is unread. New
   shares show as a teal count on the Shared tab.
@@ -180,7 +180,17 @@ hex in `src/lib/theme.ts`; components are in `src/components`.
 - **Ownership:** the account sheet always names the server. A plain-http server shows "Not encrypted" in `--warning`,
   the one use outside Health, because it's a real risk to the user's files.
 - **Storage meter:** solid segments, not hatched: Vault in `--foreground`, versions and trash in `c.dim`.
-- **Motion:** slide for folder depth, sheets slide and fade, the FAB shrinks to its icon on scroll. All of it follows
-  the system's remove-animations setting.
-- **Later phases:** the avatar's backup ring arrives with backup in Phase 5; until then no ring, so it never implies
-  a backup that doesn't exist. Rows for unbuilt actions stay hidden rather than greyed out.
+- **Motion:** slide for folder depth, sheets slide and fade, the FAB shrinks to its icon on scroll, and the previewer
+  arrives with the Stack's quiet fade. There's no tile-to-previewer morph: Reanimated's shared transitions don't
+  cross from the tab navigator into the root stack. All of it follows the system's remove-animations setting.
+- **Backup ring:** only while camera backup is on. Teal progress while uploading, whole teal when backed up,
+  `--destructive` when failing. With backup off the avatar has no ring, so it never implies a backup that doesn't exist.
+- **Notifications on the phone:** three channels (Sharing, File drops & edits, Account & security) with the server's
+  own text, titled with the account's email when more than one is signed in; tapping lands where the bell would.
+  Account → Notifications opens with a Delivery row naming the route ("Instant, built in", "Instant, via ntfy",
+  "Every 15 minutes"). Instant notifications keep a quiet low-importance "Connected to Nimbus" notification, which
+  Android requires. The ntfy card shows only when nothing instant is set up, and once dismissed stays gone.
+- **Blocking screens:** the app lock and the server-version gate share one shape: brand mark, title, one line, and at
+  most two actions, covering everything until resolved.
+- **About:** brand mark, version and build, source link, Copy diagnostics (addresses and emails shortened, said in
+  the snackbar), then licences.

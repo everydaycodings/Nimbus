@@ -217,6 +217,14 @@ default=n
 [ "$write_env" = n ] && [[ ",$(env_value COMPOSE_PROFILES)," == *",backup,"* ]] && default=y
 confirm "Run the backup worker?" "$default" && PROFILES="${PROFILES:+$PROFILES,}backup"
 
+bold "Push notifications (optional)"
+echo "The Android app gets instant notifications through ntfy or another UnifiedPush app."
+echo "Without a server here it uses ntfy.sh (or your distributor's own): no change needed."
+PROFILES=$(tr ',' '\n' <<<"$PROFILES" | grep -vx -e push -e '' | paste -sd, || true)
+default=n
+[ "$write_env" = n ] && [[ ",$(env_value COMPOSE_PROFILES)," == *",push,"* ]] && default=y
+confirm "Self-host push notifications (ntfy)?" "$default" && PROFILES="${PROFILES:+$PROFILES,}push"
+
 bold "nginx and HTTPS"
 names="https://$DOMAIN${S3_DOMAIN:+ and https://$S3_DOMAIN}"
 echo "Nimbus listens only on 127.0.0.1. nginx makes it public on $names"
@@ -238,6 +246,7 @@ fi
 ports=(3400 3401 3404 6340)
 has_profile postgres && ports+=(54340)
 has_profile minio && ports+=(3402 3403)
+has_profile push && ports+=(3405)
 if [ -z "$(docker compose ps -q 2>/dev/null || true)" ] && command -v ss >/dev/null; then
   for p in "${ports[@]}"; do
     [ -z "$(ss -ltnH "sport = :$p")" ] ||
@@ -362,6 +371,13 @@ Your bucket must let the browser read from it. Add this CORS rule to it
   [{"AllowedOrigins": ["https://$DOMAIN"], "AllowedMethods": ["GET", "HEAD"],
     "AllowedHeaders": ["Range"], "ExposeHeaders": ["Content-Range", "Content-Length", "ETag"],
     "MaxAgeSeconds": 3600}]
+
+EOF
+fi
+if has_profile push; then
+  cat <<EOF
+ntfy runs on 127.0.0.1:3405. Point https://ntfy.$DOMAIN (DNS A record, HTTPS) at it with
+your reverse proxy, then enter https://ntfy.$DOMAIN as the server in the ntfy app.
 
 EOF
 fi

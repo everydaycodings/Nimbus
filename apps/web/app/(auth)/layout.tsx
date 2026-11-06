@@ -4,6 +4,7 @@ import { redirect } from "next/navigation"
 
 import { PasswordPolicyProvider } from "@/components/password-input"
 import { ADDING_COOKIE } from "@/lib/accounts"
+import { androidRelease } from "@/lib/android-release"
 import { getSession } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
 
@@ -16,6 +17,7 @@ export default async function AuthLayout({
   if ((await getSession()) && !(await cookies()).has(ADDING_COOKIE))
     redirect("/")
   const { passwordPolicy } = await getSettings()
+  const app = await androidRelease()
   return (
     <main className="relative isolate flex min-h-svh flex-col items-center justify-center px-4 py-12">
       {/* Hairline grid that fades out from behind the card. */}
@@ -38,6 +40,14 @@ export default async function AuthLayout({
         <p className="text-center text-xs text-balance text-muted-foreground">
           Self-hosted and open source. Your files stay on this server&apos;s
           storage.
+          {app && (
+            <>
+              {" "}
+              <a href="/app" className="underline underline-offset-4">
+                Get the Android app
+              </a>
+            </>
+          )}
         </p>
       </div>
     </main>

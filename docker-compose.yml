@@ -8,6 +8,7 @@ name: nimbus
 #   postgres  run Postgres here (otherwise DATABASE_URL points at yours)
 #   minio     run MinIO here as file storage (otherwise S3_* point at yours)
 #   backup    run the backup worker
+#   push      run ntfy, a push server for the Android app (README, "Android app")
 
 x-nimbus: &nimbus
   image: nimbus-app:latest
@@ -126,6 +127,20 @@ services:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
 
+  # Self-hosted push (profile "push"). Put HTTPS in front of 127.0.0.1:3405 at
+  # ntfy.${DOMAIN}; that address goes in the ntfy app on the phone.
+  ntfy:
+    image: binwiederhier/ntfy:v2.11.0
+    profiles: [push]
+    restart: unless-stopped
+    command: serve
+    environment:
+      NTFY_BASE_URL: https://ntfy.${DOMAIN}
+      NTFY_BEHIND_PROXY: "true"
+      NTFY_CACHE_FILE: /var/cache/ntfy/cache.db
+    ports: ["127.0.0.1:3405:80"]
+    volumes: [ntfy:/var/cache/ntfy]
+
   # WebDAV at /dav (nginx forwards it here). Next can't route WebDAV's methods,
   # so this hands each request to the app as a signed POST.
   webdav:
@@ -162,3 +177,4 @@ volumes:
   postgres:
   minio:
   redis:
+  ntfy:

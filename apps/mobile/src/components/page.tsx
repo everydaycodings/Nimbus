@@ -117,11 +117,13 @@ export function Row({
 export function SwitchRow({
   label,
   detail,
+  icon,
   value,
   disabled,
   onChange,
 }: {
   label: string
+  icon?: ReactNode
   detail?: string
   value: boolean
   disabled?: boolean
@@ -138,6 +140,7 @@ export function SwitchRow({
       onPress={() => onChange(!value)}
       style={{ minHeight: 56, flexDirection: "row", alignItems: "center", gap: 16, paddingHorizontal: 16, paddingVertical: 8, opacity: disabled ? 0.5 : 1 }}
     >
+      {icon}
       <View style={{ flex: 1, gap: 2 }}>
         <Text>{label}</Text>
         {detail && <Text variant="caption" color={c.mutedForeground}>{detail}</Text>}

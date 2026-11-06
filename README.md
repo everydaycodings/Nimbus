@@ -72,6 +72,30 @@ as two existing, approved members without two-factor; set `E2E_URL`, `E2E_EMAIL`
 and `E2E_PASSWORD` to point it elsewhere. Each test makes its own `e2e …` folder or vault and
 trashes or deletes it at the end. The first run needs `npx playwright install chromium`.
 
+## Android app
+
+- **Install:** download the APK for your phone from the
+  [GitHub Releases](https://github.com/everydaycodings/Nimbus/releases) page, or open
+  `https://<your-nimbus>/app` on the phone: it picks the right build (arm64 for most phones).
+  Allow "install unknown apps" for your browser when Android asks.
+- **Updates:** add `github.com/everydaycodings/Nimbus` to [Obtainium](https://obtainium.imranr.dev/).
+- **Connect:** enter your server's address, or sign in on the web first and scan the QR in
+  Account → Sign in on your phone.
+- **Push notifications:** without any setup the app checks every 15 minutes. For instant ones, either
+  turn on Account → Notifications → Instant notifications (the app keeps a connection to your own
+  server, `GET /api/v1/events`, and Android shows a quiet "Connected to Nimbus" notification), or
+  install [ntfy](https://ntfy.sh) or any other UnifiedPush distributor on the phone. The
+  distributor's own server (ntfy.sh by default) works with no change here. To self-host it,
+  answer yes to "Self-host push notifications (ntfy)?" in `./setup.sh` (compose profile `push`,
+  port 3405), point `https://ntfy.<your domain>` at it, and enter that address in the ntfy app.
+- **Files in other apps and WebDAV:** see the app's Files settings; app passwords work with any WebDAV client.
+- **Maintainers:** `npm run release:android` in `apps/mobile` builds the signed APKs into
+  `apps/mobile/dist/` and copies them to `apps/web/android/`, which the server offers when GitHub
+  isn't reachable. The release keystore (`~/.nimbus/release.properties` and its `.jks`) can't be
+  recreated: back it up, or no update can ever install over an old one. Pushing a `v*` tag builds
+  and attaches the APKs in GitHub Actions when the `ANDROID_KEYSTORE_BASE64`,
+  `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD` secrets are set.
+
 ## Deploy to production
 
 Nimbus runs on one Linux server with Docker. [docker-compose.yml](docker-compose.yml) always runs

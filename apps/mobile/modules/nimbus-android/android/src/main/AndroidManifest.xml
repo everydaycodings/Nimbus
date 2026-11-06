@@ -1,6 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
   <application>
     <!-- WorkManager's service, typed so long uploads can run in the foreground on Android 14 and up. -->
@@ -8,6 +10,22 @@
       android:name="androidx.work.impl.foreground.SystemForegroundService"
       android:foregroundServiceType="dataSync"
       tools:node="merge" />
+    <!-- UnifiedPush: the connector's own receiver hands pushes from ntfy and the like to this service. -->
+    <service android:name="org.nimbus.android.NimbusPushService" android:exported="false">
+      <intent-filter>
+        <action android:name="org.unifiedpush.android.connector.PUSH_EVENT" />
+      </intent-filter>
+    </service>
+    <!-- Instant notifications: Live.kt keeps a connection to each account's server. -->
+    <service android:name="org.nimbus.android.LiveService" android:exported="false" android:foregroundServiceType="specialUse">
+      <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Keeps a connection to your Nimbus server for instant notifications" />
+    </service>
+    <receiver android:name="org.nimbus.android.LiveBoot" android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+      </intent-filter>
+    </receiver>
     <!-- The Files app's window onto Nimbus. MANAGE_DOCUMENTS keeps other apps out; grantUriPermissions lets
          Open with hand one document to an editor. The authority must match NimbusDocumentsProvider.authority. -->
     <provider

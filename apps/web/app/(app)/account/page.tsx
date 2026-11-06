@@ -6,6 +6,7 @@ import {
 import { desc, eq } from "drizzle-orm"
 import { redirect } from "next/navigation"
 
+import { AndroidDownload } from "@/components/android-download"
 import { AppPasswords } from "@/components/app-passwords"
 import { AvatarPicker } from "@/components/avatar-picker"
 import { DeviceAccounts } from "@/components/device-accounts"
@@ -23,6 +24,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { androidRelease } from "@/lib/android-release"
 import { enabledProviders } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { ADMIN_KINDS, account, appPasswords, user } from "@/lib/db/schema"
@@ -56,7 +58,7 @@ export default async function AccountPage() {
   const session = await getSession()
   if (!session) redirect("/sign-in")
   const me = session.user
-  const [linked, email, settings, prefs, [lock], apps] =
+  const [linked, email, settings, prefs, [lock], apps, release] =
     await Promise.all([
       db
         .select({ id: account.id, providerId: account.providerId })
@@ -77,6 +79,7 @@ export default async function AccountPage() {
         .from(appPasswords)
         .where(eq(appPasswords.userId, me.id))
         .orderBy(desc(appPasswords.createdAt)),
+      androidRelease(),
     ])
   const { require2fa, multiAccount } = settings
   const day = (d: Date) =>
@@ -293,6 +296,11 @@ export default async function AccountPage() {
           </CardHeader>
           <CardContent>
             <DeviceLink />
+            {release && (
+              <div className="mt-4 border-t pt-4">
+                <AndroidDownload release={release} />
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

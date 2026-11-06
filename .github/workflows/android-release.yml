@@ -1,0 +1,50 @@
+name: Android release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      NIMBUS_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      NIMBUS_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      NIMBUS_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - name: Check signing secrets
+        id: secrets
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$NIMBUS_KEYSTORE_PASSWORD" ] || [ -z "$NIMBUS_KEY_ALIAS" ] || [ -z "$NIMBUS_KEY_PASSWORD" ]; then
+            echo "::notice::Signing secrets (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD) aren't set; skipping the APK build."
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.secrets.outputs.build == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.secrets.outputs.build == 'true'
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-java@v4
+        if: steps.secrets.outputs.build == 'true'
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Build signed APKs
+        if: steps.secrets.outputs.build == 'true'
+        run: |
+          npm ci
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          export NIMBUS_KEYSTORE_FILE="$RUNNER_TEMP/release.jks"
+          cd apps/mobile && npm run release:android
+      - uses: softprops/action-gh-release@v2.0.9
+        if: steps.secrets.outputs.build == 'true'
+        with:
+          files: apps/mobile/dist/*.apk

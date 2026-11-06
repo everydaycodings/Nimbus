@@ -1,11 +1,13 @@
 import { router, useFocusEffect } from "expo-router"
 import { formatBytes } from "@nimbus/shared/file-rules"
-import { ArrowCircleDown, ArrowSquareOut, Broom, CaretRight, CloudArrowUp, FolderOpen, GearSix, Lock, Tag, Trash, UploadSimple } from "phosphor-react-native"
-import { useCallback, useState } from "react"
+import { ArrowCircleDown, ArrowSquareOut, Broom, CaretRight, CloudArrowUp, Fingerprint, FolderOpen, GearSix, Info, Lock, Tag, Trash, UploadSimple } from "phosphor-react-native"
+import * as LocalAuthentication from "expo-local-authentication"
+import { useCallback, useEffect, useState } from "react"
 import { ActivityIndicator, Linking, Pressable, ScrollView, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
-import { Group, Row } from "@/components/page"
+import { lockSetting, setLock } from "@/components/lock"
+import { Group, Row, SwitchRow } from "@/components/page"
 import { StorageMeter } from "@/components/storage-meter"
 import { Button, Text } from "@/components/ui"
 import { useSnack } from "@/components/snackbar"
@@ -32,9 +34,19 @@ export default function More() {
   const offline = useOffline(id)
   const queue = useQueue(id)
   useFocusEffect(useCallback(() => setCached(cacheSize(id)), [id]))
+  const [locked, setLocked] = useState(false)
+  useEffect(() => void lockSetting().then((s) => setLocked(s === "on")), [])
+  const flipLock = async (on: boolean) => {
+    // With no screen lock on the phone there'd be nothing to unlock with.
+    if (on && (await LocalAuthentication.getEnrolledLevelAsync()) === LocalAuthentication.SecurityLevel.NONE)
+      return snack({ text: "Set a screen lock, fingerprint or face on this phone first.", error: true })
+    setLocked(on)
+    await setLock(on)
+  }
   const caret = <CaretRight size={16} color={c.mutedForeground} />
 
   return (
+    <View style={{ flex: 1 }}>
     <ScrollView
       style={{ backgroundColor: c.background }}
       contentContainerStyle={{ paddingTop: inset.top + 16, paddingHorizontal: 16, paddingBottom: 24, gap: 16 }}
@@ -87,6 +99,7 @@ export default function More() {
               trailing={caret}
               onPress={() => chooseFolder()}
             />
+            <SwitchRow icon={<Fingerprint size={24} color={c.mutedForeground} />} label="App lock" detail="Ask for your fingerprint, face or screen lock when Nimbus opens" value={locked} onChange={flipLock} />
             <Row
               label="Clear cache"
               icon={<Broom size={24} color={c.mutedForeground} />}
@@ -102,6 +115,9 @@ export default function More() {
               }}
             />
           </Group>
+          <Group>
+            <Row label="About" icon={<Info size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/about")} />
+          </Group>
           {/* Only admins are told it exists; members never see this row. */}
           {me.data?.canAdmin && (
             <Group>
@@ -113,5 +129,7 @@ export default function More() {
             </Group>
           )}
     </ScrollView>
+    <View pointerEvents="none" style={{ position: "absolute", top: 0, left: 0, right: 0, height: inset.top, backgroundColor: c.background }} />
+    </View>
   )
 }

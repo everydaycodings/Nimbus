@@ -3,7 +3,7 @@
     "name": "Nimbus",
     "slug": "nimbus",
     "scheme": "nimbus",
-    "version": "0.0.1",
+    "version": "0.1.0",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -50,7 +50,8 @@
             }
           ]
         }
-      ]
+      ],
+      "versionCode": 1
     },
     "plugins": [
       "expo-router",
@@ -98,7 +99,8 @@
           "microphonePermission": false
         }
       ],
-      "expo-background-task"
+      "expo-background-task",
+      "./plugins/release-signing.js"
     ]
   }
 }

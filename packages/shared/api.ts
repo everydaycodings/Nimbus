@@ -48,6 +48,8 @@ export type Tag = { id: string; name: string; color: TagColor }
 export type Instance = {
   app: "nimbus"
   apiVersion: number
+  /** Nimbus server version; older servers omit it. */
+  version?: string
   providers: {
     google: boolean
     github: boolean

@@ -29,3 +29,16 @@ export async function cached<T>(
   client.set(key, JSON.stringify(value), "EX", seconds).catch(() => {})
   return value
 }
+
+// Fixed-window counter: true once `key` has been hit more than `limit` times in
+// `seconds`. Fails open (false) without Redis, so the API never depends on it.
+export async function overLimit(key: string, limit: number, seconds: number) {
+  if (!client) return false
+  try {
+    const n = await client.incr(key)
+    if (n === 1) await client.expire(key, seconds)
+    return n > limit
+  } catch {
+    return false
+  }
+}

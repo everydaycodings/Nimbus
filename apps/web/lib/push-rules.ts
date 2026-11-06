@@ -25,3 +25,15 @@ export function isPrivateIp(ip: string) {
     v6.startsWith("ff")
   )
 }
+
+// A `lookup` for http(s).request that always answers `ip`, so the connection
+// goes to the address that was checked, whatever DNS says later. Host header
+// and TLS server name still come from the URL.
+export function pinnedLookup(ip: string) {
+  const family = ip.includes(":") ? 6 : 4
+  return (
+    _host: string,
+    opts: { all?: boolean },
+    cb: (err: null, addr: unknown, family?: number) => void
+  ) => (opts.all ? cb(null, [{ address: ip, family }]) : cb(null, ip, family))
+}

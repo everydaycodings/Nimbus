@@ -12,13 +12,15 @@ import { c } from "@/lib/theme"
 
 const KEY = "lock.v1" // "on" | "off"; missing means it hasn't been offered yet
 const AFTER_MS = 60_000
+// The Files app keeps listing Nimbus this long after the app was last used, longer than the app's own lock.
+const FILES_GRACE_MS = Math.max(AFTER_MS, 5 * 60_000)
 
 // The Files app provider hides its roots while the lock is on and the app hasn't been used within the
 // timeout. Optional: an installed app from before Phase 6 doesn't have these.
 type LockNative = { setUnlockedAt?: (at: number, timeoutMs: number | null) => void; lockNow?: () => void }
 const lockNative = native as LockNative | null
 const unlocked = (lockOn: boolean) => {
-  if (typeof lockNative?.setUnlockedAt === "function") lockNative.setUnlockedAt(Date.now(), lockOn ? AFTER_MS : null)
+  if (typeof lockNative?.setUnlockedAt === "function") lockNative.setUnlockedAt(Date.now(), lockOn ? FILES_GRACE_MS : null)
 }
 const locked_ = () => {
   if (typeof lockNative?.lockNow === "function") lockNative.lockNow()

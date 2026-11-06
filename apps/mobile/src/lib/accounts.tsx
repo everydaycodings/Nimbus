@@ -6,6 +6,7 @@ import { json, send, type Account, type Me } from "./api"
 import { backupAvailable, readSettings, saveSettings } from "./backup"
 import { native } from "./native"
 import { forgetAccount } from "./offline"
+import { forgetPush } from "./push"
 import { engine } from "./uploads"
 
 const KEY = "accounts.v1"
@@ -22,7 +23,7 @@ type Ctx = Saved & {
 const Accounts = createContext<Ctx | null>(null)
 
 // Kotlin's uploader and backup call the server while the app is closed, so they keep their own copy.
-const mirror = (s: Saved) => native?.setAccounts(JSON.stringify(s.accounts.map(({ id, server, token }) => ({ id, server, token }))))
+const mirror = (s: Saved) => native?.setAccounts(JSON.stringify(s.accounts.map(({ id, server, token, email }) => ({ id, server, token, email }))))
 
 export function AccountsProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<Saved>({ accounts: [], activeId: null })
@@ -75,6 +76,7 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
   const remove = useCallback(
     async (id: string) => {
       const gone = state.accounts.find((a) => a.id === id)
+      if (gone) await forgetPush(gone)
       if (gone)
         await send(gone.server, "/api/auth/sign-out", {
           method: "POST",

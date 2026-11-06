@@ -12,6 +12,7 @@ object Notify {
   const val PROGRESS_ID = 4100
   const val ALERT_ID = 4101
   const val BACKUP_ID = 4103
+  const val PUSH_ID = 4105
   private const val PROGRESS = "uploads"
   private const val ALERTS = "upload-alerts"
 
@@ -28,7 +29,8 @@ object Notify {
 
   fun progress(context: Context, title: String, done: Long, total: Long) =
     NotificationCompat.Builder(context, PROGRESS)
-      .setSmallIcon(android.R.drawable.stat_sys_upload)
+      .setSmallIcon(R.drawable.ic_stat_nimbus)
+      .setColor(0xFF5FD0BB.toInt())
       .setContentTitle(title)
       .setOngoing(true)
       .setOnlyAlertOnce(true)
@@ -41,7 +43,8 @@ object Notify {
   fun alert(context: Context, title: String, text: String) {
     if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
     val n = NotificationCompat.Builder(context, ALERTS)
-      .setSmallIcon(android.R.drawable.stat_notify_error)
+      .setSmallIcon(R.drawable.ic_stat_nimbus)
+      .setColor(0xFF5FD0BB.toInt())
       .setContentTitle(title)
       .setContentText(text)
       .setAutoCancel(true)

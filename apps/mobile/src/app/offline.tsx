@@ -1,6 +1,6 @@
 import type { Item } from "@nimbus/shared/api"
 import { formatBytes } from "@nimbus/shared/file-rules"
-import { ArrowsClockwise, X } from "phosphor-react-native"
+import { ArrowsClockwise, DotsThreeVertical, X } from "phosphor-react-native"
 import { useState } from "react"
 import { View } from "react-native"
 
@@ -21,7 +21,7 @@ import { c, radius } from "@/lib/theme"
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`
 
 function ago(ms: number | null) {
-  if (!ms) return "Not yet"
+  if (!ms) return "not yet"
   const m = Math.round((Date.now() - ms) / 60_000)
   if (m < 1) return "Just now"
   if (m < 60) return `${m} min ago`
@@ -106,7 +106,7 @@ export default function Offline() {
         {snap.roots.length === 0 ? (
           <View style={{ borderWidth: 1, borderStyle: "dashed", borderColor: c.input, borderRadius: radius.card, padding: 24 }}>
             <Text variant="bodySmall" color={c.mutedForeground} style={{ textAlign: "center" }}>
-              Nothing yet. Open ⋮ on a file or folder and choose Make available offline.
+              Nothing yet. Open <DotsThreeVertical size={14} color={c.mutedForeground} /> on a file or folder and choose Make available offline.
             </Text>
           </View>
         ) : (

@@ -22,6 +22,8 @@ ENV NODE_ENV=production
 COPY --from=docker:29-cli /usr/local/bin/docker /usr/local/bin/docker
 # Owned by node: tesseract caches language data next to the app.
 COPY --from=build --chown=node:node /app ./
+# Bundled Android APKs (gitignored; the folder keeps a .gitkeep so this never fails).
+COPY --from=prune --chown=node:node /app/apps/web/android/ ./apps/web/android/
 WORKDIR /app/apps/web
 USER node
 EXPOSE 3000

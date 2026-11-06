@@ -19,6 +19,7 @@ import {
 } from "@/lib/db/schema"
 import { appUrl, message, sendInBackground } from "@/lib/email"
 import { KIND_LABEL, type Kind } from "@/lib/backup-rules"
+import { publishEvent } from "@/lib/events"
 import { enqueue } from "@/lib/redis"
 import { SERVICE_LABEL, type Service } from "@/lib/health-rules"
 
@@ -77,7 +78,10 @@ export async function notify(
   if (pref && !pref.bell)
     await db.delete(notifications).where(eq(notifications.id, row.id))
   // The phone gets it when the bell would.
-  else await enqueue("push", { userId, id: row.id }).catch(() => {})
+  else {
+    await enqueue("push", { userId, id: row.id }).catch(() => {})
+    await publishEvent(userId, row.id)
+  }
 }
 
 // An editor changed something in a folder shared with them: tell the owner,

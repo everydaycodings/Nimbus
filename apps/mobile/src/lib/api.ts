@@ -1,6 +1,8 @@
 import type { Instance } from "@nimbus/shared/api"
 
+import { oldAppText, oldServerText, versionProblem } from "./api-version"
 import { setUnreachable } from "./connectivity"
+import { logError } from "./error-log"
 
 export type Account = {
   id: string
@@ -13,10 +15,6 @@ export type Account = {
 }
 
 export type { Instance, Me } from "@nimbus/shared/api"
-
-// The server API versions this app can talk to.
-const API_MIN = 1
-const API_MAX = 1
 
 export class ApiError extends Error {
   constructor(
@@ -63,6 +61,9 @@ export async function json<T>(
 ): Promise<T> {
   const r = await send(server, path, init)
   const body = await r.json().catch(() => null)
+  // Server trouble and rate limits (429) go in the diagnostics log; ordinary refusals don't.
+  if (!r.ok && (r.status >= 500 || r.status === 429))
+    logError("api", `${init.method ?? "GET"} ${path.split("?")[0]} ${r.status} ${body?.message ?? ""}`)
   if (!r.ok)
     throw new ApiError(
       r.status,
@@ -93,10 +94,8 @@ export async function connect(raw: string) {
       notNimbus = true
       continue
     }
-    if (instance.apiVersion > API_MAX)
-      throw new ApiError(0, "old-app", "This server is newer than this app. Update Nimbus on your phone.")
-    if (instance.apiVersion < API_MIN)
-      throw new ApiError(0, "old-server", "This server needs an update before this app can use it. Ask whoever runs it.")
+    const problem = versionProblem(instance.apiVersion)
+    if (problem) throw new ApiError(0, problem, problem === "old-app" ? oldAppText(instance.apiVersion) : oldServerText(instance.apiVersion))
     return { server, instance }
   }
   throw new ApiError(
@@ -130,8 +129,14 @@ export const newToken = (r: Response) =>
   r.headers.get("set-auth-token") ?? tokenFromCookies(cookiesFrom(r.headers.get("set-cookie")))
 
 // Password rejected, code wrong and so on: Better Auth's own messages read fine.
-export const errorText = (e: unknown) =>
-  e instanceof Error ? e.message : "Something went wrong. Try again."
+// Native module rejections ("Call to function 'FileSystem.downloadFileAsync' has been rejected…") are
+// logged raw and shown as plain words.
+export const errorText = (e: unknown) => {
+  const m = e instanceof Error ? e.message : ""
+  if (e instanceof ApiError || !/Call to function|Caused by|rejected/.test(m)) return m || "Something went wrong. Try again."
+  logError("native", e)
+  return /\b404\b/.test(m) ? "This file's contents are missing on the server." : "Couldn't load this file. Check your connection and try again."
+}
 
 // A sign-in QR is nimbus://link?server=…&token=…. Null for anything else, so a
 // random QR code can't send the app somewhere.

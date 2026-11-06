@@ -8,6 +8,9 @@ version = '0.0.1'
 
 android {
   namespace "org.nimbus.android"
+  defaultConfig {
+    consumerProguardFiles "consumer-rules.pro"
+  }
 }
 
 dependencies {
@@ -17,6 +20,8 @@ dependencies {
   implementation "com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1"
   implementation "org.bouncycastle:bcprov-jdk18on:1.78.1"
   implementation "androidx.biometric:biometric:1.1.0"
+  // Push (Maven Central). Version 3 delivers through a PushService, which is what Push.kt extends.
+  implementation "org.unifiedpush.android:connector:3.3.5"
   testImplementation "junit:junit:4.13.2"
   // The android.jar one is stubbed in unit tests.
   testImplementation "org.json:json:20240303"

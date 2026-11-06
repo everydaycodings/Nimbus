@@ -7,6 +7,9 @@ import {
   FileDoc,
   FileImage,
   FilePdf,
+  FilePpt,
+  FileTxt,
+  FileXls,
   FileVideo,
   FileZip,
   Folder,
@@ -34,6 +37,9 @@ export function FileIcon({
   item: Pick<Item, "kind" | "mime" | "name">
   size?: number
 }) {
-  const t = FILE_TYPES[typeKeyOf(item.kind, item.mime, item.name)]
-  return <t.icon size={size} color={t.color} weight={item.kind === "folder" ? "fill" : "regular"} />
+  const key = typeKeyOf(item.kind, item.mime, item.name)
+  const t = FILE_TYPES[key]
+  const ext = item.name.split(".").pop()?.toLowerCase() ?? ""
+  const Glyph = key !== "doc" ? t.icon : /^(xlsx?|ods|csv)$/.test(ext) ? FileXls : /^(pptx?|odp)$/.test(ext) ? FilePpt : ext === "txt" ? FileTxt : t.icon
+  return <Glyph size={size} color={t.color} weight={item.kind === "folder" ? "fill" : "regular"} />
 }

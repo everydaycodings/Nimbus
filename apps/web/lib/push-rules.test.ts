@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 
-import { isPrivateIp } from "./push-rules.ts"
+import { isPrivateIp, pinnedLookup } from "./push-rules.ts"
 
 test("private and special addresses are refused", () => {
   for (const ip of [
@@ -25,4 +25,16 @@ test("private and special addresses are refused", () => {
 test("public addresses pass", () => {
   for (const ip of ["8.8.8.8", "172.32.0.1", "100.128.0.1", "2606:4700::1111"])
     assert.equal(isPrivateIp(ip), false, ip)
+})
+
+test("the connect lookup answers the checked address whatever DNS says", () => {
+  const lookup = pinnedLookup("93.184.216.34")
+  lookup("evil.example", {}, (_e, addr, fam) => {
+    assert.equal(addr, "93.184.216.34")
+    assert.equal(fam, 4)
+  })
+  lookup("evil.example", { all: true }, (_e, addr) =>
+    assert.deepEqual(addr, [{ address: "93.184.216.34", family: 4 }])
+  )
+  pinnedLookup("2001:db8::1")("x", {}, (_e, _a, fam) => assert.equal(fam, 6))
 })

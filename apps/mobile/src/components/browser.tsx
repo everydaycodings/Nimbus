@@ -478,7 +478,7 @@ export function Browser({
     topArea = (
       <Bar>
         <IconButton icon={X} label="Clear selection" onPress={clearSelection} />
-        <Text variant="title" style={{ flex: 1 }} numberOfLines={1} accessibilityLiveRegion="polite">
+        <Text variant="titleSmall" style={{ flex: 1 }} numberOfLines={1} accessibilityLiveRegion="polite">
           {selectedIds.size} selected
         </Text>
         {isTrash ? (

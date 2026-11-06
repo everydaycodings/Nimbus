@@ -25,13 +25,16 @@ class NimbusAndroidModule : Module() {
 
   override fun definition() = ModuleDefinition {
     Name("NimbusAndroid")
-    Events("uploads", "share", "backup", "vault")
+    Events("uploads", "share", "backup", "vault", "push")
 
     OnCreate {
       // Decrypted previews never outlive the process.
       VaultKeys.wipeCache(context)
       Uploads.listener = { sendEvent("uploads", mapOf("json" to store.rows().toString())) }
       Backup.listener = { sendEvent("backup", mapOf<String, Any>()) }
+      Push.listener = { account, endpoint -> sendEvent("push", mapOf("accountId" to account, "endpoint" to endpoint)) }
+      Push.syncPolling(context)
+      Live.sync(context)
       // Anything left from before the app was closed carries on.
       if (store.pending("manual") > 0) Uploads.schedule(context)
       // Opening the app also looks for new photos, in case Android has held the background job back.
@@ -45,6 +48,7 @@ class NimbusAndroidModule : Module() {
     OnDestroy {
       Uploads.listener = null
       Backup.listener = null
+      Push.listener = null
     }
     OnNewIntent { intent -> if (Share.take(intent)) sendEvent("share", mapOf<String, Any>()) }
 
@@ -64,7 +68,19 @@ class NimbusAndroidModule : Module() {
     Function("setAccounts") { json: String ->
       Accounts.save(context, json)
       NimbusDocumentsProvider.notifyRoots(context)
+      Push.syncPolling(context)
+      Live.sync(context)
     }
+
+    // Push (UnifiedPush). See Push.kt; JS drives it from src/lib/push.ts.
+    Function("pushRefresh") { Push.refresh(context) }
+    Function("pushSetDistributor") { id: String -> Push.setDistributor(context, id) }
+    Function("pushEndpoint") { accountId: String -> Push.endpoint(context, accountId) }
+    Function("pushRegister") { accountId: String -> Push.register(context, accountId) }
+    // Instant notifications: the built-in connection (Live.kt).
+    Function("liveSet") { on: Boolean -> Live.set(context, on) }
+    Function("liveState") { Live.isOn(context) }
+    Function("pushUnregister") { accountId: String -> Push.unregister(context, accountId) }
 
     // The Files app hides Nimbus when the app lock is on and the last unlock is older than the timeout.
     Function("setUnlockedAt") { ms: Double, timeoutMs: Double? ->

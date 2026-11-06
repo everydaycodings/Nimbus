@@ -61,7 +61,8 @@
     "android": "expo run:android",
     "typecheck": "tsc --noEmit && tsc --noEmit -p viewer",
     "test": "node --test src/lib/*.test.ts",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "release:android": "bash scripts/release-android.sh"
   },
   "private": true
 }
