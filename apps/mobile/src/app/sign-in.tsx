@@ -2,17 +2,28 @@ import { router, useLocalSearchParams } from "expo-router"
 import * as WebBrowser from "expo-web-browser"
 import { useEffect, useRef, useState } from "react"
 import { Pressable, View } from "react-native"
-import { GithubLogo, GoogleLogo, Key, QrCode, WarningCircle } from "phosphor-react-native"
+import { GithubLogo, GoogleLogo, Key, QrCode } from "phosphor-react-native"
 
 import { Button, ErrorText, Field, FormScreen, Spinner, Text, type InputRef } from "@/components/ui"
+import { whilePicking } from "@/lib/picking"
 import { useAccounts } from "@/lib/accounts"
-import { ApiError, connect, cookiesFrom, errorText, send, tokenFromCookies, type Instance } from "@/lib/api"
+import { ApiError, connect, cookiesFrom, errorText, json, send, type Instance } from "@/lib/api"
 import { offerLockIfNew } from "@/components/lock"
+import { ConfirmServer, InsecureWarning } from "@/components/server-confirm"
 import { c } from "@/lib/theme"
 
 const RETURN = "nimbus://auth"
 
-export default function SignIn() {
+export default function SignInRoute() {
+  const { server } = useLocalSearchParams<{ server: string }>()
+  return (
+    <ConfirmServer server={server}>
+      <SignIn />
+    </ConfirmServer>
+  )
+}
+
+function SignIn() {
   const { server } = useLocalSearchParams<{ server: string }>()
   const { add } = useAccounts()
   const [instance, setInstance] = useState<Instance | null>(null)
@@ -75,14 +86,16 @@ export default function SignIn() {
       const state = /(?:^|;\s*)(?:__Secure-)?[\w.-]*oauth_state=([^;]+)/.exec(cookiesFrom(r.headers.get("set-cookie")))
       const q = new URLSearchParams({ authorizationURL: body.url })
       if (state) q.set("oauthState", decodeURIComponent(state[1]))
-      const done = await WebBrowser.openAuthSessionAsync(
-        `${server}/api/auth/expo-authorization-proxy?${q}`,
+      const done = await whilePicking(() => WebBrowser.openAuthSessionAsync(
+        `${server}/api/auth/${body.url.startsWith("http:") ? "app-authorize" : "expo-authorization-proxy"}?${q}`,
         RETURN
-      )
+      ))
       if (done.type !== "success") return
       const url = new URL(done.url)
-      const token = tokenFromCookies(url.searchParams.get("cookie") ?? "")
-      if (!token) throw new Error(url.searchParams.get("error")?.replaceAll("_", " ") ?? "That sign-in didn't finish. Try again.")
+      const code = url.searchParams.get("code")
+      if (!code) throw new Error(url.searchParams.get("error")?.replaceAll("_", " ") ?? "That sign-in didn't finish. Try again.")
+      // The deep link carries a one-time code, not the session: trade it with the server.
+      const { token } = await json<{ token: string }>(server, "/api/auth/app-return/exchange", { method: "POST", body: JSON.stringify({ code }) })
       await finish(token)
     } catch (e) {
       setError(errorText(e))
@@ -100,14 +113,7 @@ export default function SignIn() {
         <Text variant="headline">Sign in</Text>
         <Text color={c.mutedForeground} numberOfLines={1}>{server.replace(/^https?:\/\//, "")}</Text>
       </View>
-      {httpOnly && (
-        <View style={{ flexDirection: "row", gap: 8 }}>
-          <WarningCircle size={18} color={c.warning} style={{ marginTop: 1 }} />
-          <Text variant="bodySmall" color={c.mutedForeground} style={{ flex: 1 }}>
-            This connection isn't encrypted. Only continue on a network you trust.
-          </Text>
-        </View>
-      )}
+      {httpOnly && <InsecureWarning />}
       {!p?.only && instance && (
         <View style={{ gap: 16 }}>
           <Field label="Email" value={email} onChangeText={setEmail} autoCapitalize="none" autoComplete="email" keyboardType="email-address" returnKeyType="next" onSubmitEditing={() => passwordField.current?.focus()} />

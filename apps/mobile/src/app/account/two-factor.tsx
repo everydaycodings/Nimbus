@@ -167,7 +167,7 @@ export default function TwoFactor() {
                       label="Copy key"
                       icon={<Copy size={18} color={c.foreground} />}
                       onPress={async () => {
-                        await Clipboard.setStringAsync(secret)
+                        await Clipboard.setStringAsync(secret, { android: { isSensitive: true } })
                         snack({ text: "Copied the key." })
                       }}
                     />
@@ -211,7 +211,7 @@ export default function TwoFactor() {
                       label="Copy"
                       icon={<Copy size={18} color={c.foreground} />}
                       onPress={async () => {
-                        await Clipboard.setStringAsync(text)
+                        await Clipboard.setStringAsync(text, { android: { isSensitive: true } })
                         snack({ text: "Copied the codes." })
                       }}
                     />

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { ActivityIndicator, Platform, View } from "react-native"
 
 import { offerLockIfNew } from "@/components/lock"
+import { InsecureWarning, ConfirmServer } from "@/components/server-confirm"
 import { Button, ErrorText, Field, FormScreen, Text } from "@/components/ui"
 import { useAccounts } from "@/lib/accounts"
 import { ApiError, connect, errorText, json, send } from "@/lib/api"
@@ -14,7 +15,16 @@ const deviceName = () =>
 
 // Reached three ways: the in-app scanner, the phone's own camera opening a
 // nimbus://link address, and "Use a code", which arrives with no token.
-export default function Link() {
+export default function LinkRoute() {
+  const { server } = useLocalSearchParams<{ server?: string }>()
+  return (
+    <ConfirmServer server={server}>
+      <Link />
+    </ConfirmServer>
+  )
+}
+
+function Link() {
   const params = useLocalSearchParams<{ server?: string; token?: string }>()
   const { add } = useAccounts()
   const [server, setServer] = useState(params.server ?? "")
@@ -78,6 +88,9 @@ export default function Link() {
     run(params.server, { token: params.token })
   }, [params.server, params.token, run])
 
+  // http only when it was typed or scanned with http://; say so wherever this screen talks to it.
+  const insecure = /^http:\/\//i.test((waitingFor ?? params.server ?? server).trim())
+
   if (waitingFor)
     return (
       <FormScreen>
@@ -90,6 +103,7 @@ export default function Link() {
           <Text variant="bodySmall" color={c.mutedForeground}>
             Signing in to {waitingFor.replace(/^https?:\/\//, "")}
           </Text>
+          {insecure && <InsecureWarning />}
         </View>
         <ActivityIndicator color={c.mutedForeground} accessibilityLabel="Waiting for approval" />
         <Button variant="text" label="Cancel" onPress={() => router.back()} />
@@ -100,6 +114,7 @@ export default function Link() {
     return (
       <FormScreen>
         <Text variant="headline">{error ? "Couldn't sign in" : "Connecting"}</Text>
+        {insecure && <InsecureWarning />}
         {error ? <ErrorText>{error}</ErrorText> : <ActivityIndicator color={c.mutedForeground} accessibilityLabel="Connecting" />}
         {error && <Button label="Scan again" onPress={() => router.replace("/scan")} />}
         <Button variant="text" label="Back" onPress={() => router.back()} />
@@ -114,6 +129,7 @@ export default function Link() {
           On your computer, open Nimbus and go to Account, then Sign in on your phone. It shows the server and code.
         </Text>
       </View>
+      {insecure && <InsecureWarning />}
       <View style={{ gap: 16 }}>
         {!params.server && (
           <Field label="Server address" placeholder="files.example.net" value={server} onChangeText={setServer} autoCapitalize="none" autoCorrect={false} keyboardType="url" returnKeyType="next" />

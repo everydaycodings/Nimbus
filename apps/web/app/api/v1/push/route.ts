@@ -8,8 +8,9 @@ import { and, eq } from "drizzle-orm"
 
 const Body = z.object({ endpoint: z.string().max(2000) })
 
-// Registers a UnifiedPush endpoint for this member. Registering the same URL
-// again (even from another member) moves it to the caller. Each new
+// Registers a UnifiedPush endpoint for this member. An endpoint already
+// registered stays with its owner (same reply either way, so it doesn't reveal
+// who has it); the owner's own repeat is a no-op. Each new
 // notification is then POSTed there as {app, id, text}, with no file names.
 export const POST = (req: Request) =>
   withMember(async (me) => {
@@ -20,10 +21,7 @@ export const POST = (req: Request) =>
     await db
       .insert(pushEndpoints)
       .values({ userId: me.id, endpoint: b.endpoint })
-      .onConflictDoUpdate({
-        target: pushEndpoints.endpoint,
-        set: { userId: me.id },
-      })
+      .onConflictDoNothing({ target: pushEndpoints.endpoint })
     return Response.json({})
   })
 

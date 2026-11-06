@@ -34,6 +34,7 @@ import {
   SAVED_MAX_AGE,
   SAVED_PREFIX,
 } from "./saved-login-rules"
+import { redeemSession, stashSession } from "./app-return"
 import { claimLink, collectLink, pollLink } from "./device-link"
 import { savedOnBrowser, touchSavedLogin } from "./saved-logins"
 import { db } from "./db"
@@ -135,6 +136,11 @@ const accountMemory = {
       window: 60,
       max: 60,
     },
+    {
+      pathMatcher: (path: string) => path === "/app-return/exchange",
+      window: 60,
+      max: 20,
+    },
   ],
   endpoints: {
     // A device presents a QR token or short code from someone's Account page.
@@ -199,6 +205,65 @@ const accountMemory = {
         await setSessionCookie(ctx, { session, user })
         await logEvent(ctx.headers, user.id, "device_linked")
         return ctx.json({ ok: true })
+      }
+    ),
+    // The Expo plugin's /expo-authorization-proxy, which only takes https. This
+    // twin also takes the configured OIDC issuer over plain http (LAN identity
+    // providers), and nothing else over http. The app uses it only for http.
+    appAuthorize: createAuthEndpoint(
+      "/app-authorize",
+      {
+        method: "GET",
+        query: z.object({
+          authorizationURL: z.string(),
+          oauthState: z.string().optional(),
+        }),
+      },
+      async (ctx) => {
+        const { authorizationURL, oauthState } = ctx.query
+        const bad = () =>
+          new APIError("BAD_REQUEST", { message: "Invalid authorizationURL" })
+        let url: URL
+        try {
+          url = new URL(authorizationURL)
+        } catch {
+          throw bad()
+        }
+        const oidc = await getOidcConfig()
+        const issuer = oidcReady(oidc) ? new URL(oidc.issuer).origin : null
+        const allowed =
+          url.protocol === "https:" ||
+          (url.protocol === "http:" && url.origin === issuer)
+        if (
+          authorizationURL.includes("#") ||
+          !allowed ||
+          url.origin === new URL(ctx.context.baseURL).origin
+        )
+          throw bad()
+        if (oauthState) {
+          const c = ctx.context.createAuthCookie("oauth_state", { maxAge: 600 })
+          ctx.setCookie(c.name, oauthState, c.attributes)
+          return ctx.redirect(authorizationURL)
+        }
+        const state = url.searchParams.get("state")
+        if (!state) throw bad()
+        const c = ctx.context.createAuthCookie("state", { maxAge: 300 })
+        await ctx.setSignedCookie(c.name, state, ctx.context.secret, c.attributes)
+        return ctx.redirect(authorizationURL)
+      }
+    ),
+    // The app trades the one-time code from its OAuth return for the session
+    // token (see after-hooks below). The bearer plugin takes it as before.
+    exchangeAppReturn: createAuthEndpoint(
+      "/app-return/exchange",
+      { method: "POST", body: z.object({ code: z.string().max(100) }) },
+      async (ctx) => {
+        const token = await redeemSession(ctx.body.code)
+        if (!token)
+          throw new APIError("BAD_REQUEST", {
+            message: "That sign-in didn't finish. Try again.",
+          })
+        return ctx.json({ token })
       }
     ),
     // One tap on a saved login (sign-in page). The secret never leaves its
@@ -316,6 +381,29 @@ const accountMemory = {
           if (!ctx.getCookie(ADDING_COOKIE)) return
           ctx.setCookie(ADDING_COOKIE, "", { path: "/", maxAge: 0 })
           await logEvent(ctx.headers, me.id, "added")
+        }),
+      },
+      // A provider sign-in that returns to the app (nimbus://): swap the session
+      // cookie for a one-time code, and keep cookies out of the deep link. Runs
+      // after the hook above and before the Expo plugin's, which then finds no cookie to append.
+      {
+        matcher: (ctx) => ctx.path?.startsWith("/callback/") === true,
+        handler: createAuthMiddleware(async (ctx) => {
+          const headers = ctx.context.responseHeaders
+          const location = headers?.get("location")
+          if (!headers || !location?.startsWith("nimbus://")) return
+          const name = ctx.context.authCookies.sessionToken.name
+          const line = headers.getSetCookie().find((c) => c.startsWith(`${name}=`))
+          const value = line?.slice(name.length + 1).split(";")[0]
+          headers.delete("set-cookie")
+          const url = new URL(location)
+          url.searchParams.delete("cookie")
+          if (value)
+            url.searchParams.set(
+              "code",
+              await stashSession(decodeURIComponent(value))
+            )
+          ctx.setHeader("location", url.toString())
         }),
       },
     ],

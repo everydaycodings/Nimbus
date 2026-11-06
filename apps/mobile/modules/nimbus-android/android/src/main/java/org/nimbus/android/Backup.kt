@@ -56,11 +56,19 @@ object Backup {
     listener?.invoke()
   }
 
+  const val NO_ACCESS = "Nimbus can't see your photos"
+
   fun status(context: Context): String {
     val p = prefs(context)
     val s = settings(context)
     val enabled = s.optBoolean("enabled")
     val account = s.optString("accountId")
+    val access = Media.access(context)
+    // Photo access came back (say, from Settings): don't keep showing the old failure until the next 15-minute run.
+    if (enabled && access != "none" && p.getString("reason", null) == NO_ACCESS) {
+      setStatus(context, "idle", null)
+      runNow(context)
+    }
     val failed = JSONArray()
     if (enabled) for ((id, name, error) in Store.of(context).failedMedia(account))
       failed.put(JSONObject().put("mediaId", id).put("name", name).put("error", error))
@@ -70,7 +78,7 @@ object Backup {
       .put("done", p.getInt("done", 0)).put("total", p.getInt("total", 0))
       .apply { if (p.contains("lastAt")) put("lastAt", p.getLong("lastAt", 0)) }
       .put("failed", failed)
-      .put("access", Media.access(context))
+      .put("access", access)
       .toString()
   }
 
@@ -186,8 +194,10 @@ class BackupWorker(context: Context, params: WorkerParameters) : CoroutineWorker
     try { setForeground(info) } catch (_: Exception) {}
   }
 
-  override suspend fun doWork(): Result {
-    if (Backup.PHOTOS in tags) runCatching { Backup.watchForPhotos(ctx, again = true) }
+  override suspend fun doWork(): Result = pass(first = true)
+
+  private suspend fun pass(first: Boolean): Result {
+    if (first && Backup.PHOTOS in tags) runCatching { Backup.watchForPhotos(ctx, again = true) }
     Notify.channels(ctx)
     val s = Backup.settings(ctx)
     if (!s.optBoolean("enabled")) return Result.success()
@@ -196,7 +206,7 @@ class BackupWorker(context: Context, params: WorkerParameters) : CoroutineWorker
       return Result.success()
     }
     if (Media.access(ctx) == "none") {
-      Backup.setStatus(ctx, "failing", "Nimbus can't see your photos")
+      Backup.setStatus(ctx, "failing", Backup.NO_ACCESS)
       return Result.success()
     }
     val mobileData = s.optBoolean("mobileData")
@@ -298,6 +308,10 @@ class BackupWorker(context: Context, params: WorkerParameters) : CoroutineWorker
           progress(done, total, reliable)
         }
       }
+      // Photos taken (or copied in) while this run went fire no trigger: the next one is only armed after this
+      // run ends. Look again and go round while there are new ones, so "All backed up" is true when it shows.
+      val seen = store.trackedMedia(account.id)
+      if (!isStopped && Media.all(ctx).any { (it.camera || it.bucketId in albums) && it.taken >= from && it.id !in seen }) return pass(first = false)
       // Anything still queued here is a video waiting for Wi-Fi.
       if (store.backupPending(account.id) > 0) {
         Backup.setStatus(ctx, "waiting", "Videos are waiting for Wi-Fi", done, total)
@@ -309,6 +323,10 @@ class BackupWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         Backup.setStatus(ctx, "failing", "Sign in to the backup account again")
         Notify.alert(ctx, "Backup stopped: sign in again", "Open Nimbus to fix it.")
         Result.success()
+      } else if (e.status == 429) {
+        // Rate limited: routine, and over within a minute. Not a failure to alarm anyone with.
+        Backup.setStatus(ctx, "waiting", "The server is busy, trying again shortly")
+        Result.retry()
       } else {
         Backup.setStatus(ctx, "failing", e.message)
         Result.retry()

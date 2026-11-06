@@ -82,7 +82,7 @@ services:
     profiles: [office]
     environment:
       aliasgroup1: ${WOPI_BASE_URL:-http://host.docker.internal:3000}
-      extra_params: --o:ssl.enable=false --o:ssl.termination=false
+      extra_params: --o:ssl.enable=false --o:ssl.termination=false --o:welcome.enable=false
     extra_hosts: ["host.docker.internal:host-gateway"]
     cap_add: [MKNOD]
     ports: ["${COLLABORA_PORT:-9980}:9980"]

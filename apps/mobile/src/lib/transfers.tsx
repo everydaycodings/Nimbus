@@ -16,6 +16,7 @@ import { ApiError, errorText } from "./api"
 import { fetchToCache } from "./file-cache"
 import { useApi } from "./files"
 import { native } from "./native"
+import { whilePicking } from "./picking"
 import { usePrefs } from "./prefs"
 import { c, radius } from "./theme"
 
@@ -65,7 +66,7 @@ export function useTransfers() {
 
     const chooseFolder = async () => {
       try {
-        const dir = await Directory.pickDirectoryAsync(prefs.downloadDir)
+        const dir = await whilePicking(() => Directory.pickDirectoryAsync(prefs.downloadDir))
         setPrefs({ downloadDir: dir.uri })
         return dir
       } catch {

@@ -623,6 +623,9 @@ export function CollaboraView({ item, version, top, active }: { item: Item; vers
         }}
         onError={() => setFailed(true)}
         onHttpError={() => setFailed(true)}
+        // Collabora's own close ("<") leaves a blank page here; the header's close does that job. Its CSP blocks a
+        // <style>, so hide the buttons from script, again whenever Collabora rebuilds its toolbar.
+        injectedJavaScript={`(function(){function h(){["toolbar-mobile-back","closebuttonwrapper"].forEach(function(id){var e=document.getElementById(id);if(e&&e.style.display!=="none")e.style.setProperty("display","none","important")})}h();new MutationObserver(h).observe(document.documentElement,{childList:true,subtree:true})})();true;`}
         allowFileAccess={false}
         incognito
         nestedScrollEnabled

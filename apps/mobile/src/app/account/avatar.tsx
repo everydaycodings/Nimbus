@@ -12,6 +12,7 @@ import { Avatar } from "@/components/avatar"
 import { Loaded, Page } from "@/components/page"
 import { useSnack } from "@/components/snackbar"
 import { ErrorText, Text } from "@/components/ui"
+import { whilePicking } from "@/lib/picking"
 import { errorText, json } from "@/lib/api"
 import { useApi, useFileActions } from "@/lib/files"
 import { c } from "@/lib/theme"
@@ -45,7 +46,7 @@ export default function AvatarPicker() {
   }
 
   const upload = async () => {
-    const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], allowsEditing: true, aspect: [1, 1] })
+    const picked = await whilePicking(() => ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], allowsEditing: true, aspect: [1, 1] }))
     const uri = picked.assets?.[0]?.uri
     if (picked.canceled || !uri) return
     save(async () => {

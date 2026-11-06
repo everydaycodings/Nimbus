@@ -185,7 +185,7 @@ export function Browser({
   const actions = useFileActions()
   const links = useLinks()
   const snack = useSnack()
-  const { width: screen } = useWindowDimensions()
+  const { width: screen, fontScale } = useWindowDimensions()
   const [prefs, setPrefs] = usePrefs(api.id)
 
   const [by, setBy] = useState<"me" | undefined>()
@@ -309,7 +309,8 @@ export function Browser({
   const gap = compact ? 8 : 12
   const asList = isSearch || prefs.layout === "list"
   const width = screen - (isWide(screen) ? 80 : 0)
-  const columns = asList ? 1 : columnsFor(width, prefs.tiles, gap)
+  // Past 1.3× text, tiles count as narrower so long names get a whole row instead of breaking mid-word.
+  const columns = asList ? 1 : columnsFor(width / Math.max(1, fontScale / 1.3), prefs.tiles, gap)
   const rows = useMemo(() => toRows(items, columns, asList ? "list" : "grid"), [items, columns, asList])
 
   const tile = (item: Item): TileProps => ({
@@ -562,7 +563,7 @@ export function Browser({
           <IconButton icon={MagnifyingGlass} label="Search" onPress={() => router.push("/search")} />
         </Bar>
         {first && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 8, alignItems: "center" }} style={{ flexGrow: 0 }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 8, alignItems: "center" }} style={{ flexGrow: 0, flexShrink: 0 }}>
             <Crumb first label={role === "owner" ? "My files" : "Shared with me"} onPress={goRoot} />
             {ancestors.map((p) => (
               <Crumb key={p.id} label={p.name} onPress={() => router.dismissTo(folderHref(tab, p.id))} />

@@ -33,3 +33,21 @@ test("the report never holds a raw address or email", () => {
   assert.ok(!text.includes("example.net") && !text.includes("sam@") && !text.includes("gmail"))
   assert.ok(text.includes("Uploads in queue: 2") && text.includes("server 1.2.3"))
 })
+
+test("the last crash is in the report with addresses and emails masked", () => {
+  const input = {
+    app: { version: "0.1.0", build: "1", runtime: "APK" as const },
+    device: { android: "15", model: "Pixel 9" },
+    accounts: [],
+    push: "none",
+    backup: "Off",
+    offlineBytes: "0 B",
+    uploadQueue: 0,
+    filesApp: false,
+    errors: [],
+  }
+  const text = diagnosticsText({ ...input, crash: { source: "native", text: "thread: main\njava.io.IOException: https://files.example.net/x for sam@gmail.com\n\tat org.nimbus.android.Net.get" } })
+  assert.ok(text.includes("Last crash (native):") && text.includes("org.nimbus.android.Net.get") && text.includes("thread: main"))
+  assert.ok(!text.includes("example.net") && !text.includes("sam@"))
+  assert.ok(!diagnosticsText(input).includes("Last crash"))
+})

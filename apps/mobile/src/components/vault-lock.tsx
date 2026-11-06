@@ -7,6 +7,7 @@ import { useFocusEffect, useNavigation, useRoute } from "expo-router"
 import { StackActions } from "expo-router/react-navigation"
 import { createContext, use, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { AppState, View } from "react-native"
+import { isPicking } from "@/lib/picking"
 
 import { useSnack } from "@/components/snackbar"
 import { useAccounts } from "@/lib/accounts"
@@ -30,16 +31,7 @@ export const useVaultLock = () => use(VaultLock)!
 const key = (account: string, vault: string) => `${account}\n${vault}`
 const DEFAULT_MINUTES = 15
 
-// A picker or the camera puts the app in the background; that time doesn't count as leaving the vault.
-let picking = 0
-export async function whilePicking<T>(run: () => Promise<T>) {
-  picking++
-  try {
-    return await run()
-  } finally {
-    picking--
-  }
-}
+export { whilePicking } from "@/lib/picking"
 
 export function VaultLockProvider({ children }: { children: ReactNode }) {
   const { active } = useAccounts()
@@ -110,7 +102,7 @@ export function VaultLockProvider({ children }: { children: ReactNode }) {
     if (!anyOpen) return
     const t = setInterval(() => {
       const minutes = client.getQueryData<AccountResponse>([accountId, "account"])?.vaultLockMinutes ?? DEFAULT_MINUTES
-      if (!picking && idleExpired(Date.now(), last.current, minutes)) lockWithNotice()
+      if (!isPicking() && idleExpired(Date.now(), last.current, minutes)) lockWithNotice()
     }, 15_000)
     return () => clearInterval(t)
   }, [anyOpen, client, accountId, lockWithNotice])
@@ -121,7 +113,7 @@ export function VaultLockProvider({ children }: { children: ReactNode }) {
     const sub = AppState.addEventListener("change", (state) => {
       if (state === "background") since = Date.now()
       else if (state === "active") {
-        if (!picking && awayExpired(Date.now(), since)) lockWithNotice()
+        if (!isPicking() && awayExpired(Date.now(), since)) lockWithNotice()
         since = 0
       }
     })

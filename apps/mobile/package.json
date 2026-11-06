@@ -56,13 +56,15 @@
   },
   "scripts": {
     "viewers": "node scripts/build-viewers.mjs",
-    "go": "npm run viewers && expo start --go",
-    "start": "npm run viewers && expo start --dev-client",
+    "licences": "node scripts/licences.mjs",
+    "go": "npm run viewers && npm run licences && expo start --go",
+    "start": "npm run viewers && npm run licences && expo start --dev-client",
     "android": "expo run:android",
     "typecheck": "tsc --noEmit && tsc --noEmit -p viewer",
     "test": "node --test src/lib/*.test.ts",
     "lint": "expo lint",
-    "release:android": "bash scripts/release-android.sh"
+    "release:android": "bash scripts/release-android.sh",
+    "e2e:android": "MAESTRO_CLI_NO_ANALYTICS=1 JAVA_HOME=${JAVA_HOME:-$HOME/Android/jdk} ~/.maestro/bin/maestro test .maestro"
   },
   "private": true
 }

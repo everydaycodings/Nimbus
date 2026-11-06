@@ -2,9 +2,9 @@ import type { AccountResponse, NotificationKind, NotificationPref } from "@nimbu
 import { useQueryClient } from "@tanstack/react-query"
 import { BellRinging, Check, Lightning } from "phosphor-react-native"
 import { useCallback, useEffect, useState } from "react"
-import { AppState, Linking, Switch, View } from "react-native"
+import { AppState, Linking, Pressable, Switch, View } from "react-native"
 
-import { Group, Loaded, Page, Row } from "@/components/page"
+import { Group, Loaded, Page, Row, SwitchRow } from "@/components/page"
 import { useSnack } from "@/components/snackbar"
 import { Button, Text } from "@/components/ui"
 import { useAccounts } from "@/lib/accounts"
@@ -54,19 +54,12 @@ function Delivery() {
       <Group>
         <Row label="Delivery" detail={pushRoute(state)} icon={<BellRinging size={24} color={c.mutedForeground} />} />
         {liveAvailable && (live || !state.saved) && (
-          <Row
+          <SwitchRow
             icon={<Lightning size={24} color={c.mutedForeground} />}
             label={state.saved ? "Use built-in instead of ntfy" : "Instant notifications"}
             detail="Stays connected to your server. Android shows a quiet 'Connected to Nimbus' notification and it uses a little battery."
-            trailing={
-              <Switch
-                value={live}
-                onValueChange={(on) => setLive(on).then(look)}
-                accessibilityLabel={state.saved ? "Use built-in instead of ntfy" : "Instant notifications"}
-                trackColor={{ true: c.brand, false: c.mutedStrong }}
-                thumbColor={c.foreground}
-              />
-            }
+            value={live}
+            onChange={(on) => setLive(on).then(look)}
           />
         )}
         {!allowed && (
@@ -135,17 +128,20 @@ export default function NotificationPrefs() {
     }
   }
 
+  // The whole "Bell [switch]" pair is one 48dp target; the bare Switch alone was 27dp tall.
   const toggle = (p: NotificationPref, channel: "bell" | "email", name: string) => (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+    <Pressable
+      onPress={() => flip(p, channel, !p[channel])}
+      accessibilityRole="switch"
+      accessibilityLabel={`${KIND_LABEL[p.kind]}: ${name}`}
+      accessibilityState={{ checked: p[channel] }}
+      style={{ flexDirection: "row", alignItems: "center", gap: 4, minHeight: 48 }}
+    >
       <Text variant="caption" color={c.mutedForeground}>{name}</Text>
-      <Switch
-        value={p[channel]}
-        onValueChange={(on) => flip(p, channel, on)}
-        accessibilityLabel={`${KIND_LABEL[p.kind]}: ${name}`}
-        trackColor={{ true: c.brand, false: c.mutedStrong }}
-        thumbColor={c.foreground}
-      />
-    </View>
+      <View pointerEvents="none" importantForAccessibility="no-hide-descendants">
+        <Switch value={p[channel]} trackColor={{ true: c.brand, false: c.mutedStrong }} thumbColor={c.foreground} />
+      </View>
+    </Pressable>
   )
 
   return (

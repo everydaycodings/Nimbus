@@ -76,7 +76,7 @@ function TwoFactorSetup({ refetch }: { refetch: () => void }) {
     <>
       <View style={{ gap: 12 }}>
         <Button variant="outlined" label="Add to authenticator app" onPress={() => Linking.openURL(uri).catch(() => setError("No authenticator app opened. Copy the key instead."))} />
-        <Button variant="text" label="Copy key" onPress={() => Clipboard.setStringAsync(secret)} />
+        <Button variant="text" label="Copy key" onPress={() => Clipboard.setStringAsync(secret, { android: { isSensitive: true } })} />
       </View>
       <View style={{ gap: 8 }}>
         <Text variant="label">Save these backup codes</Text>
@@ -84,7 +84,7 @@ function TwoFactorSetup({ refetch }: { refetch: () => void }) {
         <View style={{ backgroundColor: "rgba(255,255,255,0.05)", borderRadius: 10, padding: 12 }}>
           <Text selectable style={{ fontFamily: "GeistMono_400Regular", fontSize: 14, lineHeight: 22 }}>{codes.join("\n")}</Text>
         </View>
-        <Button variant="text" label="Copy backup codes" onPress={() => Clipboard.setStringAsync(codes.join("\n"))} />
+        <Button variant="text" label="Copy backup codes" onPress={() => Clipboard.setStringAsync(codes.join("\n"), { android: { isSensitive: true } })} />
       </View>
       <Field label="6-digit code" value={code} onChangeText={setCode} keyboardType="number-pad" autoComplete="one-time-code" maxLength={6} error={error} />
       <Button label="Turn on two-factor" busy={busy} disabled={code.length !== 6} onPress={() => run(async () => {

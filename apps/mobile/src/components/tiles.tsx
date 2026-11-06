@@ -147,7 +147,8 @@ function FolderTileImpl(p: TileProps) {
         {selecting ? <Check on={selected} /> : <FileIcon item={item} size={24} />}
         {/* Markers get their own line: beside the name they'd squeeze it to nothing in a two-column tile. */}
         <View style={{ flex: 1, gap: 2 }}>
-          <Text variant="label" numberOfLines={PixelRatio.getFontScale() > 1.15 ? 2 : 1}>
+          {/* Two lines at large text, but only when they can break at a space: one long word would split mid-word. */}
+          <Text variant="label" numberOfLines={PixelRatio.getFontScale() > 1.15 && /\s/.test(item.name) ? 2 : 1}>
             {item.name}
           </Text>
           {item.owner ? (

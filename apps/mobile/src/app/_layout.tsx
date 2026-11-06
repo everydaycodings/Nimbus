@@ -1,13 +1,14 @@
 import { Geist_400Regular, Geist_500Medium, Geist_600SemiBold, useFonts } from "@expo-google-fonts/geist"
 import { GeistMono_400Regular } from "@expo-google-fonts/geist-mono"
 import { QueryCache, QueryClient, QueryClientProvider, focusManager } from "@tanstack/react-query"
-import { ErrorBoundary as DefaultErrorBoundary, Stack, type ErrorBoundaryProps } from "expo-router"
+import { ErrorBoundary as DefaultErrorBoundary, Stack, router, type ErrorBoundaryProps } from "expo-router"
 import * as SplashScreen from "expo-splash-screen"
 import { StatusBar } from "expo-status-bar"
 import { useEffect } from "react"
 import { AppState } from "react-native"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 
+import { CrashBoundary, CrashPrompt } from "@/components/crash"
 import { LockGate } from "@/components/lock"
 import { OfflineWatcher } from "@/components/offline-bar"
 import { PushWatcher } from "@/components/push-watcher"
@@ -18,14 +19,24 @@ import { VaultLockProvider } from "@/components/vault-lock"
 import { TransferBar } from "@/lib/transfers"
 import { AccountsProvider, useAccounts } from "@/lib/accounts"
 import { ApiError } from "@/lib/api"
+import { recordCrash } from "@/lib/crash"
 import { logError } from "@/lib/error-log"
 import { persistQueries, restoreQueries } from "@/lib/query-persist"
 import { useShareIntake } from "@/lib/share-in"
 import { c } from "@/lib/theme"
 
 SplashScreen.preventAutoHideAsync()
+// A request that finds the session gone (401) or the account gated (403) sends the app back to "/", which shows
+// Sign in again or the gate. Cached data on screen used to hide these. "me" queries are "/"'s own, so they don't count.
+const authLost = new Set<(key: readonly unknown[]) => void>()
 const queries = new QueryClient({
-  queryCache: new QueryCache({ onError: (e) => logError("query", e) }),
+  queryCache: new QueryCache({
+    onError: (e, query) => {
+      logError("query", e)
+      if (e instanceof ApiError && (e.status === 401 || (e.status === 403 && e.code === "gated")) && query.queryKey[0] !== "me")
+        authLost.forEach((f) => f(query.queryKey))
+    },
+  }),
   // No connection fails at once and keeps what's on screen; anything else gets one more try.
   defaultOptions: { queries: { staleTime: 15_000, retry: (n, e) => n < 1 && !(e instanceof ApiError && e.status === 0), networkMode: "always" } },
 })
@@ -33,6 +44,7 @@ const queries = new QueryClient({
 const previousHandler = ErrorUtils.getGlobalHandler()
 ErrorUtils.setGlobalHandler((e, fatal) => {
   logError(fatal ? "fatal" : "js", e)
+  if (fatal) recordCrash(e)
   previousHandler(e, fatal)
 })
 export function ErrorBoundary(props: ErrorBoundaryProps) {
@@ -73,11 +85,30 @@ function Root() {
           <OfflineWatcher />
           <PushWatcher />
           <ServerGate />
+          <CrashPrompt />
+          <AuthWatcher />
          </VaultLockProvider>
         </UploaderProvider>
       </SnackbarProvider>
     </LockGate>
   )
+}
+
+function AuthWatcher() {
+  const { active } = useAccounts()
+  useEffect(() => {
+    if (!active) return
+    let last = 0
+    const f = (key: readonly unknown[]) => {
+      if (key[0] !== active.id || Date.now() - last < 5000) return
+      last = Date.now()
+      queries.removeQueries({ queryKey: ["me", active.id] })
+      router.replace("/")
+    }
+    authLost.add(f)
+    return () => void authLost.delete(f)
+  }, [active])
+  return null
 }
 
 function ShareIntake() {
@@ -89,11 +120,13 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: c.background }}>
       <StatusBar style="light" />
-      <QueryClientProvider client={queries}>
-        <AccountsProvider>
-          <Root />
-        </AccountsProvider>
-      </QueryClientProvider>
+      <CrashBoundary>
+        <QueryClientProvider client={queries}>
+          <AccountsProvider>
+            <Root />
+          </AccountsProvider>
+        </QueryClientProvider>
+      </CrashBoundary>
     </GestureHandlerRootView>
   )
 }

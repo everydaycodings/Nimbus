@@ -30,7 +30,7 @@ export default function Devices() {
   const [revoking, setRevoking] = useState<AppPassword | null>(null)
 
   const copy = async (text: string, what: string) => {
-    await Clipboard.setStringAsync(text)
+    await Clipboard.setStringAsync(text, { android: { isSensitive: what === "password" } })
     snack({ text: `Copied the ${what}.` })
   }
 

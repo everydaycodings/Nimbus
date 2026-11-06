@@ -8,6 +8,7 @@ import { useSyncExternalStore } from "react"
 
 import { json, type Account } from "./api"
 import { native, type NativeJob } from "./native"
+import { whilePicking } from "./picking"
 import { nativeEngine } from "./upload-engine-native"
 import { jsEngine } from "./upload-engine-js"
 import type { Entry, UploadRow } from "./upload-plan"
@@ -68,7 +69,7 @@ function walk(dir: Directory, prefix: string, out: Entry[]) {
   }
 }
 
-export const pick = {
+const pickers = {
   // Not copied to the cache: a 2 GB file would have to fit there first.
   files: async (): Promise<Entry[]> => {
     const r = await DocumentPicker.getDocumentAsync({ multiple: true, copyToCacheDirectory: false })
@@ -101,3 +102,7 @@ export const pick = {
     return [media(a, `${kind === "images" ? "IMG" : "VID"}_${stamp()}.${ext}`)]
   },
 }
+// Each picker counts as "picking", so time spent in it doesn't lock the app or a vault.
+export const pick = Object.fromEntries(
+  Object.entries(pickers).map(([k, f]) => [k, (...a: unknown[]) => whilePicking(() => (f as (...a: unknown[]) => Promise<unknown>)(...a))])
+) as typeof pickers

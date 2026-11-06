@@ -3,7 +3,7 @@
     "name": "Nimbus",
     "slug": "nimbus",
     "scheme": "nimbus",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -18,7 +18,7 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": true,
+      "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.ACCESS_MEDIA_LOCATION",
         "android.permission.POST_NOTIFICATIONS",
@@ -51,7 +51,7 @@
           ]
         }
       ],
-      "versionCode": 1
+      "versionCode": 2
     },
     "plugins": [
       "expo-router",

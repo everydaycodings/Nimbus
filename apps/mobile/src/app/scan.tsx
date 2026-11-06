@@ -5,7 +5,7 @@ import { Linking, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { Button, ErrorText, FormScreen, Text } from "@/components/ui"
-import { parseLink } from "@/lib/api"
+import { parseLink, trustServer } from "@/lib/api"
 import { c, radius } from "@/lib/theme"
 
 export default function Scan() {
@@ -44,6 +44,7 @@ export default function Scan() {
             return
           }
           handled.current = true
+          trustServer(link.server)
           router.replace({ pathname: "/link", params: link })
         }}
       />

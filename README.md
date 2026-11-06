@@ -350,10 +350,22 @@ ssh -L 3403:127.0.0.1:3403 <server>          # then open http://localhost:3403 f
 
 The MinIO console login is your `S3_ACCESS_KEY` (`nimbus`) and `S3_SECRET_KEY`.
 
+### API rate limits (optional)
+
+The mobile app and other API clients may make 1,200 requests a minute per member, and 120 a minute per
+IP on the public `/api/v1/instance` check. Over that they get a 429 ("Too many requests"). Change either in `.env`:
+
+```
+API_RATE_LIMIT_USER=1200
+API_RATE_LIMIT_INSTANCE_IP=120
+```
+
 ### Office viewer (optional)
 
 To open Word, Excel and PowerPoint files, run a Collabora Online server on its own HTTPS name.
 Set its URL in **Admin → System → Office**, and set `WOPI_BASE_URL=https://<DOMAIN>` in `.env`.
+Add `--o:welcome.enable=false` to Collabora's `extra_params` so it doesn't show its welcome dialog
+each time someone opens a file (on the web and in the Android app).
 Without it, Nimbus uses its built-in document and spreadsheet viewers.
 
 ### WebDAV (mount as a drive)

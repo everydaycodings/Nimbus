@@ -58,6 +58,15 @@ export default function Backup() {
         </View>
       </View>
 
+      {status.access === "none" && settings.enabled && (
+        <Section note="Photo access was turned off for Nimbus, so backup has stopped. Allow photos and videos to start it again.">
+          <View style={{ alignItems: "flex-start" }}>
+            {/* Asks again; after "Don't ask again" Android only allows it from Settings. */}
+            <Button variant="outlined" label="Allow access" onPress={async () => ((await askForMedia()) ? refresh() : Linking.openSettings())} />
+          </View>
+        </Section>
+      )}
+
       {status.access === "partial" && settings.enabled && (
         <Section note="You allowed Nimbus to see only some photos, so new ones won't back up until you allow all of them.">
           <View style={{ alignItems: "flex-start" }}>

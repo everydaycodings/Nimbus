@@ -1,0 +1,13 @@
+# Run: npm run e2e:android -w mobile  (needs the emulator, `adb reverse` for 3000/1080/9100, and a release or dev APK)
+flows:
+  - "flows/*"
+executionOrder:
+  continueOnFailure: false
+  flowsOrder:
+    - sign-in
+    - browse
+    - file-actions
+    - search
+    - preview
+    - share
+    - account-switch

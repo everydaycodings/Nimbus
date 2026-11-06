@@ -8,7 +8,7 @@ import { BackHandler, Share, View } from "react-native"
 import { Page } from "@/components/page"
 import { useSnack } from "@/components/snackbar"
 import { Button, ErrorText, Field, Text } from "@/components/ui"
-import { useVaultLock } from "@/components/vault-lock"
+import { Secure, useVaultLock } from "@/components/vault-lock"
 import { errorText } from "@/lib/api"
 import { useApi } from "@/lib/files"
 import { c, radius } from "@/lib/theme"
@@ -68,13 +68,14 @@ export default function NewVault() {
   if (made)
     return (
       <Page title="Recovery code" onBack={null}>
+        <Secure />
         <Text>This code opens “{made.name}” if you forget your passphrase. It is shown once. Write it down or save it somewhere safe, away from this phone.</Text>
         <View style={{ padding: 16, borderRadius: radius.card, borderWidth: 1, borderColor: c.border, backgroundColor: c.card }}>
           <Text selectable accessibilityLabel={`Recovery code, ${made.code.split("").join(" ")}`} style={{ fontFamily: "GeistMono_400Regular", fontSize: 18, lineHeight: 28, letterSpacing: 1 }}>{made.code}</Text>
         </View>
         <View style={{ flexDirection: "row", gap: 8 }}>
           <View style={{ flex: 1 }}>
-            <Button variant="outlined" label="Copy" icon={<Copy size={18} color={c.foreground} />} onPress={async () => { await Clipboard.setStringAsync(made.code); snack({ text: "Copied the recovery code." }) }} />
+            <Button variant="outlined" label="Copy" icon={<Copy size={18} color={c.foreground} />} onPress={async () => { await Clipboard.setStringAsync(made.code, { android: { isSensitive: true } }); snack({ text: "Copied the recovery code." }) }} />
           </View>
           <View style={{ flex: 1 }}>
             <Button variant="outlined" label="Share" icon={<ShareNetwork size={18} color={c.foreground} />} onPress={() => Share.share({ message: made.code }).catch(() => {})} />

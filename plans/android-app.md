@@ -1,7 +1,7 @@
 # Nimbus for Android (Expo)
 
 Native Android app with every member feature and no admin panel, for any self-hoster to point at
-their own server. Apple is dropped for now. Last updated 2026-11-06 (Phase 8).
+their own server. Apple is dropped for now. Last updated 2026-11-07 (Part A, 0.1.1).
 
 ## Starting a new session
 
@@ -28,6 +28,11 @@ API checks: `cd apps/web && node --env-file=.env.local scripts/api-check.ts` (ru
 | 6 | Offline, Android Files integration | Built and checked on the emulator (Expo Go and the APK), see below. Waiting on the user's phone check |
 | 7 | Vault | Built and checked on the emulator (APK), see below. Waiting on the user's phone check |
 | 8 | Push, release APK, web download, docs, finish review | Built and checked on the emulator (release APK), see below. Waiting on the user's phone check |
+| A | Full test of 0–8, security audit, licences, crash capture, rate limits, Maestro flows → 0.1.1 | Done 2026-11-07, see below. Phone checklist pending |
+| 9 | App shortcuts, widgets, Quick Settings tile, direct share targets | Not started |
+| 10 | Photos tab (replaces Recent), background audio, PiP, slideshow | Not started |
+| 11 | Back up other folders, two-way folder sync, export to SD/USB | Not started |
+| 12 | Text editor, multi-page scan, activity feed (web + app) | Not started |
 
 **Phase 1 detail**
 
@@ -304,6 +309,75 @@ Built by builder agents (web/docs, mobile, live connection, review fixes), check
   - Rate-limit numbers (600/min per user, 120/min per IP on `/instance`) are guesses.
 - **New dependencies:** `org.unifiedpush.android:connector` (Gradle). Optional `ntfy` compose service (profile `push`, port 3405).
 - **Dev data:** `browser-test` shared several files with `newbie` and has a public link on `app.ts`. The emulator has the release build signed in as `newbie` and `browser-test`, and ntfy is uninstalled.
+
+**Part A detail (2026-11-06 → 07): full test and hardening, released as 0.1.1**
+
+Plan: `~/.claude/plans/so-all-phases-8-gentle-popcorn.md`. Answers in Claude's project memory (Part A + 9–12 decisions).
+Ran on the release APK (x86_64, R8 on), plus Expo Go for JS-only checks. Server-wide settings were tested on a throwaway
+copy on :3001 (`nimbus_apptest`, own bucket, Redis `/4` `/5`) with Mailpit and a throwaway Keycloak (`localhost:8180`).
+
+- **Checks:** 187 of 187 API checks, 59 mobile unit tests, 30 Kotlin JUnit tests (new `CrashLogTest`, `ShareTest`),
+  web and mobile typecheck, SSRF unit tests (`node --test lib/push-rules.test.ts`).
+- **Maestro** (`npm run e2e:android -w mobile`, CLI in `~/.maestro`, analytics off): `sign-in` (clears app data),
+  `browse`, `file-actions`, `search`, `preview`, `share`, `account-switch` (adds `newbie` itself). All 7 pass on the 0.1.1 release APK.
+  Turn app lock off first: Maestro can't touch the fingerprint. After an emulator reboot, unlock it (PIN 1111) first, or Maestro's driver
+  can't start ("not encryption aware") and the run hangs.
+  "Sign in" also matches the heading, so the sign-in flow submits with Enter.
+- **Android versions:** clean installs on API 29, 33 and 36 pass sign-in, browse and search with no crash. 24–28 weren't run.
+
+**Found and fixed**
+
+- **Back exited the app from every screen** in the installed app (not Expo Go): predictive back with RN 0.88. `predictiveBackGestureEnabled` is now false.
+- **Security audit** (read-only agent, then fixes): no silent http fallback (a bare host is https only; typing `http://` shows the warning
+  everywhere); `nimbus://` sign-in links ask "Sign in to <origin>?" first; push SSRF guard covers IPv4-mapped/embedded IPv6
+  (`net.BlockList`); the OAuth return carries a 60 s one-time code exchanged at `/api/auth/app-return/exchange`, never the session;
+  share-in takes only other apps' `content://`; the vault recovery code is FLAG_SECURE and copied codes are marked sensitive;
+  a push endpoint can't be taken over by another user.
+- **OIDC on a plain-http issuer** failed in the app (the Expo proxy is https-only). `/api/auth/app-authorize` allows http only for the
+  configured OIDC issuer. Verified end to end with Keycloak, including the exchange.
+- **Session loss and gates hidden by cached data:** a 401 or a gated 403 with a list on screen kept showing it. A QueryCache handler
+  (`AuthWatcher` in `_layout.tsx`) sends any auth loss on the active account to `/`.
+- **The API ignored the confirm-email and required-2FA gates**, so the app kept working after an admin required 2FA. `withMember` now uses `gateOf`.
+- **TalkBack read the app behind the lock screen and the version gate** (absolute overlays above native screens aren't in the
+  accessibility tree): both are now `Modal`s.
+- **App lock re-locked after a sign-in tab or a picker** that took over a minute: `lib/picking.ts` (also used by the vault lock), with a
+  5 s grace because results arrive before the app reports active.
+- **Camera backup:** photos added while a run was going were skipped until the next trigger while it said "All backed up" (the worker now
+  looks again before finishing); a 429 or 5xx marked photos failed for good (now requeued); 429 shows as "The server is busy, trying
+  again shortly"; no-access showed no way out ("Allow access" now) and stayed failed after access came back (cleared at once now).
+- **Collabora:** its own "<" left a blank page (hidden by script; its CSP blocks an injected `<style>`). README: `--o:welcome.enable=false`.
+- **Accessibility and large text:** 27 dp notification switches and a 41 dp breadcrumb row are now 48 dp; at 2.0× the tab labels ran
+  together (capped at 1.3×) and folder tiles split names mid-word (one column past 1.3×; one-word names ellipsize).
+- Smaller: sign-up's password submits on Enter; licence detail Back returns to the list; crash prompt copy; `/app` explains Chrome's
+  "File might be harmful" warning.
+
+**Added (A5):** open-source licences screen (`scripts/licences.mjs`, generated and gitignored, run by go/start/release); local-only crash
+capture (`CrashLog.kt` + root error boundary, "Nimbus closed unexpectedly · Copy report"); `API_RATE_LIMIT_USER` (default now **1,200**/min,
+measured peak was about 280/min backing up 400 small photos) and `API_RATE_LIMIT_INSTANCE_IP` (120).
+
+**Verified, beyond the earlier phases' lists:** every gate on a real server (confirm email by Mailpit link, pending, rejected, temporary
+password, required 2FA end to end); email invite delivered; Empty trash; offline cap prompt; old-app gate; instant notifications after a
+reboot and in forced Doze (5 s); 200 MB upload through a tusd restart and ~70 s of web server down (hash matched); process death with
+"Don't keep activities"; permissions revoked while running; `/app` download byte-identical; Collabora view-only.
+The picking grace and Collabora's hidden "<" were checked in Expo Go (JS only, same bundle in the APK). The uploader's 429/5xx requeue
+(`Sender.kt`) was checked by review and shares its path with camera backup's 429 handling, which was run.
+
+**Not run, for the phone (checklist below):** low storage (the emulator's space accounting let full files land), API 24–28, real battery and
+OEM limits, pinch, the Play scanner and camera, an editor saving back through the Files app, the Store v3→v4 upgrade with Phase 6 rows,
+Google and GitHub sign-in (same code path as OIDC).
+
+**Real-phone checklist (0.1.1)**
+
+1. Install `nimbus-0.1.1-arm64-v8a.apk` over 0.1.0: it updates in place and keeps accounts.
+2. Back from a folder goes up; Back on Files leaves the app.
+3. Pinch a photo; swipe between files; open a PDF and a docx.
+4. Take 20 photos in a row with camera backup on: all reach `Camera/YYYY/MM`, and "All backed up" only shows at the end.
+5. App lock on, leave for 2 min, come back: locked. Open a picker for 2 min and come back: not locked.
+6. With TalkBack on, the lock screen reads only "Nimbus is locked, Unlock".
+7. Fill the phone until under 100 MB is free and download a bigger file: you get an error and no partial file.
+8. Save a text file from an editor through the Files app (Nimbus root): a new version appears on the web.
+9. Leave instant notifications on overnight on battery: a share in the morning still arrives within seconds.
+10. Scan a document (Play services).
 
 ## Working rules for this machine
 

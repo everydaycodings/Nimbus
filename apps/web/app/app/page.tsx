@@ -45,6 +45,11 @@ export default async function AppPage() {
           )}
           <AndroidDownload release={release} />
           <p className="text-sm text-muted-foreground">
+            Chrome may say the file might be harmful, because it doesn&apos;t
+            come from the Play Store. Choose Download anyway, then allow your
+            browser to install apps when Android asks.
+          </p>
+          <p className="text-sm text-muted-foreground">
             After installing, enter this server&apos;s address, or scan the QR
             in Account → Sign in on your phone.
           </p>

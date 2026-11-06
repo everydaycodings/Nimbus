@@ -1,0 +1,13 @@
+appId: org.nimbus.drive
+name: share
+# Opens the Share page for app.ts (Browser Test), checks access and links, comes back with Back.
+---
+- launchApp
+- extendedWaitUntil: { visible: "Search in Nimbus", timeout: 20000 }
+- scrollUntilVisible: { element: "More actions for app.ts", direction: DOWN }
+- tapOn: "More actions for app.ts"
+- tapOn: "Share"
+- extendedWaitUntil: { visible: "Who has access", timeout: 15000 }
+- assertVisible: "Public links"
+- back
+- assertVisible: "Search in Nimbus"

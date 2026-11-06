@@ -15,13 +15,19 @@ import java.util.UUID
 object Share {
   @Volatile private var pending: List<Uri> = emptyList()
 
+  // Only another app's content:// grant is a share. file:// would let a sender name any file the app
+  // can read, and our own content authorities would hand the app's files back to itself.
+  fun acceptable(scheme: String?, authority: String?): Boolean =
+    scheme == "content" && authority != null && !authority.startsWith("org.nimbus.drive")
+
   fun take(intent: Intent?): Boolean {
     if (intent == null) return false
-    val uris = when (intent.action) {
+    val shared = when (intent.action) {
       Intent.ACTION_SEND -> listOfNotNull(stream(intent))
       Intent.ACTION_SEND_MULTIPLE -> streams(intent)
       else -> return false
     }
+    val uris = shared.filter { acceptable(it.scheme, it.authority) }
     // Consumed, so a rotation or relaunch doesn't offer it twice.
     intent.action = Intent.ACTION_MAIN
     if (uris.isEmpty()) return false

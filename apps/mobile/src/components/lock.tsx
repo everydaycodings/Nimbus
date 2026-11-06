@@ -2,12 +2,13 @@ import * as LocalAuthentication from "expo-local-authentication"
 import { router } from "expo-router"
 import * as SecureStore from "expo-secure-store"
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
-import { AppState, View } from "react-native"
+import { AppState, BackHandler, Modal, View } from "react-native"
 
 import { BrandMark } from "./brand"
 import { Button, Text } from "./ui"
 import { backupAvailable } from "@/lib/backup"
 import { native } from "@/lib/native"
+import { isPicking } from "@/lib/picking"
 import { c } from "@/lib/theme"
 
 const KEY = "lock.v1" // "on" | "off"; missing means it hasn't been offered yet
@@ -86,7 +87,7 @@ export function LockGate({ children }: { children: ReactNode }) {
         if (!lockedRef.current) unlocked((await lockSetting()) === "on")
       }
       if (state !== "active" || !away.current) return
-      if (Date.now() - away.current > AFTER_MS && (await lockSetting()) === "on") {
+      if (Date.now() - away.current > AFTER_MS && !isPicking() && (await lockSetting()) === "on") {
         setLocked(true)
         locked_()
         unlock()
@@ -100,13 +101,19 @@ export function LockGate({ children }: { children: ReactNode }) {
   if (locked === null) return null
   return (
     <>
-      {children}
+      {/* Hidden from TalkBack while locked: the overlay only covers the screen, not the accessibility tree. */}
+      <View style={{ flex: 1 }} importantForAccessibility={locked ? "no-hide-descendants" : "auto"} accessibilityElementsHidden={!!locked}>
+        {children}
+      </View>
+      {/* A Modal is its own window: an absolute View over the native screens wasn't in the accessibility tree, so TalkBack read the app behind it. */}
       {locked && (
-        <View style={{ position: "absolute", inset: 0, backgroundColor: c.background, alignItems: "center", justifyContent: "center", gap: 24, padding: 24 }}>
-          <BrandMark />
-          <Text variant="title">Nimbus is locked</Text>
-          <Button label="Unlock" onPress={unlock} />
-        </View>
+        <Modal visible statusBarTranslucent navigationBarTranslucent animationType="none" onRequestClose={() => BackHandler.exitApp()}>
+          <View accessibilityViewIsModal style={{ flex: 1, backgroundColor: c.background, alignItems: "center", justifyContent: "center", gap: 24, padding: 24 }}>
+            <BrandMark />
+            <Text variant="title" accessibilityRole="header">Nimbus is locked</Text>
+            <Button label="Unlock" onPress={unlock} />
+          </View>
+        </Modal>
       )}
     </>
   )

@@ -5,7 +5,7 @@ import { View } from "react-native"
 
 import { BrandMark } from "@/components/brand"
 import { Button, Field, FormScreen, Text } from "@/components/ui"
-import { connect, errorText } from "@/lib/api"
+import { connect, errorText, trustServer } from "@/lib/api"
 import { c } from "@/lib/theme"
 
 export default function Connect() {
@@ -18,6 +18,7 @@ export default function Connect() {
     setError(null)
     try {
       const { server } = await connect(address)
+      trustServer(server)
       router.push({ pathname: "/sign-in", params: { server } })
     } catch (e) {
       setError(errorText(e))

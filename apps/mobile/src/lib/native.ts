@@ -103,6 +103,10 @@ export type NimbusAndroid = {
   // Instant notifications: Nimbus keeps its own connection to each account's server (a foreground service). Persisted.
   liveSet?(on: boolean): void
   liveState?(): boolean
+  // Phase 8, crash capture, kept on the phone only. Optional: older APKs don't have them.
+  // Time, thread and stack of the last uncaught exception, until clearCrash.
+  lastCrash?(): string | null
+  clearCrash?(): void
   // `json`: the queue as UploadRow[]. "vault" events carry a decrypt job's progress in plaintext bytes. "push" events carry a new endpoint for an account (null: it was dropped).
   addListener(event: "uploads" | "share" | "backup" | "vault" | "push", listener: (e: { json?: string; jobId?: string; done?: number; total?: number; accountId?: string; endpoint?: string | null }) => void): EventSubscription
 }

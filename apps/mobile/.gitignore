@@ -49,3 +49,6 @@ yarn-error.*
 
 # Built from viewer/ by scripts/build-viewers.mjs
 src/lib/viewers/
+
+# Built by scripts/licences.mjs
+src/lib/licences.generated.json

@@ -3,12 +3,22 @@ import { useRef, useState } from "react"
 import { View } from "react-native"
 
 import { offerLockIfNew } from "@/components/lock"
+import { ConfirmServer } from "@/components/server-confirm"
 import { Button, ErrorText, Field, FormScreen, Text, type InputRef } from "@/components/ui"
 import { useAccounts } from "@/lib/accounts"
 import { ApiError, errorText, send } from "@/lib/api"
 import { c } from "@/lib/theme"
 
-export default function SignUp() {
+export default function SignUpRoute() {
+  const { server } = useLocalSearchParams<{ server: string }>()
+  return (
+    <ConfirmServer server={server}>
+      <SignUp />
+    </ConfirmServer>
+  )
+}
+
+function SignUp() {
   const { server, mode } = useLocalSearchParams<{ server: string; mode: string }>()
   const { add } = useAccounts()
   const emailField = useRef<InputRef>(null)
@@ -55,7 +65,7 @@ export default function SignUp() {
       <View style={{ gap: 16 }}>
         <Field label="Name" value={name} onChangeText={setName} autoComplete="name" returnKeyType="next" onSubmitEditing={() => emailField.current?.focus()} />
         <Field ref={emailField} label="Email" value={email} onChangeText={setEmail} autoCapitalize="none" autoComplete="email" keyboardType="email-address" returnKeyType="next" onSubmitEditing={() => passwordField.current?.focus()} />
-        <Field ref={passwordField} label="Password" value={password} onChangeText={setPassword} secret autoComplete="new-password" />
+        <Field ref={passwordField} label="Password" value={password} onChangeText={setPassword} secret autoComplete="new-password" returnKeyType={mode === "invite" ? "default" : "go"} onSubmitEditing={() => mode !== "invite" && name.trim() && email.trim() && password && go()} />
         {mode === "invite" && (
           <Field label="Invite link" value={invite} onChangeText={setInvite} autoCapitalize="none" autoCorrect={false} hint="Paste the link you were sent." />
         )}

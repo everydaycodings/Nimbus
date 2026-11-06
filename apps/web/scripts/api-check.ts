@@ -582,6 +582,9 @@ async function main() {
     check("register again (idempotent)", (await call(A, "POST", "/push", { endpoint })).status === 200)
     const rows = await sql`select user_id from push_endpoints where endpoint = ${endpoint}`
     check("one row, owned by A", rows.length === 1 && rows[0].user_id === me.id, rows)
+    check("B registering A's endpoint doesn't take it", (await call(B, "POST", "/push", { endpoint })).status === 200 && (await sql`select user_id from push_endpoints where endpoint = ${endpoint}`)[0]?.user_id === me.id)
+    const bad = await fetch(`${BASE}/api/auth/app-return/exchange`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: "nope" }) })
+    check("unknown app-return code is refused", bad.status === 400, bad.status)
     check("not a URL", (await call(A, "POST", "/push", { endpoint: "nope" })).status === 400)
     check("not http", (await call(A, "POST", "/push", { endpoint: "ftp://x/y" })).status === 400)
     check("B can't delete A's endpoint", ((await call(B, "DELETE", "/push", { endpoint })).status === 200) && (await sql`select 1 from push_endpoints where endpoint = ${endpoint}`).length === 1)

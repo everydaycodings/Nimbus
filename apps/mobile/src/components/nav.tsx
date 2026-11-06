@@ -89,7 +89,7 @@ export function NavBar({ state, emitter, navigateToTab }: BarProps) {
                 </View>
               )}
             </View>
-            <Text variant="caption" color={focused ? c.foreground : c.mutedForeground} numberOfLines={1}>
+            <Text variant="caption" color={focused ? c.foreground : c.mutedForeground} numberOfLines={1} maxFontSizeMultiplier={1.3}>
               {tab.label}
             </Text>
           </Pressable>

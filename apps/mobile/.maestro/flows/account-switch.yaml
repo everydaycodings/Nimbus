@@ -1,0 +1,39 @@
+appId: org.nimbus.drive
+name: account-switch
+# Runs after sign-in (which clears state), so it adds New Bie first when missing.
+env:
+  SERVER: http://localhost:3000
+  EMAIL: newbie@example.invalid
+  PASSWORD: browser-test-pass-123
+---
+- launchApp
+- extendedWaitUntil: { visible: "Search in Nimbus", timeout: 20000 }
+- tapOn: "Account, .*"
+- runFlow:
+    when:
+      notVisible: "New Bie, .*"
+    commands:
+      - tapOn: "Add account"
+      - tapOn: "Server address"
+      - inputText: ${SERVER}
+      - tapOn: "Continue"
+      - tapOn: "Email"
+      - inputText: ${EMAIL}
+      - tapOn: "Password"
+      - inputText: ${PASSWORD}
+      - pressKey: Enter
+      - runFlow:
+          when:
+            visible: "Turn on backup"
+          commands:
+            - tapOn: "Not now"
+      - extendedWaitUntil: { visible: "Account, New Bie, .*", timeout: 20000 }
+      - tapOn: "Account, .*"
+- tapOn: "Browser Test, .*"
+- extendedWaitUntil: { visible: "Account, Browser Test, .*", timeout: 15000 }
+- tapOn: "Account, .*"
+- tapOn: "New Bie, .*"
+- extendedWaitUntil: { visible: "Account, New Bie, .*", timeout: 15000 }
+- tapOn: "Account, .*"
+- tapOn: "Browser Test, .*"
+- extendedWaitUntil: { visible: "Account, Browser Test, .*", timeout: 15000 }

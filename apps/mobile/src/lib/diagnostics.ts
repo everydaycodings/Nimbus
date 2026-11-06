@@ -29,6 +29,8 @@ export type DiagnosticsInput = {
   uploadQueue: number
   filesApp: boolean
   errors: { at: number; source: string; message: string }[]
+  // The last crash this phone kept, from JS or from the Kotlin module.
+  crash?: { source: "js" | "native"; text: string } | null
 }
 
 export function diagnosticsText(d: DiagnosticsInput) {
@@ -48,6 +50,7 @@ export function diagnosticsText(d: DiagnosticsInput) {
     "",
     `Last ${d.errors.length} errors:`,
     ...d.errors.map((e) => `${new Date(e.at).toISOString()} [${e.source}] ${scrub(e.message)}`),
+    ...(d.crash ? ["", `Last crash (${d.crash.source}):`, scrub(d.crash.text)] : []),
   ]
   return lines.join("\n")
 }

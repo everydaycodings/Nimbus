@@ -4,7 +4,7 @@ import { z } from "zod"
 import { overLimit } from "@/lib/cache"
 import { TYPE_KEYS, UUID, typeKeyOf } from "@/lib/file-rules"
 import { listTags, type Item } from "@/lib/files"
-import { getSession, type Me } from "@/lib/session"
+import { gateOf, getSession, type Me } from "@/lib/session"
 import { NOT_ALLOWED } from "@/lib/tree-ops"
 
 // Bumped when a change would break older Android apps. The app refuses servers
@@ -14,27 +14,37 @@ export const API_VERSION = 1
 export const fail = (status: number, error: string, message: string) =>
   Response.json({ error, message }, { status })
 
+// Per-minute limits, tunable from env; a bad or missing value falls back to the default.
+const limitFromEnv = (name: string, fallback: number) => {
+  const n = Number(process.env[name])
+  return Number.isInteger(n) && n > 0 ? n : fallback
+}
+const USER_LIMIT = limitFromEnv("API_RATE_LIMIT_USER", 1200)
+const INSTANCE_IP_LIMIT = limitFromEnv("API_RATE_LIMIT_INSTANCE_IP", 120)
+
 // Guard for /api/v1 routes: the JSON twin of requireMember(). 403 means a gate
 // stands in the way, and GET /api/v1/me says which.
 export async function withMember(fn: (me: Me) => Promise<Response>) {
   const session = await getSession()
   if (!session) return fail(401, "signed-out", "Sign in first.")
   const me = session.user
-  if (me.status !== "active" || me.passwordTemporary)
+  // Every gate, not just requireMember()'s: the app only learns about a new one
+  // (say, admins now require two-factor) when a request is refused.
+  if (await gateOf(me))
     return fail(403, "gated", "Finish setting up your account first.")
-  if (await overLimit(`rl:u:${me.id}`, 600, 60)) return rateLimited()
+  if (await overLimit(`rl:u:${me.id}`, USER_LIMIT, 60)) return rateLimited()
   return fn(me)
 }
 
 const rateLimited = () =>
   fail(429, "rate_limited", "Too many requests. Try again in a minute.")
 
-// Per-IP limit for public routes (120 a minute), or a 429 Response.
+// Per-IP limit for public routes (API_RATE_LIMIT_INSTANCE_IP, 120 a minute), or a 429 Response.
 export async function limitIp(name: string) {
   const h = await headers()
   const ip =
     h.get("x-forwarded-for")?.split(",")[0].trim() || h.get("x-real-ip") || "?"
-  return (await overLimit(`rl:ip:${name}:${ip}`, 120, 60)) ? rateLimited() : null
+  return (await overLimit(`rl:ip:${name}:${ip}`, INSTANCE_IP_LIMIT, 60)) ? rateLimited() : null
 }
 
 // ---- Input ----

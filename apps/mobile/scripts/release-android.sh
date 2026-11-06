@@ -36,6 +36,7 @@ fi
 VERSION="$(node -p "require('./app.json').expo.version")"
 
 npm run viewers
+npm run licences
 CI=1 npx expo prebuild --platform android --no-install
 (
   cd android

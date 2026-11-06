@@ -6,6 +6,7 @@ import { useState } from "react"
 import { Group, Loaded, Page, Row } from "@/components/page"
 import { useSnack } from "@/components/snackbar"
 import { Button, ErrorText, Text } from "@/components/ui"
+import { whilePicking } from "@/lib/picking"
 import { ApiError, cookiesFrom, errorText, send } from "@/lib/api"
 import { useAccountData, useApi, useAuthCall, useFileActions, useInstance } from "@/lib/files"
 import { c } from "@/lib/theme"
@@ -42,7 +43,7 @@ export default function Methods() {
       const state = /(?:^|;\s*)(?:__Secure-)?[\w.-]*oauth_state=([^;]+)/.exec(cookiesFrom(r.headers.get("set-cookie")))
       const q = new URLSearchParams({ authorizationURL: body.url })
       if (state) q.set("oauthState", decodeURIComponent(state[1]))
-      const done = await WebBrowser.openAuthSessionAsync(`${server}/api/auth/expo-authorization-proxy?${q}`, RETURN)
+      const done = await whilePicking(() => WebBrowser.openAuthSessionAsync(`${server}/api/auth/${body.url.startsWith("http:") ? "app-authorize" : "expo-authorization-proxy"}?${q}`, RETURN))
       if (done.type !== "success") return
       if (new URL(done.url).searchParams.get("error")) throw new Error("That didn't connect. The provider's email must match this account's.")
       actions.refresh()

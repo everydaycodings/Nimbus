@@ -1,0 +1,30 @@
+appId: org.nimbus.drive
+name: sign-in
+env:
+  SERVER: http://localhost:3000
+  EMAIL: browser-test@example.invalid
+  PASSWORD: browser-test-pass-123
+---
+- launchApp:
+    clearState: true
+- tapOn: "Server address"
+- inputText: ${SERVER}
+- tapOn: "Continue"
+- tapOn: "Email"
+- inputText: ${EMAIL}
+- tapOn: "Password"
+- inputText: ${PASSWORD}
+- pressKey: Enter  # the password field submits; "Sign in" also matches the heading
+- runFlow:
+    when:
+      visible: "Turn on app lock"
+    commands:
+      - tapOn: "Not now"
+- runFlow:
+    when:
+      visible: "Turn on backup"
+    commands:
+      - tapOn: "Not now"
+- extendedWaitUntil:
+    visible: "Search in Nimbus"
+    timeout: 20000

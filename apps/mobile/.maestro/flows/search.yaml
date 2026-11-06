@@ -1,0 +1,11 @@
+appId: org.nimbus.drive
+name: search
+---
+- launchApp
+- extendedWaitUntil: { visible: "Search in Nimbus", timeout: 20000 }
+- tapOn: "Search in Nimbus"
+- inputText: "app"
+- pressKey: Enter
+- extendedWaitUntil: { visible: "app.ts", timeout: 15000 }
+- back
+- assertVisible: "Search in Nimbus"

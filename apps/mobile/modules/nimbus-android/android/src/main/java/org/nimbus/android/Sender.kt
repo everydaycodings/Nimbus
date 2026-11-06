@@ -244,6 +244,11 @@ class Sender(context: Context, private val stopped: () -> Boolean) {
         store.set(row.id, "status" to "queued")
         return Outcome.AUTH
       }
+      // Rate limits and server errors pass: try again later, like a dropped connection, never mark the file failed.
+      if (e.status == 429 || e.status >= 500) {
+        store.set(row.id, "status" to "queued", "error" to null)
+        return Outcome.OFFLINE
+      }
       if (e.message?.startsWith("Not enough space") == true) {
         store.set(row.id, "status" to "failed", "error" to e.message)
         return Outcome.FULL

@@ -1,0 +1,17 @@
+appId: org.nimbus.drive
+name: preview
+# Opens the Preview test folder, a file, swipes to the next, closes with Back.
+---
+- launchApp
+- extendedWaitUntil: { visible: "Search in Nimbus", timeout: 20000 }
+- tapOn: "Folder, Preview test"
+- tapOn:
+    text: "File, .*"
+    index: 0
+- extendedWaitUntil: { visible: "Close preview", timeout: 15000 }
+- swipe: { direction: LEFT }
+- assertVisible: "Close preview"
+- back
+- assertNotVisible: "Close preview"
+- back
+- assertVisible: "Search in Nimbus"

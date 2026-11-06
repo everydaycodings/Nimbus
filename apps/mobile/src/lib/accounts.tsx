@@ -2,7 +2,7 @@ import { clearCache } from "./file-cache"
 import * as SecureStore from "expo-secure-store"
 import { createContext, use, useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 
-import { json, send, type Account, type Me } from "./api"
+import { json, send, trustServer, type Account, type Me } from "./api"
 import { backupAvailable, readSettings, saveSettings } from "./backup"
 import { native } from "./native"
 import { forgetAccount } from "./offline"
@@ -34,6 +34,7 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
       .then((s) => {
         if (!s) return
         const saved: Saved = JSON.parse(s)
+        saved.accounts.forEach((a) => trustServer(a.server))
         setState(saved)
         mirror(saved)
       })

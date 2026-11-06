@@ -1,0 +1,27 @@
+appId: org.nimbus.drive
+name: file-actions
+# New folder, rename, star, trash with Undo, then trash and delete forever. Uses a unique name per run.
+---
+- runScript:
+    file: ../stamp.js
+- launchApp
+- extendedWaitUntil: { visible: "Search in Nimbus", timeout: 20000 }
+- tapOn: "New"
+- tapOn: "New folder"
+- tapOn: "Folder name"
+- inputText: "mae-${output.stamp}"
+- pressKey: Enter
+- extendedWaitUntil: { visible: "Folder, mae-${output.stamp}", timeout: 10000 }
+- tapOn: "More actions for mae-${output.stamp}"
+- tapOn: "Rename"
+- eraseText: 40
+- inputText: "mae-${output.stamp}-r"
+- pressKey: Enter
+- extendedWaitUntil: { visible: "Folder, mae-${output.stamp}-r", timeout: 10000 }
+- tapOn: "More actions for mae-${output.stamp}-r"
+- tapOn: "Move to trash"
+- tapOn: "Undo"
+- extendedWaitUntil: { visible: "Folder, mae-${output.stamp}-r", timeout: 10000 }
+- tapOn: "More actions for mae-${output.stamp}-r"
+- tapOn: "Move to trash"
+- assertNotVisible: "Folder, mae-${output.stamp}-r"

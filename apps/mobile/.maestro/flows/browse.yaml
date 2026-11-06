@@ -1,0 +1,19 @@
+appId: org.nimbus.drive
+name: browse
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Search in Nimbus"
+    timeout: 20000
+- tapOn: "Folder, Projects"
+- assertVisible: "Projects"
+- back
+- tapOn: "Switch to list view"
+- assertVisible: "Switch to grid view"
+- tapOn: "Switch to grid view"
+- tapOn: "Recent"
+- tapOn: "Shared"
+- tapOn: "Starred"
+- tapOn: "More"
+- tapOn: "Files"
+- assertVisible: "Search in Nimbus"

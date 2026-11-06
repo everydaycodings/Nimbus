@@ -1,6 +1,6 @@
 import { router } from "expo-router"
 import { useEffect } from "react"
-import { AppState, Linking, View } from "react-native"
+import { AppState, Linking, Modal, View } from "react-native"
 
 import { serverName } from "./avatar"
 import { BrandMark } from "./brand"
@@ -29,7 +29,9 @@ export function ServerGate() {
   const other = accounts.find((a) => a.id !== active.id)
   const oldApp = info.problem === "old-app"
   return (
-    <View style={{ position: "absolute", inset: 0, zIndex: 10, elevation: 10, backgroundColor: c.background, alignItems: "center", justifyContent: "center", gap: 24, padding: 24 }}>
+    // A Modal is its own window, so touch and TalkBack can't reach the app behind it; Back can't close it either.
+    <Modal visible statusBarTranslucent navigationBarTranslucent animationType="none" onRequestClose={() => {}}>
+    <View accessibilityViewIsModal style={{ flex: 1, backgroundColor: c.background, alignItems: "center", justifyContent: "center", gap: 24, padding: 24 }}>
       <BrandMark />
       <View style={{ gap: 8, alignItems: "center" }}>
         <Text variant="title" accessibilityRole="header" style={{ textAlign: "center" }}>
@@ -54,5 +56,6 @@ export function ServerGate() {
         <Button variant="text" danger label="Sign out" onPress={() => remove(active.id).then(() => router.replace("/"))} />
       </View>
     </View>
+    </Modal>
   )
 }

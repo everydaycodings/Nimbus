@@ -74,13 +74,11 @@ export async function json<T>(
 }
 
 // Accepts "files.example.net", with or without a scheme, and finds the Nimbus there.
-// With no scheme it tries https first, so http only happens when https can't work.
+// With no scheme it only tries https: http is used only when it was typed.
 export async function connect(raw: string) {
   const input = raw.trim().replace(/\/+$/, "")
   if (!input) throw new ApiError(0, "empty", "Enter your server's address.")
-  const tries = /^https?:\/\//i.test(input)
-    ? [input]
-    : [`https://${input}`, `http://${input}`]
+  const tries = /^https?:\/\//i.test(input) ? [input] : [`https://${input}`]
   let notNimbus = false
   for (const server of tries) {
     let instance: Instance
@@ -103,7 +101,7 @@ export async function connect(raw: string) {
     notNimbus ? "not-nimbus" : "offline",
     notNimbus
       ? "That server answered, but it isn't Nimbus, or it needs an update. Check the address."
-      : "Can't reach that address. Check it for typos and make sure the server is running."
+      : "Can't reach that address. Check it for typos and make sure the server is running. If your server uses plain http, type http:// in front."
   )
 }
 
@@ -150,5 +148,22 @@ export function parseLink(raw: string) {
     return { server: server.replace(/\/+$/, ""), token }
   } catch {
     return null
+  }
+}
+
+// Servers the person chose inside the app (typed, scanned, or a saved account). A
+// nimbus:// link from outside names a server too, but isn't in this set until they confirm.
+const chosen = new Set<string>()
+const origin = (server: string) => new URL(server).origin
+export const trustServer = (server: string) => {
+  try {
+    chosen.add(origin(server))
+  } catch {}
+}
+export const isTrustedServer = (server: string) => {
+  try {
+    return chosen.has(origin(server))
+  } catch {
+    return false
   }
 }

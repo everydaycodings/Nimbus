@@ -28,6 +28,7 @@ class NimbusAndroidModule : Module() {
     Events("uploads", "share", "backup", "vault", "push")
 
     OnCreate {
+      CrashLog.install(context)
       // Decrypted previews never outlive the process.
       VaultKeys.wipeCache(context)
       Uploads.listener = { sendEvent("uploads", mapOf("json" to store.rows().toString())) }
@@ -262,6 +263,9 @@ class NimbusAndroidModule : Module() {
         cancel("account = ? and vault_id = ?", arrayOf(accountId, vaultId))
       }
     }
+    // The last uncaught exception, if the app died from one since JS last cleared it.
+    Function("lastCrash") { CrashLog.read(context) }
+    Function("clearCrash") { CrashLog.clear(context) }
     // Keeps vault screens out of screenshots and the recents view.
     Function("setSecure") { on: Boolean ->
       appContext.currentActivity?.let { a ->

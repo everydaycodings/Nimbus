@@ -57,6 +57,7 @@ import { TagDialog } from "@/components/tag-dialog"
 import { VaultPickSheet, canVault } from "@/components/vault-sheets"
 import { useUploader } from "@/components/uploader"
 import { Button, Text } from "@/components/ui"
+import { whilePicking } from "@/lib/picking"
 import { editable, label, roleOf, shareable, useApi, useDetails, useFileActions, useFolders, useLinks, useShareState, useTags, useVersions, type FileSheet, type Filters } from "@/lib/files"
 import { errorText } from "@/lib/api"
 import { native } from "@/lib/native"
@@ -430,7 +431,7 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
           icon={ic(ImageIcon)}
           onPress={async () => {
             try {
-              const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 1 })
+              const r = await whilePicking(() => ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 1 }))
               if (r.canceled) return
               await actions.setThumb(file, await imageToWebp(r.assets[0].uri))
               snack({ text: "Thumbnail changed." })
