@@ -14,6 +14,8 @@ import java.util.UUID
 // can't be kept is copied into the app's own storage when it's queued.
 object Share {
   @Volatile private var pending: List<Uri> = emptyList()
+  // Set when the share came through one of our direct share folders (ShareTargets).
+  @Volatile private var target: String? = null
 
   // Only another app's content:// grant is a share. file:// would let a sender name any file the app
   // can read, and our own content authorities would hand the app's files back to itself.
@@ -32,6 +34,7 @@ object Share {
     intent.action = Intent.ACTION_MAIN
     if (uris.isEmpty()) return false
     pending = uris
+    target = intent.getStringExtra(androidx.core.content.pm.ShortcutManagerCompat.EXTRA_SHORTCUT_ID)
     return true
   }
 
@@ -42,6 +45,9 @@ object Share {
   @Suppress("DEPRECATION")
   private fun streams(intent: Intent): List<Uri> =
     (if (Build.VERSION.SDK_INT >= 33) intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java) else intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)) ?: emptyList()
+
+  // Once, like files().
+  fun takeTarget(): String? = target.also { target = null }
 
   // Once: the list empties as it's read.
   fun files(context: Context): String {

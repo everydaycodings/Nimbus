@@ -35,6 +35,7 @@ object Backup {
     val before = settings(context)
     val next = JSONObject(json)
     prefs(context).edit().putString("settings", json).apply()
+    BackupTile.refresh(context)
     // A new account or a start date further back means everything is looked at again.
     if (before.optString("accountId") != next.optString("accountId")) Store.of(context).clearMedia()
     if (next.optBoolean("enabled")) {

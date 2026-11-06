@@ -103,6 +103,11 @@ export type NimbusAndroid = {
   // Instant notifications: Nimbus keeps its own connection to each account's server (a foreground service). Persisted.
   liveSet?(on: boolean): void
   liveState?(): boolean
+  // Phase 9, direct share. Optional: older APKs don't have them.
+  // A folder just uploaded into joins Android's share sheet (folderId null: My files).
+  pushShareTarget?(accountId: string, folderId: string | null, name: string): void
+  // JSON ShareTarget (share-in.ts) the waiting share was sent to; once, like sharedFiles.
+  sharedTarget?(): string | null
   // Phase 8, crash capture, kept on the phone only. Optional: older APKs don't have them.
   // Time, thread and stack of the last uncaught exception, until clearCrash.
   lastCrash?(): string | null

@@ -10,4 +10,5 @@ executionOrder:
     - search
     - preview
     - share
+    - quick-actions
     - account-switch

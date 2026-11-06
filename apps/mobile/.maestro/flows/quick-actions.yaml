@@ -1,0 +1,20 @@
+appId: org.nimbus.drive
+name: quick-actions
+# Phase 9: the nimbus://quick links behind app shortcuts, widgets and the Quick Settings tile.
+# Each lands on its screen with Files home underneath, so Back returns there.
+---
+- launchApp
+- extendedWaitUntil: { visible: "Search in Nimbus", timeout: 20000 }
+- openLink: nimbus://quick?do=search
+- extendedWaitUntil: { visible: "Clear search|Back", timeout: 10000 }
+- back
+- extendedWaitUntil: { visible: "Search in Nimbus", timeout: 10000 }
+- openLink: nimbus://quick?do=backup
+- extendedWaitUntil: { visible: "Camera backup", timeout: 10000 }
+- back
+- extendedWaitUntil: { visible: "Search in Nimbus", timeout: 10000 }
+# Upload opens Android's file picker; backing out of it leaves Files home as it was.
+- openLink: nimbus://quick?do=upload
+- extendedWaitUntil: { notVisible: "Search in Nimbus", timeout: 10000 }
+- back
+- extendedWaitUntil: { visible: "Search in Nimbus", timeout: 10000 }

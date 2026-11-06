@@ -1,0 +1,12 @@
+<resources>
+    <string name="nimbus_shortcut_upload">Upload</string>
+    <string name="nimbus_shortcut_upload_long">Upload files</string>
+    <string name="nimbus_shortcut_scan">Scan</string>
+    <string name="nimbus_shortcut_scan_long">Scan a document</string>
+    <string name="nimbus_shortcut_search">Search</string>
+    <string name="nimbus_shortcut_search_long">Search Nimbus</string>
+    <string name="nimbus_shortcut_photo">Take photo</string>
+    <string name="nimbus_shortcut_photo_long">Take a photo to Nimbus</string>
+    <string name="nimbus_widget_list">Recent or starred files</string>
+    <string name="nimbus_widget_actions">Upload and scan</string>
+</resources>

@@ -45,12 +45,16 @@ class NimbusAndroidModule : Module() {
       }
       // Opened by a share from another app.
       Share.take(appContext.currentActivity?.intent)
+      Widgets.update(context)
+      Widgets.refresh(context)
     }
     OnDestroy {
       Uploads.listener = null
       Backup.listener = null
       Push.listener = null
     }
+    // Whatever was starred or opened just now shows on the home screen.
+    OnActivityEntersBackground { Widgets.refresh(context) }
     OnNewIntent { intent -> if (Share.take(intent)) sendEvent("share", mapOf<String, Any>()) }
 
     OnActivityResult { _, payload ->
@@ -69,6 +73,9 @@ class NimbusAndroidModule : Module() {
     Function("setAccounts") { json: String ->
       Accounts.save(context, json)
       NimbusDocumentsProvider.notifyRoots(context)
+      ShareTargets.prune(context)
+      Widgets.update(context)
+      Widgets.refresh(context)
       Push.syncPolling(context)
       Live.sync(context)
     }
@@ -85,8 +92,11 @@ class NimbusAndroidModule : Module() {
 
     // The Files app hides Nimbus when the app lock is on and the last unlock is older than the timeout.
     Function("setUnlockedAt") { ms: Double, timeoutMs: Double? ->
+      val wasOn = AppLock.on(context)
       AppLock.set(context, ms.toLong(), timeoutMs?.toLong())
       NimbusDocumentsProvider.notifyRoots(context)
+      // Widgets hide their lists while the lock is on.
+      if (wasOn != AppLock.on(context)) Widgets.update(context)
     }
     Function("lockNow") {
       AppLock.lockNow(context)
@@ -105,7 +115,14 @@ class NimbusAndroidModule : Module() {
         true
       } catch (_: ActivityNotFoundException) { false }
     }
-    Function("notifyFilesChanged") { accountId: String -> notifyFilesChanged(context, accountId) }
+    Function("notifyFilesChanged") { accountId: String ->
+      notifyFilesChanged(context, accountId)
+      Widgets.refresh(context)
+    }
+    // Phase 9, direct share: a folder just saved into joins Android's share sheet.
+    Function("pushShareTarget") { accountId: String, folderId: String?, name: String -> ShareTargets.push(context, accountId, folderId, name) }
+    // The folder a waiting share was sent to, as JSON {accountId, folderId, name}; once, like sharedFiles.
+    Function("sharedTarget") { ShareTargets.lookup(context, Share.takeTarget()) }
 
     // Off the JS thread: a shared file Android won't let us keep is copied first.
     AsyncFunction("addUploads") { json: String ->

@@ -34,6 +34,40 @@ API checks: `cd apps/web && node --env-file=.env.local scripts/api-check.ts` (ru
 | 11 | Back up other folders, two-way folder sync, export to SD/USB | Not started |
 | 12 | Text editor, multi-page scan, activity feed (web + app) | Not started |
 
+**Next: Phases 9–12**, in order. Each means several hours of building, a native build, emulator testing and a commit.
+Answers are in Claude's project memory (Part A + 9–12 decisions); plan `~/.claude/plans/so-all-phases-8-gentle-popcorn.md`.
+
+- **Phase 9, phone extras** (Kotlin in `modules/nimbus-android`, wired by its config plugin):
+  - **App shortcuts:** Upload, Scan document, Search, Take photo to Nimbus (static shortcuts to `nimbus://` routes).
+  - **Widgets:** Recent / Starred list per account (account picked when placing), and a quick Upload / Scan widget. Data from a
+    small cache the app and the push/poll worker write; hidden while app lock is on.
+  - **Quick Settings tile:** pause/resume camera backup with its state; long-press opens backup settings.
+  - **Direct share targets:** recent upload folders published as sharing shortcuts, so they show in Android's share sheet.
+- **Phase 10, media:**
+  - **Photos tab replaces Recent** (tabs: Files, Photos, Shared, Starred, More). Recent moves to a chip on Files home and a More row.
+  - Timeline of all images and videos the user owns, by EXIF date taken, falling back to upload date; month headers, fast scroller,
+    grid zoom levels. Server: `takenAt` on file versions (read from EXIF by the worker, backfilled) and a paged `GET /api/v1/photos`.
+    The web gets the same Photos page (parity rule).
+  - **Background audio** with lock-screen controls, folder queue and resume position.
+  - **Video picture-in-picture.**
+  - **Slideshow** of a folder or the timeline, with an interval setting; respects remove-animations.
+- **Phase 11, sync** (all through Android's folder picker, no all-files permission; camera backup's rules; WorkManager every
+  15 min and on app open; the reliable-backup switch; live/push signal for server changes):
+  - **Back up other folders:** one-way, a target folder in My files for each, same skip-by-hash rules.
+  - **Two-way folder sync:** a state DB of the last-synced hash per path; when both sides changed, keep the server's and upload the
+    phone's as `name (conflict, <device>).ext`; deletes go to Trash, never forever; failures in the Couldn't sync list.
+  - **Export to SD / USB:** "Save to device…" for files and folders through the folder picker.
+- **Phase 12, productivity:**
+  - **Text editor:** .txt, .md and code files up to 1 MB; monospace, undo, find, Markdown preview toggle. Save makes a new version,
+    refuses if the server's version changed (offers Keep both); offline saves go through the change queue.
+  - **Scanning:** Play scanner in multi-page PDF mode, auto-named `Scan 2026-11-06 14.32.pdf`, folder choice; hidden without Play services.
+  - **Activity feed, web and app:** uploads, edits/versions, renames, moves, shares, trash/restore (no views or downloads). Owners see
+    everything on their files, others only what they can access. Shown in Details on both. Retention admin setting 30/90/365/forever
+    (default 90), purged by the worker, saved through `saveSettings` for the audit log.
+
+Each phase: a short decision check only if something new comes up, build, Impeccable pass on new screens, a Maestro flow, a check on
+the release APK, an update here, a commit.
+
 **Phase 1 detail**
 
 - Verified: 179 of 179 API checks; native password and TOTP sign-in over HTTP; QR sign-in flow with a

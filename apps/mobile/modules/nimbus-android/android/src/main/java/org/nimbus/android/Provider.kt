@@ -38,6 +38,9 @@ object AppLock {
 
   fun lockNow(c: Context) = prefs(c).edit().putBoolean("locked", true).apply()
 
+  // The app lock is switched on (widgets show nothing while it is).
+  fun on(c: Context) = prefs(c).getLong("timeout", -1L) >= 0
+
   fun hidden(c: Context): Boolean {
     val p = prefs(c)
     val timeout = p.getLong("timeout", -1L).takeIf { it >= 0 }

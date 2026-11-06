@@ -102,6 +102,7 @@ export function UploaderProvider({ children }: { children: ReactNode }) {
           speedCap: me.uploadSpeedBytes ?? null,
         }))
         await engine.add(jobs, account.token)
+        shareTo(account, parentId)
         return true
       } catch (e) {
         setPrompt(null)
@@ -134,6 +135,16 @@ export function UploaderProvider({ children }: { children: ReactNode }) {
       {prompt?.kind === "data" && <DataDialog bytes={prompt.bytes} onDone={prompt.done} />}
     </Uploader>
   )
+}
+
+// The folder joins Android's share sheet (direct share). Best effort: a missing name only skips it.
+function shareTo(account: Account, parentId: string | null) {
+  if (typeof native?.pushShareTarget !== "function") return
+  const push = (name: string) => native!.pushShareTarget!(account.id, parentId, name)
+  if (!parentId) return push("My files")
+  json<{ item: { name: string } | null }>(account.server, `/api/v1/items/${parentId}`, { token: account.token })
+    .then((r) => r.item && push(r.item.name))
+    .catch(() => {})
 }
 
 // Back or the scrim cancels the upload, like the web's dialog.

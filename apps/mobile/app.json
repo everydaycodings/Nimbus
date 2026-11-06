@@ -100,7 +100,8 @@
         }
       ],
       "expo-background-task",
-      "./plugins/release-signing.js"
+      "./plugins/release-signing.js",
+      "./plugins/shortcuts.js"
     ]
   }
 }

@@ -1,7 +1,7 @@
 import * as LocalAuthentication from "expo-local-authentication"
 import { router } from "expo-router"
 import * as SecureStore from "expo-secure-store"
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
+import { createContext, useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { AppState, BackHandler, Modal, View } from "react-native"
 
 import { BrandMark } from "./brand"
@@ -57,6 +57,9 @@ export function enterApp() {
   router.replace("/")
 }
 
+// True while the lock screen covers the app, so a screen can wait before acting (a shortcut's picker, say).
+export const LockedContext = createContext(false)
+
 // Covers the app until the fingerprint or device PIN passes, at launch and after
 // a minute in the background.
 export function LockGate({ children }: { children: ReactNode }) {
@@ -103,7 +106,7 @@ export function LockGate({ children }: { children: ReactNode }) {
     <>
       {/* Hidden from TalkBack while locked: the overlay only covers the screen, not the accessibility tree. */}
       <View style={{ flex: 1 }} importantForAccessibility={locked ? "no-hide-descendants" : "auto"} accessibilityElementsHidden={!!locked}>
-        {children}
+        <LockedContext value={locked}>{children}</LockedContext>
       </View>
       {/* A Modal is its own window: an absolute View over the native screens wasn't in the accessibility tree, so TalkBack read the app behind it. */}
       {locked && (

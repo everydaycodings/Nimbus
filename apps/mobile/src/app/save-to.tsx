@@ -1,7 +1,7 @@
 import { formatBytes } from "@nimbus/shared/file-rules"
 import { router } from "expo-router"
 import { ArrowLeft, CaretRight, Lock, X } from "phosphor-react-native"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { ActivityIndicator, BackHandler, FlatList, Pressable, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
@@ -14,7 +14,7 @@ import { VaultPickSheet, canVault } from "@/components/vault-sheets"
 import { useAccounts } from "@/lib/accounts"
 import { useFolders } from "@/lib/files"
 import { usePrefs } from "@/lib/prefs"
-import { sharedFiles } from "@/lib/share-in"
+import { exitAfterSave, sharedFiles, shareTarget } from "@/lib/share-in"
 import { c, radius } from "@/lib/theme"
 
 type Place = { id: string | null; name: string }
@@ -22,7 +22,13 @@ const ROOT: Place = { id: null, name: "My files" }
 
 // Share into Nimbus: pick an account and a folder, save, and go back to the app that shared.
 export default function SaveTo() {
-  const { active } = useAccounts()
+  const { active, accounts, switchTo } = useAccounts()
+  // Sent to one of the share sheet's folders: start in that folder's account.
+  useEffect(() => {
+    const to = shareTarget()
+    if (to && to.accountId !== active?.id && accounts.some((a) => a.id === to.accountId)) switchTo(to.accountId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   if (!active)
     return (
       <Shell>
@@ -56,7 +62,11 @@ function Chooser() {
   const { active, accounts, switchTo } = useAccounts()
   const account = active!
   const [prefs, setPrefs] = usePrefs(account.id)
-  const [stack, setStack] = useState<Place[]>(prefs.saveTo?.id ? [ROOT, prefs.saveTo] : [ROOT])
+  const [stack, setStack] = useState<Place[]>(() => {
+    const to = shareTarget()
+    const start = to?.accountId === account.id ? { id: to.folderId, name: to.name } : prefs.saveTo
+    return start?.id ? [ROOT, start] : [ROOT]
+  })
   const [accountsOpen, setAccountsOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [vaults, setVaults] = useState(false)
@@ -74,7 +84,8 @@ function Chooser() {
     if (!ok) return
     setPrefs({ saveTo: here })
     // The upload carries on in the background; the person goes back to what they were doing.
-    BackHandler.exitApp()
+    if (exitAfterSave()) BackHandler.exitApp()
+    else router.back()
   }
 
   return (
@@ -146,7 +157,7 @@ function Chooser() {
       {vaults && (
         <VaultPickSheet
           title="Save to a vault"
-          intake={{ files: files.map((f) => ({ path: f.name, size: f.size, uri: f.uri, mime: f.mime })), exit: true }}
+          intake={{ files: files.map((f) => ({ path: f.name, size: f.size, uri: f.uri, mime: f.mime })), exit: exitAfterSave() }}
           onClose={() => setVaults(false)}
         />
       )}

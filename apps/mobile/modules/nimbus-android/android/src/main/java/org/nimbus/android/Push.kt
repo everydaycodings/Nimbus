@@ -200,6 +200,8 @@ class PushWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
       // An answer we can't read: the next push or poll tries afresh.
       Log.w("NimbusPush", "unreadable answer for ${a.id}: $e")
     }
+    // Something changed on the server, or it's the regular poll: widgets catch up too.
+    if (endpoint == null) Widgets.refresh(ctx)
     if (again && runAttemptCount < 3) Result.retry() else Result.success()
   }
 }

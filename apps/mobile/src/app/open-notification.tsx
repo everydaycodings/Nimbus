@@ -12,7 +12,7 @@ import { openPreview } from "@/lib/preview-session"
 import { folderHref } from "@/lib/tab"
 
 // Where tapping an Android notification lands: nimbus://open-notification?account=…&kind=…&href=…&node=…
-// (built by Push.kt). Switches to that account, then goes where the bell would.
+// (built by Push.kt; widgets and share-sheet folders use it too, with kind=widget). Switches to that account, then goes where the bell would.
 export default function OpenNotification() {
   const p = useLocalSearchParams<{ account?: string; kind?: string; href?: string; node?: string }>()
   const { accounts, ready, switchTo } = useAccounts()
@@ -24,7 +24,7 @@ export default function OpenNotification() {
     started.current = true
     const account = accounts.find((a) => a.id === p.account)
     if (!account) {
-      snack({ text: "That notification was for an account that's no longer on this phone." })
+      snack({ text: "That was for an account that's no longer on this phone." })
       return void router.replace("/")
     }
     ;(async () => {

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Attached to MainActivity by plugins/android-extras.js. The package and class are the app's, not this module's. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="upload" android:icon="@drawable/ic_shortcut_upload"
+        android:shortcutShortLabel="@string/nimbus_shortcut_upload" android:shortcutLongLabel="@string/nimbus_shortcut_upload_long">
+        <intent android:action="android.intent.action.VIEW" android:data="nimbus://quick?do=upload"
+            android:targetPackage="org.nimbus.drive" android:targetClass="org.nimbus.drive.MainActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="scan" android:icon="@drawable/ic_shortcut_scan"
+        android:shortcutShortLabel="@string/nimbus_shortcut_scan" android:shortcutLongLabel="@string/nimbus_shortcut_scan_long">
+        <intent android:action="android.intent.action.VIEW" android:data="nimbus://quick?do=scan"
+            android:targetPackage="org.nimbus.drive" android:targetClass="org.nimbus.drive.MainActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="search" android:icon="@drawable/ic_shortcut_search"
+        android:shortcutShortLabel="@string/nimbus_shortcut_search" android:shortcutLongLabel="@string/nimbus_shortcut_search_long">
+        <intent android:action="android.intent.action.VIEW" android:data="nimbus://quick?do=search"
+            android:targetPackage="org.nimbus.drive" android:targetClass="org.nimbus.drive.MainActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="photo" android:icon="@drawable/ic_shortcut_camera"
+        android:shortcutShortLabel="@string/nimbus_shortcut_photo" android:shortcutLongLabel="@string/nimbus_shortcut_photo_long">
+        <intent android:action="android.intent.action.VIEW" android:data="nimbus://quick?do=photo"
+            android:targetPackage="org.nimbus.drive" android:targetClass="org.nimbus.drive.MainActivity" />
+    </shortcut>
+    <!-- Direct share: ShareTargets.kt publishes folders under this category. -->
+    <share-target android:targetClass="org.nimbus.drive.MainActivity">
+        <data android:mimeType="*/*" />
+        <category android:name="org.nimbus.drive.category.SAVE_TO_FOLDER" />
+    </share-target>
+</shortcuts>
