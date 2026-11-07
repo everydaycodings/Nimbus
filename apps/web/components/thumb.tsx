@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 
 import { previewKind, thumbable } from "@/lib/file-rules"
+import { linkBase } from "@/lib/file-types"
 import type { Item } from "@/lib/files"
 import { ensureThumb } from "@/lib/thumbs"
 import { cn } from "@/lib/utils"
@@ -37,7 +38,7 @@ export function Thumb({
   const src =
     v && rev
       ? link
-        ? `/s/${link}/thumb/${item.id}?r=${rev}`
+        ? `${linkBase(link)}/thumb/${item.id}?r=${rev}`
         : `/api/files/${item.id}/thumb?v=${v}&r=${rev}`
       : null
   const has = Boolean(src) && broken !== src

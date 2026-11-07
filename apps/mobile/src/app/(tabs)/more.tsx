@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from "expo-router"
 import { formatBytes } from "@nimbus/shared/file-rules"
-import { ArrowCircleDown, ArrowSquareOut, Broom, CaretRight, ClockCounterClockwise, CloudArrowUp, Fingerprint, FolderOpen, FolderSimple as FolderSync, GearSix, Info, Lock, Tag, Trash, UploadSimple } from "phosphor-react-native"
+import { ArrowCircleDown, ArrowSquareOut, Broom, CaretRight, ClockCounterClockwise, CloudArrowUp, Fingerprint, FolderOpen, FolderSimple as FolderSync, GearSix, Info, Lock, PaperPlaneTilt, Tag, Trash, UploadSimple } from "phosphor-react-native"
 import * as LocalAuthentication from "expo-local-authentication"
 import { useCallback, useEffect, useState } from "react"
 import { ActivityIndicator, Linking, Pressable, ScrollView, View } from "react-native"
@@ -19,6 +19,7 @@ import { useApi, useMe } from "@/lib/files"
 import { useOffline } from "@/lib/offline"
 import { useQueue } from "@/lib/offline-queue"
 import { usePrefs } from "@/lib/prefs"
+import { useSent } from "@/lib/sent"
 import { homeHref } from "@/lib/tab"
 import { vaultNative } from "@/lib/vault"
 import { useTransfers } from "@/lib/transfers"
@@ -35,6 +36,7 @@ export default function More() {
   const backup = useBackup()
   const offline = useOffline(id)
   const queue = useQueue(id)
+  const sent = useSent()
   useFocusEffect(useCallback(() => setCached(cacheSize(id)), [id]))
   const [locked, setLocked] = useState(false)
   useEffect(() => void lockSetting().then((s) => setLocked(s === "on")), [])
@@ -90,6 +92,7 @@ export default function More() {
               }
               onPress={() => router.push("/offline")}
             />
+            {sent.data?.options.enabled !== false && <Row label="Transfers" detail="Send files by email or link" icon={<PaperPlaneTilt size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/transfers")} />}
             <Row label="Recent" icon={<ClockCounterClockwise size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.navigate(homeHref("(recent)"))} />
             <Row label="Trash" icon={<Trash size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/trash")} />
             <Row label="Tags" icon={<Tag size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/tags")} />

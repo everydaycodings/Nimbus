@@ -157,6 +157,37 @@ object Vault {
   fun newFileKey(vk: ByteArray): Pair<ByteArray, String> = random(32).let { it to seal(vk, it) }
   fun openFileKey(vk: ByteArray, wrapped: String) = open(vk, wrapped)
 
+  // ---- Share links: the format is written up above LinkFile in packages/shared/vault-crypto.ts ----
+  // A link key (LK) is 32 random bytes. A file's key for the link is seal(LK, FK), the manifest is
+  // seal(LK, JSON), and LK rides in the URL's # as unpadded base64url (or, in passphrase mode, is
+  // sealed by Argon2id(passphrase), which is exactly what `rewrap` does for any key).
+  fun b64url(b: ByteArray): String = Base64.getUrlEncoder().withoutPadding().encodeToString(b)
+  fun unb64url(s: String): ByteArray = Base64.getUrlDecoder().decode(s)
+  fun wrapForLink(lk: ByteArray, fk: ByteArray) = seal(lk, fk)
+  fun unwrapFromLink(lk: ByteArray, wrapped: String) = open(lk, wrapped)
+  fun sealManifest(lk: ByteArray, json: String) = seal(lk, json.toByteArray(Charsets.UTF_8))
+  fun openManifest(lk: ByteArray, sealed: String) = String(open(lk, sealed), Charsets.UTF_8)
+
+  class Link(val key: String?, val manifest: String, val salt: String?, val t: Int?, val m: Int?, val wrappedLinkKey: String?)
+
+  // Re-wraps each file's key (opened with the vault key) under a new link key. `files` carry
+  // path, size, mime, versionId and encKey; the manifest has fileKey in place of encKey.
+  fun makeLink(vk: ByteArray, files: List<JSONObject>, passphrase: String?): Link {
+    val lk = random(32)
+    val arr = org.json.JSONArray()
+    for (f in files) {
+      val fk = openFileKey(vk, f.getString("encKey"))
+      arr.put(JSONObject().put("path", f.getString("path")).put("size", f.getLong("size"))
+        .put("mime", if (f.isNull("mime")) JSONObject.NULL else f.getString("mime"))
+        .put("versionId", f.getString("versionId")).put("fileKey", wrapForLink(lk, fk)))
+      fk.fill(0)
+    }
+    val sealed = sealManifest(lk, arr.toString())
+    if (passphrase == null) return Link(b64url(lk), sealed, null, null, null, null)
+    val w = rewrap(lk, passphrase)
+    return Link(null, sealed, w.salt, w.t, w.m, w.wrapped)
+  }
+
   private fun chunkCount(size: Long) = maxOf(1L, (size + CHUNK - 1) / CHUNK)
   fun cipherSize(size: Long) = size + TAG * chunkCount(size)
   fun plainSize(cipher: Long) = cipher - TAG * maxOf(1L, (cipher + CIPHER_CHUNK - 1) / CIPHER_CHUNK)

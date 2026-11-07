@@ -1,0 +1,33 @@
+appId: org.nimbus.drive
+name: transfer
+# More → Transfers → New transfer with app.ts from Nimbus, a unique title; send, open it, revoke it.
+---
+- runScript:
+    file: ../stamp.js
+- launchApp
+- extendedWaitUntil: { visible: "Search in Nimbus", timeout: 20000 }
+- tapOn: "More"
+- tapOn: "Transfers"
+- extendedWaitUntil: { visible: "Transfers", timeout: 10000 }
+- tapOn: "New transfer"
+- tapOn: "Add from Nimbus"
+- scrollUntilVisible: { element: "Select app.ts", direction: DOWN, centerElement: true }
+- tapOn: "Select app.ts"
+- tapOn: "Add 1 item"
+- extendedWaitUntil: { visible: "Remove app.ts", timeout: 10000 }
+- tapOn: "Title (optional)"
+- inputText: "mae-tr-${output.stamp}"
+- hideKeyboard
+- scrollUntilVisible: { element: "Send", direction: DOWN }
+- tapOn: "Send"
+- extendedWaitUntil: { visible: "Transfer sent", timeout: 30000 }
+- assertVisible: "Copy link"
+- tapOn: "Done"
+- tapOn: "mae-tr-${output.stamp}"
+- extendedWaitUntil: { visible: "Downloaded by…", timeout: 10000 }
+- assertVisible: "Active"
+- tapOn: "Revoke"
+# The dialog hides the row underneath, so its button is the only "Revoke" left.
+- extendedWaitUntil: { visible: "Revoke this transfer?", timeout: 5000 }
+- tapOn: "Revoke"
+- extendedWaitUntil: { visible: "Revoked", timeout: 10000 }

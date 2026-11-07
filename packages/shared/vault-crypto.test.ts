@@ -10,6 +10,15 @@ import {
   decName,
   decryptStream,
   encName,
+  exportLinkKey,
+  importLinkKey,
+  linkKeyUnwrap,
+  linkKeyWrap,
+  newLinkKey,
+  openManifest,
+  sealManifest,
+  unwrapFromLink,
+  wrapForLink,
   nameTag,
   newFileKey,
   newVault,
@@ -158,4 +167,39 @@ test("name tags ignore case and differ between vaults", async () => {
   assert.equal(await nameTag(a, "Taxes.PDF"), await nameTag(a, "taxes.pdf"))
   assert.notEqual(await nameTag(a, "taxes.pdf"), await nameTag(a, "taxes.pd"))
   assert.notEqual(await nameTag(a, "taxes.pdf"), await nameTag(b, "taxes.pdf"))
+})
+
+test("a share link carries file keys and a manifest, never the vault key", async () => {
+  const { vk } = await newVault("pw", FAST)
+  const { fk } = await newFileKey(vk)
+  const pt = plain(CHUNK + 5)
+  const ct = await encryptAll(fk, pt)
+
+  const lk = await newLinkKey()
+  const fileKey = await wrapForLink(lk, fk)
+  const manifest = [
+    { path: "a/b.txt", size: pt.length, mime: "text/plain", versionId: "v1", fileKey },
+  ]
+  const sealed = await sealManifest(lk, manifest)
+
+  // The recipient has only the # part and the sealed manifest.
+  const lk2 = await importLinkKey(await exportLinkKey(lk))
+  assert.match(await exportLinkKey(lk), /^[\w-]{43}$/)
+  const [f] = await openManifest(lk2, sealed)
+  assert.deepEqual({ ...f, fileKey: "" }, { ...manifest[0], fileKey: "" })
+  assert.deepEqual(await decryptAll(await unwrapFromLink(lk2, f.fileKey), ct), pt)
+
+  // Another link's key opens nothing.
+  const other = await newLinkKey()
+  await assert.rejects(openManifest(other, sealed))
+  await assert.rejects(unwrapFromLink(other, fileKey))
+  await assert.rejects(importLinkKey("short"))
+})
+
+test("passphrase mode wraps the link key, and a wrong passphrase fails", async () => {
+  const lk = await newLinkKey()
+  const w = await linkKeyWrap("hunter2 pässword", lk, FAST)
+  const back = await linkKeyUnwrap("hunter2 pässword", w.salt, w.wrapped, w.kdf)
+  assert.equal(await exportLinkKey(back), await exportLinkKey(lk))
+  await assert.rejects(linkKeyUnwrap("hunter3", w.salt, w.wrapped, w.kdf))
 })

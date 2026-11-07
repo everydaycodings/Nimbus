@@ -2,40 +2,41 @@
 // re-exports them next to the icons.
 
 export const DOC =
-  /\.(docx?|odt|rtf|txt|xlsx?|ods|csv|pptx?|odp|pages|numbers|key)$/i
+  /\.(docx?|odt|rtf|txt|xlsx?|ods|csv|pptx?|odp|pages|numbers|key)$/i;
 // A known extension decides a file's kind before its stored mime type, so .ts
 // (video/mp2t) isn't counted as video.
-export const IMAGE = /\.(jpe?g|png|gif|webp|avif|heic|heif|bmp|svg|tiff?|ico)$/i
-export const VIDEO = /\.(mp4|m4v|mov|webm|mkv|avi|wmv|flv|mpe?g|3gp|ogv)$/i
-export const AUDIO = /\.(mp3|m4a|aac|wav|flac|ogg|oga|opus|wma|aiff?)$/i
+export const IMAGE =
+  /\.(jpe?g|png|gif|webp|avif|heic|heif|bmp|svg|tiff?|ico)$/i;
+export const VIDEO = /\.(mp4|m4v|mov|webm|mkv|avi|wmv|flv|mpe?g|3gp|ogv)$/i;
+export const AUDIO = /\.(mp3|m4a|aac|wav|flac|ogg|oga|opus|wma|aiff?)$/i;
 
 // Postgres regexes (`~*`) for the Photos timeline: a photo or video by name, or by mime type
 // when the name has no known extension, as `typeKeyOf` does it (.ts is video/mp2t but not a video).
-export const MEDIA_NAME_RE = `(${IMAGE.source})|(${VIDEO.source})`
-export const MEDIA_MIME_RE = "^(image|video)/"
-export const NOT_MEDIA_NAME_RE = "\\.(ts|mts|m2ts)$"
+export const MEDIA_NAME_RE = `(${IMAGE.source})|(${VIDEO.source})`;
+export const MEDIA_MIME_RE = "^(image|video)/";
+export const NOT_MEDIA_NAME_RE = "\\.(ts|mts|m2ts)$";
 
-const UNITS = ["B", "KB", "MB", "GB", "TB"]
+const UNITS = ["B", "KB", "MB", "GB", "TB"];
 
 export function formatBytes(n: number) {
-  let i = 0
+  let i = 0;
   while (n >= 1024 && i < UNITS.length - 1) {
-    n /= 1024
-    i++
+    n /= 1024;
+    i++;
   }
-  return `${i ? n.toFixed(n < 10 ? 1 : 0) : n} ${UNITS[i]}`
+  return `${i ? n.toFixed(n < 10 ? 1 : 0) : n} ${UNITS[i]}`;
 }
 
 export const TEXT =
-  /\.(txt|log|ini|conf|cfg|env|properties|c|h|cc|cpp|hpp|cs|css|scss|less|go|html?|java|js|mjs|cjs|json|jsx|kt|lua|php|pl|py|r|rb|rs|scala|sh|bash|zsh|sql|swift|toml|ts|tsx|vue|svelte|xml|ya?ml|graphql|proto|tf|dart|gradle|bat|ps1|diff|patch)$|(^|\/)(dockerfile|makefile|readme|license)$/i
+  /\.(txt|log|ini|conf|cfg|env|properties|c|h|cc|cpp|hpp|cs|css|scss|less|go|html?|java|js|mjs|cjs|json|jsx|kt|lua|php|pl|py|r|rb|rs|scala|sh|bash|zsh|sql|swift|toml|ts|tsx|vue|svelte|xml|ya?ml|graphql|proto|tf|dart|gradle|bat|ps1|diff|patch)$|(^|\/)(dockerfile|makefile|readme|license)$/i;
 
 // How much of a file a preview reads. Past HIGHLIGHT_MAX, code shows plain:
 // highlighting megabytes stalls the page.
-export const TEXT_MAX = 2 * 1024 ** 2
-export const HIGHLIGHT_MAX = 256 * 1024
-export const CSV_MAX = 5 * TEXT_MAX
-export const OFFICE_MAX = 50 * 1024 ** 2
-export const PREVIEW_ROWS = 1000
+export const TEXT_MAX = 2 * 1024 ** 2;
+export const HIGHLIGHT_MAX = 256 * 1024;
+export const CSV_MAX = 5 * TEXT_MAX;
+export const OFFICE_MAX = 50 * 1024 ** 2;
+export const PREVIEW_ROWS = 1000;
 
 export type PreviewKind =
   | "image"
@@ -48,87 +49,87 @@ export type PreviewKind =
   | "zip"
   | "docx"
   | "sheet"
-  | "pptx"
+  | "pptx";
 
 // Browsers label TypeScript as MPEG transport stream video.
 // ponytail: real .ts video recordings show as code; sniff the bytes if that matters.
 export const mimeOf = (mime: string | null, name: string) =>
-  /\.(ts|tsx|mts|cts)$/i.test(name) ? "text/typescript" : (mime ?? "")
+  /\.(ts|tsx|mts|cts)$/i.test(name) ? "text/typescript" : (mime ?? "");
 
 // Which viewer opens a file, or null when the browser can't show it.
 export function previewKind(
   mime: string | null,
-  name: string
+  name: string,
 ): PreviewKind | null {
-  const m = mimeOf(mime, name)
-  if (m.startsWith("image/")) return "image"
-  if (m.startsWith("video/")) return "video"
-  if (m.startsWith("audio/")) return "audio"
-  if (m === "application/pdf" || /\.pdf$/i.test(name)) return "pdf"
-  if (/\.(md|markdown)$/i.test(name)) return "markdown"
-  if (/\.(csv|tsv)$/i.test(name)) return "csv"
-  if (/\.zip$/i.test(name)) return "zip"
-  if (/\.docx$/i.test(name)) return "docx"
-  if (/\.(xlsx|xlsm|xls|ods)$/i.test(name)) return "sheet"
-  if (/\.pptx$/i.test(name)) return "pptx"
+  const m = mimeOf(mime, name);
+  if (m.startsWith("image/")) return "image";
+  if (m.startsWith("video/")) return "video";
+  if (m.startsWith("audio/")) return "audio";
+  if (m === "application/pdf" || /\.pdf$/i.test(name)) return "pdf";
+  if (/\.(md|markdown)$/i.test(name)) return "markdown";
+  if (/\.(csv|tsv)$/i.test(name)) return "csv";
+  if (/\.zip$/i.test(name)) return "zip";
+  if (/\.docx$/i.test(name)) return "docx";
+  if (/\.(xlsx|xlsm|xls|ods)$/i.test(name)) return "sheet";
+  if (/\.pptx$/i.test(name)) return "pptx";
   if (
     TEXT.test(name) ||
     m.startsWith("text/") ||
     /json|xml|javascript|yaml|toml/.test(m)
   )
-    return "text"
-  return null
+    return "text";
+  return null;
 }
 
 export const UUID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Temporary files apps make while saving over WebDAV (GNOME's
 // .goutputstream-*, LibreOffice's .~lock.*# and lu*.tmp, Office's ~$*), swept
 // after a day. Postgres reads the same patterns with ~*.
-export const TEMP = String.raw`^(\.goutputstream-.*|\.~lock\..*#|~\$.*|lu\w+\.tmp)$`
+export const TEMP = String.raw`^(\.goutputstream-.*|\.~lock\..*#|~\$.*|lu\w+\.tmp)$`;
 // Those plus the ._name files macOS keeps beside each file (Finder tags and
 // other metadata; Finder errors if they vanish). Kept so the apps work, hidden
 // on the web, and never versioned.
-export const JUNK = String.raw`^(\._.+|\.goutputstream-.*|\.~lock\..*#|~\$.*|lu\w+\.tmp)$`
-export const isJunk = (name: string) => new RegExp(JUNK, "i").test(name)
+export const JUNK = String.raw`^(\._.+|\.goutputstream-.*|\.~lock\..*#|~\$.*|lu\w+\.tmp)$`;
+export const isJunk = (name: string) => new RegExp(JUNK, "i").test(name);
 
 // Folder metadata Macs and Windows write everywhere and never need back.
 export const isDropped = (name: string) =>
-  /^(\.DS_Store|Thumbs\.db|desktop\.ini)$/i.test(name)
+  /^(\.DS_Store|Thumbs\.db|desktop\.ini)$/i.test(name);
 
 // Files Collabora opens when an admin has set it up.
 export const OFFICE_EXT =
-  /\.(docx?|dotx?|odt|ott|rtf|xlsx?|xlsm|ods|ots|pptx?|ppsx?|odp|otp|odg)$/i
+  /\.(docx?|dotx?|odt|ott|rtf|xlsx?|xlsm|ods|ots|pptx?|ppsx?|odp|otp|odg)$/i;
 
 // Kinds the browser can draw a thumbnail of.
 export const thumbable = (k: PreviewKind | null) =>
-  k !== null && k !== "zip" && k !== "docx" && k !== "sheet"
+  k !== null && k !== "zip" && k !== "docx" && k !== "sheet";
 
 // Lowercase, without the dot: "a.JPG" → "jpg". Dotfiles like ".env" have none.
 export function extOf(name: string) {
-  const dot = name.lastIndexOf(".")
-  return dot > 0 ? name.slice(dot + 1).toLowerCase() : ""
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
 }
 
 // The lowest free "name (n).ext". `taken` holds lowercased names.
 export function freeName(name: string, taken: Set<string>, folder = false) {
-  const dot = folder ? -1 : name.lastIndexOf(".")
+  const dot = folder ? -1 : name.lastIndexOf(".");
   const [base, ext] =
-    dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""]
+    dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
   for (let n = 1; ; n++) {
-    const next = `${base} (${n})${ext}`
-    if (!taken.has(next.toLowerCase())) return next
+    const next = `${base} (${n})${ext}`;
+    if (!taken.has(next.toLowerCase())) return next;
   }
 }
 
 // "nimbus_files_2026-10-29_14-30-05.zip", in local time ("sv-SE" gives ISO-like order).
 export const zipName = (base = "nimbus_files") =>
-  `${base}_${new Date().toLocaleString("sv-SE").replace(" ", "_").replaceAll(":", "-")}.zip`
+  `${base}_${new Date().toLocaleString("sv-SE").replace(" ", "_").replaceAll(":", "-")}.zip`;
 
 const CODE =
-  /\.(c|cpp|cs|css|go|h|html|java|js|json|jsx|kt|md|php|py|rb|rs|sh|sql|swift|toml|ts|tsx|xml|ya?ml)$/i
-const ARCHIVE = /\.(zip|tar|gz|tgz|bz2|xz|7z|rar)$/i
+  /\.(c|cpp|cs|css|go|h|html|java|js|json|jsx|kt|md|php|py|rb|rs|sh|sql|swift|toml|ts|tsx|xml|ya?ml)$/i;
+const ARCHIVE = /\.(zip|tar|gz|tgz|bz2|xz|7z|rar)$/i;
 
 export const TYPE_KEYS = [
   "folder",
@@ -140,29 +141,82 @@ export const TYPE_KEYS = [
   "code",
   "archive",
   "other",
-] as const
-export type TypeKey = (typeof TYPE_KEYS)[number]
+] as const;
+export type TypeKey = (typeof TYPE_KEYS)[number];
 
 // The kind the file lists group by ("Type" filter). Known extensions first, the
 // stored mime type only for the rest (as getUsage).
 export function typeKeyOf(
   kind: "file" | "folder",
   mime: string | null,
-  name: string
+  name: string,
 ): TypeKey {
-  if (kind === "folder") return "folder"
-  if (IMAGE.test(name)) return "image"
-  if (VIDEO.test(name)) return "video"
-  if (AUDIO.test(name)) return "audio"
-  if (/\.pdf$/i.test(name)) return "pdf"
-  if (CODE.test(name)) return "code"
-  if (ARCHIVE.test(name)) return "archive"
-  if (DOC.test(name)) return "doc"
-  const m = mimeOf(mime, name)
-  if (m.startsWith("image/")) return "image"
-  if (m.startsWith("video/")) return "video"
-  if (m.startsWith("audio/")) return "audio"
-  if (m === "application/pdf") return "pdf"
-  if (m.startsWith("text/")) return "doc"
-  return "other"
+  if (kind === "folder") return "folder";
+  if (IMAGE.test(name)) return "image";
+  if (VIDEO.test(name)) return "video";
+  if (AUDIO.test(name)) return "audio";
+  if (/\.pdf$/i.test(name)) return "pdf";
+  if (CODE.test(name)) return "code";
+  if (ARCHIVE.test(name)) return "archive";
+  if (DOC.test(name)) return "doc";
+  const m = mimeOf(mime, name);
+  if (m.startsWith("image/")) return "image";
+  if (m.startsWith("video/")) return "video";
+  if (m.startsWith("audio/")) return "audio";
+  if (m === "application/pdf") return "pdf";
+  if (m.startsWith("text/")) return "doc";
+  return "other";
+}
+
+// File requests: the kinds a link may take. Entries are these keys or ".ext".
+// `label` for checkboxes, `word` mid-sentence ("PDFs or images").
+export const REQUEST_TYPES = {
+  images: { label: "Images", word: "images", re: IMAGE },
+  pdf: { label: "PDFs", word: "PDFs", re: /\.pdf$/i },
+  docs: { label: "Documents", word: "documents", re: DOC },
+  video: { label: "Videos", word: "videos", re: VIDEO },
+  audio: { label: "Audio", word: "audio files", re: AUDIO },
+} as const;
+
+export function typeAllowed(
+  name: string,
+  allowed: string[] | null | undefined,
+) {
+  if (!allowed?.length) return true;
+  const lower = name.toLowerCase();
+  return allowed.some((a) =>
+    a.startsWith(".")
+      ? lower.endsWith(a.toLowerCase())
+      : (REQUEST_TYPES as Record<string, { re: RegExp }>)[a]?.re.test(name),
+  );
+}
+
+// The same list in words: "images, PDFs or .psd".
+export function typesLabel(allowed: string[]) {
+  const words = allowed.map(
+    (a) => (REQUEST_TYPES as Record<string, { word: string }>)[a]?.word ?? a,
+  );
+  return words.length > 1
+    ? `${words.slice(0, -1).join(", ")} or ${words.at(-1)}`
+    : (words[0] ?? "");
+}
+
+// For <input accept>: extensions taken from each category's regex.
+export function acceptOf(allowed: string[] | null | undefined) {
+  if (!allowed?.length) return undefined;
+  return allowed
+    .flatMap((a) => {
+      if (a.startsWith(".")) return [a];
+      const re = (REQUEST_TYPES as Record<string, { re: RegExp }>)[a]?.re;
+      const inner = re?.source.match(/\\\.\((.*)\)\$/)?.[1];
+      if (!inner) return a === "pdf" ? [".pdf"] : [];
+      // Expand "jpe?g" to .jpg and .jpeg; drop other optional bits.
+      return inner
+        .split("|")
+        .flatMap((x) =>
+          x.includes("?") ? [x.replace(/.\?/, ""), x.replace("?", "")] : [x],
+        )
+        .map((x) => `.${x}`);
+    })
+    .join(",");
 }

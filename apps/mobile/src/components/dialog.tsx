@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react"
-import { KeyboardAvoidingView, Modal, Pressable, View } from "react-native"
+import { KeyboardAvoidingView, Modal, Pressable, ScrollView, View } from "react-native"
 
 import { Button, Field, Text } from "@/components/ui"
 import { c, radius } from "@/lib/theme"
@@ -11,10 +11,13 @@ export function Frame({ onClose, title, children }: { onClose: () => void; title
         <Pressable style={{ position: "absolute", inset: 0 }} accessibilityLabel="Close" onPress={onClose} />
         <View
           accessibilityViewIsModal
-          style={{ alignSelf: "center", width: "100%", maxWidth: 420, gap: 16, padding: 24, backgroundColor: c.card, borderColor: c.border, borderWidth: 1, borderRadius: radius.sheet }}
+          style={{ alignSelf: "center", width: "100%", maxWidth: 420, maxHeight: "100%", gap: 16, padding: 24, backgroundColor: c.card, borderColor: c.border, borderWidth: 1, borderRadius: radius.sheet }}
         >
           <Text variant="title">{title}</Text>
-          {children}
+          {/* Scrolls when a tall dialog meets the keyboard, so its buttons stay reachable; a button tap works with the keyboard up. */}
+          <ScrollView style={{ flexGrow: 0 }} contentContainerStyle={{ gap: 16 }} keyboardShouldPersistTaps="handled">
+            {children}
+          </ScrollView>
         </View>
       </KeyboardAvoidingView>
     </Modal>

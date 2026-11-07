@@ -142,6 +142,12 @@ nothing to return answers `200 {}`.
 | PATCH | `/links/{shareId}` | `UpdateLinkRequest` | `{}` |
 | DELETE | `/links/{shareId}` | | `{}` |
 | GET | `/links/{shareId}/events` | `?limit=` (<=500, 20) | `LinkEventsResponse` |
+| GET | `/transfers` | | `TransfersResponse` (sent transfers, newest first, and `options` from the admin) |
+| POST | `/transfers` | `CreateTransferRequest` | `CreateTransferResponse` (a draft; copies `nodeIds` server-side) |
+| GET | `/transfers/{id}` | | `TransferResponse` (with the access log) |
+| POST | `/transfers/{id}/files` | `TransferFileTokenRequest` | `TransferFileTokenResponse` (tus `token`; then `POST /uploads/finish`) |
+| POST | `/transfers/{id}/finalise` | | `{ transfer }` (opens it, sends the emails; idempotent) |
+| POST | `/transfers/{id}/revoke` | | `{}` |
 | POST | `/items/{id}/ownership` | `OfferOwnershipRequest` | `{}` |
 | DELETE | `/items/{id}/ownership` | cancel my offer | `{}` |
 | POST | `/items/{id}/ownership/answer` | `AnswerOwnershipRequest` | `{}` |

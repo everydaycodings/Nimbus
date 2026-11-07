@@ -22,12 +22,14 @@ import {
   nodes,
   settings,
   shares,
+  transferFiles,
+  transfers,
   user,
   vaults,
 } from "@/lib/db/schema"
 import { notify, notifyEdit } from "@/lib/notify"
 import { checkStorage, release } from "@/lib/quota"
-import { UUID, zipName } from "@/lib/file-rules"
+import { UUID, formatBytes, typeAllowed, zipName } from "@/lib/file-rules"
 import { enqueueDerive } from "@/lib/redis"
 import { deleteKeys, getText, headSize } from "@/lib/s3"
 import {
@@ -247,6 +249,8 @@ type Finished = {
   nodeId?: string
   versionId?: string
   vault?: boolean
+  // A file added to a transfer: `nodeId` is its transfer_files id.
+  transfer?: boolean
 }
 
 // A public link that still takes uploads, with what notifications need.
@@ -257,6 +261,8 @@ export async function dropLink(shareId: string) {
       nodeId: shares.nodeId,
       name: shares.name,
       cap: shares.uploadCapBytes,
+      maxFileBytes: shares.maxFileBytes,
+      allowedTypes: shares.allowedTypes,
       createdBy: shares.createdBy,
     })
     .from(shares)
@@ -277,17 +283,39 @@ export async function dropLink(shareId: string) {
 
 // Bytes a file-drop link has taken in so far.
 export async function droppedBytes(shareId: string) {
+  return (await dropped(shareId)).bytes
+}
+
+// Bytes and files a file-drop link has taken in so far.
+export async function dropped(shareId: string) {
   const [row] = await db
-    .select({ n: sql<string>`coalesce(sum(${fileVersions.size}), 0)::text` })
+    .select({
+      n: sql<string>`coalesce(sum(${fileVersions.size}), 0)::text`,
+      files: sql<number>`count(*)::int`,
+    })
     .from(fileVersions)
     .where(eq(fileVersions.viaShareId, shareId))
-  return Number(row?.n ?? 0)
+  return { bytes: Number(row?.n ?? 0), files: row?.files ?? 0 }
 }
 
 // Whoever the token names may still add to its folder: the owner, an editor
 // who still is one, or a link that still takes uploads into that folder or
 // one inside it.
 export async function uploaderMayAdd(t: UploadToken) {
+  if (t.x) {
+    const [open] = await db
+      .select({ id: transfers.id })
+      .from(transfers)
+      .where(
+        and(
+          eq(transfers.id, t.x),
+          eq(transfers.senderId, t.u),
+          eq(transfers.draft, true),
+          isNull(transfers.revokedAt)
+        )
+      )
+    return Boolean(open) && (await isActiveUser(t.u))
+  }
   if (!(await isActiveUser(t.u)) || !(await isOpenFolder(t.u, t.p, t.v)))
     return false
   if (t.v) return !t.b && !t.s
@@ -412,12 +440,26 @@ export async function finishTusUpload(
     if (r.nodeId) await checkStorage(token.u)
     return r
   }
+  if (token.x) {
+    const r = await finishTransferUpload(token, meta, key, size, uploadId)
+    await release(token.u, key)
+    if (r.transfer) await checkStorage(token.u)
+    return r
+  }
   const names = splitPath(meta.path)
   if (!names) return { error: "That upload has an invalid name." }
   if (!(await uploaderMayAdd(token)))
     return { error: "The folder for that upload is gone." }
 
   const name = names.pop()!
+  // A file request's limits, again: the token was asked for with a name and size.
+  if (token.s) {
+    const link = await dropLink(token.s)
+    if (link && !typeAllowed(name, link.allowedTypes))
+      return { error: "This link doesn't take that kind of file." }
+    if (link?.maxFileBytes && size > link.maxFileBytes)
+      return { error: `Files here can be up to ${formatBytes(link.maxFileBytes)}.` }
+  }
   const mime = meta.filetype || null
   const version = {
     s3Key: key,
@@ -482,6 +524,47 @@ export async function finishTusUpload(
     }
   }
   return result
+}
+
+// A device file for a draft transfer: its own object, kept until the transfer
+// expires. Idempotent through transfer_files.upload_id.
+// ponytail: no thumbnail for these (the worker only derives them for versions); add one if the recipient page needs it.
+async function finishTransferUpload(
+  token: UploadToken,
+  meta: Record<string, string>,
+  key: string,
+  size: number,
+  uploadId: string
+): Promise<Finished> {
+  const names = splitPath(meta.path)
+  if (!names) return { error: "That upload has an invalid name." }
+  const row = async () =>
+    (
+      await db
+        .select({ id: transferFiles.id })
+        .from(transferFiles)
+        .where(eq(transferFiles.uploadId, uploadId))
+    )[0]
+  const prior = await row()
+  if (prior) return { nodeId: prior.id, transfer: true }
+  if (!(await uploaderMayAdd(token)))
+    return { error: "That transfer is closed to new files." }
+  await db
+    .insert(transferFiles)
+    .values({
+      transferId: token.x!,
+      name: names.join("/"),
+      size,
+      mime: meta.filetype || null,
+      s3Key: key,
+      uploadId,
+    })
+    .onConflictDoNothing()
+  const [file] = await db
+    .select({ id: transferFiles.id })
+    .from(transferFiles)
+    .where(eq(transferFiles.uploadId, uploadId))
+  return { nodeId: file.id, transfer: true }
 }
 
 // Vault files: the name, its tag and the file key arrive sealed, folders were

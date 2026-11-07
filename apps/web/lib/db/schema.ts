@@ -276,6 +276,14 @@ export const shares = pgTable(
     allowUpload: boolean("allow_upload").notNull().default(false),
     // Total bytes a file-drop link takes in. Null: only the owner's quota.
     uploadCapBytes: bigint("upload_cap_bytes", { mode: "number" }),
+    // File requests: what visitors read, what they must give, what they may send.
+    instructions: text("instructions"),
+    requireEmail: boolean("require_email").notNull().default(false),
+    perVisitorFolder: boolean("per_visitor_folder").notNull().default(false),
+    maxFileBytes: bigint("max_file_bytes", { mode: "number" }),
+    maxFiles: integer("max_files"),
+    // Categories (images, pdf, docs, video, audio) and ".ext" entries. Null: any.
+    allowedTypes: text("allowed_types").array(),
     viewCount: integer("view_count").notNull().default(0),
     downloadCount: integer("download_count").notNull().default(0),
     lastOpenedAt: timestamp("last_opened_at", { withTimezone: true }),
@@ -311,7 +319,7 @@ export const linkEvents = pgTable(
       .notNull()
       .references(() => shares.id, { onDelete: "cascade" }),
     kind: text("kind")
-      .$type<"view" | "download" | "upload" | "unlock_fail">()
+      .$type<"view" | "download" | "upload" | "unlock_fail" | "confirm">()
       .notNull(),
     ip: text("ip"),
     ua: text("ua"),
@@ -540,6 +548,8 @@ export const NOTIFICATION_KINDS = [
   "file_drop",
   "edits",
   "transfer",
+  // Someone downloaded a Transfer you sent (labelled "Transfers").
+  "transfer_download",
   "signup_request",
   "service_health",
   "backup",
@@ -660,6 +670,13 @@ export const settings = pgTable(
     requireLinkPassword: boolean("require_link_password")
       .notNull()
       .default(false),
+    // Transfer (send copies of files by link or email) and Vault share links.
+    transfersEnabled: boolean("transfers_enabled").notNull().default(true),
+    vaultLinksEnabled: boolean("vault_links_enabled").notNull().default(true),
+    // Longest a transfer may last, in days (the picker offers 1/7/30 up to this). Null: 30.
+    transferMaxDays: integer("transfer_max_days"),
+    // Biggest transfer, in bytes. Null: only the sender's quota.
+    transferMaxBytes: bigint("transfer_max_bytes", { mode: "number" }),
     // Tesseract languages for reading text in images, joined with "+".
     ocrLangs: text("ocr_langs").notNull().default("eng"),
     // Vaults. Off stops new vaults; existing ones keep working. Null cap: no limit.
@@ -993,3 +1010,132 @@ export const backupReauth = pgTable("backup_reauth", {
   attempts: integer("attempts").notNull().default(0),
   verifiedUntil: timestamp("verified_until", { withTimezone: true }),
 })
+
+// Transfer: copies of files sent by link or email, deleted at expiry (hourly
+// purge). Their bytes count against the sender's quota until then.
+export const transfers = pgTable(
+  "transfers",
+  {
+    id: id(),
+    senderId: text("sender_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    title: text("title"),
+    message: text("message"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    passwordHash: text("password_hash"),
+    // Full downloads allowed (a zip, or the first file download in a visit). Null: no limit.
+    downloadLimit: integer("download_limit"),
+    downloads: integer("downloads").notNull().default(0),
+    // Files are still being added (device uploads); recipients can't open it yet.
+    draft: boolean("draft").notNull().default(true),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("transfers_sender_idx").on(t.senderId),
+    index("transfers_expires_idx").on(t.expiresAt),
+  ]
+)
+
+export const transferFiles = pgTable(
+  "transfer_files",
+  {
+    id: id(),
+    transferId: uuid("transfer_id")
+      .notNull()
+      .references(() => transfers.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    size: bigint("size", { mode: "number" }).notNull(),
+    mime: text("mime"),
+    s3Key: text("s3_key").notNull(),
+    // Thumbnail at thumbs/<s3Key>.webp when one was made.
+    thumb: boolean("thumb").notNull().default(false),
+    // tus upload id, so finishing twice adds the file once.
+    uploadId: text("upload_id").unique(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("transfer_files_transfer_idx").on(t.transferId)]
+)
+
+// One link per emailed recipient, plus one with email null for "copy link".
+export const transferRecipients = pgTable(
+  "transfer_recipients",
+  {
+    id: id(),
+    transferId: uuid("transfer_id")
+      .notNull()
+      .references(() => transfers.id, { onDelete: "cascade" }),
+    email: text("email"),
+    token: text("token").notNull().unique(),
+    downloads: integer("downloads").notNull().default(0),
+    lastAt: timestamp("last_at", { withTimezone: true }),
+  },
+  (t) => [index("transfer_recipients_transfer_idx").on(t.transferId)]
+)
+
+// Views, downloads and wrong passwords, like link_events.
+export const transferEvents = pgTable(
+  "transfer_events",
+  {
+    id: id(),
+    recipientId: uuid("recipient_id")
+      .notNull()
+      .references(() => transferRecipients.id, { onDelete: "cascade" }),
+    kind: text("kind")
+      .$type<"view" | "download" | "unlock_fail" | "save">()
+      .notNull(),
+    ip: text("ip"),
+    ua: text("ua"),
+    detail: text("detail"),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("transfer_events_recipient_at_idx").on(t.recipientId, t.at),
+    index("transfer_events_ip_kind_at_idx").on(t.ip, t.kind, t.at),
+  ]
+)
+
+// Vault share links: no data is copied. The browser re-wraps each shared file's
+// key under a fresh link key and seals a manifest ({path,size,mime,versionId,
+// fileKey}[]) with it. The link key travels in the URL's # (never sent here), or
+// is wrapped by a passphrase (kdf_salt + wrapped_link_key). Deleting the row
+// (Revoke) deletes the wrapped keys with it.
+export const vaultLinks = pgTable(
+  "vault_links",
+  {
+    id: id(),
+    token: text("token").notNull().unique(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    vaultId: uuid("vault_id")
+      .notNull()
+      .references(() => vaults.id, { onDelete: "cascade" }),
+    manifest: text("manifest").notNull(),
+    kdfSalt: text("kdf_salt"),
+    kdfIterations: integer("kdf_iterations"),
+    kdfMemory: integer("kdf_memory"),
+    wrappedLinkKey: text("wrapped_link_key"),
+    // Sealed with the vault key, so only the owner's list can show what it is.
+    label: text("label").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    viewCount: integer("view_count").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [index("vault_links_owner_idx").on(t.ownerId)]
+)
+
+// Which ciphertexts a vault link may fetch. A version deleted later drops out.
+export const vaultLinkVersions = pgTable(
+  "vault_link_versions",
+  {
+    linkId: uuid("link_id")
+      .notNull()
+      .references(() => vaultLinks.id, { onDelete: "cascade" }),
+    versionId: uuid("version_id")
+      .notNull()
+      .references(() => fileVersions.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.linkId, t.versionId] })]
+)

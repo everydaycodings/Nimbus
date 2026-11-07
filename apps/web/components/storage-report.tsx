@@ -253,6 +253,30 @@ export function StorageReport({
         )}
       </Section>
 
+      {r.transfers.count > 0 && (
+        <Section
+          title="Transfers"
+          note={`${plural(r.transfers.count, "transfer")} · ${formatBytes(r.transfers.bytes)}`}
+          actions={
+            !readOnly && (
+              <Button
+                size="sm"
+                variant="outline"
+                render={<Link href="/transfers" />}
+                nativeButton={false}
+              >
+                Open transfers
+              </Button>
+            )
+          }
+        >
+          <p className={EMPTY}>
+            Copies of sent files, deleted when each transfer expires or is
+            revoked.
+          </p>
+        </Section>
+      )}
+
       <Section title="Folders" note="What each folder holds, biggest first.">
         <nav
           aria-label="Folder"

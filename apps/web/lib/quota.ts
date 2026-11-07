@@ -20,15 +20,24 @@ export type Usage = {
   other: number
   // Everything in vaults, trash included (it's ciphertext, so no kinds).
   vault: number
-  // Older versions and trashed files: `used` minus the current files.
+  // Older versions and trashed files: `used` minus the current files and transfers.
   extra: number
+  // Copies held by live transfers (already part of `used`).
+  transfers: number
 }
+
+// What a sender's live transfers hold: not revoked, not expired (drafts count).
+const transferBytes = (userId: string) =>
+  db.execute<{ n: string }>(sql`
+    select coalesce(sum(tf.size), 0)::text as n from transfer_files tf
+    join transfers t on t.id = tf.transfer_id
+    where t.sender_id = ${userId} and t.revoked_at is null and t.expires_at > now()`)
 
 // A restored version shares its object with the one it copies, so bytes are
 // counted once per S3 key.
 // ponytail: summed on every call; cache per user if big accounts get slow.
 export async function getUsage(userId: string): Promise<Usage> {
-  const [[stored], [current], quota] = await Promise.all([
+  const [[stored], [current], quota, [held]] = await Promise.all([
     db.execute<{ used: string }>(sql`
       select coalesce(sum(size), 0)::text as used from (
         select distinct on (fv.s3_key) fv.size from file_versions fv
@@ -63,13 +72,15 @@ export async function getUsage(userId: string): Promise<Usage> {
         coalesce(sum(size) filter (where cat = 'vault'), 0)::text as vault
       from f`),
     quotaFor(userId),
+    transferBytes(userId),
   ])
   const images = Number(current.images)
   const videos = Number(current.videos)
   const docs = Number(current.docs)
   const other = Number(current.other)
   const vault = Number(current.vault)
-  const used = Number(stored.used)
+  const transfers = Number(held.n)
+  const used = Number(stored.used) + transfers
   return {
     used,
     quota,
@@ -78,7 +89,8 @@ export async function getUsage(userId: string): Promise<Usage> {
     docs,
     other,
     vault,
-    extra: Math.max(0, used - images - videos - docs - other - vault),
+    extra: Math.max(0, used - transfers - images - videos - docs - other - vault),
+    transfers,
   }
 }
 
@@ -106,7 +118,15 @@ export async function usedByOwner(ids: string[]) {
       from file_versions fv join nodes n on n.id = fv.node_id
       where n.owner_id in ${ids}
     ) k group by owner`)
-  return new Map(rows.map((r) => [r.owner, Number(r.used)]))
+  const held = await db.execute<{ owner: string; used: string }>(sql`
+    select t.sender_id as owner, sum(tf.size)::text as used
+    from transfer_files tf join transfers t on t.id = tf.transfer_id
+    where t.sender_id in ${ids} and t.revoked_at is null and t.expires_at > now()
+    group by t.sender_id`)
+  const used = new Map(rows.map((r) => [r.owner, Number(r.used)]))
+  for (const r of held)
+    used.set(r.owner, (used.get(r.owner) ?? 0) + Number(r.used))
+  return used
 }
 
 // Bytes left, or null when unlimited.

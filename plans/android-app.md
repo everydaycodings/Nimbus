@@ -33,6 +33,14 @@ API checks: `cd apps/web && node --env-file=.env.local scripts/api-check.ts` (ru
 | 10 | Photos tab (replaces Recent), background audio, PiP, slideshow | Built 2026-11-07, checked on the emulator (release APK), see below. Committed; released as 0.2.0 (GitHub Actions) |
 | 11 | Back up other folders, two-way folder sync, export to SD/USB | Built 2026-11-07, checked on the emulator (release APK), see below. Committed; released as 0.2.0 (GitHub Actions) |
 | 12 | Text editor, multi-page scan, activity feed (web + app) | Built 2026-11-07, checked on the emulator (release APK), see below. Committed; released as 0.2.0 (GitHub Actions) |
+| 13 | File requests, Transfer, Vault share links | Built 2026-11-07 on web + app. Web: e2e-tested and Impeccable-polished. App: checked on the emulator (Expo Go and the release APK), Maestro 14/14, Kotlin 43/43. Not committed yet. See "Phase 13 status" |
+| 14 | Comments on files (web + app) | Planned |
+| 15 | Photos: On this day, places map, smart groups, shared albums, partner sharing, quick edits | Planned |
+| 16 | Playback: cast to TV, sleep timer and speed, data-saver video quality | Planned |
+| 17 | Passkeys, restore a folder to a point in time | Planned |
+| 18 | PDF tools (markup, fill, sign), contacts and calendar backup | Planned |
+| 19 | Smart search: server OCR of images, scans and video frames, with where-it-matched results | Planned |
+| 20 | Optional AI service (admin): face grouping, speech search, search by what's in a photo | Planned |
 
 **0.2.2** (2026-11-07, versionCode 5): in-app updates. More → About → Check for updates asks the server's /api/android/latest (GitHub's latest release, or the bundled APKs), shows the notes (the tagged commit's message, now written into each GitHub release by the workflow), downloads the APK for the phone's ABI with progress, asks once for "Install unknown apps", then opens Android's installer. Tested end to end on the emulator. Server: the bundled fallback now offers only the newest version's APKs (it mixed 0.1.0 and 0.1.1).
 
@@ -441,6 +449,163 @@ Google and GitHub sign-in (same code path as OIDC).
 8. Save a text file from an editor through the Files app (Nimbus root): a new version appears on the web.
 9. Leave instant notifications on overnight on battery: a share in the morning still arrives within seconds.
 10. Scan a document (Play services).
+
+## Phases 13–20 (planned 2026-11-07)
+
+Chosen by the user from suggestions inspired by Google Drive, Google Photos, Dropbox, MEGA and OneDrive: every Tier 1 and
+Tier 2 idea, plus contacts and calendar backup, smart search and optional face grouping. **Every feature ships on the web too**
+(user, 2026-11-07), with no exceptions. Where the phone does something a browser can't, the web gets its own version (noted in each
+phase). Each phase follows
+the usual loop: a short decision check, build, Impeccable pass, a Maestro flow, a release-APK check, update here, commit.
+
+Decided already (2026-11-07):
+- **Smart search:** OCR on the server for everyone. Speech search and search by what's in a photo only when the AI service is on.
+- **AI runs in an optional `nimbus-ml` container** (Compose profile), off by default and using no RAM until the admin turns it
+  on. The admin can point it at another machine's URL. Without it, those features are hidden, not broken.
+- **Transfer keeps its own copy** of the files, deleted at expiry, counted against the sender's quota until then.
+- **Comments: anyone with access** can comment, viewers included. The owner and editors can delete any comment and resolve threads.
+
+**Phase 13, sharing extras**
+- **File requests:** an upload-only link on a folder. Visitors see a drop page with no listing, give a name (and an email if the
+  owner asks for one) and upload. Options: deadline, size limit, password. Uploads land in the folder, or in a subfolder per
+  visitor, and the owner gets a bell, push and email notification. Uses the existing tus upload path and the link rate limits.
+- **Transfer:** pick files from the phone or from Nimbus, add recipient emails (sent through the jobs queue) and/or copy the link,
+  plus a message, an expiry (1/7/30 days), an optional password and a download limit. A "Downloaded by…" notice for each download.
+  Sent transfers get a list in More (web: a Transfers page) with Revoke. The worker purges them at expiry.
+- **Vault share links:** a link to one Vault file or folder carries the key in the `#` part of the URL, which never reaches the
+  server. The page decrypts in the browser with the same crypto as Phase 7. Optional expiry; Revoke deletes the copy that was
+  re-encrypted for the link, so the Vault key itself is never shared.
+
+**Phase 13 status (2026-11-07)**
+
+Decisions (16 answers, user): file requests upgrade the existing file-drop link (no new link type) and get a "Request files…"
+entry in the folder menu; a folder per person is an owner toggle (off by default); name always, email optional or required;
+limits per file size, file types and file count; the drop page shows title, instructions, a "Closes in…" countdown, the
+visitor's own uploads and a receipt email. Transfer: one link per emailed recipient (the copy link is anonymous); the limit
+counts full downloads (a zip, or the first file in a 30-minute visit); sender quota plus an admin max; the recipient page has
+preview, Download all and Save to my Nimbus; download notices through bell, push and email ("Transfers" preference, folded
+hourly). Vault links re-wrap each file's own key under a link key, so no data is copied (this replaces the "re-encrypted copy"
+above); a folder link is a snapshot; key in `#` or an optional passphrase; preview and download. Admin: Transfer on/off, Vault
+links on/off, longest transfer lifetime, biggest transfer, a Transfers page with Revoke, a Transfers row in the storage report.
+
+Built:
+- Schema: `shares` gets request columns (`drizzle/0029`); `transfers`, `transfer_files`, `transfer_recipients`,
+  `transfer_events`, `vault_links`, `vault_link_versions` and the four settings (`drizzle/0030`).
+- File requests: `app/s/actions.ts` (checks, folder per person, `finishDrop` receipt), the limits checked again when tus
+  finishes (`lib/uploads.ts`), `components/share-dialog.tsx` RequestSettings, `components/public-link.tsx` DropZone; app:
+  `share/link/[id].tsx` RequestFields, "Request files" in the folder sheet and the Share screen. Type rules are shared
+  (`packages/shared/file-rules.ts` REQUEST_TYPES, `typeAllowed`, `acceptOf`).
+- Transfer: `lib/services/transfers.ts`, `lib/transfer-links.ts`, `/t/[token]` (page, download, zip, thumb), `/transfers`,
+  `/api/v1/transfers/*`, hourly purge, orphan-sweep exclusion, quota counting; app: More → Transfers, New transfer (Nimbus
+  picker + device files through the upload engine), "Send with Transfer" in the file sheet and in Save to (share-in).
+- Vault links: `packages/shared/vault-crypto.ts` (link key, wrapForLink, sealManifest, passphrase wrap; tests and vectors),
+  `lib/vault-links.ts`, `/v/[token]` (page + ranged ciphertext route), `components/vault-links.tsx` and
+  `vault-link-view.tsx`; app: Kotlin `Vault.makeLink` + `vaultLinkSeal` (optional native method, hidden on older APKs), Share
+  link in the vault sheet, Shared links in vault settings.
+
+Checked (web): Playwright `e2e/request.spec.ts`, `transfer.spec.ts`, `vault-link.spec.ts` plus the old link, share, upload and
+vault specs, 7/7 passing; shared, app and web unit tests pass; tsc and eslint clean. Receipt emails aren't sent on the dev
+instance (email is off there): the spec checks Mailpit only with `E2E_MAILPIT` set.
+
+Impeccable polish (web, 2026-11-07; the user asked for production grade with no compromises): drop page without the
+duplicate "Shared by", limits as words ("Only PDFs or images"), no orphan separators on phones, a "Sent N files to X; a
+receipt is on its way" status line and file sizes in the visitor's list; Request files scrolls the dialog (not the page) to
+the new request and hides the meaningless Download toggle on upload-only links; Vault link page title on the page scale,
+names open the preview, no amber outside Health; Transfer dialog with visible labels and type icons and sizes on every row,
+the recipient page with type icons instead of unreadable text thumbnails and Download all first on phones, the Transfers list
+with Revoke on closed transfers too (they still hold storage), an inline Revoke/Keep instead of `confirm()`, and honest
+status lines.
+
+Checked (app, Expo Go on the emulator, 2026-11-08): More → Transfers (empty state, list, details, Revoke confirm; the link
+stops), New transfer from Nimbus (a folder expands to its files, title kept, link works), Request files from the folder sheet
+opens the new request's settings, type switches and limits save (bad input shows an error). Polish there: file-type icons
+and a labelled remove button on picked rows (tapping a row no longer removes it), a taller Message field, Files and
+Downloads as separate detail rows, the plural following the limit ("0 of 1 download", web too), and the Download switch
+hidden on upload-only links.
+
+About (user request, 2026-11-08): a web `/about` page from the account menu and a "Made by" section on the app's About
+screen: the creator's photo (bundled `creator.webp`, cropped passport-style from the user's own picture, so nothing is
+fetched from GitHub), "everydaycodings", GitHub profile and everydaycodings.com, plus the source code link.
+
+Release APK (x86_64, 2026-11-08, Cursor kept open: emulator, Metro and next dev stopped during Gradle, --max-workers=2,
+-Xmx2g; 8 min, no crash): Kotlin tests 43/43 including `VaultTest.sharesLinksLikeTheWeb`. On the phone: Vault Share link,
+link only and with a passphrase (Argon2id about 3 s), both opened and decrypted in a signed-out browser; Shared links shows
+the decrypted name and views; Revoke stops the link. Maestro: new `request`, `transfer`, `about` flows; `editor` now scrolls
+to Versions (Send with Transfer pushed it down), `share` centres app.ts (its ⋯ sat under the New button), `quick-actions`
+and `folder-sync` back out of a deep system picker, `photos` waits for the grid (a playing video hides Close preview). All 14
+pass. Found on the phone: a tall dialog (vault link with passphrase) put its buttons under the keyboard; dialogs now scroll
+(`components/dialog.tsx`), to be seen on the next APK. Then commit.
+
+**Phase 14, comments**
+- Threads on files (not folders) in Details and the previewer, with replies, @mentions of people who have access, edit and
+  delete your own, and Resolve/Reopen. Mentions and replies notify through the bell, push and email, using the existing notification
+  preferences plus a new "Comments" toggle. Comments show in the Activity feed. They're kept across versions and go with the file
+  on ownership transfer. Vault files can't have comments, since the server can't see them.
+
+**Phase 15, Photos**
+- **On this day:** a card at the top of Photos, "N years ago", grouped by year from `takenAt`, opening a slideshow. An optional
+  daily notification (off by default). Hide a day or a photo from memories.
+- **Places map:** a map view of photos that have GPS, clustered, tap to see the photos from that spot. Map tiles from
+  OpenStreetMap (the server URL can be changed in admin settings, or the map turned off). The location is read from EXIF by the
+  worker next to `takenAt`.
+- **Smart groups:** Screenshots, Documents, Receipts and Videos, worked out from file paths, names and OCR text (Phase 19
+  improves them), shown as chips in Photos.
+- **Shared albums:** albums that other people can view or add photos to, using the existing share roles. **Partner sharing:**
+  automatically share new photos (all of them, or from a date onwards) with one person, who can choose to save them to their own
+  library.
+- **Quick edits:** crop, rotate, straighten and markup (pen, highlighter, text, arrows), from the previewer and before an upload
+  (scan, camera, share-in). Saving makes a new version, or a copy if you choose. The original is always kept in versions.
+  Web: the same editor (canvas) in the previewer, and an Edit button on images in the upload panel before they're sent.
+
+**Phase 16, playback**
+- **Cast to TV** (Chromecast) for video, photos and slideshows: the server gives the TV a short-lived signed URL. Hidden without
+  Play services. Web: a Cast button in the video player through the browser's Remote Playback API (Chrome and Edge), hidden where
+  that isn't available.
+- **Sleep timer** (15/30/60 min, end of track) and **playback speed** for audio and video.
+- **Data-saver quality:** the worker makes a 720p (and 480p) H.264 copy of each video, and the player uses it on mobile data,
+  with a quality picker. Admin switch, off by default (heavy on CPU and space); each copy counts as a derived file, not as quota.
+
+**Phase 17, sign-in and safety**
+- **Passkeys:** add, name and remove passkeys in account settings (web and app), and sign in with one on either. The app uses
+  Android's Credential Manager. The server serves `/.well-known/assetlinks.json` with the APK's signing fingerprint. Needs HTTPS
+  and a real domain, so the option is hidden on HTTP or IP servers, with a note saying why. Passkeys count as two-factor.
+- **Restore to a point in time:** on a folder (or all of My files), choose a date and time, see a preview of what changes
+  (restored from Trash, older versions, undone renames and moves), then restore. Built from versions, Trash and the Activity
+  log, so how far back it reaches follows the activity retention setting. The restore itself can be undone.
+
+**Phase 18, documents and phone**
+- **PDF tools:** highlight, underline, notes, free text, drawing, fill in form fields, and a saved signature you can place.
+  Saving makes a new version. The same on the web.
+- **Contacts and calendar backup** (backups made by the app; the web can read them): exports contacts as `.vcf` and calendars as `.ics` into My files →
+  Phone backup → <device>, on the backup schedule (daily by default) with Wi-Fi and charging rules. Keeps the last N copies.
+  Restore opens the file in Android's Contacts or Calendar import. Needs the contacts and calendar permissions, asked for only
+  when you turn it on. Web: a Phone backup page for each device with the latest backup time, a searchable list of contacts and
+  events read from the `.vcf`/`.ics`, and a download of any copy (to import into Google, Outlook or another phone).
+
+**Phase 19, smart search (OCR)**
+- OCR moves from the browser to the worker (tesseract, already a dependency), so it runs for every upload, including from the
+  app and WebDAV: images, scanned PDFs (pages with no text layer) and video frames (one every few seconds, plus scene changes,
+  using ffmpeg), with the OCR languages set by the admin. Backfilled for old files a little at a time.
+- Results say **where** the match is: the text around it with the words highlighted, the PDF page (opens at that page), the time
+  in the video (opens there), or the area of the image (shown with a box). Filters: Images, Videos, PDFs, Documents.
+- Uses the existing memory gate: the admin can turn OCR off or limit it to images.
+
+**Phase 20, optional AI service (admin switch)**
+- `nimbus-ml`: a small Python container (ONNX models, CPU) behind a Compose profile, health-checked on the Health page. An admin
+  page turns on each of these separately: **face grouping**, **speech search**, **search by what's in a photo**.
+- **Face grouping:** a People view in Photos: name a person, merge, split, hide. Each user's faces stay separate (no matching
+  across accounts). A user can turn it off for themselves, which deletes their face data. Not run on Vault or shared-in files.
+  **Lightest models (user, 2026-11-07):** detection with **YuNet** (OpenCV Zoo, ~230 KB, MIT) and recognition with **SFace int8**
+  (OpenCV Zoo, ~10 MB, Apache-2.0, 128-d embeddings), run through `opencv-python-headless`, with no PyTorch or GPU. About 10–30 ms
+  per photo on one CPU core, and the faces part of the container stays under ~300 MB of RAM. InsightFace models (SCRFD, buffalo)
+  are avoided because their licence is non-commercial. Speed-ups: work on the existing server thumbnails (longest side 1024),
+  never the originals; one photo at a time at low priority, paused while uploads are busy; skip faces under 40 px. Grouping: compare
+  each new face with the existing people using pgvector cosine distance (join a person if close enough, otherwise unassigned),
+  then group the unassigned faces in a nightly job, so the whole library is never re-clustered.
+- **Speech search:** Whisper transcripts of videos and audio, searchable with time links like the OCR results in Phase 19.
+- **Search by what's in it:** CLIP embeddings stored with pgvector, so a search like "dog on a beach" finds photos and video frames.
+- Embeddings and face data live in the DB only and are deleted with the file. Model files download on first enable, not in the image.
+- **Machine:** test it with the emulator off, since a model plus Whisper can take several GB of RAM.
 
 ## Working rules for this machine
 

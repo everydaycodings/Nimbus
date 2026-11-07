@@ -25,7 +25,7 @@ import { Button } from "@/components/ui/button"
 import { Thumb } from "@/components/thumb"
 import { VideoPlayer } from "@/components/video-player"
 import { parseCsv } from "@/lib/csv"
-import { fileType, formatBytes } from "@/lib/file-types"
+import { fileType, formatBytes, linkBase } from "@/lib/file-types"
 import {
   CSV_MAX,
   HIGHLIGHT_MAX,
@@ -226,7 +226,7 @@ export function downloadHref(
   v?: Shown["version"],
   link?: { token: string; download: boolean }
 ) {
-  if (link) return link.download ? `/s/${link.token}/download/${item.id}` : null
+  if (link) return link.download ? `${linkBase(link.token)}/download/${item.id}` : null
   return `/api/files/${item.id}/download${v ? `?v=${v.id}` : ""}`
 }
 

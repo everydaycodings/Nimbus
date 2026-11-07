@@ -51,6 +51,7 @@ export async function loadTree(api: Api, vn: VaultNative, vaultId: string): Prom
     updatedAt: n.updatedAt,
     trashedAt: n.trashedAt,
     encKey: n.encKey,
+    versionId: n.versionId,
   }))
   const untagged = entries.filter((e, i) => opened[i] && !nodes[i].tagged)
   if (untagged.length) {

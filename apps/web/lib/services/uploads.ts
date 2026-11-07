@@ -272,7 +272,7 @@ export async function finishUpload(
     )
   } catch {}
   const done = await finishTusUpload(id, { user: me.id })
-  if (done.nodeId && !done.vault) {
+  if (done.nodeId && !done.vault && !done.transfer) {
     await markOpened(me.id, done.nodeId)
     if (
       done.versionId &&

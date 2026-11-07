@@ -23,6 +23,7 @@ export async function GET() {
       providers,
       signupMode: settings.signupMode,
       deviceLinks: settings.deviceLinks,
+      vaultLinks: settings.vaultLinksEnabled,
       passwordPolicy: settings.passwordPolicy,
       email,
       tusUrl: new URL(process.env.TUS_URL ?? "/files/", appUrl()).href,

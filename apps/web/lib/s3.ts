@@ -1,4 +1,5 @@
 import {
+  CopyObjectCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
   GetObjectCommand,
@@ -99,6 +100,18 @@ export const thumbKey = (key: string) => `thumbs/${key}.webp`
 
 export async function deleteObject(key: string) {
   await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }))
+}
+
+// Server-side copy, so a transfer gets its own object without the bytes passing here.
+// ponytail: one CopyObject call, which S3 caps at 5 GB; use multipart copy if bigger files get sent.
+export async function copyObject(from: string, to: string) {
+  await s3.send(
+    new CopyObjectCommand({
+      Bucket: BUCKET,
+      Key: to,
+      CopySource: `${BUCKET}/${encodeURIComponent(from)}`,
+    })
+  )
 }
 
 export async function putObject(key: string, body: Uint8Array, type: string) {

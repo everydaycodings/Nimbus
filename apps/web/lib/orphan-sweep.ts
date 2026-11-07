@@ -24,7 +24,8 @@ export async function sweepOrphans(): Promise<SweepResult> {
   const [files, avatars, live] = await Promise.all([
     db.execute<{ k: string }>(sql`
       select s3_key as k from file_versions
-      union select s3_key from nodes where s3_key is not null`),
+      union select s3_key from nodes where s3_key is not null
+      union select s3_key from transfer_files`),
     db.execute<{ k: string }>(sql`
       select substr(image, ${AVATAR_URL.length + 1}) as k from "user"
       where starts_with(image, ${AVATAR_URL})`),

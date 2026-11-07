@@ -14,6 +14,7 @@ import { Button, Field, Text } from "@/components/ui"
 import { errorText } from "@/lib/api"
 import { useApi, useFileActions, useLinks, useShareState } from "@/lib/files"
 import { c, font } from "@/lib/theme"
+import { REQUEST_TYPES } from "@nimbus/shared/file-rules"
 
 const DAY = 86_400_000
 const PRESETS = [1, 7, 30, 90]
@@ -26,6 +27,98 @@ const endOfDay = (d: Date) => {
   return end.toISOString()
 }
 
+const gb = (b: number | null) => (b ? String(+(b / 2 ** 30).toFixed(2)) : "")
+// "" is no limit; NaN is a mistake.
+const bytesOf = (t: string) => (t.trim() ? Math.round(Number(t) * 2 ** 30) : null)
+const countOf = (t: string) => (t.trim() ? Number(t) : null)
+const bad = (n: number | null) => n !== null && !(Number.isFinite(n) && n > 0)
+const extsOf = (t: string) => t.split(/[\s,]+/).filter(Boolean).map((e) => (e.startsWith(".") ? e : `.${e}`).toLowerCase())
+
+type Patch = (change: UpdateLinkRequest, local: Partial<LinkInfo>, done?: string) => Promise<void>
+
+// What a file-drop link asks of visitors and what it takes (a file request), as on the web.
+function RequestFields({ link, patch }: { link: LinkInfo; patch: Patch }) {
+  const types = link.allowedTypes ?? []
+  const cats = types.filter((t) => !t.startsWith("."))
+  const [instructions, setInstructions] = useState(link.instructions ?? "")
+  const [extra, setExtra] = useState(types.filter((t) => t.startsWith(".")).join(", "))
+  const [perFile, setPerFile] = useState(gb(link.maxFileBytes))
+  const [files, setFiles] = useState(link.maxFiles ? String(link.maxFiles) : "")
+  const [cap, setCap] = useState(gb(link.uploadCapBytes))
+  const next = {
+    instructions: instructions.trim() || null,
+    maxFileBytes: bytesOf(perFile),
+    maxFiles: countOf(files),
+    uploadCapBytes: bytesOf(cap),
+    allowedTypes: [...cats, ...extsOf(extra)],
+  }
+  const wrong = bad(next.maxFileBytes) || bad(next.maxFiles) || bad(next.uploadCapBytes)
+  const changed =
+    next.instructions !== (link.instructions ?? null) ||
+    next.maxFileBytes !== link.maxFileBytes ||
+    next.maxFiles !== link.maxFiles ||
+    next.uploadCapBytes !== link.uploadCapBytes ||
+    extsOf(extra).join() !== types.filter((t) => t.startsWith(".")).join()
+  const save = () => {
+    if (wrong || !changed) return
+    Keyboard.dismiss()
+    patch(next, { ...next, allowedTypes: next.allowedTypes.length ? next.allowedTypes : null }, "Saved the file request.")
+  }
+  const setCats = (list: string[]) => {
+    const allowedTypes = [...list, ...types.filter((t) => t.startsWith("."))]
+    patch({ allowedTypes }, { allowedTypes: allowedTypes.length ? allowedTypes : null })
+  }
+
+  return (
+    <>
+      <Field
+        label="Instructions for people sending files"
+        placeholder="e.g. Please send your signed contract and a photo ID."
+        multiline
+        maxLength={2000}
+        value={instructions}
+        onChangeText={setInstructions}
+        style={{ minHeight: 88, textAlignVertical: "top" }}
+      />
+      <Group>
+        <SwitchRow
+          label="Ask for an email"
+          detail="Their name is always asked. With an email, they also get a receipt."
+          value={link.requireEmail}
+          onChange={(requireEmail) => patch({ requireEmail }, { requireEmail })}
+        />
+        <SwitchRow
+          label="A folder for each person"
+          detail="Each person's files go in a folder with their name."
+          value={link.perVisitorFolder}
+          onChange={(perVisitorFolder) => patch({ perVisitorFolder }, { perVisitorFolder })}
+        />
+      </Group>
+      <Section title="Kinds of files" note={cats.length || extra.trim() ? undefined : "None picked: any kind."}>
+        <Group>
+          {Object.entries(REQUEST_TYPES).map(([k, v]) => (
+            <SwitchRow
+              key={k}
+              label={v.label}
+              value={cats.includes(k)}
+              onChange={(on) => setCats(on ? [...cats, k] : cats.filter((x) => x !== k))}
+            />
+          ))}
+        </Group>
+        <Field label="Other extensions" placeholder="e.g. .psd, .dwg" autoCapitalize="none" value={extra} onChangeText={setExtra} />
+      </Section>
+      <Field label="Each file up to (GB)" placeholder="No limit" keyboardType="decimal-pad" value={perFile} onChangeText={setPerFile} error={bad(next.maxFileBytes) ? "Enter gigabytes, or leave it empty." : null} />
+      <Field label="Files at most" placeholder="No limit" keyboardType="number-pad" value={files} onChangeText={setFiles} error={bad(next.maxFiles) ? "Enter a whole number, or leave it empty." : null} />
+      <Field label="Stop taking uploads after, in total (GB)" placeholder="No limit" keyboardType="decimal-pad" value={cap} onChangeText={setCap} error={bad(next.uploadCapBytes) ? "Enter gigabytes, or leave it empty." : null} />
+      {changed && (
+        <View style={{ alignSelf: "flex-end" }}>
+          <Button variant="outlined" label="Save" disabled={wrong} onPress={save} />
+        </View>
+      )}
+    </>
+  )
+}
+
 function Settings({ item, link, state }: { item: string; link: LinkInfo; state: ShareState }) {
   const api = useApi()
   const links = useLinks()
@@ -33,7 +126,6 @@ function Settings({ item, link, state }: { item: string; link: LinkInfo; state: 
   const client = useQueryClient()
   const snack = useSnack()
   const [name, setName] = useState(link.name)
-  const [cap, setCap] = useState(link.uploadCapBytes ? String(+(link.uploadCapBytes / 2 ** 30).toFixed(2)) : "")
   const [open, setOpen] = useState<"expiry" | "password" | "delete" | null>(null)
   const key = [api.id, "shares", item]
   const close = () => setOpen(null)
@@ -56,14 +148,6 @@ function Settings({ item, link, state }: { item: string; link: LinkInfo; state: 
       Keyboard.dismiss()
       patch({ name: next }, { name: next }, "Saved the name.")
     }
-  }
-  const capBytes = cap.trim() ? Math.round(Number(cap) * 2 ** 30) : null
-  const capBad = capBytes !== null && !(capBytes > 0)
-  const capChanged = capBytes !== link.uploadCapBytes
-  const saveCap = () => {
-    if (capBad || !capChanged) return
-    Keyboard.dismiss()
-    patch({ uploadCapBytes: capBytes }, { uploadCapBytes: capBytes }, "Saved the upload limit.")
   }
   const expire = (expiresAt: string | null) =>
     patch({ expiresAt }, { expiresAt }, expiresAt ? `This link now stops working on ${medium(expiresAt)}.` : "This link no longer expires.")
@@ -130,13 +214,14 @@ function Settings({ item, link, state }: { item: string; link: LinkInfo; state: 
                 value={link.allowView}
                 onChange={(allowView) => patch({ allowView }, { allowView })}
               />
-              <SwitchRow
-                label="Download"
-                detail="Off: preview only. Anyone can still screenshot what they see."
-                value={link.allowDownload}
-                disabled={!link.allowView}
-                onChange={(allowDownload) => patch({ allowDownload }, { allowDownload })}
-              />
+              {link.allowView && (
+                <SwitchRow
+                  label="Download"
+                  detail="Off: preview only. Anyone can still screenshot what they see."
+                  value={link.allowDownload}
+                  onChange={(allowDownload) => patch({ allowDownload }, { allowDownload })}
+                />
+              )}
               {state.kind === "folder" && (
                 <SwitchRow
                   label="Upload files (file drop)"
@@ -146,25 +231,7 @@ function Settings({ item, link, state }: { item: string; link: LinkInfo; state: 
                 />
               )}
             </Group>
-            {state.kind === "folder" && link.allowUpload && (
-              <>
-                <Field
-                  label="Stop taking uploads after (GB)"
-                  placeholder="No limit"
-                  keyboardType="decimal-pad"
-                  returnKeyType="done"
-                  value={cap}
-                  onChangeText={setCap}
-                  onSubmitEditing={saveCap}
-                  error={capBad ? "Enter a number of gigabytes, or leave it empty for no limit." : null}
-                />
-                {capChanged && (
-                  <View style={{ alignSelf: "flex-end" }}>
-                    <Button variant="outlined" label="Save limit" disabled={capBad} onPress={saveCap} />
-                  </View>
-                )}
-              </>
-            )}
+            {state.kind === "folder" && link.allowUpload && <RequestFields link={link} patch={patch} />}
           </Section>
         </>
       )}

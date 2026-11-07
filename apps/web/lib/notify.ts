@@ -29,7 +29,7 @@ type Event = {
   data?: Record<string, string>
 }
 
-const DIGEST: NotificationKind[] = ["edits", "file_drop"]
+const DIGEST: NotificationKind[] = ["edits", "file_drop", "transfer_download"]
 
 export async function notify(
   userId: string,
@@ -37,7 +37,13 @@ export async function notify(
   e: Event = {}
 ) {
   if (e.actorId === userId) return
-  if (DIGEST.includes(kind) && e.nodeId) {
+  // Folds by item, or by transfer (named in data) for downloads of a transfer.
+  const fold = e.nodeId
+    ? eq(notifications.nodeId, e.nodeId)
+    : e.data?.transfer
+      ? sql`${notifications.data}->>'transfer' = ${e.data.transfer}`
+      : null
+  if (DIGEST.includes(kind) && fold) {
     const [bumped] = await db
       .update(notifications)
       .set({ count: sql`${notifications.count} + 1` })
@@ -45,7 +51,7 @@ export async function notify(
         and(
           eq(notifications.userId, userId),
           eq(notifications.kind, kind),
-          eq(notifications.nodeId, e.nodeId),
+          fold,
           isNull(notifications.readAt),
           gt(notifications.createdAt, sql`now() - interval '1 hour'`)
         )
@@ -184,6 +190,10 @@ async function describe(userId: string, ids?: string[]) {
       service_health: `${SERVICE_LABEL[d.service as Service] ?? "A service"} ${d.state === "up" ? "is working again" : "is down"}`,
       app_password: `A new app password “${d.name ?? "unnamed"}” was made for your account${d.ip ? ` from ${d.ip}` : ""}. Revoke it in Account if it wasn't you.`,
       backup: `${KIND_LABEL[d.backup as Kind] ?? "A"} backup ${d.event === "stale" ? "hasn't succeeded in a while" : d.event === "warning" ? "finished with a warning" : "failed"}`,
+      transfer_download:
+        r.count > 1
+          ? `Your transfer “${d.title || "Untitled"}” was downloaded ${r.count} times`
+          : `${d.who || "Someone"} downloaded your transfer “${d.title || "Untitled"}”`,
       storage_low: `${r.actor ? `${who} reminded you: your` : "Your"} storage is ${d.percent ?? 90}% full. See what's using it.`,
     }[r.kind]
     const seen = r.nodeId ? access.get(r.nodeId) : undefined
@@ -198,6 +208,8 @@ async function describe(userId: string, ids?: string[]) {
             ? "/account#connect"
           : r.kind === "storage_low"
             ? "/storage"
+          : r.kind === "transfer_download"
+            ? "/transfers"
           : !seen
             ? "/shared"
             : r.kindOf === "folder"

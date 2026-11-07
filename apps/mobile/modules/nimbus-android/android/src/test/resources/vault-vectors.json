@@ -15,58 +15,73 @@
  },
  "vault": {
   "passphrase": "correct horse battery stápled",
-  "recoveryCode": "V77A-JYWZ-U9NS-7VDX-J3YQ-XWQZ-JVBS-9FH9-45YT-TA9X-H6NJ-HRAE-LRYS",
+  "recoveryCode": "VZMQ-PEQY-6MVD-NXXV-AW2C-RQ8P-RFNY-M7X5-V3PN-SCTN-EAMM-K776-AMPS",
   "keys": {
-   "salt": "xS5TushIqUqLXkHTRM0G5g==",
+   "salt": "u266BByZGMf6DYza+nH7kA==",
    "kdf": {
     "t": 1,
     "m": 1024
    },
-   "wrapped": "jtJAw4KVZ5akJD4goxsuF+d4/pMQkqGFfjFE7CytH+JXMfBgcCXOxP+Wql3s2tJy9K1eoqhNRuUvf4Cg",
-   "recoveryWrapped": "C5QB7H1YYwUI56QlKTJkB439MdLWB+SpqUZ+lPpZ/xR3p+jxSPM3U2J+peS3isnWIY+TQb5TXF/0Hz4k"
+   "wrapped": "SaWLSJRyjNS+5jqooC5gj4DauWcAelhsmgV6+8aGySoyG3+fQ4G32p1qDEtxHZPopIKMo6/sB53RE4LV",
+   "recoveryWrapped": "kKhDaDHMPefzXZkaJLw7wzNhjm8PhUvl34+sVm5oW80uAL3kg2zwVRq3TYxRuLWqBL0K0vegE1UyQp9Y"
   },
-  "vk": "CfiDywHjQmQPLm8pHciaRPflxrEHTm6hyZaesyUQhjo="
+  "vk": "n6Mz5iflZK3ripe8ZC+/cCieaqOwsI6YLx7bTKe1l64="
  },
  "names": [
   {
    "n": "report.pdf",
    "t": "application/pdf",
-   "sealed": "MErSpR6Mc2ngKxXZvQDe3R9LVBvYHj0DfQw/Bm0ZBkOAqAL/SMs15W0KkGp5O6/spxV/gs+SSb95qls1UpqbjQhSwEs="
+   "sealed": "5lCTJhcVIRTw4yBGPEGlVHcnov4t8U6PGOd/gYpFjOB3+N14ektHbzgBTrEEXa7UBc5CDeg2NF8QhaJKUU1Ago6uz+o="
   },
   {
    "n": "Ünïcode 日本語 🙂.txt",
    "t": null,
-   "sealed": "rHJdjizX+BC+BuzVTqrslCLobFij9dRd7Fgsvd7A9/7RRsGw3/PcVNlngjFAojHPVG6EheQyTvj6CMbmriiVqJBF3GVyVSH7+Q=="
+   "sealed": "8qBlb3nnGnIumSN0VLQ3R5UlbFqN11q7DMugZyAG5vNZzqk5tJ7CQEca9xS1MWKCOR/nq9ZhzS7fb6kYzm4NW+9kAnr3Vva2hA=="
   }
  ],
  "tags": [
   {
    "name": "Report.PDF",
-   "tag": "zHBMJI18Oa04nobxVo/P0w=="
+   "tag": "jx4upX7h0GHEUpHQZ+ihKA=="
   },
   {
    "name": "Résumé.DOCX",
-   "tag": "oWq58ZPnHB6LnYClqjm8Ew=="
+   "tag": "eBVVPGFDKXqh1G1O5SiSqQ=="
   },
   {
    "name": "Résumé.DOCX",
-   "tag": "oWq58ZPnHB6LnYClqjm8Ew=="
+   "tag": "eBVVPGFDKXqh1G1O5SiSqQ=="
   },
   {
    "name": "İstanbul.txt",
-   "tag": "AZZiqtdh3JlU/m2t3FFqYQ=="
+   "tag": "lnByRoBgZH+Ua5VYK+704w=="
   }
  ],
+ "link": {
+  "key": "5ZK9sItShjPh6hoSeCJxW8dw2c7mCTeeVylkWxTSd0M",
+  "fileKey": "NytcST7JUJmfICugBt8IW5HunLJPyabKQSCvaWmFmt30mZzD/3x3HD7F58mU87NqH4MqzJo3yszOZrTP",
+  "manifest": "hqfWvXGPWhsPVADw81IzazT0QrKrKcQYy2CDH7emTmwvbYsRjZOoBotZfjYWAlvyNSCgz8aoY/X3opKjUWgDWnM5bnv7ehhn2dDzPuLpwlNZa86B5FMwp8F5MO8pMSydfS6J9v9e2z+a9u6nPAj/zUlXFYAMhM3lZRCDymUwq9/qeyhJICgO8Cw+xcASFmbwQqEBdLg8hjqIvvJjY12o4cOXAm1ugQa70iBsEA4/IELfiaG6BP0LVZURSX3Vf8GzeDF6QHG0SqlqEwaP9z8Gw6QIz0YDhl0Fg+/iN0vFIg4glxNVAwZubdf2RYUYKofUDg==",
+  "manifestJson": "[{\"path\":\"Docs/report.pdf\",\"size\":10485760,\"mime\":\"application/pdf\",\"versionId\":\"00000000-0000-4000-8000-000000000001\",\"fileKey\":\"NytcST7JUJmfICugBt8IW5HunLJPyabKQSCvaWmFmt30mZzD/3x3HD7F58mU87NqH4MqzJo3yszOZrTP\"}]",
+  "passphrase": "ünï link phrase",
+  "wrap": {
+   "salt": "vg4CbWM95te60BkGK2A0eQ==",
+   "kdf": {
+    "t": 1,
+    "m": 1024
+   },
+   "wrapped": "twEwJVOVA9ue80vzPHgWnFEEhNvD3+mHWNWUjI93lwiRj414qkuQUi1JlXIaq0LRT29F/xmK0HXnYPKg"
+  }
+ },
  "file": {
-  "fk": "YFoT5eQJJYxx6FGL1Ze5DsYKA9fUyh/DimtHpPwpIx8=",
-  "wrapped": "HTwVIs9/GXV8P0cUiX9YlB3mLTP1x8NB9wCwiOlJTcMcKrYZg8kOw2502aMWcZBjgcf6xlvTuyXFOIFJ",
+  "fk": "gJnnPKBYoSX9dOMeGMFfhAgY2Adq9mjV7BpMLfGu+RI=",
+  "wrapped": "eIgI5Xr+JTEPIw2P65X4bBqRtU/uykF2QtNTgFWoUd7uUNon9WTqiqmoxE9IcnfPoPNJNjOZRqgb9PmG",
   "size": 10485760,
   "cipherLength": 10485808,
-  "cipherSha256": "f6ddf918b237d8d221ef418b575ec025c8cb879fe6dc6cffd670a7737358a100",
-  "empty": "L03k9ohuzaKFUW7VjAkgcA==",
+  "cipherSha256": "427c3132c07ac9e53e535b4edb489bce51453cc8692b44278918821a821178fb",
+  "empty": "yvF2KJXWIcGWKE3bUkQuOA==",
   "tiny": {
    "size": 13,
-   "cipher": "YWGVSeXmRODhBeZxGih4owvsbcXF4Tq+LkhfVxc="
+   "cipher": "DhLbu7hLer42fWNdBoNbIX4ZHALNW9PJ+cbbgRw="
   }
  }
 }

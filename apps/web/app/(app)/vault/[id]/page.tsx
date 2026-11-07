@@ -2,6 +2,7 @@ import { notFound } from "next/navigation"
 
 import { VaultView } from "@/components/vault-browser"
 import { pageUserId, viewPrefs } from "@/lib/files"
+import { getSettings } from "@/lib/signup"
 import { uploadLimits } from "@/lib/uploads"
 import { getVault } from "@/lib/vault"
 
@@ -16,7 +17,11 @@ export default async function VaultPage({
   const { id } = await params
   const vault = await getVault(me, id)
   if (!vault) notFound()
-  const [prefs, limits] = await Promise.all([viewPrefs(), uploadLimits()])
+  const [prefs, limits, settings] = await Promise.all([
+    viewPrefs(),
+    uploadLimits(),
+    getSettings(),
+  ])
   return (
     <VaultView
       key={vault.id}
@@ -29,6 +34,7 @@ export default async function VaultPage({
         kdf: { t: vault.kdfIterations, m: vault.kdfMemory },
       }}
       blocked={limits.blockedExtensions}
+      linksEnabled={settings.vaultLinksEnabled}
       {...prefs}
     />
   )

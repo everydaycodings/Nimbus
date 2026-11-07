@@ -94,6 +94,26 @@ export default async function VaultsPage() {
           />
         </SettingRow>
         <SettingRow
+          id="vault-links"
+          label="Allow vault share links"
+          htmlFor="vault-links"
+          hint="Off: members can't make new links, and existing ones stop opening."
+          tip={{
+            does: "Lets members share a vault file or folder by link. The key travels in the link (or a passphrase), never to this server.",
+            affects: "Every vault share link.",
+            default: "On",
+          }}
+          reset={reset("vaultLinksEnabled")}
+        >
+          <input
+            type="checkbox"
+            id="vault-links"
+            name="links"
+            defaultChecked={s.vaultLinksEnabled}
+            className="size-4 shrink-0 self-start accent-primary sm:self-end"
+          />
+        </SettingRow>
+        <SettingRow
           id="vaults-per-member"
           label="Vaults per member"
           htmlFor="maxVaults"

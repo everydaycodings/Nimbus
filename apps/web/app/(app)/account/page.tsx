@@ -42,6 +42,7 @@ const KIND_LABEL = {
   file_drop: "Files arrive through my file-drop links",
   edits: "Editors change things in my shared folders (at most hourly)",
   transfer: "Someone offers me ownership of an item",
+  transfer_download: "Someone downloads a transfer I sent (at most hourly)",
   signup_request: "Someone asks to join this Nimbus",
   service_health: "A service goes down or comes back (Admin → Health)",
   backup: "A backup fails, warns, or hasn't run (Admin → Backups)",

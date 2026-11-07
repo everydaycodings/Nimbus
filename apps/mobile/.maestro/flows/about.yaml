@@ -1,0 +1,13 @@
+appId: org.nimbus.drive
+name: about
+# More → About shows the version and the creator card.
+---
+- launchApp
+- extendedWaitUntil: { visible: "Search in Nimbus", timeout: 20000 }
+- tapOn: "More"
+- scrollUntilVisible: { element: "About", direction: DOWN }
+- tapOn: "About"
+- extendedWaitUntil: { visible: "Check for updates", timeout: 10000 }
+- scrollUntilVisible: { element: "everydaycodings", direction: DOWN }
+- assertVisible: "Creator of Nimbus"
+- assertVisible: "everydaycodings.com"

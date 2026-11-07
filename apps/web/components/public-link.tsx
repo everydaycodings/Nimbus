@@ -5,6 +5,7 @@ import {
   CheckCircleIcon,
   CheckIcon,
   CircleNotchIcon,
+  ClockIcon,
   DownloadSimpleIcon,
   ListBulletsIcon,
   LockSimpleIcon,
@@ -15,20 +16,33 @@ import {
 } from "@phosphor-icons/react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useRef, useState, useTransition } from "react"
+import { useEffect, useRef, useState, useTransition } from "react"
 import { Upload } from "tus-js-client"
 
-import { finishLinkUpload, linkUploadToken, unlockLink } from "@/app/s/actions"
+import {
+  finishDrop,
+  finishLinkUpload,
+  linkUploadToken,
+  unlockLink,
+} from "@/app/s/actions"
 import { Segmented } from "@/components/file-browser"
 import { Previewer, View, downloadHref } from "@/components/previewer"
 import { Thumb } from "@/components/thumb"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { fileType, formatBytes } from "@/lib/file-types"
+import { acceptOf, typeAllowed, typesLabel } from "@/lib/file-rules"
 import type { Item } from "@/lib/files"
 import { cn } from "@/lib/utils"
 
-export function PasswordGate({ token }: { token: string }) {
+export function PasswordGate({
+  token,
+  unlock = unlockLink,
+}: {
+  token: string
+  // Transfers check their own password.
+  unlock?: typeof unlockLink
+}) {
   const [error, setError] = useState<string | null>(null)
   const [pending, start] = useTransition()
   const router = useRouter()
@@ -37,7 +51,7 @@ export function PasswordGate({ token }: { token: string }) {
       className="mx-auto flex w-full max-w-sm flex-col gap-4 rounded-xl border bg-card p-6"
       action={(form) =>
         start(async () => {
-          const res = await unlockLink(token, String(form.get("password")))
+          const res = await unlock(token, String(form.get("password")))
           if (res.error) setError(res.error)
           else router.refresh()
         })
@@ -434,51 +448,110 @@ type Drop = {
   error?: string
 }
 
+export type DropRequest = {
+  instructions: string | null
+  requireEmail: boolean
+  maxFileBytes: number | null
+  maxFiles: number | null
+  allowedTypes: string[] | null
+  expiresAt: string | null
+}
+
+const read = (k: string) => {
+  try {
+    return localStorage.getItem(k) ?? ""
+  } catch {
+    return ""
+  }
+}
+
+// "Closes in 3 days", ticking every minute.
+function useCloses(at: string | null) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!at) return
+    const t = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(t)
+  }, [at])
+  if (!at) return null
+  const ms = new Date(at).getTime() - now
+  if (ms <= 0) return "Closed"
+  const min = Math.ceil(ms / 60_000)
+  if (min < 60) return `Closes in ${min} minute${min === 1 ? "" : "s"}`
+  const h = Math.round(min / 60)
+  if (h < 48) return `Closes in ${h} hour${h === 1 ? "" : "s"}`
+  return `Closes in ${Math.round(h / 24)} days`
+}
+
 // File drop: anyone with the link can send files here, but can't see what's
-// already in the folder unless the link also shows it.
+// already in the folder unless the link also shows it. A file request adds
+// instructions, a deadline and limits; the server checks the limits again.
 export function DropZone({
   token,
   folderId,
   tusUrl,
+  request,
+  owner,
 }: {
   token: string
   folderId: string
   tusUrl: string
+  request: DropRequest
+  owner: string
 }) {
-  const [name, setName] = useState(() => {
-    try {
-      return localStorage.getItem("nimbus-drop-name") ?? ""
-    } catch {
-      return ""
-    }
-  })
+  const [name, setName] = useState(() => read("nimbus-drop-name"))
+  const [email, setEmail] = useState(() => read("nimbus-drop-email"))
   const [drops, setDrops] = useState<Drop[]>([])
   const [over, setOver] = useState(false)
+  // Who the last batch's receipt went to, once it's done.
+  const [receipt, setReceipt] = useState<string | null>(null)
   const input = useRef<HTMLInputElement>(null)
   const router = useRouter()
+  const busy = drops.some((d) => d.status === "uploading")
+  const sentCount = drops.filter((d) => d.status === "done").length
+  const closes = useCloses(request.expiresAt)
+  const ready = name.trim() && (!request.requireEmail || email.trim())
+  const limits = [
+    request.allowedTypes?.length && `Only ${typesLabel(request.allowedTypes)}`,
+    request.maxFileBytes && `up to ${formatBytes(request.maxFileBytes)} each`,
+    request.maxFiles &&
+      `${request.maxFiles} file${request.maxFiles === 1 ? "" : "s"} at most`,
+  ].filter(Boolean)
 
   const patch = (key: string, p: Partial<Drop>) =>
     setDrops((d) => d.map((x) => (x.key === key ? { ...x, ...p } : x)))
 
-  async function send(file: File) {
+  async function send(file: File): Promise<boolean> {
     const key = `${file.name}:${file.size}:${Math.random()}`
     setDrops((d) => [
       ...d,
       { key, name: file.name, size: file.size, sent: 0, status: "uploading" },
     ])
+    const local = !typeAllowed(file.name, request.allowedTypes)
+      ? `This link only takes ${typesLabel(request.allowedTypes!)}.`
+      : request.maxFileBytes && file.size > request.maxFileBytes
+        ? `Files here can be up to ${formatBytes(request.maxFileBytes)}.`
+        : null
+    if (local) {
+      patch(key, { status: "error", error: local })
+      return false
+    }
     const res = await linkUploadToken(
       token,
       folderId,
       file.name,
       file.size,
-      name
+      name,
+      email
     )
-    if (!res.token)
-      return patch(key, {
+    if (!res.token) {
+      patch(key, {
         status: "error",
         error: res.error ?? "Couldn't upload this.",
       })
-    await new Promise<void>((done) => {
+      return false
+    }
+    return new Promise<boolean>((done) => {
       const up = new Upload(file, {
         endpoint: tusUrl,
         retryDelays: [0, 1000, 3000, 5000],
@@ -494,7 +567,7 @@ export function DropZone({
             status: "error",
             error: "The upload stopped. Try again.",
           })
-          done()
+          done(false)
         },
         onSuccess: async () => {
           const fin = await finishLinkUpload(token, up.url!).catch(() => null)
@@ -504,7 +577,7 @@ export function DropZone({
               ? { status: "done", sent: file.size }
               : { status: "error", error: fin?.error ?? "Couldn't save it." }
           )
-          done()
+          done(Boolean(fin?.ok))
         },
       })
       up.start()
@@ -512,15 +585,23 @@ export function DropZone({
   }
 
   async function sendAll(files: FileList | File[]) {
+    if (!ready) return
     try {
       localStorage.setItem("nimbus-drop-name", name)
+      localStorage.setItem("nimbus-drop-email", email)
     } catch {}
     // Three at a time, like the app.
     const list = [...files]
+    const sent: string[] = []
     const next = async () => {
-      for (let f = list.shift(); f; f = list.shift()) await send(f)
+      for (let f = list.shift(); f; f = list.shift())
+        if (await send(f)) sent.push(f.name)
     }
     await Promise.all([next(), next(), next()])
+    if (sent.length && email.trim()) {
+      await finishDrop(token, email, sent).catch(() => {})
+      setReceipt(email.trim())
+    }
     router.refresh()
   }
 
@@ -528,7 +609,7 @@ export function DropZone({
     <section
       aria-labelledby="drop-heading"
       onDragOver={(e) => {
-        if (!e.dataTransfer.types.includes("Files")) return
+        if (!ready || !e.dataTransfer.types.includes("Files")) return
         e.preventDefault()
         setOver(true)
       }}
@@ -552,34 +633,128 @@ export function DropZone({
         <h2 id="drop-heading" className="font-semibold">
           Send files here
         </h2>
-        <p className="text-sm text-muted-foreground">
-          Drop files on this box or pick them. They go straight to the
-          folder&apos;s owner.
-        </p>
+        {request.instructions ? (
+          <p className="max-w-prose text-sm whitespace-pre-line text-muted-foreground">
+            {request.instructions}
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Drop files on this box or pick them. They go straight to the
+            folder&apos;s owner.
+          </p>
+        )}
+        {(closes || limits.length > 0) && (
+          <p className="flex flex-wrap justify-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
+            {closes && (
+              <span
+                className="mr-1.5 inline-flex items-center gap-1 font-medium text-foreground"
+                title={new Date(request.expiresAt!).toLocaleString()}
+              >
+                <ClockIcon className="size-3.5" />
+                {closes}
+              </span>
+            )}
+            {limits.map((l, i) => (
+              <span key={i} className="whitespace-nowrap">
+                {l}
+                {i < limits.length - 1 && " ·"}
+              </span>
+            ))}
+          </p>
+        )}
       </div>
-      <div className="mx-auto flex w-full max-w-md flex-col gap-2 sm:flex-row">
-        <Input
-          aria-label="Your name (optional)"
-          placeholder="Your name (optional)"
-          value={name}
-          maxLength={80}
-          onChange={(e) => setName(e.target.value)}
-        />
-        <Button onClick={() => input.current?.click()}>Choose files</Button>
+      <div className="mx-auto flex w-full max-w-md flex-col gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Input
+            aria-label="Your name"
+            placeholder="Your name"
+            value={name}
+            maxLength={60}
+            required
+            onChange={(e) => setName(e.target.value)}
+          />
+          <Input
+            aria-label={
+              request.requireEmail ? "Your email" : "Your email (optional)"
+            }
+            placeholder={
+              request.requireEmail ? "Your email" : "Email (optional)"
+            }
+            type="email"
+            value={email}
+            maxLength={120}
+            required={request.requireEmail}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </div>
+        <Button disabled={!ready} onClick={() => input.current?.click()}>
+          Choose files
+        </Button>
+        {!ready && (
+          <p className="text-center text-xs text-muted-foreground">
+            {request.requireEmail
+              ? "Enter your name and email to send files."
+              : "Enter your name to send files."}
+          </p>
+        )}
         <input
           ref={input}
           type="file"
           multiple
           hidden
-          onChange={(e) => e.target.files && sendAll(e.target.files)}
+          accept={acceptOf(request.allowedTypes)}
+          onChange={(e) => {
+            if (e.target.files) sendAll(e.target.files)
+            e.target.value = ""
+          }}
         />
       </div>
       {drops.length > 0 && (
-        <ul className="mx-auto flex w-full max-w-md flex-col divide-y rounded-lg border bg-card text-sm">
+        <p
+          role="status"
+          className="mx-auto flex w-full max-w-md items-center gap-2 text-sm"
+        >
+          {busy ? (
+            <>
+              <CircleNotchIcon className="size-4 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" />
+              Sending… keep this page open until it finishes.
+            </>
+          ) : sentCount ? (
+            <>
+              <CheckCircleIcon
+                weight="fill"
+                className="size-4 shrink-0 text-brand"
+              />
+              <span>
+                Sent {sentCount} file{sentCount === 1 ? "" : "s"} to {owner}.
+                {receipt && (
+                  <span className="text-muted-foreground">
+                    {" "}
+                    A receipt is on its way to {receipt}.
+                  </span>
+                )}
+              </span>
+            </>
+          ) : (
+            <>
+              <WarningCircleIcon className="size-4 shrink-0 text-destructive" />
+              Nothing was sent. See below.
+            </>
+          )}
+        </p>
+      )}
+      {drops.length > 0 && (
+        <ul
+          aria-label="Files you sent"
+          className="mx-auto flex w-full max-w-md flex-col divide-y rounded-lg border bg-card text-sm"
+        >
           {drops.map((d) => (
             <li key={d.key} className="flex flex-col gap-1.5 px-3 py-2">
               <span className="flex items-center gap-2">
                 <span className="min-w-0 flex-1 truncate">{d.name}</span>
+                <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
+                  {formatBytes(d.size)}
+                </span>
                 {d.status === "done" ? (
                   <CheckCircleIcon
                     weight="fill"

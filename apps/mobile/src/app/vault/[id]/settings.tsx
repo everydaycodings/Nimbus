@@ -1,7 +1,7 @@
 import type { VaultResponse } from "@nimbus/shared/api"
 import { useQueryClient } from "@tanstack/react-query"
 import { router, useLocalSearchParams } from "expo-router"
-import { Fingerprint, Key, Trash } from "phosphor-react-native"
+import { Fingerprint, Key, LinkSimple, Trash } from "phosphor-react-native"
 import { useEffect, useState } from "react"
 
 import { Actions, Frame } from "@/components/dialog"
@@ -13,6 +13,7 @@ import { errorText } from "@/lib/api"
 import { useApi } from "@/lib/files"
 import { c } from "@/lib/theme"
 import { vaultNative, type VaultNative } from "@/lib/vault"
+import { useCanShareLinks } from "@/lib/vault-links"
 
 const MIN = 12
 
@@ -28,6 +29,7 @@ function Body({ id, name, change, vn }: { id: string; name: string; change: bool
   const snack = useSnack()
   const [available, setAvailable] = useState(false)
   const [bio, setBio] = useState(() => vn.vaultBioEnabled(api.id, id))
+  const canLink = useCanShareLinks()
   // After a recovery unlock the passphrase has to be replaced.
   const [dialog, setDialog] = useState<"pass" | "delete" | null>(change ? "pass" : null)
   useEffect(() => {
@@ -57,6 +59,11 @@ function Body({ id, name, change, vn }: { id: string; name: string; change: bool
         )}
         <Row label="Change passphrase" icon={<Key size={24} color={c.mutedForeground} />} onPress={() => setDialog("pass")} />
       </Group>
+      {canLink && (
+        <Group>
+          <Row label="Shared links" detail="See who has a link to these files, and revoke it." icon={<LinkSimple size={24} color={c.mutedForeground} />} onPress={() => router.push({ pathname: "/vault/[id]/links", params: { id, name } })} />
+        </Group>
+      )}
       <Group>
         <Row label="Delete vault" detail="Deletes everything in it for good." danger icon={<Trash size={24} color={c.destructive} />} onPress={() => setDialog("delete")} />
       </Group>

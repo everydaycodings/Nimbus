@@ -92,6 +92,8 @@ export type NimbusAndroid = {
   vaultDecrypt?(jobId: string, accountId: string, vaultId: string, url: string, encKey: string, dest: string): Promise<void>
   vaultZip?(jobId: string, accountId: string, vaultId: string, itemsJson: string, dest: string): Promise<void>
   vaultCancel?(jobId: string): void
+  // Share link: re-wraps each file's key under a new link key (format: packages/shared/vault-crypto.ts). itemsJson is [{path,size,mime,versionId,encKey}]; returns JSON {key|null, manifest, kdfSalt, kdfIterations, kdfMemory, wrappedLinkKey}. Optional: APKs from before vault links lack it.
+  vaultLinkSeal?(accountId: string, vaultId: string, itemsJson: string, passphrase: string | null): Promise<string>
   vaultBioAvailable?(): Promise<boolean>
   vaultBioEnabled?(accountId: string, vaultId: string): boolean
   vaultBioEnable?(accountId: string, vaultId: string): Promise<"ok" | "cancel">

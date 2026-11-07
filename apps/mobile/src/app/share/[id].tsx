@@ -256,37 +256,47 @@ function People({ id, state, run }: { id: string; state: ShareState; run: Run })
   )
 }
 
-function Links({ id, state, newLink }: { id: string; state: ShareState; newLink: boolean }) {
+function Links({ id, state, newLink, request }: { id: string; state: ShareState; newLink: boolean; request: boolean }) {
   const links = useLinks()
   const snack = useSnack()
-  const [asking, setAsking] = useState(false)
+  // What the password prompt will make.
+  const [asking, setAsking] = useState<false | "link" | "request">(false)
   const [busy, setBusy] = useState(false)
 
-  const make = async (password?: string) => {
+  const make = async (password?: string, kind: "link" | "request" = "link") => {
+    const link = await links.create(id, password, kind === "request")
+    // A request wants its instructions and limits set before it goes out.
+    if (kind === "request") router.push({ pathname: "/share/link/[id]", params: { id: link.id, item: id } })
     // Not awaited: Android may never say the share menu closed, which would leave this busy.
-    links.sendTo(await links.create(id, password))
+    else links.sendTo(link)
   }
-  const start = async () => {
+  const start = async (kind: "link" | "request" = "link") => {
     // A field left focused brings the keyboard back when the share menu closes.
     Keyboard.dismiss()
-    if (state.requireLinkPassword) return setAsking(true)
+    if (state.requireLinkPassword) return setAsking(kind)
     setBusy(true)
     try {
-      await make()
+      await make(undefined, kind)
     } catch (e) {
       snack({ text: errorText(e), error: true })
     }
     setBusy(false)
   }
 
-  // Sent here by Copy link, on a server that won't make a link without a password.
+  // Sent here by Copy link on a server that won't make a link without a password, or by Request files.
   const asked = useRef(false)
   useEffect(() => {
-    if (newLink && !asked.current && state.publicLinks && state.requireLinkPassword) {
+    if (asked.current || !state.publicLinks) return
+    if (request) {
       asked.current = true
-      setAsking(true)
+      start("request")
+    } else if (newLink && state.requireLinkPassword) {
+      asked.current = true
+      setAsking("link")
     }
-  }, [newLink, state.publicLinks, state.requireLinkPassword])
+    // Once per visit; start reads the state it was opened with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newLink, request, state.publicLinks, state.requireLinkPassword])
 
   const kind = state.kind === "folder" ? "browse this folder" : "open this file"
   return (
@@ -299,8 +309,13 @@ function Links({ id, state, newLink }: { id: string; state: ShareState; newLink:
             ? `Anyone with a link can ${kind} without signing in. Each link gets its own expiry, password and permissions.`
             : undefined
       }
-      trailing={state.publicLinks ? <Button variant="outlined" label="New link" busy={busy} icon={<Plus size={18} color={c.foreground} />} onPress={start} /> : undefined}
+      trailing={state.publicLinks ? <Button variant="outlined" label="New link" busy={busy} icon={<Plus size={18} color={c.foreground} />} onPress={() => start()} /> : undefined}
     >
+      {state.publicLinks && state.kind === "folder" && (
+        <View style={{ alignSelf: "flex-start" }}>
+          <Button variant="text" label="Request files" icon={<UploadSimple size={18} color={c.brand} />} onPress={() => start("request")} />
+        </View>
+      )}
       <Group>
         {state.links.map((l) => {
           const expired = !!l.expiresAt && Date.parse(l.expiresAt) < Date.now()
@@ -330,7 +345,7 @@ function Links({ id, state, newLink }: { id: string; state: ShareState; newLink:
       </Group>
       {asking && (
         <PromptDialog
-          title="Password for the new link"
+          title={asking === "request" ? "Password for the file request" : "Password for the new link"}
           label="Password"
           confirm="Create"
           secret
@@ -338,7 +353,7 @@ function Links({ id, state, newLink }: { id: string; state: ShareState; newLink:
           onClose={() => setAsking(false)}
           onSubmit={async (password) => {
             try {
-              await make(password)
+              await make(password, asking || "link")
             } catch (e) {
               return errorText(e)
             }
@@ -350,7 +365,7 @@ function Links({ id, state, newLink }: { id: string; state: ShareState; newLink:
 }
 
 export default function Share() {
-  const { id, name, newLink } = useLocalSearchParams<{ id: string; name?: string; newLink?: string }>()
+  const { id, name, newLink, request } = useLocalSearchParams<{ id: string; name?: string; newLink?: string; request?: string }>()
   const state = useShareState(id)
   const actions = useFileActions()
   const snack = useSnack()
@@ -382,7 +397,7 @@ export default function Share() {
               <AddPeople id={id} state={s} run={run} />
               {problem && <ErrorText>{problem}</ErrorText>}
               <People id={id} state={s} run={run} />
-              <Links id={id} state={s} newLink={!!newLink} />
+              <Links id={id} state={s} newLink={!!newLink} request={!!request} />
             </>
           )}
         </Loaded>

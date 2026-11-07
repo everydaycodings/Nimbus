@@ -60,6 +60,8 @@ export type Instance = {
   signupMode: "approval" | "invite" | "open" | "closed"
   /** Sign-in by QR or short code from the web's Account page. */
   deviceLinks: boolean
+  /** Vault share links are on; older servers omit it (no links there). */
+  vaultLinks?: boolean
   passwordPolicy: {
     min: number
     lower: boolean
@@ -89,6 +91,8 @@ export type Usage = {
   vault: number
   /** Older versions and trashed files. */
   extra: number
+  /** Copies held by live transfers (already part of `used`). */
+  transfers: number
 }
 
 export type Me = {
@@ -404,6 +408,12 @@ export type LinkInfo = {
   allowDownload: boolean
   allowUpload: boolean
   uploadCapBytes: number | null
+  instructions: string | null
+  requireEmail: boolean
+  perVisitorFolder: boolean
+  maxFileBytes: number | null
+  maxFiles: number | null
+  allowedTypes: string[] | null
   viewCount: number
   downloadCount: number
   lastOpenedAt: string | null
@@ -440,7 +450,12 @@ export type ShareWithRequest = {
 }
 export type ReshareRequest = { allowReshare: boolean }
 export type SetShareRoleRequest = { role: "viewer" | "editor" }
-export type CreateLinkRequest = { name?: string; password?: string }
+export type CreateLinkRequest = {
+  name?: string
+  password?: string
+  /** An upload-only link (a file request); folders only. */
+  request?: boolean
+}
 export type CreateLinkResponse = { id: string }
 export type UpdateLinkRequest = {
   name?: string
@@ -452,6 +467,12 @@ export type UpdateLinkRequest = {
   allowDownload?: boolean
   allowUpload?: boolean
   uploadCapBytes?: number | null
+  instructions?: string | null
+  requireEmail?: boolean
+  perVisitorFolder?: boolean
+  maxFileBytes?: number | null
+  maxFiles?: number | null
+  allowedTypes?: string[] | null
 }
 export type LinkEvent = {
   kind: string
@@ -478,6 +499,7 @@ export type NotificationKind =
   | "backup"
   | "app_password"
   | "storage_low"
+  | "transfer_download"
 export type Notification = {
   id: string
   kind: NotificationKind
@@ -573,6 +595,8 @@ export type StorageReport = {
   usage: Usage
   largest: ReportRow[]
   old: ReportRow[]
+  /** Copies held for Transfers until they expire. */
+  transfers: { bytes: number; count: number }
   trash: { bytes: number; count: number; top: ReportRow[] }
   folder: {
     id: string | null
@@ -621,6 +645,8 @@ export type VaultNode = {
   trashedAt: string | null
   /** The file's wrapped key. */
   encKey: string | null
+  /** The version that key belongs to; share links list it. */
+  versionId: string | null
   /** Has its name tag; send tags for the ones that don't. */
   tagged: boolean
 }
@@ -646,6 +672,28 @@ export type PlanVaultUploadRequest = {
   groups: { parentId: string | null; sizes: number[] }[]
 }
 export type PlanVaultUploadResponse = { tokens: string[] }
+export type VaultLink = {
+  id: string
+  token: string
+  /** Sealed with the vault key (a {n, t} name). */
+  label: string
+  createdAt: string
+  expiresAt: string | null
+  viewCount: number
+  passphrase: boolean
+  files: number
+}
+export type VaultLinksResponse = { links: VaultLink[] }
+/** `manifest` is sealed with the link key, `label` with the vault key; see vault-crypto.ts. */
+export type CreateVaultLinkRequest = {
+  manifest: string
+  label: string
+  versionIds: string[]
+  expiresInDays: 1 | 7 | 30 | null
+  /** Passphrase mode: the link key wrapped by Argon2id(passphrase). */
+  passphrase?: { salt: string; kdf: { t: number; m: number }; wrapped: string }
+}
+export type CreateVaultLinkResponse = { id: string; token: string }
 export type VaultFileResponse = { url: string; encKey: string; size: number }
 
 // ---- Push ----
@@ -676,3 +724,71 @@ export type TreeResponse = { entries: TreeEntry[]; truncated: boolean }
 export type PhotoItem = Item & { takenAt: string }
 /** `GET /photos?limit=&cursor=`: newest taken first. `total` counts every page. */
 export type PhotosResponse = { items: PhotoItem[]; total: number; nextCursor: string | null }
+
+// ---- Transfer (Phase 13b) ----
+
+/** A draft (still being filled) never appears in lists. */
+export type TransferStatus = "active" | "expired" | "revoked" | "closed"
+export type TransferFile = { id: string; name: string; size: number }
+export type TransferRecipient = {
+  id: string
+  /** null: the copy-link. */
+  email: string | null
+  downloads: number
+  lastAt: string | null
+}
+export type Transfer = {
+  id: string
+  title: string | null
+  message: string | null
+  status: TransferStatus
+  expiresAt: string
+  hasPassword: boolean
+  downloadLimit: number | null
+  /** Full downloads so far. */
+  downloads: number
+  fileCount: number
+  bytes: number
+  createdAt: string
+  /** Token of the copy-link (open it at `<server>/t/<token>`), null without one. */
+  linkToken: string | null
+  files: TransferFile[]
+  recipients: TransferRecipient[]
+}
+export type TransferEvent = {
+  id: string
+  /** The recipient's email, or "Someone" for the copy-link. */
+  who: string
+  kind: "view" | "download" | "unlock_fail" | "save"
+  ip: string | null
+  ua: string | null
+  detail: string | null
+  at: string
+}
+/** What the sender may pick, from the admin's settings. */
+export type TransferOptions = {
+  enabled: boolean
+  /** Longest expiry in days; the picker offers 1, 7 and 30 up to it. */
+  maxDays: number
+  maxBytes: number | null
+  /** Email is set up, so recipients can be mailed. */
+  email: boolean
+}
+export type TransfersResponse = { transfers: Transfer[]; options: TransferOptions }
+export type CreateTransferRequest = {
+  /** Files and folders of mine to copy in; device files are added after. */
+  nodeIds: string[]
+  title?: string
+  message?: string
+  days: number
+  password?: string
+  downloadLimit?: number | null
+  emails?: string[]
+  /** Also make a link to copy. */
+  link?: boolean
+}
+export type CreateTransferResponse = { id: string }
+export type TransferResponse = { transfer: Transfer; events: TransferEvent[] }
+export type TransferFileTokenRequest = { name: string; size: number }
+/** tus metadata `token`; then POST /uploads/finish with the upload URL. */
+export type TransferFileTokenResponse = { token: string }

@@ -8,6 +8,11 @@ import {
   cipherSlice,
   cipherSize,
   encName,
+  exportLinkKey,
+  linkKeyWrap,
+  newLinkKey,
+  sealManifest,
+  wrapForLink,
   fromB64,
   newFileKey,
   newVault,
@@ -65,6 +70,13 @@ const names = [
 ]
 const tagInputs = ["Report.PDF", "Résumé.DOCX", "Résumé.DOCX".normalize("NFD"), "İstanbul.txt"]
 
+const lk = await newLinkKey()
+const linkManifest = [
+  { path: "Docs/report.pdf", size, mime: "application/pdf", versionId: "00000000-0000-4000-8000-000000000001", fileKey: await wrapForLink(lk, fk.fk) },
+]
+const linkPass = "ünï link phrase"
+const linkWrap = await linkKeyWrap(linkPass, lk, fast)
+
 const vectors = {
   kdf: {
     password: kdfPass,
@@ -80,6 +92,15 @@ const vectors = {
   },
   names: await Promise.all(names.map(async (x) => ({ ...x, sealed: await encName(vk, x) }))),
   tags: await Promise.all(tagInputs.map(async (name) => ({ name, tag: await nameTag(vk, name) }))),
+  // Share links: Kotlin must open all of this, and seal things the web opens (see vault-crypto.ts).
+  link: {
+    key: await exportLinkKey(lk),
+    fileKey: linkManifest[0].fileKey, // wraps file.fk
+    manifest: await sealManifest(lk, linkManifest),
+    manifestJson: JSON.stringify(linkManifest),
+    passphrase: linkPass,
+    wrap: linkWrap,
+  },
   file: {
     fk: toB64(fkRaw),
     wrapped: fk.wrapped,

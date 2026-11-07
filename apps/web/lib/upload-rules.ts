@@ -77,7 +77,8 @@ export function readToken<T extends { exp: number }>(
 // The upload token binds the folder's owner (`u`) and folder (`p`) to who is
 // uploading: a member (`b`, missing when it's the owner) or a file-drop link
 // (`s`, with the name the uploader typed in `l` and their IP in `i`). Vault
-// uploads carry the vault (`v`); `p` null is then the vault's root.
+// uploads carry the vault (`v`); `p` null is then the vault's root. Transfer
+// uploads carry the transfer (`x`) instead of a folder.
 export type UploadToken = {
   u: string
   p: string | null
@@ -86,6 +87,7 @@ export type UploadToken = {
   l?: string
   i?: string
   v?: string
+  x?: string
   exp: number
 }
 
@@ -93,7 +95,7 @@ export function signUploadToken(
   ownerId: string,
   parentId: string | null,
   now = Date.now(),
-  by: Pick<UploadToken, "b" | "s" | "l" | "i" | "v"> = {}
+  by: Pick<UploadToken, "b" | "s" | "l" | "i" | "v" | "x"> = {}
 ) {
   return signToken("upload-token", { u: ownerId, p: parentId, ...by }, DAY, now)
 }

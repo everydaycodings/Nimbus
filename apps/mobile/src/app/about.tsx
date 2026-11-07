@@ -3,13 +3,13 @@ import * as Clipboard from "expo-clipboard"
 import Constants from "expo-constants"
 import { Directory, File, Paths } from "expo-file-system"
 import { router } from "expo-router"
-import { ArrowCircleUp, ArrowSquareOut, Copy, GithubLogo, Scales } from "phosphor-react-native"
+import { ArrowCircleUp, ArrowSquareOut, Copy, GithubLogo, Globe, Scales } from "phosphor-react-native"
 import { useEffect, useRef, useState } from "react"
-import { AppState, Linking, ScrollView, View } from "react-native"
+import { AppState, Image, Linking, ScrollView, View } from "react-native"
 
 import { BrandMark } from "@/components/brand"
 import { Actions, Frame } from "@/components/dialog"
-import { Caret, Group, Page, Row } from "@/components/page"
+import { Caret, Group, Page, Row, Section } from "@/components/page"
 import { useSnack } from "@/components/snackbar"
 import { Button, Spinner, Text } from "@/components/ui"
 import { useAccounts } from "@/lib/accounts"
@@ -22,6 +22,8 @@ import { c, radius } from "@/lib/theme"
 import { newer, pickApk, unwrapNotes, type Release } from "@/lib/update-rules"
 
 const SOURCE = "https://github.com/everydaycodings/Nimbus"
+// Bundled, so the About screen works offline and never asks github.com for the photo.
+const CREATOR_PHOTO = require("../../assets/creator.webp")
 
 const version = Constants.expoConfig?.version ?? "?"
 const build = String(Constants.expoConfig?.android?.versionCode ?? "?")
@@ -78,6 +80,23 @@ export default function About() {
         <Row label="Copy diagnostics" detail="For bug reports: versions, settings and recent errors" icon={<Copy size={24} color={c.mutedForeground} />} onPress={copy} />
         <Row label="Open-source licences" detail="What Nimbus is built on" icon={<Scales size={24} color={c.mutedForeground} />} trailing={<Caret />} onPress={() => router.push("/licences")} />
       </Group>
+      <Section title="Made by">
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 16, paddingVertical: 4 }}>
+          <Image
+            source={CREATOR_PHOTO}
+            accessibilityIgnoresInvertColors
+            style={{ width: 56, height: 56, borderRadius: 28, borderWidth: 1, borderColor: c.border }}
+          />
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text variant="titleSmall">everydaycodings</Text>
+            <Text variant="bodySmall" color={c.mutedForeground}>Creator of Nimbus</Text>
+          </View>
+        </View>
+        <Group>
+          <Row label="GitHub" detail="github.com/everydaycodings" icon={<GithubLogo size={24} color={c.mutedForeground} />} trailing={<ArrowSquareOut size={20} color={c.mutedForeground} />} onPress={() => Linking.openURL("https://github.com/everydaycodings")} />
+          <Row label="Website" detail="everydaycodings.com" icon={<Globe size={24} color={c.mutedForeground} />} trailing={<ArrowSquareOut size={20} color={c.mutedForeground} />} onPress={() => Linking.openURL("https://everydaycodings.com")} />
+        </Group>
+      </Section>
       {found && <UpdateDialog update={found} onClose={() => setFound(null)} />}
     </Page>
   )

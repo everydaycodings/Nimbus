@@ -19,6 +19,7 @@ export function linkSummary(l: LinkInfo, now = Date.now()) {
     !l.allowView && "Uploads only",
     l.allowView && !l.allowDownload && "No download",
     l.allowUpload && l.allowView && "Takes uploads",
+    l.allowUpload && l.perVisitorFolder && "Folder per person",
   ].filter(Boolean)
   return parts.length ? parts.join(" · ") : "Anyone with the link"
 }
@@ -54,4 +55,5 @@ export const EVENT: Record<string, string> = {
   download: "Downloaded",
   upload: "Uploaded",
   unlock_fail: "Wrong password",
+  confirm: "Emailed a receipt to",
 }

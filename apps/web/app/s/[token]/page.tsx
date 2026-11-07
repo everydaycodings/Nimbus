@@ -90,7 +90,7 @@ export default async function LinkPage({ params, searchParams }: Props) {
   const path = full.slice(full.findIndex((p) => p.id === link.nodeId))
 
   return (
-    <Shell by={by}>
+    <Shell by={link.allowView ? by : undefined}>
       <div className="flex flex-col gap-6">
         {link.allowView ? (
           <PublicFolder
@@ -101,16 +101,36 @@ export default async function LinkPage({ params, searchParams }: Props) {
             download={link.allowDownload}
           />
         ) : (
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {link.itemName}
-          </h1>
+          <div className="mx-auto flex w-full max-w-2xl flex-col gap-1 text-center">
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {link.name && !/^(Link \d+|File request)$/.test(link.name)
+                ? link.name
+                : link.itemName}
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {link.ownerName} is asking for files
+            </p>
+          </div>
         )}
         {link.allowUpload && (
-          <DropZone
-            token={token}
-            folderId={folderId}
-            tusUrl={process.env.TUS_URL ?? ""}
-          />
+          <div
+            className={link.allowView ? undefined : "mx-auto w-full max-w-2xl"}
+          >
+            <DropZone
+              token={token}
+              folderId={folderId}
+              tusUrl={process.env.TUS_URL ?? ""}
+              owner={link.ownerName}
+              request={{
+                instructions: link.instructions,
+                requireEmail: link.requireEmail,
+                maxFileBytes: link.maxFileBytes,
+                maxFiles: link.maxFiles,
+                allowedTypes: link.allowedTypes,
+                expiresAt: link.expiresAt?.toISOString() ?? null,
+              }}
+            />
+          </div>
         )}
       </div>
     </Shell>

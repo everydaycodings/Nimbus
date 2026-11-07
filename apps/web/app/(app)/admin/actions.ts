@@ -1,7 +1,7 @@
 "use server"
 
 import { randomBytes } from "node:crypto"
-import { and, eq, ilike, isNotNull, or, sql } from "drizzle-orm"
+import { and, eq, ilike, isNotNull, isNull, or, sql } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 
 import { MAX_SESSIONS } from "@/lib/accounts"
@@ -14,6 +14,7 @@ import {
   invites,
   settings,
   shares,
+  transfers,
   user,
   type SignupMode,
   type ToastPosition,
@@ -298,6 +299,7 @@ export async function setVaultPolicy(form: FormData) {
   const cap = limit(form, "maxVaults")
   await saveSettings({
     vaultsEnabled: form.get("enabled") === "on",
+    vaultLinksEnabled: form.get("links") === "on",
     maxVaultsPerMember: cap && Math.min(Math.ceil(cap), 1000),
     updatedAt: new Date(),
   })
@@ -340,6 +342,31 @@ export async function setLinkPolicy(form: FormData) {
   revalidatePath("/admin", "layout")
 }
 
+export async function setTransferPolicy(form: FormData) {
+  await requireAdmin()
+  const days = limit(form, "maxDays")
+  const size = limit(form, "maxSize")
+  const unit = UNITS[String(form.get("unit"))] ?? UNITS.GB
+  await saveSettings({
+    transfersEnabled: form.get("enabled") === "on",
+    transferMaxDays: days && Math.min(Math.floor(days), 30),
+    transferMaxBytes: size === null ? null : Math.round(size * unit),
+    updatedAt: new Date(),
+  })
+  revalidatePath("/", "layout")
+}
+
+export async function revokeTransfer(id: string) {
+  await requireAdmin()
+  const gone = await db
+    .update(transfers)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(transfers.id, String(id)), isNull(transfers.revokedAt)))
+    .returning({ by: transfers.senderId })
+  if (gone[0]) await audit("transfer_revoke", { targetId: gone[0].by })
+  revalidatePath("/admin", "layout")
+}
+
 // Settings a "Reset to default" button may touch. Email has its own form.
 const RESETTABLE: SettingKey[] = [
   "signupMode",
@@ -361,7 +388,11 @@ const RESETTABLE: SettingKey[] = [
   "publicLinksEnabled",
   "requireLinkPassword",
   "maxLinkDays",
+  "transfersEnabled",
+  "transferMaxDays",
+  "transferMaxBytes",
   "vaultsEnabled",
+  "vaultLinksEnabled",
   "maxVaultsPerMember",
   "officeUrl",
   "webdav",

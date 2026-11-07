@@ -244,6 +244,84 @@ export async function newFileKey(vk: CryptoKey) {
 export const openFileKey = (vk: CryptoKey, wrapped: string) =>
   openKey(wrapped, vk)
 
+// ---- Share links ----
+// A link key (LK) is a fresh random AES-256 key per link; the vault key never leaves the owner.
+//   file key for the link = b64(iv12 || AES-GCM-wrap(raw FK, LK))          wrapForLink
+//   manifest              = b64(iv12 || AES-GCM(JSON, LK, no AAD))          sealManifest
+//   key mode: LK travels in the URL's # as base64url of its 32 raw bytes    exportLinkKey
+//   passphrase mode: wrappedLinkKey = b64(iv12 || AES-GCM-wrap(raw LK, Argon2id(passphrase, salt)))
+// The manifest is JSON: LinkFile[]. Files keep the chunk format above, so decryptStream and
+// plainSlice work with an unwrapped file key.
+export type LinkFile = {
+  path: string
+  size: number
+  mime: string | null
+  versionId: string
+  fileKey: string // wrapForLink output
+}
+
+const LINK_USAGES: KeyUsage[] = ["encrypt", "decrypt", "wrapKey", "unwrapKey"]
+
+export const newLinkKey = () => subtle.generateKey(GCM, true, LINK_USAGES)
+
+export async function exportLinkKey(lk: CryptoKey) {
+  return toB64(new Uint8Array(await subtle.exportKey("raw", lk)))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "")
+}
+
+export async function importLinkKey(b64url: string) {
+  const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/")
+  const raw = fromB64(b64 + "=".repeat((4 - (b64.length % 4)) % 4))
+  if (raw.length !== 32) throw new Error("bad link key")
+  return subtle.importKey("raw", raw, GCM, true, LINK_USAGES)
+}
+
+export const wrapForLink = (lk: CryptoKey, fk: CryptoKey) => sealKey(fk, lk)
+export const unwrapFromLink = (lk: CryptoKey, wrapped: string) =>
+  openKey(wrapped, lk)
+
+export async function sealManifest(lk: CryptoKey, manifest: LinkFile[]) {
+  const iv = random(12)
+  const pt = new TextEncoder().encode(JSON.stringify(manifest))
+  const ct = new Uint8Array(await subtle.encrypt({ name: "AES-GCM", iv }, lk, pt))
+  return toB64(concat([iv, ct]))
+}
+
+export async function openManifest(
+  lk: CryptoKey,
+  sealed: string
+): Promise<LinkFile[]> {
+  const b = fromB64(sealed)
+  const pt = await subtle.decrypt(
+    { name: "AES-GCM", iv: b.subarray(0, 12) },
+    lk,
+    b.subarray(12)
+  )
+  return JSON.parse(new TextDecoder().decode(pt))
+}
+
+// Passphrase mode: the link key is wrapped by a passphrase key, and the URL carries no key.
+export async function linkKeyWrap(passphrase: string, lk: CryptoKey, kdf = KDF) {
+  const salt = toB64(random(16))
+  return {
+    salt,
+    kdf,
+    wrapped: await sealKey(lk, await passphraseKey(passphrase, salt, kdf)),
+  }
+}
+
+// Throws on a wrong passphrase: GCM refuses to open.
+export async function linkKeyUnwrap(
+  passphrase: string,
+  salt: string,
+  wrapped: string,
+  kdf: { t: number; m: number }
+) {
+  return openKey(wrapped, await passphraseKey(passphrase, salt, kdf))
+}
+
 const chunkCount = (size: number) => Math.max(1, Math.ceil(size / CHUNK))
 export const cipherSize = (size: number) => size + TAG * chunkCount(size)
 // The server only knows the ciphertext size.

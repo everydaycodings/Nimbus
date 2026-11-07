@@ -14,6 +14,7 @@ import {
   user,
 } from "@/lib/db/schema"
 import { appUrl, emailEnabled, message, sendInBackground } from "@/lib/email"
+import { REQUEST_TYPES } from "@/lib/file-rules"
 import { UUID } from "@/lib/files"
 import { hashLinkPassword, newLinkToken } from "@/lib/links"
 import { notify } from "@/lib/notify"
@@ -55,6 +56,12 @@ export type LinkInfo = {
   allowDownload: boolean
   allowUpload: boolean
   uploadCapBytes: number | null
+  instructions: string | null
+  requireEmail: boolean
+  perVisitorFolder: boolean
+  maxFileBytes: number | null
+  maxFiles: number | null
+  allowedTypes: string[] | null
   viewCount: number
   downloadCount: number
   lastOpenedAt: string | null
@@ -199,6 +206,12 @@ export async function getShareState(
       allowDownload: l.allowDownload,
       allowUpload: l.allowUpload,
       uploadCapBytes: l.uploadCapBytes,
+      instructions: l.instructions,
+      requireEmail: l.requireEmail,
+      perVisitorFolder: l.perVisitorFolder,
+      maxFileBytes: l.maxFileBytes,
+      maxFiles: l.maxFiles,
+      allowedTypes: l.allowedTypes,
       viewCount: l.viewCount,
       downloadCount: l.downloadCount,
       lastOpenedAt: l.lastOpenedAt?.toISOString() ?? null,
@@ -417,10 +430,13 @@ async function linkExpiry(raw: string | null | undefined) {
 export async function createLink(
   me: Me,
   nodeId: string,
-  opts: { name?: string; password?: string } = {}
+  // request: an upload-only link (a file request), folders only.
+  opts: { name?: string; password?: string; request?: boolean } = {}
 ): Promise<Result & { id?: string }> {
   const a = await mayShare(me.id, nodeId)
   if (!a) return { error: NOT_ALLOWED }
+  if (opts.request && a.kind !== "folder")
+    return { error: "Only folders can take file requests." }
   const settings = await getSettings()
   if (!settings.publicLinksEnabled)
     return { error: "Your admin turned public links off." }
@@ -440,7 +456,8 @@ export async function createLink(
       name:
         String(opts.name ?? "")
           .trim()
-          .slice(0, 80) || `Link ${n + 1}`,
+          .slice(0, 80) || (opts.request ? "File request" : `Link ${n + 1}`),
+      ...(opts.request && { allowView: false, allowUpload: true }),
       passwordHash: password ? await hashLinkPassword(password) : null,
       expiresAt: settings.maxLinkDays
         ? new Date(Date.now() + settings.maxLinkDays * DAY)
@@ -460,6 +477,12 @@ export type LinkPatch = {
   allowDownload?: boolean
   allowUpload?: boolean
   uploadCapBytes?: number | null
+  instructions?: string | null
+  requireEmail?: boolean
+  perVisitorFolder?: boolean
+  maxFileBytes?: number | null
+  maxFiles?: number | null
+  allowedTypes?: string[] | null
 }
 
 export async function updateLink(
@@ -493,6 +516,25 @@ export async function updateLink(
     if (cap !== null && !(Number.isFinite(cap) && cap > 0))
       return { error: "Enter a size above zero, or leave it blank." }
     set.uploadCapBytes = cap === null ? null : Math.round(cap)
+  }
+  for (const k of ["requireEmail", "perVisitorFolder"] as const)
+    if (patch[k] !== undefined) set[k] = Boolean(patch[k])
+  if (patch.instructions !== undefined)
+    set.instructions = String(patch.instructions ?? "").trim().slice(0, 2000) || null
+  for (const k of ["maxFileBytes", "maxFiles"] as const) {
+    const v = patch[k]
+    if (v === undefined) continue
+    if (v !== null && !(Number.isFinite(v) && v > 0))
+      return { error: "Enter a number above zero, or leave it blank." }
+    set[k] = v === null ? null : Math.round(v)
+  }
+  if (patch.allowedTypes !== undefined) {
+    const list = (Array.isArray(patch.allowedTypes) ? patch.allowedTypes : [])
+      .map((t) => String(t).trim().toLowerCase())
+      .map((t) => (t in REQUEST_TYPES || t.startsWith(".") ? t : `.${t}`))
+      .filter((t) => /^(\.[a-z0-9]{1,10}|[a-z]+)$/.test(t))
+      .slice(0, 30)
+    set.allowedTypes = list.length ? [...new Set(list)] : null
   }
   if (set.allowView === false && set.allowUpload === false)
     return { error: "A link has to show the files or take uploads." }

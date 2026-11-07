@@ -107,3 +107,22 @@ export async function planVaultUpload(
 export async function vaultFileUrl(vaultId: string, id: string) {
   return svc.vaultFileUrl(await requireMember(), vaultId, id)
 }
+
+// Share links. The browser re-wraps the file keys; see lib/services/vault.ts.
+export async function createVaultLink(
+  vaultId: string,
+  input: svc.VaultLinkInput
+) {
+  return svc.createVaultLink(await requireMember(), vaultId, input)
+}
+
+export async function listVaultLinks(vaultId: string) {
+  return svc.listVaultLinks(await requireMember(), vaultId)
+}
+
+export async function revokeVaultLink(
+  vaultId: string,
+  linkId: string
+): Promise<Result> {
+  return svc.revokeVaultLink(await requireMember(), vaultId, linkId)
+}

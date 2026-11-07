@@ -44,6 +44,7 @@ import {
   XIcon,
   type Icon,
   LockKeyIcon,
+  PaperPlaneTiltIcon,
 } from "@phosphor-icons/react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -86,6 +87,7 @@ import {
 } from "@/components/overlay-styles"
 import { SubmitButton } from "@/components/submit-button"
 import { TagColors, useTagEditor } from "@/components/tag-edit"
+import { useTransfer } from "@/components/transfer-dialog"
 import {
   pastedFiles,
   readDrop,
@@ -214,6 +216,7 @@ export function FileBrowser({
 }) {
   const router = useRouter()
   const { upload, download } = useUploads()
+  const transfer = useTransfer()
   const [layout, setLayout] = useState(initialLayout)
   const [compact, setCompact] = useState(initialCompact)
   const [tiles, setTiles] = useState(initialTiles)
@@ -251,6 +254,7 @@ export function FileBrowser({
   const [previewOpen, setPreviewOpen] = useState(false)
   // The item whose Share dialog is open.
   const [sharing, setSharing] = useState<Item | null>(null)
+  const [requesting, setRequesting] = useState(false)
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>(
     view === "recent" || view === "search"
       ? { key: "rank", desc: false }
@@ -666,7 +670,39 @@ export function FileBrowser({
           label: "Share…",
           icon: ShareNetworkIcon,
           kbd: "Shift S",
-          run: () => setSharing(one),
+          run: () => {
+            setRequesting(false)
+            setSharing(one)
+          },
+        },
+      one &&
+        one.kind === "folder" &&
+        !one.shortcut &&
+        roleOf(one) !== "viewer" && {
+          label: "Request files…",
+          icon: UploadSimpleIcon,
+          menuOnly: true,
+          run: () => {
+            setRequesting(true)
+            setSharing(one)
+          },
+        },
+      transfer.enabled &&
+        !t.some((i) => i.shortcut) && {
+          label: "Send with Transfer…",
+          short: "Transfer",
+          icon: PaperPlaneTiltIcon,
+          menuOnly: true,
+          run: () =>
+            transfer.send(
+              t.map((i) => ({
+                id: i.id,
+                name: i.name,
+                kind: i.kind,
+                mime: i.mime,
+                size: i.size,
+              }))
+            ),
         },
       one &&
         edit && {
@@ -959,6 +995,7 @@ export function FileBrowser({
         if (mod || !canEdit || !sel.length) return
         if (e.shiftKey) {
           if (sel.length !== 1 || roleOf(sel[0]) === "viewer") return
+          setRequesting(false)
           setSharing(sel[0])
         } else star(sel)
         break
@@ -1871,7 +1908,11 @@ export function FileBrowser({
         }}
       />
 
-      <ShareDialog item={sharing} onClose={() => setSharing(null)} />
+      <ShareDialog
+        item={sharing}
+        request={requesting}
+        onClose={() => setSharing(null)}
+      />
 
       <DetailsSheet
         item={detailsItem}

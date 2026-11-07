@@ -61,7 +61,7 @@ export async function setAllowReshare(
 
 export async function createLink(
   nodeId: string,
-  opts: { name?: string; password?: string } = {}
+  opts: { name?: string; password?: string; request?: boolean } = {}
 ): Promise<Result & { id?: string }> {
   const r = await svc.createLink(await requireMember(), nodeId, opts)
   if (!r.error) refresh()

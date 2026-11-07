@@ -11,7 +11,11 @@ export const POST = (
   withMember(async (me) => {
     const b = await json(
       req,
-      z.object({ name: z.string().optional(), password: z.string().optional() })
+      z.object({
+        name: z.string().optional(),
+        password: z.string().optional(),
+        request: z.boolean().optional(),
+      })
     )
     if (b instanceof Response) return b
     return done(await svc.createLink(me, (await params).id, b))

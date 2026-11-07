@@ -1,0 +1,30 @@
+appId: org.nimbus.drive
+name: request
+# Request files on a new folder: the request's settings open, PDFs only saves, then the folder is trashed. Unique name per run.
+---
+- runScript:
+    file: ../stamp.js
+- launchApp
+- extendedWaitUntil: { visible: "Search in Nimbus", timeout: 20000 }
+- tapOn: "New"
+- tapOn: "New folder"
+- tapOn: "Folder name"
+- inputText: "mae-req-${output.stamp}"
+- pressKey: Enter
+- extendedWaitUntil: { visible: "Folder, mae-req-${output.stamp}", timeout: 10000 }
+- tapOn: "More actions for mae-req-${output.stamp}"
+- scrollUntilVisible: { element: "Request files" }
+- tapOn: "Request files"
+- extendedWaitUntil: { visible: "Instructions for people sending files", timeout: 15000 }
+- assertVisible: "File request"
+- assertNotVisible: "Download"
+- scrollUntilVisible: { element: "PDFs", direction: DOWN }
+- tapOn: "PDFs"
+- back
+- extendedWaitUntil: { visible: "Who has access", timeout: 10000 }
+- assertVisible: "Uploads only"
+- back
+- tapOn: "More actions for mae-req-${output.stamp}"
+- scrollUntilVisible: { element: "Move to trash" }
+- tapOn: "Move to trash"
+- assertNotVisible: "Folder, mae-req-${output.stamp}"

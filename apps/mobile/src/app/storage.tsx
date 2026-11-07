@@ -212,6 +212,12 @@ export default function Storage() {
             {r.trash.count === 0 ? <Empty>The trash is empty.</Empty> : <Hairlines rows={r.trash.top.map((f) => <Row key={f.id} row={f} />)} />}
           </Section>
 
+          {r.transfers.count > 0 && (
+            <Section title="Transfers" note={`${plural(r.transfers.count, "transfer")} · ${formatBytes(r.transfers.bytes)}`}>
+              <Empty>Copies of sent files, deleted when each transfer expires or is revoked.</Empty>
+            </Section>
+          )}
+
           <Section title="Folders" note="What each folder holds, biggest first.">
             <View accessibilityRole="header" style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 4 }}>
               {[{ id: null as string | null, name: "My files" }, ...r.folder.path].map((p, i, all) => {

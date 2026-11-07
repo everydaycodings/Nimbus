@@ -30,6 +30,7 @@ import {
   Lock,
   NotePencil,
   Minus,
+  PaperPlaneTilt,
   PencilSimple,
   Plus,
   Scan,
@@ -58,6 +59,7 @@ import { Sheet, SheetDivider, SheetRow, useDismiss } from "@/components/sheet"
 import { useSnack } from "@/components/snackbar"
 import { TagDialog } from "@/components/tag-dialog"
 import { VaultPickSheet, canVault } from "@/components/vault-sheets"
+import { sendWithTransfer, useSent } from "@/lib/sent"
 import { useUploader } from "@/components/uploader"
 import { Button, Text } from "@/components/ui"
 import { whilePicking } from "@/lib/picking"
@@ -263,6 +265,7 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
   const api = useApi()
   const snack = useSnack()
   const links = useLinks()
+  const sent = useSent()
   const offline = useOfflineActions()
   const one = items.length === 1 ? items[0] : null
   const file = one?.kind === "file" ? one : null
@@ -343,6 +346,17 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
               links.copyFor(one)
             }}
           />
+          {one.kind === "folder" && (
+            <SheetRow
+              label="Request files"
+              needsNet
+              icon={ic(UploadSimple)}
+              onPress={() => {
+                done()
+                router.push({ pathname: "/share/[id]", params: { id: one.id, name: one.name, request: "1" } })
+              }}
+            />
+          )}
         </>
       )}
       <SheetRow
@@ -397,6 +411,17 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
       )}
       {file && OFFICE_EXT.test(file.name) && <CollaboraRow item={file} onClose={onClose} icon={ic(FileText)} />}
       {one && edit && <SheetRow label="Rename" icon={ic(PencilSimple)} onPress={() => ask({ kind: "rename", item: one })} />}
+      {sent.data?.options.enabled !== false && !items.some((i) => i.shortcut) && (
+        <SheetRow
+          label="Send with Transfer"
+          needsNet
+          icon={ic(PaperPlaneTilt)}
+          onPress={() => {
+            done()
+            sendWithTransfer(items.map((i) => ({ id: i.id, name: i.name, kind: i.kind, mime: i.mime, size: i.size })))
+          }}
+        />
+      )}
       {edit && <SheetRow label="Move" icon={ic(ArrowBendUpRight)} onPress={() => onChange({ kind: "move", items })} />}
       {edit && canVault && items.every((i) => !i.role && !i.shortcut) && <SheetRow label="Move to vault" needsNet icon={ic(Lock)} onPress={() => onChange({ kind: "vault", items })} />}
       <SheetRow

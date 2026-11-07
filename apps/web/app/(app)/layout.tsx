@@ -7,6 +7,7 @@ import {
   HourglassIcon,
   KeyIcon,
   LockIcon,
+  PaperPlaneTiltIcon,
   ShieldIcon,
   ShieldCheckIcon,
   SignOutIcon,
@@ -33,6 +34,7 @@ import { NotificationBell, SharedBadge } from "@/components/notification-bell"
 import { SidebarShell } from "@/components/sidebar-shell"
 import { SidebarTags } from "@/components/sidebar-tags"
 import { Toaster } from "@/components/toaster"
+import { TransferProvider } from "@/components/transfer-dialog"
 import { TwoFactorSetup } from "@/components/two-factor"
 import { NewMenu, UploadProvider } from "@/components/upload-provider"
 import { VaultKeysProvider } from "@/components/vault-keys"
@@ -301,6 +303,13 @@ export default async function AppLayout({
               {href === "/shared" && <SharedBadge initial={counts} />}
             </NavLink>
           ))}
+          {settings.transfersEnabled && (
+            <NavLink
+              href="/transfers"
+              icon={<PaperPlaneTiltIcon />}
+              label="Transfers"
+            />
+          )}
           {(settings.vaultsEnabled || vaultPrefs.vaults > 0) && (
             <NavLink href="/vault" icon={<LockIcon />} label="Vault" />
           )}
@@ -346,6 +355,7 @@ export default async function AppLayout({
 
   return (
     <Toaster position={settings.toastPosition}>
+      <TransferProvider enabled={settings.transfersEnabled}>
       <UploadProvider
         tusUrl={process.env.TUS_URL ?? ""}
         zipMode={process.env.VERCEL ? "client" : "server"}
@@ -376,6 +386,7 @@ export default async function AppLayout({
           />
         )}
       </UploadProvider>
+      </TransferProvider>
     </Toaster>
   )
 }

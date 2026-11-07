@@ -463,8 +463,9 @@ export function useLinks() {
     const url = (link: LinkInfo) => linkUrl(api.account.server, link)
     const state = (id: string) => api.get<ShareState>(`/items/${id}/shares`)
     // Answers only the id, and the URL's token is in the share state.
-    const create = async (id: string, password?: string) => {
-      const made = await api.post<CreateLinkResponse>(`/items/${id}/links`, { password })
+    // request: an upload-only link (a file request), folders only.
+    const create = async (id: string, password?: string, request?: boolean) => {
+      const made = await api.post<CreateLinkResponse>(`/items/${id}/links`, { password, request })
       const link = (await state(id)).links.find((l) => l.id === made.id)
       if (!link) throw new Error("The link was made, but it couldn't be loaded. Try again.")
       actions.refresh()

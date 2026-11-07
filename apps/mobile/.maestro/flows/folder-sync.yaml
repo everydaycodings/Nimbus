@@ -18,10 +18,11 @@ name: folder-sync
 - tapOn: "Add a folder"
 - extendedWaitUntil: { visible: "(?i)use this folder", timeout: 10000 }
 - waitForAnimationToEnd
-- back
-- runFlow:
-    when: { visible: "(?i)use this folder" }
-    commands: [ back ]
+# The picker can open a few folders deep, and Back walks up them first.
+- repeat:
+    while: { visible: "(?i)use this folder" }
+    times: 5
+    commands: [ back, waitForAnimationToEnd ]
 - assertVisible: "Folder backup & sync"
 - back
 # And from Camera backup.

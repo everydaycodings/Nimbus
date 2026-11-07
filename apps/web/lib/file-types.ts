@@ -14,6 +14,11 @@ import { typeKeyOf } from "@/lib/file-rules"
 
 export { DOC, formatBytes } from "@/lib/file-rules"
 
+// Where a public page's files live: "/s/<token>" for a share link, and "t:<token>"
+// (":" can't appear in a real token) for a transfer's "/t/<token>".
+export const linkBase = (link: string) =>
+  link.startsWith("t:") ? `/t/${link.slice(2)}` : `/s/${link}`
+
 // Icon and hue for each kind of file. Colors are the --file-* tokens in globals.css.
 const TYPES = {
   folder: {

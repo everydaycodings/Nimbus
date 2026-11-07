@@ -1,14 +1,22 @@
 import "server-only"
 
-import { and, count, eq, inArray, isNull, sql } from "drizzle-orm"
+import { and, count, desc, eq, inArray, isNull, sql } from "drizzle-orm"
 
 import { db } from "@/lib/db"
-import { fileVersions, nodes, vaults } from "@/lib/db/schema"
+import {
+  fileVersions,
+  nodes,
+  vaultLinks,
+  vaultLinkVersions,
+  vaults,
+} from "@/lib/db/schema"
 import { UUID } from "@/lib/files"
 import { formatBytes } from "@/lib/file-rules"
+import { newLinkToken } from "@/lib/links"
 import { spaceLeft } from "@/lib/quota"
 import { presignGet } from "@/lib/s3"
 import type { Me } from "@/lib/session"
+import { getSettings } from "@/lib/signup"
 import { sizeLabel, signUploadToken } from "@/lib/upload-rules"
 import {
   deleteNodes,
@@ -136,6 +144,8 @@ export type VaultNode = {
   updatedAt: string
   trashedAt: string | null
   encKey: string | null
+  // The version encKey belongs to; a share link lists it.
+  versionId: string | null
   // Has its name tag; older items get one the next time the vault opens.
   tagged: boolean
 }
@@ -155,6 +165,7 @@ export async function vaultTree(me: Me, vaultId: string): Promise<VaultNode[] | 
       updatedAt: nodes.updatedAt,
       trashedAt: nodes.trashedAt,
       encKey: fileVersions.encKey,
+      versionId: nodes.currentVersionId,
       tagged: sql<boolean>`${nodes.nameTag} is not null`,
     })
     .from(nodes)
@@ -410,4 +421,145 @@ export async function vaultFileUrl(
     encKey: row.encKey,
     size: row.size,
   }
+}
+
+// ---- Share links ----
+// The browser does the crypto (re-wrapping file keys under a link key); the server stores the
+// sealed manifest and which ciphertexts the link may serve. See lib/vault-links.ts.
+
+const MAX_MANIFEST = 2 * 1024 * 1024
+const MAX_LINK_FILES = 5000
+const LINKS_OFF = "Vault links are turned off on this server."
+
+export type VaultLinkInput = {
+  manifest: string // sealed with the link key
+  label: string // sealed with the vault key
+  versionIds: string[]
+  expiresInDays: 1 | 7 | 30 | null
+  // Passphrase mode: the link key wrapped by Argon2id(passphrase); omitted in key mode.
+  passphrase?: { salt: string; kdf: { t: number; m: number }; wrapped: string }
+}
+
+export async function createVaultLink(
+  me: Me,
+  vaultId: string,
+  input: VaultLinkInput
+): Promise<Result & { id?: string; token?: string }> {
+  if (!(await getSettings()).vaultLinksEnabled) return { error: LINKS_OFF }
+  const vault = await myVault(me, vaultId)
+  if (!vault) return { error: GONE }
+  const ids = Array.isArray(input.versionIds)
+    ? [...new Set(input.versionIds.filter((v) => UUID.test(v)))]
+    : []
+  const pass = input.passphrase
+  if (
+    !ids.length ||
+    ids.length > MAX_LINK_FILES ||
+    typeof input.manifest !== "string" ||
+    input.manifest.length > MAX_MANIFEST ||
+    !/^[A-Za-z0-9+/]+=*$/.test(input.manifest) ||
+    !isSealedName(input.label) ||
+    (input.expiresInDays !== null && ![1, 7, 30].includes(input.expiresInDays)) ||
+    (pass &&
+      (![pass.salt, pass.wrapped].every(isSealedName) || !kdfOk(pass.kdf)))
+  )
+    return { error: "That link doesn't look right." }
+  // Only this owner's files, in this vault.
+  const [{ n }] = await db
+    .select({ n: count() })
+    .from(fileVersions)
+    .innerJoin(nodes, eq(nodes.id, fileVersions.nodeId))
+    .where(
+      and(
+        inArray(fileVersions.id, ids),
+        eq(nodes.vaultId, vault.id),
+        eq(nodes.ownerId, me.id),
+        eq(nodes.kind, "file")
+      )
+    )
+  if (n !== ids.length) return { error: GONE }
+  const days = input.expiresInDays
+  const token = newLinkToken()
+  const id = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .insert(vaultLinks)
+      .values({
+        token,
+        ownerId: me.id,
+        vaultId: vault.id,
+        manifest: input.manifest,
+        label: input.label,
+        expiresAt: days ? new Date(Date.now() + days * 86_400_000) : null,
+        ...(pass && {
+          kdfSalt: pass.salt,
+          kdfIterations: pass.kdf.t,
+          kdfMemory: pass.kdf.m,
+          wrappedLinkKey: pass.wrapped,
+        }),
+      })
+      .returning({ id: vaultLinks.id })
+    await tx
+      .insert(vaultLinkVersions)
+      .values(ids.map((versionId) => ({ linkId: row.id, versionId })))
+    return row.id
+  })
+  return { id, token }
+}
+
+export type VaultLinkRow = {
+  id: string
+  token: string
+  label: string // sealed
+  createdAt: string
+  expiresAt: string | null
+  viewCount: number
+  passphrase: boolean
+  files: number
+}
+
+export async function listVaultLinks(
+  me: Me,
+  vaultId: string
+): Promise<VaultLinkRow[] | null> {
+  const vault = await myVault(me, vaultId)
+  if (!vault) return null
+  const rows = await db
+    .select({
+      id: vaultLinks.id,
+      token: vaultLinks.token,
+      label: vaultLinks.label,
+      createdAt: vaultLinks.createdAt,
+      expiresAt: vaultLinks.expiresAt,
+      viewCount: vaultLinks.viewCount,
+      passphrase: sql<boolean>`${vaultLinks.wrappedLinkKey} is not null`,
+      files: sql<number>`(select count(*)::int from vault_link_versions v where v.link_id = ${vaultLinks.id})`,
+    })
+    .from(vaultLinks)
+    .where(and(eq(vaultLinks.vaultId, vault.id), eq(vaultLinks.ownerId, me.id)))
+    .orderBy(desc(vaultLinks.createdAt))
+  return rows.map((r) => ({
+    ...r,
+    createdAt: r.createdAt.toISOString(),
+    expiresAt: r.expiresAt?.toISOString() ?? null,
+  }))
+}
+
+// Deleting the row deletes the wrapped file keys with it.
+export async function revokeVaultLink(
+  me: Me,
+  vaultId: string,
+  linkId: string
+): Promise<Result> {
+  const vault = await myVault(me, vaultId)
+  if (!vault || !UUID.test(linkId)) return { error: GONE }
+  await db
+    .delete(vaultLinks)
+    .where(
+      and(
+        eq(vaultLinks.id, linkId),
+        eq(vaultLinks.vaultId, vault.id),
+        eq(vaultLinks.ownerId, me.id)
+      )
+    )
+  return {}
 }

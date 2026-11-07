@@ -49,6 +49,8 @@ function sentence(e: typeof auditEvents.$inferSelect, who: string) {
       return "revoked an invite link"
     case "link_revoke":
       return `revoked a public link of ${who}`
+    case "transfer_revoke":
+      return `revoked a transfer from ${who}`
     case "backup_download":
       return "downloaded a database backup"
     case "settings":

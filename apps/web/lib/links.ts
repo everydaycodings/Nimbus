@@ -26,7 +26,7 @@ export async function hashLinkPassword(pw: string) {
   return `scrypt$${salt.toString("base64url")}$${hash.toString("base64url")}`
 }
 
-async function checkPassword(pw: string, stored: string) {
+export async function checkPassword(pw: string, stored: string) {
   const [, salt, hash] = stored.split("$")
   if (!salt || !hash) return false
   const got = await scryptAsync(pw, Buffer.from(salt, "base64url"), 32)
@@ -54,6 +54,12 @@ export async function findLink(token: string) {
       allowDownload: shares.allowDownload,
       allowUpload: shares.allowUpload,
       uploadCapBytes: shares.uploadCapBytes,
+      instructions: shares.instructions,
+      requireEmail: shares.requireEmail,
+      perVisitorFolder: shares.perVisitorFolder,
+      maxFileBytes: shares.maxFileBytes,
+      maxFiles: shares.maxFiles,
+      allowedTypes: shares.allowedTypes,
       expiresAt: shares.expiresAt,
       ownerId: nodes.ownerId,
       ownerName: user.name,
@@ -139,7 +145,7 @@ export async function clientIp() {
 
 export async function logLinkEvent(
   shareId: string,
-  kind: "view" | "download" | "upload" | "unlock_fail",
+  kind: "view" | "download" | "upload" | "unlock_fail" | "confirm",
   detail?: string
 ) {
   const h = await headers()

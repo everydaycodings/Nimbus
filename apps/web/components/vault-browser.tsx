@@ -21,6 +21,7 @@ import {
   LockKeyIcon,
   MagnifyingGlassIcon,
   KeyIcon,
+  LinkSimpleIcon,
   PencilSimpleIcon,
   SquareIcon,
   SquaresFourIcon,
@@ -80,6 +81,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useVaultKeys } from "@/components/vault-keys"
+import { LinksDialog, ShareLinkDialog } from "@/components/vault-links"
 import { PassphraseFields } from "@/components/vault-list"
 import {
   pickSaveTarget,
@@ -120,6 +122,8 @@ type Props = {
   layout: "grid" | "list"
   compact: boolean
   tiles: "small" | "medium" | "large"
+  // An admin can turn share links off.
+  linksEnabled: boolean
 }
 
 type Rekey = Pick<VaultInfo, "salt" | "wrapped" | "kdf">
@@ -328,6 +332,7 @@ function VaultBrowser({
   layout: initialLayout,
   compact,
   tiles: initialTiles,
+  linksEnabled,
   rescued,
   onRekey,
 }: Props & {
@@ -367,7 +372,10 @@ function VaultBrowser({
   const [dropId, setDropId] = useState<string | null>(null)
   const [viewing, setViewing] = useState<Entry | null>(null)
   const [src, setSrc] = useState<Decrypted>(null)
-  const [vaultDialog, setVaultDialog] = useState<"pass" | "delete" | null>(
+  const [linking, setLinking] = useState<Entry[] | null>(null)
+  const [vaultDialog, setVaultDialog] = useState<
+    "pass" | "delete" | "links" | null
+  >(
     rescued ? "pass" : null
   )
 
@@ -1102,6 +1110,12 @@ function VaultBrowser({
           setNaming({ item: one })
         },
       })
+    if (linksEnabled)
+      acts.push({
+        label: "Share link…",
+        icon: LinkSimpleIcon,
+        run: () => setLinking(t),
+      })
     acts.push(
       { label: "Move…", icon: ArrowBendUpRightIcon, run: () => setMoving(t) },
       {
@@ -1126,7 +1140,7 @@ function VaultBrowser({
   }
 
   const busy = Boolean(
-    naming || moving || movingOut || deleting || vaultDialog || viewing
+    naming || moving || movingOut || deleting || vaultDialog || linking || viewing
   )
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -1536,6 +1550,15 @@ function VaultBrowser({
                     <KeyIcon />
                     Change passphrase…
                   </Menu.Item>
+                  {linksEnabled && (
+                    <Menu.Item
+                      className={MENU_ITEM}
+                      onClick={() => setVaultDialog("links")}
+                    >
+                      <LinkSimpleIcon />
+                      Shared links…
+                    </Menu.Item>
+                  )}
                   <Menu.Separator className="-mx-1 my-1 h-px bg-border" />
                   <Menu.Item
                     className={cn(
@@ -1730,6 +1753,22 @@ function VaultBrowser({
             setVaultDialog(null)
             if (text) setNotice({ text })
           }}
+        />
+      )}
+      {linking && (
+        <ShareLinkDialog
+          vault={vault}
+          vk={vk}
+          targets={linking}
+          kidsOf={kidsOf}
+          onClose={() => setLinking(null)}
+        />
+      )}
+      {vaultDialog === "links" && (
+        <LinksDialog
+          vaultId={vault.id}
+          vk={vk}
+          onClose={() => setVaultDialog(null)}
         />
       )}
       {vaultDialog === "delete" && (

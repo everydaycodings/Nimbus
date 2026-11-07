@@ -54,6 +54,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { UserAvatar } from "@/components/user-avatar"
 import type { Item } from "@/lib/files"
+import { REQUEST_TYPES } from "@/lib/file-rules"
 import { cn } from "@/lib/utils"
 
 type Role = "viewer" | "editor"
@@ -72,9 +73,12 @@ const dateTime = new Intl.DateTimeFormat(undefined, {
 export function ShareDialog({
   item,
   onClose,
+  request = false,
 }: {
   item: Item | null
   onClose: () => void
+  // Opened from "Request files…": make an upload-only link straight away.
+  request?: boolean
 }) {
   // Kept while the dialog animates out.
   const [shown, setShown] = useState(item)
@@ -158,6 +162,7 @@ export function ShareDialog({
               act={act}
               pending={pending}
               error={error}
+              request={request}
             />
           )}
         </Dialog.Popup>
@@ -174,32 +179,52 @@ function Body({
   act,
   pending,
   error,
+  request,
 }: {
   nodeId: string
   state: ShareState
   act: Act
   pending: boolean
   error: string | null
+  request: boolean
 }) {
   const [openLink, setOpenLink] = useState<string | null>(null)
+  // The link just made, scrolled into view once it renders.
+  const [made, setMade] = useState<string | null>(null)
   const [newPassword, setNewPassword] = useState("")
-  const [askingPassword, setAskingPassword] = useState(false)
+  // What the password form will make: a link or a file request.
+  const [askingPassword, setAskingPassword] = useState<
+    false | "link" | "request"
+  >(false)
 
-  function newLink() {
+  function newLink(kind: "link" | "request" = "link") {
     if (state.requireLinkPassword && !askingPassword) {
-      setAskingPassword(true)
+      setAskingPassword(kind)
       return
     }
     act(async () => {
-      const res = await createLink(nodeId, { password: newPassword })
+      const res = await createLink(nodeId, {
+        password: newPassword,
+        request: kind === "request",
+      })
       if (res.id) {
         setOpenLink(res.id)
+        setMade(res.id)
         setAskingPassword(false)
         setNewPassword("")
       }
       return res
     })
   }
+
+  const asked = useRef(false)
+  useEffect(() => {
+    if (!request || asked.current || !state.publicLinks) return
+    asked.current = true
+    newLink("request")
+    // Once per opening; newLink reads the state it was opened with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request, state.publicLinks])
 
   return (
     <div className="flex flex-col">
@@ -292,11 +317,23 @@ function Body({
           >
             Public links
           </h3>
+          {state.publicLinks && state.kind === "folder" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => newLink("request")}
+              disabled={pending}
+              title="An upload-only link: people send files, nobody sees what's here"
+            >
+              <UploadSimpleIcon />
+              Request files
+            </Button>
+          )}
           {state.publicLinks && (
             <Button
               variant="outline"
               size="sm"
-              onClick={newLink}
+              onClick={() => newLink()}
               disabled={pending}
             >
               <PlusIcon />
@@ -309,14 +346,18 @@ function Body({
             className="flex gap-2"
             onSubmit={(e) => {
               e.preventDefault()
-              newLink()
+              newLink(askingPassword || "link")
             }}
           >
             <Input
               type="password"
               autoFocus
               autoComplete="new-password"
-              placeholder="Password for the new link"
+              placeholder={
+                askingPassword === "request"
+                  ? "Password for the file request"
+                  : "Password for the new link"
+              }
               aria-label="Password for the new link"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
@@ -350,6 +391,7 @@ function Body({
                 maxLinkDays={state.maxLinkDays}
                 requirePassword={state.requireLinkPassword}
                 open={openLink === l.id}
+                fresh={made === l.id}
                 onToggle={() => setOpenLink(openLink === l.id ? null : l.id)}
                 act={act}
               />
@@ -628,6 +670,7 @@ function LinkRow({
   maxLinkDays,
   requirePassword,
   open,
+  fresh,
   onToggle,
   act,
 }: {
@@ -636,9 +679,27 @@ function LinkRow({
   maxLinkDays: number | null
   requirePassword: boolean
   open: boolean
+  fresh: boolean
   onToggle: () => void
   act: Act
 }) {
+  const ref = useRef<HTMLLIElement>(null)
+  useEffect(() => {
+    // Scroll only the dialog: scrollIntoView would also move the page behind it.
+    const row = ref.current
+    const box = row?.closest<HTMLElement>("[role=dialog]")
+    if (!fresh || !row || !box) return
+    box.scrollTo({
+      top:
+        row.getBoundingClientRect().top -
+        box.getBoundingClientRect().top +
+        box.scrollTop -
+        16,
+      behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+    })
+  }, [fresh])
   // The dialog only renders in the browser, after it's opened.
   const url = `${window.location.origin}/s/${link.token}`
   const [now] = useState(Date.now)
@@ -648,10 +709,12 @@ function LinkRow({
     !link.allowView && "Uploads only",
     link.allowView && !link.allowDownload && "No download",
     link.allowUpload && link.allowView && "Takes uploads",
+    link.allowUpload && link.perVisitorFolder && "Folder per person",
   ].filter(Boolean) as string[]
 
   return (
     <li
+      ref={ref}
       className="flex flex-col rounded-lg data-open:bg-muted/30"
       data-open={open || undefined}
     >
@@ -728,17 +791,11 @@ function LinkSettings({
 }) {
   const [name, setName] = useState(link.name)
   const [password, setPassword] = useState("")
-  const [cap, setCap] = useState(
-    link.uploadCapBytes
-      ? String(+(link.uploadCapBytes / 2 ** 30).toFixed(2))
-      : ""
-  )
   const [events, setEvents] = useState<LinkEvent[] | null>(null)
   const [all, setAll] = useState(false)
   const nameId = useId()
   const expId = useId()
   const pwId = useId()
-  const capId = useId()
 
   useEffect(() => {
     listLinkEvents(link.id, all ? 500 : 20).then(setEvents)
@@ -853,13 +910,14 @@ function LinkSettings({
           onChange={(on) => patch({ allowView: on })}
           label={kind === "folder" ? "See the files in it" : "See the file"}
         />
-        <Toggle
-          checked={link.allowDownload}
-          disabled={!link.allowView}
-          onChange={(on) => patch({ allowDownload: on })}
-          label="Download"
-          hint="Off: preview only. Anyone can still screenshot what they see."
-        />
+        {link.allowView && (
+          <Toggle
+            checked={link.allowDownload}
+            onChange={(on) => patch({ allowDownload: on })}
+            label="Download"
+            hint="Off: preview only. Anyone can still screenshot what they see."
+          />
+        )}
         {kind === "folder" && (
           <Toggle
             checked={link.allowUpload}
@@ -869,34 +927,7 @@ function LinkSettings({
           />
         )}
         {kind === "folder" && link.allowUpload && (
-          <form
-            className="ml-7 flex items-end gap-1.5"
-            onSubmit={(e) => {
-              e.preventDefault()
-              patch({
-                uploadCapBytes: cap.trim() ? Number(cap) * 2 ** 30 : null,
-              })
-            }}
-          >
-            <div className="grid gap-1.5">
-              <label htmlFor={capId} className="text-xs text-muted-foreground">
-                Stop taking uploads after (GB)
-              </label>
-              <Input
-                id={capId}
-                type="number"
-                min={0.01}
-                step={0.01}
-                placeholder="No limit"
-                value={cap}
-                onChange={(e) => setCap(e.target.value)}
-                className="w-36"
-              />
-            </div>
-            <Button type="submit" variant="outline">
-              Save
-            </Button>
-          </form>
+          <RequestSettings link={link} patch={patch} />
         )}
       </fieldset>
 
@@ -962,11 +993,164 @@ function LinkSettings({
   )
 }
 
+const gb = (b: number | null) => (b ? String(+(b / 2 ** 30).toFixed(2)) : "")
+const bytesOf = (gbText: string) =>
+  gbText.trim() ? Math.round(Number(gbText) * 2 ** 30) : null
+
+// What a file-drop link asks of visitors and what it takes (a file request).
+function RequestSettings({
+  link,
+  patch,
+}: {
+  link: LinkInfo
+  patch: (p: LinkPatch) => void
+}) {
+  const [instructions, setInstructions] = useState(link.instructions ?? "")
+  const [perFile, setPerFile] = useState(gb(link.maxFileBytes))
+  const [files, setFiles] = useState(link.maxFiles ? String(link.maxFiles) : "")
+  const [cap, setCap] = useState(gb(link.uploadCapBytes))
+  const types = link.allowedTypes ?? []
+  const [extra, setExtra] = useState(
+    types.filter((t) => t.startsWith(".")).join(", ")
+  )
+  const ids = {
+    ins: useId(),
+    per: useId(),
+    files: useId(),
+    cap: useId(),
+    ext: useId(),
+  }
+  const setTypes = (cats: string[], ext = extra) =>
+    patch({
+      allowedTypes: [
+        ...cats,
+        ...ext
+          .split(/[\s,]+/)
+          .filter(Boolean)
+          .map((e) => (e.startsWith(".") ? e : `.${e}`)),
+      ],
+    })
+  const cats = types.filter((t) => !t.startsWith("."))
+
+  return (
+    <div className="ml-7 flex flex-col gap-4 pt-1">
+      <div className="grid gap-1.5">
+        <label htmlFor={ids.ins} className="text-xs font-medium">
+          Instructions for people sending files
+        </label>
+        <textarea
+          id={ids.ins}
+          rows={3}
+          maxLength={2000}
+          placeholder="e.g. Please send your signed contract and a photo ID."
+          value={instructions}
+          onChange={(e) => setInstructions(e.target.value)}
+          onBlur={() =>
+            instructions.trim() !== (link.instructions ?? "") &&
+            patch({ instructions: instructions.trim() || null })
+          }
+          className="rounded-md border border-input bg-input/30 px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        />
+      </div>
+      <Toggle
+        checked={link.requireEmail}
+        onChange={(on) => patch({ requireEmail: on })}
+        label="Ask for an email"
+        hint="Their name is always asked. With an email, they also get a receipt."
+      />
+      <Toggle
+        checked={link.perVisitorFolder}
+        onChange={(on) => patch({ perVisitorFolder: on })}
+        label="Put each person's files in a folder with their name"
+        hint="People who give the same name share a folder."
+      />
+      <fieldset className="flex flex-col gap-1.5">
+        <legend className="pb-1 text-xs font-medium">
+          Kinds of files{" "}
+          <span className="font-normal text-muted-foreground">
+            (none ticked: any)
+          </span>
+        </legend>
+        <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+          {Object.entries(REQUEST_TYPES).map(([k, v]) => (
+            <label
+              key={k}
+              className="flex cursor-pointer items-center gap-1.5 text-sm"
+            >
+              <input
+                type="checkbox"
+                className="size-4 accent-primary"
+                checked={cats.includes(k)}
+                onChange={(e) =>
+                  setTypes(
+                    e.target.checked
+                      ? [...cats, k]
+                      : cats.filter((c) => c !== k)
+                  )
+                }
+              />
+              {v.label}
+            </label>
+          ))}
+        </div>
+        <Input
+          id={ids.ext}
+          aria-label="Other extensions"
+          placeholder="Other extensions, e.g. .psd, .dwg"
+          value={extra}
+          onChange={(e) => setExtra(e.target.value)}
+          onBlur={() => setTypes(cats)}
+          className="max-w-xs"
+        />
+      </fieldset>
+      <form
+        className="flex flex-wrap items-end gap-2"
+        onSubmit={(e) => {
+          e.preventDefault()
+          patch({
+            maxFileBytes: bytesOf(perFile),
+            maxFiles: files.trim() ? Number(files) : null,
+            uploadCapBytes: bytesOf(cap),
+          })
+        }}
+      >
+        {(
+          [
+            [ids.per, "Each file up to (GB)", perFile, setPerFile, 0.01],
+            [ids.files, "Files at most", files, setFiles, 1],
+            [ids.cap, "Stop after, in total (GB)", cap, setCap, 0.01],
+          ] as const
+        ).map(([id, label, value, set, step]) => (
+          <div key={id} className="grid gap-1.5">
+            <label htmlFor={id} className="text-xs text-muted-foreground">
+              {label}
+            </label>
+            <Input
+              id={id}
+              type="number"
+              min={step}
+              step={step}
+              placeholder="No limit"
+              value={value}
+              onChange={(e) => set(e.target.value)}
+              className="w-32"
+            />
+          </div>
+        ))}
+        <Button type="submit" variant="outline">
+          Save
+        </Button>
+      </form>
+    </div>
+  )
+}
+
 const EVENT: Record<string, string> = {
   view: "Opened",
   download: "Downloaded",
   upload: "Uploaded",
   unlock_fail: "Wrong password",
+  confirm: "Emailed a receipt to",
 }
 
 function Toggle({

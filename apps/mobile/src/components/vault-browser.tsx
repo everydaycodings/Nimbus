@@ -19,6 +19,7 @@ import {
   GearSix,
   ImagesSquare,
   Info,
+  LinkSimple,
   LockSimple,
   MagnifyingGlass,
   PencilSimple,
@@ -47,6 +48,7 @@ import { useSnack } from "@/components/snackbar"
 import { FileCard, FolderTile, ListRow, type TileProps } from "@/components/tiles"
 import { useUploader } from "@/components/uploader"
 import { Bar, Button, Fab, IconButton, Text } from "@/components/ui"
+import { VaultLinkDialog } from "@/components/vault-link-dialog"
 import { FolderSheet, useMyFolders, vaultFolders } from "@/components/vault-sheets"
 import { useVaultLock, whilePicking } from "@/components/vault-lock"
 import { errorText } from "@/lib/api"
@@ -58,6 +60,7 @@ import { c, radius, type } from "@/lib/theme"
 import { engine, pick, useUploadRows } from "@/lib/uploads"
 import { takeIntake, toItem, useVaultTree, type VaultNative } from "@/lib/vault"
 import { useVaultOps } from "@/lib/vault-ops"
+import { useCanShareLinks } from "@/lib/vault-links"
 import { filtered, kidsOf, live, pathTo, sorted, trashRoots, type VaultEntry } from "@/lib/vault-rules"
 
 const ICON = 24
@@ -78,6 +81,7 @@ type Dialogs =
   | { kind: "rename"; item: VaultEntry }
   | { kind: "forever"; items: VaultEntry[] }
   | { kind: "copy"; items: VaultEntry[] }
+  | { kind: "link"; items: VaultEntry[] }
 
 function Header({ icon, title, caption }: { icon?: ReactNode; title: string; caption?: string }) {
   return (
@@ -134,6 +138,7 @@ export function VaultBrowser({ vaultId, name, trash, vn }: { vaultId: string; na
   const tree = useVaultTree(vaultId, vn)
   const all = useMemo(() => tree.entries ?? [], [tree.entries])
   const ops = useVaultOps(vaultId, vn, all, tree.reload)
+  const canLink = useCanShareLinks()
 
   const [folder, setFolder] = useState<string | null>(null)
   const [query, setQuery] = useState("")
@@ -437,6 +442,8 @@ export function VaultBrowser({ vaultId, name, trash, vn }: { vaultId: string; na
           <Sheet onClose={close} header={headerFor(list)}>
             {one?.kind === "folder" && <SheetRow label="Open" icon={ic(FolderOpen)} onPress={() => { setQuery(""); setFolder(one.id) }} />}
             <SheetRow label={file ? "Download" : "Download as ZIP"} icon={ic(DownloadSimple)} onPress={() => setDialog({ kind: "copy", items: list })} />
+
+            {canLink && <SheetRow label="Share link" icon={ic(LinkSimple)} onPress={() => setDialog({ kind: "link", items: list })} />}
             {file && <SheetRow label="Open with" icon={ic(ArrowSquareOut)} onPress={() => ops.openWith(file)} />}
             {one && <SheetRow label="Rename" icon={ic(PencilSimple)} onPress={() => setDialog({ kind: "rename", item: one })} />}
             <SheetRow label="Move" icon={ic(ArrowBendUpRight)} onPress={() => setSheet({ kind: "move", items: list })} />
@@ -566,6 +573,7 @@ export function VaultBrowser({ vaultId, name, trash, vn }: { vaultId: string; na
           onConfirm={() => { ops.download(dialog.items); clearSelection() }}
         />
       )}
+      {dialog?.kind === "link" && <VaultLinkDialog vaultId={vaultId} vn={vn} all={all} targets={dialog.items} onClose={() => { setDialog(null); clearSelection() }} />}
     </View>
   )
 }

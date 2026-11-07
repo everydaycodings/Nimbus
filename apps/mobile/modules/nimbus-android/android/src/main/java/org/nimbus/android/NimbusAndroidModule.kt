@@ -312,6 +312,18 @@ class NimbusAndroidModule : Module() {
       }
       VaultFiles.zip(context, jobId, VaultKeys.scope(accountId, vaultId), items, dest, promise) { done, total -> vaultProgress(jobId, done, total) }
     }
+    // Share link: file keys re-wrapped under a fresh link key, sealed into a manifest. itemsJson is
+    // [{path,size,mime,versionId,encKey}]. Returns {key|null, manifest, kdfSalt, kdfIterations, kdfMemory, wrappedLinkKey}.
+    AsyncFunction("vaultLinkSeal") { accountId: String, vaultId: String, itemsJson: String, passphrase: String? ->
+      val vk = vaultKey(accountId, vaultId)
+      val list = JSONArray(itemsJson)
+      val link = try {
+        Vault.makeLink(vk, (0 until list.length()).map { list.getJSONObject(it) }, passphrase)
+      } catch (e: GeneralSecurityException) { throw CodedException("A file's key doesn't open.") }
+      JSONObject().put("key", link.key ?: JSONObject.NULL).put("manifest", link.manifest)
+        .put("kdfSalt", link.salt ?: JSONObject.NULL).put("kdfIterations", link.t ?: JSONObject.NULL)
+        .put("kdfMemory", link.m ?: JSONObject.NULL).put("wrappedLinkKey", link.wrappedLinkKey ?: JSONObject.NULL).toString()
+    }
     Function("vaultCancel") { jobId: String -> VaultFiles.cancel(jobId) }
 
     AsyncFunction("vaultBioAvailable") { VaultBio.available(context) }

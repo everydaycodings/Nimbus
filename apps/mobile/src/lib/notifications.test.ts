@@ -11,6 +11,7 @@ test("admin alerts open the web", () => {
 test("account and storage alerts open their screens", () => {
   assert.deepEqual(notificationTarget({ kind: "app_password", href: "/account#connect", nodeId: null }), { to: "route", path: "/account/devices" })
   assert.deepEqual(notificationTarget({ kind: "storage_low", href: "/storage", nodeId: null }), { to: "route", path: "/storage" })
+  assert.deepEqual(notificationTarget({ kind: "transfer_download", href: "/transfers", nodeId: null }), { to: "route", path: "/transfers" })
 })
 
 test("the rest go to their item, or Shared when there's none", () => {

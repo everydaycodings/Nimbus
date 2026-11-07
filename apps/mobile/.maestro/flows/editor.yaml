@@ -19,5 +19,6 @@ name: editor
 - back
 - extendedWaitUntil: { visible: "Close preview", timeout: 15000 }
 - tapOn: "More actions"
+- scrollUntilVisible: { element: "Versions" }
 - tapOn: "Versions"
 - extendedWaitUntil: { visible: ".*Current.*", timeout: 20000 }

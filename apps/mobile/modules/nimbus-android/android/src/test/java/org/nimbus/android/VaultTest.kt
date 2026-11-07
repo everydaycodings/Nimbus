@@ -121,6 +121,28 @@ class VaultTest {
     assertArrayEquals(pt, ByteArrayOutputStream().also { Vault.decryptStream(key, ByteArrayInputStream(encrypt(pt, key)), it) }.toByteArray())
   }
 
+  @Test fun sharesLinksLikeTheWeb() {
+    val link = v.getJSONObject("link")
+    val lk = Vault.unb64url(link.getString("key"))
+    assertEquals(32, lk.size)
+    // What the web sealed opens here, down to the file key.
+    assertEquals(link.getString("manifestJson"), Vault.openManifest(lk, link.getString("manifest")))
+    assertArrayEquals(fk, Vault.unwrapFromLink(lk, link.getString("fileKey")))
+    val w = link.getJSONObject("wrap")
+    val kdf = w.getJSONObject("kdf")
+    assertArrayEquals(lk, Vault.open(Vault.passphraseKey(link.getString("passphrase"), w.getString("salt"), kdf.getInt("t"), kdf.getInt("m")), w.getString("wrapped")))
+    // And what Kotlin makes holds the same keys (the web test opens the same format).
+    val made = Vault.makeLink(vk, listOf(JSONObject().put("path", "a/b.txt").put("size", 13).put("mime", JSONObject.NULL).put("versionId", "v1").put("encKey", file.getString("wrapped"))), null)
+    val mk = Vault.unb64url(made.key!!)
+    val item = org.json.JSONArray(Vault.openManifest(mk, made.manifest)).getJSONObject(0)
+    assertEquals("a/b.txt", item.getString("path"))
+    assertArrayEquals(fk, Vault.unwrapFromLink(mk, item.getString("fileKey")))
+    val byPass = Vault.makeLink(vk, listOf(JSONObject().put("path", "x").put("size", 1).put("mime", "text/plain").put("versionId", "v").put("encKey", file.getString("wrapped"))), "pässword")
+    assertEquals(null, byPass.key)
+    val unwrapped = Vault.open(Vault.passphraseKey("pässword", byPass.salt!!, byPass.t!!, byPass.m!!), byPass.wrappedLinkKey!!)
+    assertEquals("x", org.json.JSONArray(Vault.openManifest(unwrapped, byPass.manifest)).getJSONObject(0).getString("path"))
+  }
+
   @Test fun tamperedReorderedOrTruncatedFileFails() {
     val cc = Vault.CIPHER_CHUNK
     val flipped = webCipher.clone().also { it[cc + 5] = (it[cc + 5].toInt() xor 1).toByte() }

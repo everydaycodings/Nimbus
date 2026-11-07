@@ -11,5 +11,8 @@ executionOrder:
     - preview
     - editor
     - share
+    - request
+    - transfer
+    - about
     - quick-actions
     - account-switch

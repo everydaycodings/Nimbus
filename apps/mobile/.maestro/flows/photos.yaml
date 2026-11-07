@@ -13,8 +13,11 @@ name: photos
     index: 0
 - extendedWaitUntil: { visible: "Close preview", timeout: 15000 }
 - swipe: { direction: LEFT }  # may land on a video, which hides the bars while it plays
-- back
-- assertNotVisible: "Close preview"
+# A playing video hides "Close preview", so check for the grid, not the preview's absence.
+- repeat:
+    while: { notVisible: "Grid size.*" }
+    times: 3
+    commands: [ back, waitForAnimationToEnd ]
 - tapOn: "Grid size.*"
 - assertVisible: "Grid size.*"
 - tapOn: "Slideshow"

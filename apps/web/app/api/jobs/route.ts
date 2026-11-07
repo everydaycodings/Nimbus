@@ -10,6 +10,7 @@ import { sweepOrphans } from "@/lib/orphan-sweep"
 import { sendPush } from "@/lib/push"
 import { recheckWarned } from "@/lib/quota"
 import { removeObjects } from "@/lib/s3"
+import { purgeTransfers } from "@/lib/services/transfers"
 import { readToken } from "@/lib/upload-rules"
 import { finishTusUpload } from "@/lib/uploads"
 
@@ -17,6 +18,7 @@ const jobs: Record<string, (data: never) => Promise<unknown>> = {
   purge: async () => {
     await purgeExpiredTrash()
     await purgeActivity()
+    await purgeTransfers()
     await sweepJunk()
     await recheckWarned()
   },

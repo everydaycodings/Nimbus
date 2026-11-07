@@ -9,6 +9,7 @@ import {
   PlusIcon,
   ShieldCheckIcon,
   SignOutIcon,
+  InfoIcon,
   UserCircleIcon,
   XIcon,
 } from "@phosphor-icons/react"
@@ -332,6 +333,10 @@ export function NavUser({
               <Menu.Item render={<Link href="/account" />} className={ITEM}>
                 <UserCircleIcon />
                 Account and security
+              </Menu.Item>
+              <Menu.Item render={<Link href="/about" />} className={ITEM}>
+                <InfoIcon />
+                About Nimbus
               </Menu.Item>
               {admin && (
                 <Menu.Item

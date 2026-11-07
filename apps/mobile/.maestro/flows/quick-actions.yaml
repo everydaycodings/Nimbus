@@ -17,8 +17,9 @@ name: quick-actions
 - openLink: nimbus://quick?do=upload
 - extendedWaitUntil: { notVisible: "Search in Nimbus", timeout: 10000 }
 - waitForAnimationToEnd
-- back
-- runFlow:
-    when: { notVisible: "Search in Nimbus" }
-    commands: [ back ]
+# The picker can open a few folders deep, and Back walks up them first.
+- repeat:
+    while: { notVisible: "Search in Nimbus" }
+    times: 5
+    commands: [ back, waitForAnimationToEnd ]
 - extendedWaitUntil: { visible: "Search in Nimbus", timeout: 10000 }

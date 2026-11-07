@@ -18,6 +18,8 @@ export type VaultEntry = {
   updatedAt: string
   trashedAt: string | null
   encKey: string | null
+  // The version encKey belongs to; a share link lists it. Absent on older servers.
+  versionId?: string | null
 }
 
 export const lower = (s: string) => s.toLowerCase()

@@ -15,6 +15,12 @@ const Patch = z.object({
   allowDownload: z.boolean().optional(),
   allowUpload: z.boolean().optional(),
   uploadCapBytes: z.number().positive().nullable().optional(),
+  instructions: z.string().max(2000).nullable().optional(),
+  requireEmail: z.boolean().optional(),
+  perVisitorFolder: z.boolean().optional(),
+  maxFileBytes: z.number().positive().nullable().optional(),
+  maxFiles: z.number().int().positive().nullable().optional(),
+  allowedTypes: z.array(z.string().max(20)).max(30).nullable().optional(),
 })
 
 export const PATCH = (req: Request, { params }: Ctx) =>

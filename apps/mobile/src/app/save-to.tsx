@@ -16,6 +16,7 @@ import { useAccounts } from "@/lib/accounts"
 import { errorText } from "@/lib/api"
 import { useApi, useFolders } from "@/lib/files"
 import { usePrefs } from "@/lib/prefs"
+import { sendWithTransfer, useSent } from "@/lib/sent"
 import { exitAfterSave, sharedFiles, shareTarget } from "@/lib/share-in"
 import { c, radius } from "@/lib/theme"
 
@@ -74,6 +75,7 @@ function Chooser() {
   const [vaults, setVaults] = useState(false)
   const [naming, setNaming] = useState(false)
   const api = useApi()
+  const sent = useSent()
   const { send } = useUploader()
   const here = stack[stack.length - 1]
   const q = useFolders(here.id)
@@ -169,6 +171,15 @@ function Chooser() {
 
       <View style={{ padding: 16, paddingBottom: inset.bottom + 16, borderTopWidth: 1, borderTopColor: c.border }}>
         <Button label={`Save to ${here.name}`} busy={busy} disabled={!files.length} onPress={save} />
+        {sent.data?.options.enabled && files.length > 0 && (
+          <View style={{ marginTop: 8 }}>
+            <Button
+              variant="text"
+              label="Send with Transfer instead"
+              onPress={() => sendWithTransfer([], files.map((f) => ({ path: f.name, size: f.size, uri: f.uri, mime: f.mime })))}
+            />
+          </View>
+        )}
       </View>
       {naming && <PromptDialog title="New folder" label="Folder name" confirm="Create" onClose={() => setNaming(false)} onSubmit={newFolder} />}
       {vaults && (
