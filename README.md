@@ -87,7 +87,8 @@ trashes or deletes it at the end. The first run needs `npx playwright install ch
   install [ntfy](https://ntfy.sh) or any other UnifiedPush distributor on the phone. The
   distributor's own server (ntfy.sh by default) works with no change here. To self-host it,
   answer yes to "Self-host push notifications (ntfy)?" in `./setup.sh` (compose profile `push`,
-  port 3405), point `https://ntfy.<your domain>` at it, and enter that address in the ntfy app.
+  port 3405), add a DNS record for `ntfy.<your domain>` (`setup-nginx.sh` serves it over HTTPS), and
+  enter `https://ntfy.<your domain>` in the ntfy app.
 - **Files in other apps and WebDAV:** see the app's Files settings; app passwords work with any WebDAV client.
 - **Maintainers:** `npm run release:android` in `apps/mobile` builds the signed APKs into
   `apps/mobile/dist/` and copies them to `apps/web/android/`, which the server offers when GitHub

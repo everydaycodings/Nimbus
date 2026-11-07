@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Puts nginx in front of Nimbus with Let's Encrypt certificates, on Debian/Ubuntu.
-# Reads DOMAIN, S3_DOMAIN (empty when you use your own S3) and CERTBOT_EMAIL from
-# .env at the repo root. Already set up and working? It checks and changes nothing.
+# Reads DOMAIN, S3_DOMAIN (empty when you use your own S3), CERTBOT_EMAIL and
+# COMPOSE_PROFILES ("push" adds ntfy.DOMAIN) from .env at the repo root.
+# Already set up and working? It checks and changes nothing.
 # Run as root once DNS points here: sudo ./setup-nginx.sh
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -18,6 +19,8 @@ EMAIL="$(env_value CERTBOT_EMAIL)"
 
 names=("$DOMAIN")
 [ -n "$S3_DOMAIN" ] && names+=("$S3_DOMAIN")
+export NTFY_DOMAIN=""
+[[ ",$(env_value COMPOSE_PROFILES)," == *",push,"* ]] && NTFY_DOMAIN="ntfy.$DOMAIN" && names+=("$NTFY_DOMAIN")
 site=/etc/nginx/sites-available/nimbus
 cert=/etc/letsencrypt/live/$DOMAIN/fullchain.pem
 
@@ -30,6 +33,7 @@ working() {
     openssl x509 -in "$cert" -noout -ext subjectAltName | grep -q "DNS:$d\b" || return 1
     path=/sign-in
     [ "$d" = "$S3_DOMAIN" ] && path=/minio/health/live
+    [ "$d" = "$NTFY_DOMAIN" ] && path=/v1/health
     code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
       --resolve "$d:443:127.0.0.1" "https://$d$path" || true)
     [[ "$code" =~ ^[23] ]] || return 1
@@ -66,6 +70,7 @@ fi
 {
   envsubst '${DOMAIN}' < nginx/nimbus.conf.template
   [ -n "$S3_DOMAIN" ] && envsubst '${S3_DOMAIN}' < nginx/nimbus-s3.conf.template
+  [ -n "$NTFY_DOMAIN" ] && envsubst '${NTFY_DOMAIN}' < nginx/nimbus-ntfy.conf.template
 } > "$site"
 ln -sf "$site" /etc/nginx/sites-enabled/nimbus
 rm -f /etc/nginx/sites-enabled/default

@@ -9,7 +9,7 @@ import { NOT_ALLOWED } from "@/lib/tree-ops"
 
 // Bumped when a change would break older Android apps. The app refuses servers
 // outside the range it knows and says which side needs updating.
-export const API_VERSION = 1
+export const API_VERSION = 2
 
 export const fail = (status: number, error: string, message: string) =>
   Response.json({ error, message }, { status })

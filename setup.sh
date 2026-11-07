@@ -376,8 +376,8 @@ EOF
 fi
 if has_profile push; then
   cat <<EOF
-ntfy runs on 127.0.0.1:3405. Point https://ntfy.$DOMAIN (DNS A record, HTTPS) at it with
-your reverse proxy, then enter https://ntfy.$DOMAIN as the server in the ntfy app.
+ntfy runs on 127.0.0.1:3405. Add a DNS A record for ntfy.$DOMAIN pointing here;
+setup-nginx.sh serves it over HTTPS. Then enter https://ntfy.$DOMAIN as the server in the ntfy app.
 
 EOF
 fi

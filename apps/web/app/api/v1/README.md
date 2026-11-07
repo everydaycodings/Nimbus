@@ -3,7 +3,9 @@
 The private JSON API for the Nimbus Android app. Member features only: there is
 no admin route. Request and response types are in `@nimbus/shared/api`
 (`packages/shared/api.ts`); the type name for each route is in the table.
-`API_VERSION` is 1 (`GET /instance` returns it).
+`API_VERSION` is 2 (`GET /instance` returns it): 2 added `/photos`, `/tree` and `/files/{id}/activity`
+(app 0.2.0). The app accepts only the versions in `apps/mobile/src/lib/api-version.ts`, so a bump also
+asks people on an older app to update.
 
 ## Auth and errors
 
