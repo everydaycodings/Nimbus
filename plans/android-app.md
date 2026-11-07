@@ -34,6 +34,8 @@ API checks: `cd apps/web && node --env-file=.env.local scripts/api-check.ts` (ru
 | 11 | Back up other folders, two-way folder sync, export to SD/USB | Built 2026-11-07, checked on the emulator (release APK), see below. Committed; released as 0.2.0 (GitHub Actions) |
 | 12 | Text editor, multi-page scan, activity feed (web + app) | Built 2026-11-07, checked on the emulator (release APK), see below. Committed; released as 0.2.0 (GitHub Actions) |
 
+**0.2.2** (2026-11-07, versionCode 5): in-app updates. More → About → Check for updates asks the server's /api/android/latest (GitHub's latest release, or the bundled APKs), shows the notes (the tagged commit's message, now written into each GitHub release by the workflow), downloads the APK for the phone's ABI with progress, asks once for "Install unknown apps", then opens Android's installer. Tested end to end on the emulator. Server: the bundled fallback now offers only the newest version's APKs (it mixed 0.1.0 and 0.1.1).
+
 **0.2.1** (2026-11-07, versionCode 4): New folder in Save to Nimbus; camera backup queue (tap the status card) with pause/resume for the whole backup or one file, skip one or all, and a Skipped list to back up again. Fixes found on the emulator: queued rows now send when a run finds no new photos (resumed and Wi-Fi-held videos were stuck, and the run looped into the rate limit), backup runs take turns (overlapping runs marked finished uploads failed), and the queue keeps a fixed order.
 
 **Phases 9–12 built and committed** (2026-11-07). API 2, app 0.2.0 (versionCode 3), released through GitHub Actions (tag v0.2.0); signing secrets set in the repo. Each means several hours of building, a native build, emulator testing and a commit.
