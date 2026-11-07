@@ -341,6 +341,14 @@ class NimbusAndroidModule : Module() {
       }
     }
 
+    // The video player's screen controls.
+    Function("orient") { mode: String, release: Boolean -> appContext.currentActivity?.let { Screen.orient(it, mode, release) } }
+    Function("immersive") { on: Boolean -> appContext.currentActivity?.let { Screen.immersive(it, on) } }
+    Function("brightness") { appContext.currentActivity?.let { Screen.brightness(it) } ?: 0.5 }
+    Function("setBrightness") { v: Double -> appContext.currentActivity?.let { Screen.setBrightness(it, v) } }
+    Function("volume") { Screen.volume(context) }
+    Function("setVolume") { v: Double -> Screen.setVolume(context, v) }
+
     AsyncFunction("freeUpCandidates") { days: Int ->
       val items = Backup.freeable(context, days)
       JSONObject().put("count", items.size).put("bytes", items.sumOf { it.size }).toString()

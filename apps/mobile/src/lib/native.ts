@@ -140,6 +140,15 @@ export type NimbusAndroid = {
   // Time, thread and stack of the last uncaught exception, until clearCrash.
   lastCrash?(): string | null
   clearCrash?(): void
+  // Video player. Optional: older APKs don't have them.
+  // "auto" follows the phone; `release` hands a forced landscape/portrait back once the phone is held that way.
+  orient?(mode: "auto" | "landscape" | "portrait" | "lock", release: boolean): void
+  immersive?(on: boolean): void
+  // 0..1. setBrightness(-1) gives it back to the system.
+  brightness?(): number
+  setBrightness?(v: number): void
+  volume?(): number
+  setVolume?(v: number): void
   // `json`: the queue as UploadRow[]. "vault" events carry a decrypt job's progress in plaintext bytes. "push" events carry a new endpoint for an account (null: it was dropped).
   addListener(event: "uploads" | "share" | "backup" | "vault" | "push", listener: (e: { json?: string; jobId?: string; done?: number; total?: number; accountId?: string; endpoint?: string | null }) => void): EventSubscription
 }

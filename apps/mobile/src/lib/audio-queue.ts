@@ -33,7 +33,7 @@ export function savedPosition(account: string, id: string) {
   }
 }
 
-function savePosition(account: string, id: string, position: number, duration: number) {
+export function savePosition(account: string, id: string, position: number, duration: number) {
   try {
     const at = resumeAt(position, duration)
     if (at) Storage.setItemSync(key(account, id), String(Math.floor(at)))

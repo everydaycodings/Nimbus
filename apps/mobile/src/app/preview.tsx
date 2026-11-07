@@ -11,7 +11,8 @@ import { useSafeAreaFrame, useSafeAreaInsets } from "react-native-safe-area-cont
 import { Directory } from "expo-file-system"
 
 import { FileSheets } from "@/components/file-sheets"
-import { AudioPage, CollaboraView, ImagePage, NoPreview, VideoPage, WebPage, type PageProps } from "@/components/preview-pages"
+import { AudioPage, CollaboraView, ImagePage, NoPreview, WebPage, type PageProps } from "@/components/preview-pages"
+import { resetScreen, VideoPage } from "@/components/video-page"
 import { useSnack } from "@/components/snackbar"
 import { IconButton, Text } from "@/components/ui"
 import { errorText } from "@/lib/api"
@@ -25,12 +26,12 @@ import { Secure, useVaultLock } from "@/components/vault-lock"
 import { useVaultItem } from "@/components/vault-item"
 import { vaultDirUri, vaultNative } from "@/lib/vault"
 import { frameToWebp } from "@/lib/thumbs"
+import { native } from "@/lib/native"
 import { c } from "@/lib/theme"
 
 const BAR = 56
 const LOAD_MORE_WITHIN = 3
 const COUNTS_AS_OPENED_MS = 800
-const HIDE_WHILE_PLAYING_MS = 3000
 
 // A vault file is decrypted whole to a temp copy, so every viewer reads it locally; Collabora can't see it.
 function planOf(name: string, mime: string | null, size: number): Plan {
@@ -149,22 +150,16 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
     })
   }, [index, items.length, session])
 
-  // Native video controls take the taps, so the bar follows playback there instead.
-  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const isPlaying = useRef(false)
-  const onPlaying = useCallback((playing: boolean) => {
-    isPlaying.current = playing
-    if (hideTimer.current) clearTimeout(hideTimer.current)
-    if (playing) hideTimer.current = setTimeout(() => setBars(false), HIDE_WHILE_PLAYING_MS)
-    else setBars(true)
-  }, [])
-  const onTouched = useCallback(() => {
-    setBars(true)
-    onPlaying(isPlaying.current)
-  }, [onPlaying])
-  useEffect(() => () => {
-    if (hideTimer.current) clearTimeout(hideTimer.current)
-  }, [])
+  // A video's controls decide when the bar shows. Fullscreen hides the system bars too.
+  const [videoFull, setVideoFull] = useState(false)
+  const isVideo = plan?.show === "video"
+  const fullscreen = isVideo && videoFull
+  useEffect(() => native?.immersive?.(fullscreen), [fullscreen])
+  // Off a video, the screen turns and lights as the phone says again.
+  useEffect(() => {
+    if (!isVideo) resetScreen()
+  }, [isVideo])
+  useEffect(() => resetScreen, [])
 
   const onTap = useCallback(() => setBars((b) => !b), [])
   const onScrollDown = useCallback((down: boolean) => setBars(!down), [])
@@ -193,6 +188,30 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
     listRef.current?.scrollToIndex({ index: next, animated: !still })
     goTo(next)
   }
+  // The nearest video before or after the shown file, for the player's previous and next.
+  const videoAt = (by: 1 | -1) => {
+    if (version) return -1
+    for (let i = index + by; i >= 0 && i < items.length; i += by) {
+      const it = items[i]
+      if (planOf(it.name, it.mime, it.size).show === "video") return i
+    }
+    return -1
+  }
+  const prevVideo = isVideo ? videoAt(-1) : -1
+  const nextVideo = isVideo ? videoAt(1) : -1
+  const goVideo = useRef((by: 1 | -1) => {})
+  goVideo.current = (by) => {
+    const to = by < 0 ? prevVideo : nextVideo
+    if (to < 0) return
+    listRef.current?.scrollToIndex({ index: to, animated: false })
+    goTo(to)
+  }
+  const videoNav = isVideo && (prevVideo >= 0 || nextVideo >= 0) ? { prev: prevVideo >= 0, next: nextVideo >= 0, go: (by: 1 | -1) => goVideo.current(by) } : undefined
+  // Turning the phone changes the page width; the list stays mounted (so a video keeps playing) and moves back
+  // to the same page once its pages have their new size.
+  const indexRef = useRef(index)
+  indexRef.current = index
+  const realign = useCallback(() => listRef.current?.scrollToOffset({ offset: indexRef.current * width, animated: false }), [width])
   const latestEdge = useRef(onEdge)
   latestEdge.current = onEdge
   const edge = useCallback((by: number) => latestEdge.current(by), [])
@@ -263,14 +282,15 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
           onScrollDown={onScrollDown}
           onZoom={setZoomed}
           onEdge={edge}
-          onPlaying={onPlaying}
+          onBars={setBars}
+          onFullscreen={setVideoFull}
           onPlayer={onPlayer}
-          onTouched={onTouched}
+          videoNav={i === index ? videoNav : undefined}
           onAudioTrack={onAudioTrack}
         />
       </View>
     ),
-    [width, height, index, version, top, inset.bottom, edge, onTap, onScrollDown, onPlaying, onPlayer, onTouched, onAudioTrack]
+    [width, height, index, version, top, inset.bottom, edge, onTap, onScrollDown, onPlayer, onAudioTrack, videoNav?.prev, videoNav?.next]
   )
 
   if (!shown) return <View style={{ flex: 1, backgroundColor: c.background }} />
@@ -278,10 +298,9 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
   return (
     <View style={{ flex: 1, backgroundColor: immersive ? "#000" : c.background }} onTouchStartCapture={vaultId ? touch : undefined}>
       {vaultId && <Secure />}
-      <StatusBar hidden={immersive && !bars} style="light" />
+      <StatusBar hidden={(immersive && !bars) || fullscreen} style="light" />
       <FlatList
         ref={listRef}
-        key={width}
         data={items}
         renderItem={renderItem}
         keyExtractor={(i) => i.id}
@@ -296,6 +315,7 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
         maxToRenderPerBatch={1}
         windowSize={3}
         onMomentumScrollEnd={onSwiped}
+        onContentSizeChange={realign}
         keyboardShouldPersistTaps="handled"
       />
 

@@ -6,7 +6,7 @@ import { useAudioPlayer, useAudioPlayerStatus, useAudioPlaylistStatus } from "ex
 import { fetch as streamingFetch } from "expo/fetch"
 import { Image } from "expo-image"
 import { useNetworkState, NetworkStateType } from "expo-network"
-import { VideoView, useVideoPlayer, type VideoPlayer } from "expo-video"
+import type { VideoPlayer, VideoView } from "expo-video"
 import { ArrowClockwise, ArrowCounterClockwise, Pause, Play, SkipBack, SkipForward } from "phosphor-react-native"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ActivityIndicator, Linking, Pressable, ScrollView, View, useWindowDimensions, type GestureResponderEvent } from "react-native"
@@ -39,10 +39,13 @@ export type PageProps = {
   // True while the page wants sideways drags for itself, so the pager holds still.
   onZoom: (zoomed: boolean) => void
   onEdge: (by: number) => void
-  onPlaying: (playing: boolean) => void
+  // A video page shows and hides the top bar along with its own controls.
+  onBars: (shown: boolean) => void
+  onFullscreen: (on: boolean) => void
   // The view too, for picture-in-picture.
   onPlayer: (player: VideoPlayer | null, view?: VideoView | null) => void
-  onTouched: () => void
+  // On the shown video only: whether there's a video before or after it in the list, and a way there.
+  videoNav?: { prev: boolean; next: boolean; go: (by: 1 | -1) => void }
   // The audio queue moved on to this track.
   onAudioTrack: (item: Item) => void
 }
@@ -107,7 +110,7 @@ export function NoPreview({ item, version, reason, onRetry }: { item: Item; vers
   )
 }
 
-const Loading = ({ progress }: { progress?: number }) => (
+export const Loading = ({ progress }: { progress?: number }) => (
   <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 12 }}>
     <ActivityIndicator color={c.mutedForeground} accessibilityLabel="Loading" />
     {progress !== undefined && (
@@ -230,61 +233,11 @@ export function ImagePage({ item, version, active, near, onTap, onZoom }: PagePr
   )
 }
 
-// ---- Video ----
-
-export function VideoPage({ item, version, active, onPlaying, onPlayer, onTouched }: PageProps) {
-  const { url, error, refetch } = usePreviewUrl(item, version, active)
-  const [failed, setFailed] = useState(false)
-  const retried = useRef(false)
-  const view = useRef<VideoView>(null)
-  const player = useVideoPlayer(url && active ? { uri: url } : null, (p) => {
-    p.staysActiveInBackground = false
-  })
-  // Autoplays when it arrives on screen. Asking before it has loaded is ignored, so this waits.
-  useEffect(() => {
-    if (!active || !url) return
-    if (player.status === "readyToPlay") player.play()
-    const sub = player.addListener("statusChange", (e) => {
-      if (e.status === "readyToPlay" && e.oldStatus !== "readyToPlay") player.play()
-    })
-    return () => sub.remove()
-  }, [active, url, player])
-
-  useEffect(() => {
-    if (!active) return
-    onPlayer(player, view.current)
-    return () => onPlayer(null)
-  }, [active, player, onPlayer, url])
-  useEffect(() => {
-    const playing = player.addListener("playingChange", (e) => onPlaying(e.isPlaying))
-    const status = player.addListener("statusChange", (e) => {
-      if (e.status !== "error") return
-      if (retried.current) return setFailed(true)
-      retried.current = true
-      refetch()
-    })
-    return () => {
-      playing.remove()
-      status.remove()
-    }
-  }, [player, onPlaying, refetch])
-
-  if (failed || (error && !url))
-    return <NoPreview item={item} version={version} reason="Couldn't play this video." onRetry={() => { retried.current = false; setFailed(false); refetch() }} />
-  if (!active || !url) return <Loading />
-  // The native controls take the taps. Touches still reach this wrapper, so the bar can come back with them.
-  return (
-    <View style={{ flex: 1 }} onTouchEnd={onTouched}>
-      <VideoView ref={view} player={player} nativeControls allowsPictureInPicture startsPictureInPictureAutomatically contentFit="contain" style={{ flex: 1 }} accessibilityLabel={item.name} />
-    </View>
-  )
-}
-
 // ---- Audio ----
 
 const SPEEDS = [1, 1.25, 1.5, 2, 0.75]
 
-const clock = (s: number) => {
+export const clock = (s: number) => {
   const t = Math.max(0, Math.floor(s || 0))
   const h = Math.floor(t / 3600)
   const m = Math.floor((t % 3600) / 60)
