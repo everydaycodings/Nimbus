@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from "expo-router"
 import { formatBytes } from "@nimbus/shared/file-rules"
-import { ArrowCircleDown, ArrowSquareOut, Broom, CaretRight, CloudArrowUp, Fingerprint, FolderOpen, GearSix, Info, Lock, Tag, Trash, UploadSimple } from "phosphor-react-native"
+import { ArrowCircleDown, ArrowSquareOut, Broom, CaretRight, ClockCounterClockwise, CloudArrowUp, Fingerprint, FolderOpen, FolderSimple as FolderSync, GearSix, Info, Lock, Tag, Trash, UploadSimple } from "phosphor-react-native"
 import * as LocalAuthentication from "expo-local-authentication"
 import { useCallback, useEffect, useState } from "react"
 import { ActivityIndicator, Linking, Pressable, ScrollView, View } from "react-native"
@@ -13,11 +13,13 @@ import { Button, Text } from "@/components/ui"
 import { useSnack } from "@/components/snackbar"
 import { cacheSize, clearCache } from "@/lib/file-cache"
 import { backupAvailable, useBackup } from "@/lib/backup"
+import { syncAvailable } from "@/lib/folder-sync"
 import { describe } from "@/lib/backup-rules"
 import { useApi, useMe } from "@/lib/files"
 import { useOffline } from "@/lib/offline"
 import { useQueue } from "@/lib/offline-queue"
 import { usePrefs } from "@/lib/prefs"
+import { homeHref } from "@/lib/tab"
 import { vaultNative } from "@/lib/vault"
 import { useTransfers } from "@/lib/transfers"
 import { c, radius } from "@/lib/theme"
@@ -75,6 +77,7 @@ export default function More() {
       )}
           <Group>
             {backupAvailable && <Row label="Camera backup" detail={backup.settings.enabled ? describe(backup.status).title : "Off"} icon={<CloudArrowUp size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/backup")} />}
+            {syncAvailable && <Row label="Folder backup & sync" icon={<FolderSync size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/folder-sync")} />}
             <Row label="Uploads" icon={<UploadSimple size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/uploads")} />
             <Row
               label="Offline"
@@ -87,6 +90,7 @@ export default function More() {
               }
               onPress={() => router.push("/offline")}
             />
+            <Row label="Recent" icon={<ClockCounterClockwise size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.navigate(homeHref("(recent)"))} />
             <Row label="Trash" icon={<Trash size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/trash")} />
             <Row label="Tags" icon={<Tag size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/tags")} />
             <Row label="Vaults" detail={vaultNative ? "Encrypted on this phone" : "Needs the installed app"} icon={<Lock size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/vault")} />

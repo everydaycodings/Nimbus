@@ -9,6 +9,7 @@ executionOrder:
     - file-actions
     - search
     - preview
+    - editor
     - share
     - quick-actions
     - account-switch

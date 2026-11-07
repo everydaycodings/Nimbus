@@ -4,6 +4,7 @@ import { and, desc, eq, ilike, isNotNull, ne, or, sql } from "drizzle-orm"
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core"
 
 import { accessOne, mayShare } from "@/lib/access"
+import { recordOne } from "@/lib/activity"
 import { db } from "@/lib/db"
 import {
   linkEvents,
@@ -250,7 +251,7 @@ export async function shareWith(
   if (!a) return { error: NOT_ALLOWED }
 
   const [member] = await db
-    .select({ id: user.id, status: user.status, email: user.email })
+    .select({ id: user.id, name: user.name, status: user.status, email: user.email })
     .from(user)
     .where(
       UUID.test(target) || !target.includes("@")
@@ -273,6 +274,7 @@ export async function shareWith(
     await db
       .insert(shares)
       .values({ nodeId, granteeId: member.id, role, createdBy: me.id })
+    await recordOne(nodeId, me.id, "share", `Shared with ${member.name} as ${role}`)
     await notify(member.id, "shared", {
       nodeId,
       actorId: me.id,
@@ -300,6 +302,7 @@ export async function shareWith(
     .onConflictDoNothing()
     .returning({ id: shares.id })
   if (!row) return { error: "They're already invited." }
+  await recordOne(nodeId, me.id, "share", `Invited ${email} as ${role}`)
   const [n] = await db
     .select({ name: nodes.name })
     .from(nodes)
@@ -353,6 +356,7 @@ export async function setShareRole(
   const s = await manageable(me.id, shareId)
   if (!s || s.token) return { error: NOT_ALLOWED }
   await db.update(shares).set({ role }).where(eq(shares.id, s.id))
+  await recordOne(s.nodeId, me.id, "share", `Changed someone's access to ${role}`)
   if (s.granteeId)
     await notify(s.granteeId, "access_changed", {
       nodeId: s.nodeId,
@@ -366,6 +370,7 @@ export async function removeShare(me: Me, shareId: string): Promise<Result> {
   const s = await manageable(me.id, shareId)
   if (!s) return { error: NOT_ALLOWED }
   await db.delete(shares).where(eq(shares.id, s.id))
+  await recordOne(s.nodeId, me.id, "share", s.token ? "Removed a link" : "Removed someone's access")
   if (s.granteeId)
     await notify(s.granteeId, "access_removed", {
       nodeId: s.nodeId,
@@ -442,6 +447,7 @@ export async function createLink(
         : null,
     })
     .returning({ id: shares.id })
+  await recordOne(nodeId, me.id, "share", "Created a link")
   return { id: row.id }
 }
 
@@ -491,6 +497,7 @@ export async function updateLink(
   if (set.allowView === false && set.allowUpload === false)
     return { error: "A link has to show the files or take uploads." }
   await db.update(shares).set(set).where(eq(shares.id, s.id))
+  await recordOne(s.nodeId, me.id, "share", "Changed a link")
   return {}
 }
 
@@ -498,6 +505,7 @@ export async function deleteLink(me: Me, shareId: string): Promise<Result> {
   const s = await manageable(me.id, shareId)
   if (!s?.token) return { error: NOT_ALLOWED }
   await db.delete(shares).where(eq(shares.id, s.id))
+  await recordOne(s.nodeId, me.id, "share", "Removed a link")
   return {}
 }
 

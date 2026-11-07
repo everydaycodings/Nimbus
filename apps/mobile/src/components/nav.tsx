@@ -1,5 +1,5 @@
 import type { Tabs } from "expo-router"
-import { ClockCounterClockwise, DotsThreeCircle, Folder, Star, UsersThree } from "phosphor-react-native"
+import { DotsThreeCircle, Folder, Images, Star, UsersThree } from "phosphor-react-native"
 import type { ComponentProps } from "react"
 import { Pressable, useWindowDimensions, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
@@ -12,7 +12,7 @@ type BarProps = Parameters<NonNullable<ComponentProps<typeof Tabs>["tabBar"]>>[0
 
 const TABS: Record<string, { label: string; icon: typeof Folder }> = {
   "(files)": { label: "Files", icon: Folder },
-  "(recent)": { label: "Recent", icon: ClockCounterClockwise },
+  photos: { label: "Photos", icon: Images },
   "(shared)": { label: "Shared", icon: UsersThree },
   "(starred)": { label: "Starred", icon: Star },
   more: { label: "More", icon: DotsThreeCircle },

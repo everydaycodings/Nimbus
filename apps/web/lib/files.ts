@@ -38,7 +38,14 @@ import {
   type TagColor,
 } from "@/lib/db/schema"
 import { accessOne, accessTo, atLeast, type Access } from "@/lib/access"
-import { JUNK, UUID } from "@/lib/file-rules"
+import {
+  JUNK,
+  MEDIA_MIME_RE,
+  MEDIA_NAME_RE,
+  NOT_MEDIA_NAME_RE,
+  UUID,
+} from "@/lib/file-rules"
+import { parsePhotoCursor, photoCursor } from "@nimbus/shared/photos"
 import { purgeSavedLogins } from "@/lib/saved-logins"
 import { getSession } from "@/lib/session"
 import { deleteNodes } from "@/lib/uploads"
@@ -258,6 +265,50 @@ export async function listRecent(viewer: string) {
     .orderBy(desc(nodeOpens.openedAt))
     .limit(50)
   return withAccess(viewer, rows)
+}
+
+// The viewer's own photos and videos, newest taken first (the Photos timeline).
+// Keyset paging on (time, id) so uploads between pages don't shift the list.
+// ponytail: the match is by name or mime only (a .pdf labelled image/* counts); no index beyond owner/parent.
+export async function listPhotos(viewer: string, limit: number, cursor?: string) {
+  const when = sql`date_trunc('milliseconds', coalesce(${fileVersions.takenAt}, ${fileVersions.createdAt}))`
+  const media = and(
+    live(viewer),
+    eq(nodes.kind, "file"),
+    notJunk,
+    sql`(${nodes.name} ~* ${MEDIA_NAME_RE} or (${nodes.mime} ~ ${MEDIA_MIME_RE} and ${nodes.name} !~* ${NOT_MEDIA_NAME_RE}))`
+  )
+  const c = parsePhotoCursor(cursor)
+  const rows = await db
+    .select({
+      ...cols(viewer),
+      takenAt: sql<string>`to_char(${when} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
+    })
+    .from(nodes)
+    .innerJoin(fileVersions, eq(fileVersions.id, nodes.currentVersionId))
+    .where(
+      and(
+        media,
+        c
+          ? sql`(${when}, ${nodes.id}) < (${new Date(c.ms).toISOString()}::timestamptz, ${c.id}::uuid)`
+          : undefined
+      )
+    )
+    .orderBy(desc(when), desc(nodes.id))
+    .limit(limit + 1)
+  const [{ total }] = await db
+    .select({ total: sql<number>`count(*)`.mapWith(Number) })
+    .from(nodes)
+    .innerJoin(fileVersions, eq(fileVersions.id, nodes.currentVersionId))
+    .where(media)
+  const page = rows.slice(0, limit).map((r) => ({ ...toItem(r), takenAt: r.takenAt }))
+  const last = page[page.length - 1]
+  return {
+    items: page,
+    total,
+    nextCursor:
+      rows.length > limit && last ? photoCursor(last.takenAt, last.id) : null,
+  }
 }
 
 // Rows the viewer can still see, with their role.

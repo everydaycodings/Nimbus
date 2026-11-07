@@ -1,0 +1,23 @@
+appId: org.nimbus.drive
+name: editor
+# Opens app.ts in the Preview test folder, edits it, saves, sees the edit in the preview and in Versions.
+---
+- runScript:
+    file: ../stamp.js
+- launchApp
+- extendedWaitUntil: { visible: "Search in Nimbus", timeout: 20000 }
+- tapOn: "Folder, Preview test"
+- tapOn: "File, app\\.ts.*"
+- extendedWaitUntil: { visible: "Close preview", timeout: 15000 }
+- tapOn: "Edit"
+- extendedWaitUntil: { visible: "File contents", timeout: 15000 }
+- tapOn: "File contents"
+- inputText: " edit-${output.stamp}"
+- tapOn: "Save"
+- extendedWaitUntil: { visible: "Saved", timeout: 60000 }
+- hideKeyboard
+- back
+- extendedWaitUntil: { visible: "Close preview", timeout: 15000 }
+- tapOn: "More actions"
+- tapOn: "Versions"
+- extendedWaitUntil: { visible: ".*Current.*", timeout: 20000 }

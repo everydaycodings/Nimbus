@@ -108,6 +108,23 @@ export type NimbusAndroid = {
   pushShareTarget?(accountId: string, folderId: string | null, name: string): void
   // JSON ShareTarget (share-in.ts) the waiting share was sent to; once, like sharedFiles.
   sharedTarget?(): string | null
+  // Phase 11, folder backup and sync, Save to device. Optional: older APKs don't have them. Types are in folder-sync-rules.ts.
+  // SyncPair[] / SyncFailure[] as JSON. Pairs change as the worker runs; a "backup" event fires then.
+  syncPairs?(): string
+  syncFailures?(): string
+  // JSON {accountId, name, treeUri, folderName, remoteId, remotePath, twoWay}; treeUri comes from Directory.pickDirectoryAsync. Returns the pair id.
+  syncAdd?(json: string): string
+  syncUpdate?(id: string, name: string, twoWay: boolean, paused: boolean): void
+  syncRemove?(id: string): void
+  // One pair, or all (null). Also confirms deletions that were held back.
+  syncNow?(id: string | null): void
+  // Forgets the problems and tries again.
+  syncRetry?(id: string | null): void
+  // SyncRules as JSON: Wi-Fi, charging and reliable settings for folder sync.
+  syncRules?(): string
+  setSyncRules?(json: string): void
+  // Copies files and folders (JSON [{id, name, kind}]) from the server into a phone folder the person picked, in the background.
+  exportToDevice?(accountId: string, treeUri: string, items: string): void
   // Phase 8, crash capture, kept on the phone only. Optional: older APKs don't have them.
   // Time, thread and stack of the last uncaught exception, until clearCrash.
   lastCrash?(): string | null

@@ -1,0 +1,32 @@
+appId: org.nimbus.drive
+name: folder-sync
+# Phase 11: the Folder backup & sync screen, reached from More and from Camera backup.
+# Adding a pair and Save to device both open Android's system folder picker, which Maestro can't drive
+# reliably, so this flow stops at the picker; those parts are checked by hand on a phone or the emulator.
+---
+- launchApp
+- extendedWaitUntil: { visible: "Search in Nimbus", timeout: 20000 }
+- tapOn: "More"
+- scrollUntilVisible: { element: "Folder backup & sync" }
+- tapOn: "Folder backup & sync"
+- extendedWaitUntil: { visible: ".*Two-way sync keeps both the same.*", timeout: 10000 }
+- assertVisible: "Use mobile data"
+- assertVisible: "Only while charging"
+- assertVisible: "Reliable sync"
+- assertVisible: "Add a folder"
+# The picker opens; backing out leaves the screen as it was.
+- tapOn: "Add a folder"
+- extendedWaitUntil: { visible: "(?i)use this folder", timeout: 10000 }
+- waitForAnimationToEnd
+- back
+- runFlow:
+    when: { visible: "(?i)use this folder" }
+    commands: [ back ]
+- assertVisible: "Folder backup & sync"
+- back
+# And from Camera backup.
+- scrollUntilVisible: { element: "Camera backup" }
+- tapOn: "Camera backup"
+- scrollUntilVisible: { element: "Folder backup & sync" }
+- tapOn: "Folder backup & sync"
+- extendedWaitUntil: { visible: "Add a folder", timeout: 10000 }

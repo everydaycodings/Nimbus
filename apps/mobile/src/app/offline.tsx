@@ -11,6 +11,7 @@ import { Sheet, SheetRow } from "@/components/sheet"
 import { useSnack } from "@/components/snackbar"
 import { Button, IconButton, Text } from "@/components/ui"
 import { useOnline } from "@/lib/connectivity"
+import { useFolderSync } from "@/lib/folder-sync"
 import { useApi } from "@/lib/files"
 import { backgroundRefreshAvailable } from "@/lib/offline-task"
 import { getCap, getCellular, lastRefresh, refreshAll, removeAll, setCap, setCellular, takeNotices, unmark, useOffline, useRefreshStatus } from "@/lib/offline"
@@ -35,6 +36,7 @@ export default function Offline() {
   const online = useOnline()
   const snap = useOffline(id)
   const queue = useQueue(id)
+  const folders = useFolderSync()
   const status = useRefreshStatus()
   const [picker, setPicker] = useState(false)
   const [confirm, setConfirm] = useState(false)
@@ -80,11 +82,24 @@ export default function Offline() {
         <Button label="Refresh now" variant="outlined" busy={status.running} onPress={refreshNow} />
       </View>
 
-      {(queue.waiting > 0 || queue.failed.length > 0) && (
+      {(queue.waiting > 0 || queue.failed.length > 0 || folders.failures.length > 0) && (
         <Section
           title="Changes"
           note={queue.waiting ? `${plural(queue.waiting, "change")} will sync when you're online.` : undefined}
         >
+          {folders.failures.length > 0 && (
+            <Group>
+              {folders.failures.slice(0, 50).map((f) => (
+                <View key={`${f.pairId}/${f.path}`} style={{ padding: 16, gap: 8 }}>
+                  <Text variant="label">{f.path}</Text>
+                  <Text variant="caption" color={c.destructive}>{f.pairName} · {f.error}</Text>
+                  <View style={{ flexDirection: "row", gap: 8, marginLeft: -12 }}>
+                    <Button variant="text" label="Retry" onPress={() => folders.retry(f.pairId)} />
+                  </View>
+                </View>
+              ))}
+            </Group>
+          )}
           {queue.failed.length > 0 && (
             <Group>
               {queue.failed.map((f) => (

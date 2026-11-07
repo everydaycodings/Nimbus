@@ -29,12 +29,12 @@ API checks: `cd apps/web && node --env-file=.env.local scripts/api-check.ts` (ru
 | 7 | Vault | Built and checked on the emulator (APK), see below. Waiting on the user's phone check |
 | 8 | Push, release APK, web download, docs, finish review | Built and checked on the emulator (release APK), see below. Waiting on the user's phone check |
 | A | Full test of 0–8, security audit, licences, crash capture, rate limits, Maestro flows → 0.1.1 | Done 2026-11-07, see below. Phone checklist pending |
-| 9 | App shortcuts, widgets, Quick Settings tile, direct share targets | Not started |
-| 10 | Photos tab (replaces Recent), background audio, PiP, slideshow | Not started |
-| 11 | Back up other folders, two-way folder sync, export to SD/USB | Not started |
-| 12 | Text editor, multi-page scan, activity feed (web + app) | Not started |
+| 9 | App shortcuts, widgets, Quick Settings tile, direct share targets | Done, committed ("added till phase 9") |
+| 10 | Photos tab (replaces Recent), background audio, PiP, slideshow | Built 2026-11-07, checked on the emulator (release APK), see below. Uncommitted |
+| 11 | Back up other folders, two-way folder sync, export to SD/USB | Built 2026-11-07, checked on the emulator (release APK), see below. Uncommitted |
+| 12 | Text editor, multi-page scan, activity feed (web + app) | Built 2026-11-07, checked on the emulator (release APK), see below. Uncommitted |
 
-**Next: Phases 9–12**, in order. Each means several hours of building, a native build, emulator testing and a commit.
+**Phases 9–12 built** (10–12 uncommitted, 2026-11-07). Each means several hours of building, a native build, emulator testing and a commit.
 Answers are in Claude's project memory (Part A + 9–12 decisions); plan `~/.claude/plans/so-all-phases-8-gentle-popcorn.md`.
 
 - **Phase 9, phone extras** (Kotlin in `modules/nimbus-android`, wired by its config plugin):
@@ -67,6 +67,31 @@ Answers are in Claude's project memory (Part A + 9–12 decisions); plan `~/.cla
 
 Each phase: a short decision check only if something new comes up, build, Impeccable pass on new screens, a Maestro flow, a check on
 the release APK, an update here, a commit.
+
+**Phases 10–12 detail (2026-11-07)**
+
+Built by three parallel builder agents, then integrated and tested here. Migration `0028_phases10_12.sql` (activity table,
+`file_versions.taken_at`, `settings.activity_retention_days`), applied to the dev DB.
+
+- **Checks:** 203/203 API checks (new: photos timeline, `/tree`, activity), 72 mobile + 56 web + 9 shared unit tests, Kotlin
+  `SyncRulesTest` (12) and the old suites, web and mobile typecheck. Maestro: all 11 flows pass on the x86_64 release APK
+  (new `photos`, `editor`, `folder-sync`). Web Photos page and Details → Activity checked in the browser.
+- **Two-way sync run by hand on the emulator** (Documents/nsync ↔ a My files folder): first upload, phone edit → new version,
+  phone add, phone delete → server Trash, server rename and trash → phone, both-sides edit → server copy kept on the phone and
+  the phone's uploaded as `alpha (conflict, sdk_gphone64_x86_64).txt`, which then came down; later runs settle on "Nothing changed".
+- **Found and fixed:** adding a pair always failed (Expo's picker returns a document URI inside the tree; Kotlin now stores the
+  tree URI); versions with no SHA-256 (uploaders that don't send one) made sync re-download them every run — the worker now
+  hashes them (`hashMisses` in `scripts/derive.ts`, 20 per sweep); Activity lines ended in "…new version of" (now "…of it",
+  web and app); Maestro flows: sheet scroll for "Move to trash", the Photos tab vs a folder named Photos, picker timing, slideshow
+  controls auto-hide, keyboard before Back.
+- **Not run, for the phone:** background audio and lock-screen controls (AudioPlaylist next/previous), PiP, Save to device,
+  SD card/USB pulled mid-sync, Android 15 `dataSync` cap on Reliable sync, Play scanner multi-page, the takenAt backfill on a
+  big library (worker), the editor's offline save replay.
+- **For review:** the status line shows only the last run (right after adding a pair it can say "Nothing changed" though it just
+  uploaded); web Activity names you ("Browser Test"), the app says "You"; non-owners never see share events; folder sync has its
+  own Wi-Fi/charging/reliable switches; mass-delete guard holds a run past max(10, half the files); videos sort by upload time.
+- **Machine:** Cursor's Java/Gradle extensions imported `apps/mobile/android` and crashed Cursor during the APK build;
+  `.vscode/settings.json` now turns their Gradle import off.
 
 **Phase 1 detail**
 

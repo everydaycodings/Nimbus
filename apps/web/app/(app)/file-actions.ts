@@ -2,10 +2,12 @@
 
 import { refresh } from "next/cache"
 
+import { listActivity } from "@/lib/activity"
 import { type TagColor } from "@/lib/db/schema"
 import * as svc from "@/lib/services/files"
 import { requireMember } from "@/lib/session"
 
+export type { ActivityEvent } from "@/lib/activity"
 export type { Details, TagSnapshot } from "@/lib/services/files"
 type Result = svc.Result
 
@@ -72,6 +74,11 @@ export async function listFolders(parentId: string | null) {
 // For the details panel.
 export async function getDetails(id: string) {
   return svc.getDetails(await requireMember(), id)
+}
+
+// For the details panel: who changed this, newest first. Null: not theirs to see.
+export async function getActivity(id: string) {
+  return listActivity((await requireMember()).id, id)
 }
 
 // Makes a tag and puts it on `applyTo` in one go, the way "New tag…" is used.

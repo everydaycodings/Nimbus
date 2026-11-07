@@ -1,4 +1,5 @@
 import type { Item, Tag } from "@nimbus/shared/api"
+import { typeKeyOf } from "@nimbus/shared/file-rules"
 import * as Haptics from "expo-haptics"
 import { router, useFocusEffect } from "expo-router"
 import {
@@ -11,12 +12,14 @@ import {
   Bell,
   CaretDown,
   CaretRight,
+  ClockCounterClockwise,
   DotsThreeVertical,
   Link as LinkIcon,
   MagnifyingGlass,
   Plus,
   Rows,
   SelectionAll,
+  Slideshow,
   SquaresFour,
   Star,
   Trash,
@@ -81,13 +84,13 @@ const SORTS = { name: "Name", date: "Modified", size: "Size" }
 
 // The 48dp box is the press target and the 40dp pill is only what you see. The clear X is a
 // sibling, not a child, so TalkBack reaches it on its own.
-function Chip({ label, value, onPress, onClear }: { label: string; value?: string; onPress: () => void; onClear: () => void }) {
+function Chip({ label, value, onPress, onClear, go }: { label: string; value?: string; onPress: () => void; onClear: () => void; go?: ReactNode }) {
   return (
     <View style={{ minHeight: 48, justifyContent: "center" }}>
       <Pressable
         onPress={onPress}
         accessibilityRole="button"
-        accessibilityLabel={value ? `${label}: ${value}. Change filter` : `Filter by ${label.toLowerCase()}`}
+        accessibilityLabel={go ? label : value ? `${label}: ${value}. Change filter` : `Filter by ${label.toLowerCase()}`}
         style={{ minHeight: 48, justifyContent: "center" }}
       >
         {({ pressed }) => (
@@ -104,8 +107,9 @@ function Chip({ label, value, onPress, onClear }: { label: string; value?: strin
               backgroundColor: pressed ? c.ripple : value ? c.brandWash : "transparent",
             }}
           >
+            {go}
             <Text variant="label">{value ?? label}</Text>
-            {value ? <View style={{ width: 16 }} /> : <CaretDown size={14} color={c.mutedForeground} />}
+            {go ? null : value ? <View style={{ width: 16 }} /> : <CaretDown size={14} color={c.mutedForeground} />}
           </View>
         )}
       </Pressable>
@@ -424,6 +428,10 @@ export function Browser({
       onClear={() => setOnlyOffline(false)}
     />
   )
+  // Recent has no tab of its own (Photos took it), so it opens from here and from More.
+  const recentChip = given.kind === "files" && !top && (
+    <Chip key="recent" label="Recent" go={<ClockCounterClockwise size={16} color={c.mutedForeground} />} onPress={() => router.navigate(homeHref("(recent)"))} onClear={() => {}} />
+  )
   const SortIcon = prefs.order === "asc" ? ArrowUp : ArrowDown
   const sortable = !keepsServerOrder(source)
   const header = (
@@ -434,6 +442,7 @@ export function Browser({
         style={{ marginHorizontal: -16 }}
         contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
       >
+        {recentChip}
         {offlineChip}
         {!showOffline && chip("type", "Type", filters.type ? FILE_TYPES[filters.type].label : undefined)}
         {!showOffline && chip("modified", isTrash ? "Trashed" : "Modified", filters.modified ? FILTER_LABELS.modified[filters.modified] : undefined)}
@@ -560,6 +569,9 @@ export function Browser({
           <Text style={[type.title, { flex: 1 }]} numberOfLines={1}>
             {folderName}
           </Text>
+          {items.some((i) => typeKeyOf(i.kind, i.mime, i.name) === "image") && (
+            <IconButton icon={Slideshow} label="Slideshow" onPress={() => router.push({ pathname: "/slideshow", params: { folder: source.id, name: folderName } })} />
+          )}
           <IconButton icon={MagnifyingGlass} label="Search" onPress={() => router.push("/search")} />
         </Bar>
         {first && (

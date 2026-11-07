@@ -43,6 +43,7 @@ class NimbusAndroidModule : Module() {
         Backup.schedule(context)
         Backup.runNow(context)
       }
+      FolderSync.onStart(context)
       // Opened by a share from another app.
       Share.take(appContext.currentActivity?.intent)
       Widgets.update(context)
@@ -197,6 +198,18 @@ class NimbusAndroidModule : Module() {
       store.retryMedia()
       Backup.runNow(context)
     }
+
+    // ---- Phase 11: folder backup and sync, Save to device (FolderSync.kt, Export.kt) ----
+    Function("syncPairs") { FolderSync.db(context).json().toString() }
+    Function("syncFailures") { FolderSync.db(context).failures().toString() }
+    Function("syncAdd") { json: String -> FolderSync.add(context, json) }
+    Function("syncUpdate") { id: String, name: String, twoWay: Boolean, paused: Boolean -> FolderSync.update(context, id, name, twoWay, paused) }
+    Function("syncRemove") { id: String -> FolderSync.remove(context, id) }
+    Function("syncNow") { id: String? -> FolderSync.runNow(context, id, force = true) }
+    Function("syncRetry") { id: String? -> FolderSync.retry(context, id) }
+    Function("syncRules") { FolderSync.rules(context).toString() }
+    Function("setSyncRules") { json: String -> FolderSync.setRules(context, json) }
+    Function("exportToDevice") { accountId: String, treeUri: String, items: String -> Export.start(context, accountId, treeUri, items) }
 
     // ---- Vault: keys stay here; JS gets names, handles and results ----
 

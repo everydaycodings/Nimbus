@@ -9,6 +9,12 @@ export const IMAGE = /\.(jpe?g|png|gif|webp|avif|heic|heif|bmp|svg|tiff?|ico)$/i
 export const VIDEO = /\.(mp4|m4v|mov|webm|mkv|avi|wmv|flv|mpe?g|3gp|ogv)$/i
 export const AUDIO = /\.(mp3|m4a|aac|wav|flac|ogg|oga|opus|wma|aiff?)$/i
 
+// Postgres regexes (`~*`) for the Photos timeline: a photo or video by name, or by mime type
+// when the name has no known extension, as `typeKeyOf` does it (.ts is video/mp2t but not a video).
+export const MEDIA_NAME_RE = `(${IMAGE.source})|(${VIDEO.source})`
+export const MEDIA_MIME_RE = "^(image|video)/"
+export const NOT_MEDIA_NAME_RE = "\\.(ts|mts|m2ts)$"
+
 const UNITS = ["B", "KB", "MB", "GB", "TB"]
 
 export function formatBytes(n: number) {

@@ -14,6 +14,7 @@ import { useAccounts } from "@/lib/accounts"
 import { errorText } from "@/lib/api"
 import { askForMedia, useAlbums, useBackup } from "@/lib/backup"
 import { describe } from "@/lib/backup-rules"
+import { syncAvailable } from "@/lib/folder-sync"
 import { native } from "@/lib/native"
 import { c, radius } from "@/lib/theme"
 
@@ -116,6 +117,14 @@ export default function Backup() {
             </Group>
           </Section>
         </>
+      )}
+
+      {syncAvailable && (
+        <Section title="Other folders">
+          <Group>
+            <Row label="Folder backup & sync" detail="Back up or sync any folder, including an SD card" trailing={<Caret />} onPress={() => router.push("/folder-sync")} />
+          </Group>
+        </Section>
       )}
 
       {status.failed.length > 0 && (

@@ -6,7 +6,8 @@
   "exports": {
     "./file-rules": "./file-rules.ts",
     "./vault-crypto": "./vault-crypto.ts",
-    "./api": "./api.ts"
+    "./api": "./api.ts",
+    "./photos": "./photos.ts"
   },
   "scripts": {
     "test": "node --test *.test.ts"

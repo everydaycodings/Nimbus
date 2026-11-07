@@ -3,6 +3,7 @@
 // so search finds them too. The browser does the same work lazily.
 // `npm run worker` sweeps every minute.
 // Run: npm run indexer   (one sweep)
+import { createHash } from "node:crypto"
 import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3"
 import postgres from "postgres"
 
@@ -23,6 +24,14 @@ const s3 = new S3Client({
 // Files with no text to read, so later sweeps don't look at them again.
 // ponytail: forgotten on restart; costs one cheap row scan per sweep.
 const skip = new Set<string>()
+
+// SHA-256 of the whole object, streamed.
+export async function sha256Of(key: string) {
+  const r = await s3.send(new GetObjectCommand({ Bucket: env.S3_BUCKET!, Key: key }))
+  const h = createHash("sha256")
+  for await (const chunk of r.Body as AsyncIterable<Uint8Array>) h.update(chunk)
+  return h.digest("hex")
+}
 
 export async function read(key: string, end: number) {
   const r = await s3.send(

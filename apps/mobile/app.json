@@ -88,8 +88,20 @@
           "recordAudioAndroid": false
         }
       ],
-      "expo-video",
-      "expo-audio",
+      [
+        "expo-video",
+        {
+          "supportsPictureInPicture": true
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "enableBackgroundPlayback": true
+        }
+      ],
       "expo-sharing",
       "@react-native-community/datetimepicker",
       [

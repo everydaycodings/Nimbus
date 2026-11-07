@@ -1,13 +1,13 @@
 // One page of the previewer, per kind of file. app/preview.tsx holds the pager and the bars.
 import type { Item, OfficeResponse, PreviewResponse, Version } from "@nimbus/shared/api"
-import { formatBytes } from "@nimbus/shared/file-rules"
+import { formatBytes, typeKeyOf } from "@nimbus/shared/file-rules"
 import { useQuery } from "@tanstack/react-query"
-import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio"
+import { useAudioPlayer, useAudioPlayerStatus, useAudioPlaylistStatus } from "expo-audio"
 import { fetch as streamingFetch } from "expo/fetch"
 import { Image } from "expo-image"
 import { useNetworkState, NetworkStateType } from "expo-network"
 import { VideoView, useVideoPlayer, type VideoPlayer } from "expo-video"
-import { ArrowClockwise, ArrowCounterClockwise, Pause, Play } from "phosphor-react-native"
+import { ArrowClockwise, ArrowCounterClockwise, Pause, Play, SkipBack, SkipForward } from "phosphor-react-native"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ActivityIndicator, Linking, Pressable, ScrollView, View, useWindowDimensions, type GestureResponderEvent } from "react-native"
 import { Gesture, GestureDetector } from "react-native-gesture-handler"
@@ -17,6 +17,7 @@ import { WebView, type WebViewMessageEvent } from "react-native-webview"
 import { FileIcon } from "@/components/file-icon"
 import { Button, IconButton, Text } from "@/components/ui"
 import { errorText } from "@/lib/api"
+import { startQueue, useQueue, type Queue } from "@/lib/audio-queue"
 import { cachedFile, fetchToCache, offlineFile } from "@/lib/file-cache"
 import { useApi } from "@/lib/files"
 import { previewSession } from "@/lib/preview-session"
@@ -39,8 +40,11 @@ export type PageProps = {
   onZoom: (zoomed: boolean) => void
   onEdge: (by: number) => void
   onPlaying: (playing: boolean) => void
-  onPlayer: (player: VideoPlayer | null) => void
+  // The view too, for picture-in-picture.
+  onPlayer: (player: VideoPlayer | null, view?: VideoView | null) => void
   onTouched: () => void
+  // The audio queue moved on to this track.
+  onAudioTrack: (item: Item) => void
 }
 
 // Lazy, so a viewer's few MB of script aren't parsed until it's needed.
@@ -232,6 +236,7 @@ export function VideoPage({ item, version, active, onPlaying, onPlayer, onTouche
   const { url, error, refetch } = usePreviewUrl(item, version, active)
   const [failed, setFailed] = useState(false)
   const retried = useRef(false)
+  const view = useRef<VideoView>(null)
   const player = useVideoPlayer(url && active ? { uri: url } : null, (p) => {
     p.staysActiveInBackground = false
   })
@@ -247,9 +252,9 @@ export function VideoPage({ item, version, active, onPlaying, onPlayer, onTouche
 
   useEffect(() => {
     if (!active) return
-    onPlayer(player)
+    onPlayer(player, view.current)
     return () => onPlayer(null)
-  }, [active, player, onPlayer])
+  }, [active, player, onPlayer, url])
   useEffect(() => {
     const playing = player.addListener("playingChange", (e) => onPlaying(e.isPlaying))
     const status = player.addListener("statusChange", (e) => {
@@ -270,7 +275,7 @@ export function VideoPage({ item, version, active, onPlaying, onPlayer, onTouche
   // The native controls take the taps. Touches still reach this wrapper, so the bar can come back with them.
   return (
     <View style={{ flex: 1 }} onTouchEnd={onTouched}>
-      <VideoView player={player} nativeControls contentFit="contain" style={{ flex: 1 }} accessibilityLabel={item.name} />
+      <VideoView ref={view} player={player} nativeControls allowsPictureInPicture startsPictureInPictureAutomatically contentFit="contain" style={{ flex: 1 }} accessibilityLabel={item.name} />
     </View>
   )
 }
@@ -287,34 +292,31 @@ const clock = (s: number) => {
   return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`
 }
 
-export function AudioPage({ item, version, active, top }: PageProps) {
+type AudioViewProps = {
+  item: Item
+  version?: Version
+  top: number
+  position: number
+  duration: number
+  playing: boolean
+  onSeek: (seconds: number) => void
+  onToggle: () => void
+  onSpeed: (rate: number) => void
+  // Next and previous track, when there is a queue.
+  onSkip?: (by: 1 | -1) => void
+}
+
+// The controls, for whichever player is behind them.
+function AudioView({ item, version, top, position: playedTo, duration, playing, onSeek, onToggle, onSpeed, onSkip }: AudioViewProps) {
   const { account } = useApi()
-  const { url, error, refetch } = usePreviewUrl(item, version, active)
-  const player = useAudioPlayer(url && active ? { uri: url } : null, { updateInterval: 250 })
-  const status = useAudioPlayerStatus(player)
   const [speed, setSpeed] = useState(1)
   const [barWidth, setBarWidth] = useState(1)
   const [drag, setDrag] = useState<number | null>(null)
-  const started = useRef<string | null>(null)
 
-  useEffect(() => {
-    if (!url || !active || started.current === url || !status.isLoaded) return
-    started.current = url
-    player.play()
-  }, [url, active, status.isLoaded, player])
-  useEffect(() => {
-    if (active) return
-    started.current = null // Swiping back starts it again.
-    if (status.playing) player.pause()
-  }, [active, status.playing, player])
-
-  if (error && !url) return <NoPreview item={item} version={version} reason="Couldn't play this file." onRetry={() => refetch()} />
-
-  const duration = status.duration || 0
-  const position = drag ?? status.currentTime ?? 0
+  const position = drag ?? playedTo
   const fraction = duration ? Math.min(1, position / duration) : 0
   const seekFrom = (e: GestureResponderEvent) => Math.max(0, Math.min(1, e.nativeEvent.locationX / barWidth)) * duration
-  const jump = (by: number) => player.seekTo(Math.max(0, Math.min(duration, position + by)))
+  const jump = (by: number) => onSeek(Math.max(0, Math.min(duration, position + by)))
 
   return (
     <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingTop: top, paddingHorizontal: 32, gap: 24 }}>
@@ -339,7 +341,7 @@ export function AudioPage({ item, version, active, top }: PageProps) {
           onResponderGrant={(e) => setDrag(seekFrom(e))}
           onResponderMove={(e) => setDrag(seekFrom(e))}
           onResponderRelease={(e) => {
-            player.seekTo(seekFrom(e))
+            onSeek(seekFrom(e))
             setDrag(null)
           }}
           accessible
@@ -363,13 +365,13 @@ export function AudioPage({ item, version, active, top }: PageProps) {
         <IconButton icon={ArrowCounterClockwise} label="Back 10 seconds" onPress={() => jump(-10)} />
         <View style={{ borderRadius: 32, overflow: "hidden" }}>
           <Pressable
-            onPress={() => (status.playing ? player.pause() : player.play())}
+            onPress={onToggle}
             android_ripple={{ color: "rgba(0,0,0,0.12)" }}
             accessibilityRole="button"
-            accessibilityLabel={status.playing ? "Pause" : "Play"}
+            accessibilityLabel={playing ? "Pause" : "Play"}
             style={{ width: 64, height: 64, alignItems: "center", justifyContent: "center", backgroundColor: c.primary }}
           >
-            {status.playing ? <Pause size={28} weight="fill" color={c.primaryForeground} /> : <Play size={28} weight="fill" color={c.primaryForeground} />}
+            {playing ? <Pause size={28} weight="fill" color={c.primaryForeground} /> : <Play size={28} weight="fill" color={c.primaryForeground} />}
           </Pressable>
         </View>
         <IconButton icon={ArrowClockwise} label="Forward 10 seconds" onPress={() => jump(10)} />
@@ -377,7 +379,7 @@ export function AudioPage({ item, version, active, top }: PageProps) {
           onPress={() => {
             const next = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]
             setSpeed(next)
-            player.setPlaybackRate(next)
+            onSpeed(next)
           }}
           accessibilityRole="button"
           accessibilityLabel={`Playback speed ${speed} times`}
@@ -386,8 +388,109 @@ export function AudioPage({ item, version, active, top }: PageProps) {
           <Text variant="label" style={{ fontVariant: ["tabular-nums"] }}>{speed}×</Text>
         </Pressable>
       </View>
+      {onSkip && (
+        <View style={{ flexDirection: "row", gap: 32 }}>
+          <IconButton icon={SkipBack} label="Previous track" onPress={() => onSkip(-1)} />
+          <IconButton icon={SkipForward} label="Next track" onPress={() => onSkip(1)} />
+        </View>
+      )}
     </View>
   )
+}
+
+// Older versions and Vault files: one player on this page, which stops when you swipe away.
+function LocalAudioPage({ item, version, active, top }: PageProps) {
+  const { url, error, refetch } = usePreviewUrl(item, version, active)
+  const player = useAudioPlayer(url && active ? { uri: url } : null, { updateInterval: 250 })
+  const status = useAudioPlayerStatus(player)
+  const started = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!url || !active || started.current === url || !status.isLoaded) return
+    started.current = url
+    player.play()
+  }, [url, active, status.isLoaded, player])
+  useEffect(() => {
+    if (active) return
+    started.current = null // Swiping back starts it again.
+    if (status.playing) player.pause()
+  }, [active, status.playing, player])
+
+  if (error && !url) return <NoPreview item={item} version={version} reason="Couldn't play this file." onRetry={() => refetch()} />
+
+  return (
+    <AudioView
+      item={item}
+      version={version}
+      top={top}
+      position={status.currentTime ?? 0}
+      duration={status.duration || 0}
+      playing={status.playing}
+      onSeek={(s) => player.seekTo(s)}
+      onToggle={() => (status.playing ? player.pause() : player.play())}
+      onSpeed={(r) => player.setPlaybackRate(r)}
+    />
+  )
+}
+
+// The folder's audio plays as a queue (lib/audio-queue.ts). This page starts it when it comes on
+// screen and shows whichever track is playing; the previewer follows the track when it moves on.
+function QueueAudioPage({ item, active, top, onAudioTrack }: PageProps) {
+  const api = useApi()
+  const queue = useQueue()
+  const [error, setError] = useState<string | null>(null)
+  const starting = useRef(false)
+  const mine = queue?.account === api.id && queue.items.some((i) => i.id === item.id)
+
+  useEffect(() => {
+    if (!active) return
+    if (mine) {
+      // Swiped to another track of the same queue.
+      if (queue.items[queue.playlist.currentIndex]?.id !== item.id) queue.playlist.skipTo(queue.items.findIndex((i) => i.id === item.id))
+      return
+    }
+    if (starting.current) return
+    starting.current = true
+    const files = (previewSession()?.items ?? [item]).filter((i) => i.kind === "file" && typeKeyOf("file", i.mime, i.name) === "audio")
+    startQueue(api, files, Math.max(0, files.findIndex((i) => i.id === item.id)))
+      .catch((e) => setError(errorText(e)))
+      .finally(() => (starting.current = false))
+  }, [active, mine, queue, item, api])
+
+  // The playlist moved on by itself (or from the lock screen): bring this screen to that track.
+  useEffect(() => {
+    if (!active || !mine) return
+    const sub = queue.playlist.addListener("trackChanged", (e) => {
+      const next = queue.items[e.currentIndex]
+      if (next && next.id !== item.id) onAudioTrack(next)
+    })
+    return () => sub.remove()
+  }, [active, mine, queue, item.id, onAudioTrack])
+
+  if (error) return <NoPreview item={item} reason={error} onRetry={() => setError(null)} />
+  if (!mine) return <Loading />
+  return <QueueControls queue={queue} item={item} top={top} />
+}
+
+function QueueControls({ queue, item, top }: { queue: Queue; item: Item; top: number }) {
+  const status = useAudioPlaylistStatus(queue.playlist)
+  return (
+    <AudioView
+      item={item}
+      top={top}
+      position={status.currentTime ?? 0}
+      duration={status.duration || 0}
+      playing={status.playing}
+      onSeek={(s) => void queue.playlist.seekTo(s)}
+      onToggle={() => (status.playing ? queue.playlist.pause() : queue.playlist.play())}
+      onSpeed={(r) => (queue.playlist.playbackRate = r)}
+      onSkip={(by) => (by > 0 ? queue.playlist.next() : queue.playlist.previous())}
+    />
+  )
+}
+
+export function AudioPage(props: PageProps) {
+  return props.version || previewSession()?.vault ? <LocalAudioPage {...props} /> : <QueueAudioPage {...props} />
 }
 
 // ---- Documents: a sandboxed page, with this side reading the bytes ----

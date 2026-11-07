@@ -3,7 +3,7 @@ import { test } from "node:test"
 
 import type { Conflict } from "@nimbus/shared/api"
 
-import { applyAnswers, askBeforeData, pendingConflicts, stripSummary, type Answers, type Entry, type UploadRow } from "./upload-plan.ts"
+import { applyAnswers, askBeforeData, pendingConflicts, scanName, stripSummary, type Answers, type Entry, type UploadRow } from "./upload-plan.ts"
 
 const folder: Conflict = { path: "Photos", kind: "folder", freeName: "Photos (1)" }
 const inner: Conflict = { path: "Photos/a.jpg", kind: "file", freeName: "a (1).jpg" }
@@ -72,4 +72,9 @@ test("a duplicate keeps the strip up until someone decides", () => {
 test("progress ignores refused files and counts finished ones in full", () => {
   assert.equal(stripSummary([row("done", 0), row("uploading", 50), row("refused")]).progress, 0.75)
   assert.equal(stripSummary([row("refused")]).failed, 1)
+})
+
+test("a scan is named by the local date and time, to the minute", () => {
+  assert.equal(scanName("2026-11-07T14:32:05.123Z"), "Scan 2026-11-07 14.32.pdf")
+  assert.equal(scanName("2026-01-02T00:05:00.000Z"), "Scan 2026-01-02 00.05.pdf")
 })

@@ -8,6 +8,7 @@ import { ApiError, json, type Account } from "./api"
 import { db } from "./offline-db"
 import { idsOf, remap, renamed, classify, unresolved, type Op } from "./offline-rules"
 import { savedAccounts, tellNative } from "./offline"
+import { CHANGED, currentOf, uploadText } from "./editor-save"
 
 export type Failed = { id: number; op: Op; label: string; error: string; created: number }
 type Snap = { waiting: number; pending: Set<string>; ops: Op[]; failed: Failed[] }
@@ -123,6 +124,12 @@ async function exec(a: Account, op: Op): Promise<string | void> {
       return void (await send("POST", "/tags/apply", { ids: op.ids, tagId: op.tagId, on: op.on }))
     case "newFolder":
       return (await send<{ id: string }>("POST", "/folders", { parentId: op.parentId, name: op.name })).id
+    case "saveText": {
+      // The server's copy wins: if it moved on, this goes to Couldn't sync with the text still in it.
+      const now = (await currentOf(a, op.id)).item
+      if (!now || now.trashedAt || now.version !== op.base) throw new ApiError(409, "changed", CHANGED)
+      return void (await uploadText(a, op.parentId, now.name, op.text, "version"))
+    }
   }
 }
 

@@ -28,6 +28,7 @@ import type {
   RunStatus,
   Trigger,
 } from "../backup-rules"
+import type { ActivityType } from "../activity-rules"
 import type { Outcome, Service } from "../health-rules"
 import type { PasswordPolicy } from "../password-policy"
 
@@ -170,6 +171,9 @@ export const fileVersions = pgTable(
     // SHA-256 (hex) the browser computed while uploading, for spotting duplicates.
     // Null when unknown (resumed uploads, WebDAV, vaults).
     sha256: text("sha256"),
+    // Photos and videos: when it was taken (EXIF), else its upload time. The
+    // worker fills it in; null means not looked at yet (the timeline then uses createdAt).
+    takenAt: timestamp("taken_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [
@@ -318,6 +322,28 @@ export const linkEvents = pgTable(
   (t) => [
     index("link_events_share_at_idx").on(t.shareId, t.at),
     index("link_events_ip_kind_at_idx").on(t.ip, t.kind, t.at),
+  ]
+)
+
+// Who changed a file or folder: uploads, new versions, renames, moves, share changes, trash and restore.
+// Views and downloads aren't recorded. Pruned by settings.activityRetentionDays.
+export const activity = pgTable(
+  "activity",
+  {
+    id: id(),
+    nodeId: uuid("node_id")
+      .notNull()
+      .references(() => nodes.id, { onDelete: "cascade" }),
+    // Null for a drop through a public link, or once the account is gone.
+    actorId: text("actor_id").references(() => user.id, { onDelete: "set null" }),
+    type: text("type").$type<ActivityType>().notNull(),
+    // "old name" for a rename, "Ana as editor" for a share, and so on.
+    detail: text("detail"),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("activity_node_at_idx").on(t.nodeId, t.at),
+    index("activity_at_idx").on(t.at),
   ]
 )
 
@@ -614,6 +640,8 @@ export const settings = pgTable(
     resendApiKey: text("resend_api_key"),
     // Trashed items older than this are deleted for good. Null keeps them until emptied.
     trashRetentionDays: integer("trash_retention_days"),
+    // Activity feed events older than this are deleted. Null keeps them.
+    activityRetentionDays: integer("activity_retention_days").default(90),
     // Uploads. Null means no limit.
     maxUploadBytes: bigint("max_upload_bytes", { mode: "number" }),
     // Web uploader speed cap per member, bytes a second. Null: no cap.

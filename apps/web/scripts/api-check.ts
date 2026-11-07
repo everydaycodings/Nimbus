@@ -274,6 +274,17 @@ async function main() {
     const man = await call(A, "POST", "/zip-manifest", { ids: [folderId] })
     check("zip manifest", man.body.entries?.some((e: any) => e.path.endsWith("a.txt")), man.body)
 
+    const tree = await call(A, "GET", `/tree?folder=${folderId}`)
+    check(
+      "folder tree: relative paths, hash and size",
+      tree.status === 200 &&
+        tree.body.truncated === false &&
+        tree.body.entries.some((e: any) => e.path === "a.txt" && e.kind === "file" && e.size === bytes1.length && e.sha256 === sha(bytes1)) &&
+        tree.body.entries.some((e: any) => e.path === "empty/deep" && e.kind === "folder"),
+      tree.body
+    )
+    check("folder tree: My files root and a bad id", (await call(A, "GET", "/tree")).status === 200 && (await call(A, "GET", "/tree?folder=nope")).status === 404)
+
     const idx = await call(A, "PUT", `/items/${fileId}/content`, {
       versionId: fin.body.versionId,
       body: "zebra crossing unique-api-check-word",
@@ -431,8 +442,16 @@ async function main() {
     check("B adds a shortcut", (await call(B, "POST", "/shortcuts", { nodeId: folderId })).status === 200 && (await call(B, "GET", "/files")).body.items.some((i: any) => i.shortcut))
     check("B removes the shortcut", (await call(B, "DELETE", `/shortcuts/${folderId}`)).status === 200)
     check("role change", (await call(A, "PATCH", `/shares/${person.shareId}`, { role: "editor" })).status === 200)
-    check("editor may rename", (await call(B, "PATCH", `/items/${fileId}`, { name: "renamed.txt" })).status === 200)
+    check("editor may rename", (await call(B, "PATCH", `/items/${fileId}`, { name: "edited.txt" })).status === 200)
     check("editor sees versions", (await call(B, "GET", `/items/${fileId}/versions`)).body.versions.length >= 1)
+    const actA = (await call(A, "GET", `/files/${fileId}/activity`)).body.events ?? []
+    const typesA = actA.map((e: any) => e.type)
+    check("activity: owner sees upload, version and rename", ["upload", "version", "rename"].every((t) => typesA.includes(t)), typesA)
+    check("activity: newest first, with who", actA[0]?.type === "rename" && actA[0].actorId === meB.id && actA[0].detail?.endsWith("→ edited.txt"), actA[0])
+    const folderA = (await call(A, "GET", `/files/${folderId}/activity`)).body.events ?? []
+    check("activity: a folder's feed includes its children and the share", folderA.some((e: any) => e.nodeId === fileId) && folderA.some((e: any) => e.type === "share"), folderA.map((e: any) => e.type))
+    const folderB = (await call(B, "GET", `/files/${folderId}/activity`)).body.events ?? []
+    check("activity: an editor sees children but not share events", folderB.some((e: any) => e.nodeId === fileId) && !folderB.some((e: any) => e.type === "share"), folderB.map((e: any) => e.type))
     check("reshare flag", (await call(A, "PATCH", `/items/${folderId}/shares`, { allowReshare: true })).status === 200)
     check("only the owner sets reshare", (await call(B, "PATCH", `/items/${folderId}/shares`, { allowReshare: false })).status === 403)
     await call(A, "PATCH", `/items/${folderId}/shares`, { allowReshare: false })
@@ -457,6 +476,7 @@ async function main() {
     check("answering a withdrawn offer is 404", (await call(B, "POST", `/items/${folderId}/ownership/answer`, { accept: true })).status === 404)
     check("remove access", (await call(A, "DELETE", `/shares/${person.shareId}`)).status === 200)
     check("B no longer sees it", (await call(B, "GET", `/folders/${folderId}`)).status === 404)
+    check("activity: B has no access, so no feed", (await call(B, "GET", `/files/${fileId}/activity`)).status === 404)
   })
 
   // ---- notifications
@@ -651,6 +671,44 @@ async function main() {
     check("pending account: /vaults is 403", (await call(T3, "GET", "/vaults")).status === 403)
     check("pending account: /me says pending", (await call(T3, "GET", "/me")).body.gate === "pending")
     check("sign out", (await auth(T3, "POST", "/sign-out", {})).status === 200 && (await call(T3, "GET", "/me")).status === 401)
+  })
+
+  await group("photos timeline", async () => {
+    const up = async (name: string, type: string) => {
+      const b = randomBytes(512)
+      const plan = await call(A, "POST", "/uploads/plan", { parentId: folderId, entries: [{ path: name, size: b.length }] })
+      const url = await tusUpload(instance.tusUrl, b, { filename: name, filetype: type, token: plan.body.token, path: name, onConflict: "rename" })
+      return (await call(A, "POST", "/uploads/finish", { uploadUrl: url })).body
+    }
+    const old = await up(`${RUN}-old.jpg`, "image/jpeg")
+    const recent = await up(`${RUN}-new.mp4`, "video/mp4")
+    check("photo uploads finish", old.nodeId && recent.nodeId, { old, recent })
+    await sql`update file_versions set taken_at = '2020-01-15T10:00:00Z' where id = ${old.versionId}`
+    await sql`update file_versions set taken_at = '2021-03-02T10:00:00Z' where id = ${recent.versionId}`
+
+    const all = await call(A, "GET", "/photos?limit=1000")
+    const mine = (all.body.items ?? []).filter((i: any) => [old.nodeId, recent.nodeId].includes(i.id))
+    check("photos lists images and videos with their date taken", all.status === 200 && mine.length === 2 && mine.find((i: any) => i.id === old.nodeId).takenAt === "2020-01-15T10:00:00.000Z", all.body)
+    check("...newest taken first, total counts them", all.body.items.findIndex((i: any) => i.id === recent.nodeId) < all.body.items.findIndex((i: any) => i.id === old.nodeId) && all.body.total >= 2 && all.body.nextCursor === null)
+    check("...not text files", !all.body.items.some((i: any) => i.id === fileId))
+
+    // page through one at a time and meet both, in order
+    const seen: string[] = []
+    let cursor = ""
+    for (let i = 0; i < 1000; i++) {
+      const page = await call(A, "GET", `/photos?limit=1${cursor ? `&cursor=${cursor}` : ""}`)
+      seen.push(...page.body.items.map((x: any) => x.id))
+      if (!page.body.nextCursor) break
+      cursor = page.body.nextCursor
+    }
+    check("photos pages by cursor without gaps or repeats", new Set(seen).size === seen.length && seen.length === all.body.total && seen.indexOf(recent.nodeId) < seen.indexOf(old.nodeId))
+    check("a bad limit is 400", (await call(A, "GET", "/photos?limit=0")).status === 400)
+    check("a junk cursor starts over", (await call(A, "GET", "/photos?cursor=junk")).body.items?.length > 0)
+    check("photos needs a token", (await fetch(`${BASE}/api/v1/photos`)).status === 401)
+
+    await call(A, "POST", "/items/trash", { ids: [old.nodeId] })
+    check("trashed photos leave the timeline", !(await call(A, "GET", "/photos?limit=1000")).body.items.some((i: any) => i.id === old.nodeId))
+    await call(A, "POST", "/items/restore", { ids: [old.nodeId] })
   })
 }
 

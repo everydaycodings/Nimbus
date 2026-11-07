@@ -1,0 +1,8 @@
+{
+  // Cursor's Java/Gradle extensions import apps/mobile/android and run ~3-6 GB of JVMs, which crashed Cursor during APK builds.
+  "java.import.gradle.enabled": false,
+  "java.import.maven.enabled": false,
+  "java.server.launchMode": "LightWeight",
+  "java.configuration.updateBuildConfiguration": "disabled",
+  "gradle.autoDetect": "off"
+}

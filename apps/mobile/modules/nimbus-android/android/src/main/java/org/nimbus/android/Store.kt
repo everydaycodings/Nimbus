@@ -142,6 +142,20 @@ class Store private constructor(context: Context) : SQLiteOpenHelper(context, "n
     return id
   }
 
+  // Folder sync (FolderSync.kt): one file of one pair, the pair id kept in media_id.
+  fun addSync(account: Accounts.Account, tusUrl: String, uri: String, name: String, size: Long, mime: String, path: String, parentId: String?, token: String, onConflict: String, wifiOnly: Boolean, cap: Long?, sha: String, pair: String): String {
+    val id = UUID.randomUUID().toString()
+    val now = System.currentTimeMillis()
+    writableDatabase.insert("uploads", null, ContentValues().apply {
+      put("id", id); put("account", account.id); put("server", account.server); put("tus_url", tusUrl)
+      put("uri", uri); put("name", name); put("size", size); put("mime", mime)
+      put("path", path); put("plan_token", token); put("planned", now); put("parent_id", parentId)
+      put("on_conflict", onConflict); put("wifi_only", if (wifiOnly) 1 else 0); cap?.let { put("speed_cap", it) }
+      put("source", "sync"); put("media_id", pair); put("status", "queued"); put("sha", sha); put("created", now)
+    })
+    return id
+  }
+
   fun setMedia(mediaId: String, account: String, state: String, item: Media.Item, sha: String? = null, uploadId: String? = null, error: String? = null) {
     writableDatabase.insertWithOnConflict("backup_media", null, ContentValues().apply {
       put("media_id", mediaId); put("account", account); put("state", state); put("name", item.name)

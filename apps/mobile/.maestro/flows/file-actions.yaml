@@ -19,9 +19,11 @@ name: file-actions
 - pressKey: Enter
 - extendedWaitUntil: { visible: "Folder, mae-${output.stamp}-r", timeout: 10000 }
 - tapOn: "More actions for mae-${output.stamp}-r"
+- scrollUntilVisible: { element: "Move to trash" }
 - tapOn: "Move to trash"
 - tapOn: "Undo"
 - extendedWaitUntil: { visible: "Folder, mae-${output.stamp}-r", timeout: 10000 }
 - tapOn: "More actions for mae-${output.stamp}-r"
+- scrollUntilVisible: { element: "Move to trash" }
 - tapOn: "Move to trash"
 - assertNotVisible: "Folder, mae-${output.stamp}-r"

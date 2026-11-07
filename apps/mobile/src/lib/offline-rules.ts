@@ -15,8 +15,10 @@ export type Op =
   | { op: "restore"; ids: string[] }
   | { op: "newFolder"; parentId: string | null; name: string; tempId: string; clashed?: boolean }
   | { op: "applyTag"; ids: string[]; tagId: string; on: boolean }
+  // An edited text file; `base` is the version it was opened at. Fails (Couldn't sync) if the server's has moved on.
+  | { op: "saveText"; id: string; parentId: string | null; name: string; text: string; base: string | null }
 
-export const QUEUEABLE = ["rename", "move", "star", "trash", "restore", "newFolder", "applyTag"] as const
+export const QUEUEABLE = ["rename", "move", "star", "trash", "restore", "newFolder", "applyTag", "saveText"] as const
 export const canQueue = (op: string) => (QUEUEABLE as readonly string[]).includes(op)
 
 export const newTempId = () => `temp-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
@@ -24,8 +26,8 @@ export const isTemp = (id: string | null) => !!id && id.startsWith("temp-")
 
 // Every id an op points at, not counting the temporary id a new folder is born with.
 export function idsOf(op: Op): string[] {
-  const ids = op.op === "rename" ? [op.id] : op.op === "newFolder" ? [] : op.ids
-  const parent = op.op === "move" || op.op === "newFolder" ? [op.parentId] : []
+  const ids = op.op === "rename" || op.op === "saveText" ? [op.id] : op.op === "newFolder" ? [] : op.ids
+  const parent = op.op === "move" || op.op === "newFolder" || op.op === "saveText" ? [op.parentId] : []
   return [...ids, ...parent].filter((i): i is string => !!i)
 }
 
@@ -37,6 +39,7 @@ export function remap<T extends Op>(op: T, real: Record<string, string>): T {
     case "rename":
       return { ...op, id: swap(op.id) }
     case "newFolder":
+    case "saveText":
       return { ...op, parentId: op.parentId && swap(op.parentId) }
     case "move":
       return { ...op, ids: op.ids.map(swap), parentId: op.parentId && swap(op.parentId) }

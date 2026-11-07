@@ -15,6 +15,10 @@ export type Prefs = {
   recentSearches?: string[]
   // Where Share into Nimbus last saved; null id is My files.
   saveTo?: { id: string | null; name: string }
+  // Seconds each photo shows in a slideshow.
+  slideshowSeconds?: 3 | 5 | 10
+  // Photos tab: tiles per row.
+  photoColumns?: number
 }
 
 const DEFAULTS: Prefs = { layout: "grid", sort: "name", order: "asc", tiles: "medium", compact: false }

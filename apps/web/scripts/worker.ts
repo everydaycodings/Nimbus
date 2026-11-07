@@ -19,7 +19,7 @@ import {
   workerConnection,
 } from "../lib/redis.ts"
 import { signToken } from "../lib/upload-rules.ts"
-import { derive, deriveMisses } from "./derive.ts"
+import { derive, deriveMisses, exifMisses, hashMisses } from "./derive.ts"
 import { sql as indexSql, sweep } from "./indexer.ts"
 
 const app = process.env.BETTER_AUTH_URL ?? "http://localhost:3000"
@@ -78,6 +78,8 @@ async function index() {
   await (sweeping ??= (async () => {
     await sweep()
     await deriveMisses()
+    await exifMisses()
+    await hashMisses()
     // Admin → System: how many derive jobs run at once.
     const [{ n }] = await indexSql`select derive_concurrency as n from settings`
     derives.concurrency = Math.max(1, n)

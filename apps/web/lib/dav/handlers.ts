@@ -32,6 +32,7 @@ import {
   type Entry,
   type Lock,
 } from "@/lib/dav/xml"
+import { recordSaved } from "@/lib/activity"
 import { db } from "@/lib/db"
 import { fileVersions, nodes } from "@/lib/db/schema"
 import { isDropped, isJunk, mimeOf } from "@/lib/file-rules"
@@ -292,6 +293,7 @@ async function store(
     await deleteUnreferenced(old.map((o) => o.key))
   } else {
     await pruneVersions(saved.nodeId)
+    await recordSaved(saved.nodeId, saved.versionId!, c.me.id)
     if (at.ownerId !== c.me.id) await notifyEdit(c.me.id, saved.nodeId)
     await enqueueDerive(saved.versionId!)
   }

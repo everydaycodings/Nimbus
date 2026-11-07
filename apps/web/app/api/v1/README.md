@@ -56,6 +56,8 @@ server's order (`rank`); trash is newest-trashed first. Date/size default to des
 Paging is by offset: pass `nextCursor` back as `cursor` until it is `null`. The
 underlying queries return whole lists, so the server filters, sorts and slices
 in memory (fine for thousands of items per list). Recent is capped at 50, search with text at 50.
+`/photos` pages by keyset instead: pass its `nextCursor` (an opaque string) back as `cursor`. `takenAt` is the
+EXIF date, else the upload time; the worker reads it within a minute of an upload, until then it is the upload time.
 An item's `role` is set when it isn't mine (`editor`|`viewer`); viewers can't change it.
 
 ## Routes
@@ -71,6 +73,7 @@ nothing to return answers `200 {}`.
 | GET | `/files` | `ListQuery` | `ListResponse` (My files root + shortcuts) |
 | GET | `/folders/{id}` | `ListQuery` | `FolderResponse` (adds `folder`, `path` breadcrumbs) |
 | GET | `/recent` | `ListQuery` | `ListResponse` |
+| GET | `/photos` | `?limit=` (1-1000, 500), `?cursor=` | `PhotosResponse` (my images and videos, not Vault or trashed, newest `takenAt` first) |
 | GET | `/starred` | `ListQuery` | `ListResponse` |
 | GET | `/shared` | `?by=me` for shared-by-me, `ListQuery` | `ListResponse` |
 | GET | `/trash` | `ListQuery` | `TrashResponse` (adds `retentionDays`) |
@@ -107,12 +110,15 @@ nothing to return answers `200 {}`.
 | POST | `/versions/{vid}/current` | make current (also switches back) | `{}` |
 | POST | `/versions/{vid}/copy` | | `CopyVersionResponse` |
 | DELETE | `/versions/{vid}` | not the current one | `{}` |
+| **Activity** | | | |
+| GET | `/files/{id}/activity` | a file, or a folder with everything inside it; newest first, 50 at most | `ActivityResponse` (404 if I can't open it) |
 | **Uploads** | | | |
 | POST | `/uploads/plan` | `PlanUploadRequest` | `Plan` |
 | POST | `/uploads/folders` | `CreateFoldersRequest` (empty folders, mkdir -p) | `{}` |
 | POST | `/uploads/finish` | `FinishUploadRequest` | `FinishUploadResponse` |
 | POST | `/uploads/exists` | `ExistsRequest` | `ExistsResponse` |
 | POST | `/zip-manifest` | `IdsRequest` | `ZipManifest` |
+| GET | `/tree` | `?folder=` (omit: My files) | `TreeResponse` (every file and folder below it: relative `path`, `size`, `modified`, `sha256`, `versionId`; `truncated` past 50,000) |
 | **Previews and files** | | | |
 | GET | `/items/{id}/preview` | `?v=` older version, `?open=1` counts as opened | `PreviewResponse` (short-lived storage URL) |
 | GET | `/items/{id}/office` | `?v=` | `OfficeResponse` |
@@ -178,6 +184,14 @@ nothing to return answers `200 {}`.
 
 Paths starting `/api/` above are existing routes, outside `/api/v1`; the rest are `/api/v1/...`.
 
+## Activity
+
+Uploads, new versions (including switching version), renames, moves, share and link changes, trash and
+restore are recorded with who did them; views and downloads aren't. Owners see every event on their
+files. Editors and viewers see the events on what they can currently open, except `share` events, which
+are the owner's. The admin keeps them 30, 90 (default), 365 days or forever (Admin, Storage, Versions);
+the worker's hourly purge deletes older ones. Vault items record nothing.
+
 ## Uploads
 
 1. `POST /uploads/plan` with `{parentId, entries: [{path, size}]}`. `path` is
@@ -225,6 +239,14 @@ folder, in order) and `VaultTusMetadata`: `filename` (sealed name), `nameTag`,
 `token`, `encKey` (the wrapped file key) and optionally `replaces`. Parts must be
 `CIPHER_CHUNK` (4 MiB + 16) ciphertext chunks from `@nimbus/shared/vault-crypto`.
 Finish with `POST /uploads/finish` (no `sha256`).
+
+## Folder sync
+
+The Android app's folder sync and "Save to device" walk a folder with one call, `GET /tree?folder=<id>`
+(no `folder`: My files), instead of listing every subfolder. A file's `sha256` is that of its current
+version (null if it was finished without one: treat it as changed). Upload changes with
+`onConflict: "version"` (a new version) or `"rename"` (a new file), trash with `POST /items/trash`, and
+download with `GET /api/files/{id}/download`. Check `truncated` before treating a missing path as deleted.
 
 ## Previews and Collabora
 

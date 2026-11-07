@@ -1,6 +1,7 @@
 // The worker (scripts/worker.ts) hands queued and scheduled jobs here, because
 // they reuse the app's database, storage and email code. Anything but a 2xx
 // makes the worker try the job again later.
+import { purgeActivity } from "@/lib/activity"
 import { backupAlert } from "@/lib/backup/alert"
 import { sweepJunk } from "@/lib/dav/locks"
 import { sendNow, type Message } from "@/lib/email"
@@ -15,6 +16,7 @@ import { finishTusUpload } from "@/lib/uploads"
 const jobs: Record<string, (data: never) => Promise<unknown>> = {
   purge: async () => {
     await purgeExpiredTrash()
+    await purgeActivity()
     await sweepJunk()
     await recheckWarned()
   },

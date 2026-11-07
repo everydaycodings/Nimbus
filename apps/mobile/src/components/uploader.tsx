@@ -14,7 +14,7 @@ import { Button, Text } from "@/components/ui"
 import { errorText, json, send as request, type Account } from "@/lib/api"
 import { native, type NativeJob } from "@/lib/native"
 import { c } from "@/lib/theme"
-import { applyAnswers, askBeforeData, pendingConflicts, type Answers, type Choice, type Entry } from "@/lib/upload-plan"
+import { applyAnswers, askBeforeData, pendingConflicts, scanName, type Answers, type Choice, type Entry } from "@/lib/upload-plan"
 import { engine, localStamp, plan } from "@/lib/uploads"
 
 type Ctx = {
@@ -116,7 +116,7 @@ export function UploaderProvider({ children }: { children: ReactNode }) {
   const scan = useCallback(async (): Promise<Entry[]> => {
     const uri = await native?.scan()
     if (!uri) return []
-    const name = `Scan ${localStamp().slice(0, 16).replace("T", " ").replace(":", ".")}.pdf`
+    const name = scanName(localStamp())
     return [{ path: name, size: new File(uri).size ?? 0, uri, mime: "application/pdf" }]
   }, [])
 

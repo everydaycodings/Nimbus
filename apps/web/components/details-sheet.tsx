@@ -5,7 +5,7 @@ import { Menu } from "@base-ui/react/menu"
 import { PlusIcon, StarIcon, XIcon } from "@phosphor-icons/react"
 import { useEffect, useState } from "react"
 
-import { getDetails, type Details } from "@/app/(app)/file-actions"
+import { getActivity, getDetails, type ActivityEvent, type Details } from "@/app/(app)/file-actions"
 import type { Version } from "@/app/(app)/upload-actions"
 import { MENU_ITEM, MENU_POPUP } from "@/components/overlay-styles"
 import { Thumb } from "@/components/thumb"
@@ -239,6 +239,7 @@ export function DetailsSheet({
                   ))}
               </dl>
             )}
+            {open && details !== null && <Activity item={item} />}
             {open && item.kind === "file" && details !== null && tags && (
               <Versions
                 item={item}
@@ -294,6 +295,56 @@ function Versions({
         >
           See all versions
         </Button>
+      )}
+    </section>
+  )
+}
+
+const SAID: Record<ActivityEvent["type"], string> = {
+  upload: "uploaded",
+  version: "saved a new version of",
+  rename: "renamed",
+  move: "moved",
+  share: "changed sharing of",
+  trash: "trashed",
+  restore: "restored",
+}
+
+// Who changed this, newest first; a folder's list covers what's inside it.
+function Activity({ item }: { item: Item }) {
+  const [loaded, setLoaded] = useState<{ id: string; events: ActivityEvent[] | null } | null>(null)
+  useEffect(() => {
+    let live = true
+    getActivity(item.id).then((events) => live && setLoaded({ id: item.id, events }))
+    return () => {
+      live = false
+    }
+  }, [item.id, item.updatedAt])
+  const events = loaded?.id === item.id ? loaded.events : undefined
+  if (events === null) return null
+  return (
+    <section aria-labelledby="activity-heading" className="flex flex-col gap-2">
+      <h3 id="activity-heading" className="text-sm font-medium">
+        Activity
+      </h3>
+      {events === undefined ? (
+        <span className="h-4 w-32 animate-pulse rounded bg-muted/60 motion-reduce:animate-none" />
+      ) : !events.length ? (
+        <p className="text-xs text-muted-foreground">Nothing recorded yet.</p>
+      ) : (
+        <ul className="flex flex-col gap-2 text-sm">
+          {events.map((e) => (
+            <li key={e.id} className="flex flex-col">
+              <span className="break-words">
+                <span className="font-medium">{e.actorName ?? "Someone"}</span> {SAID[e.type]}
+                {item.kind === "folder" && e.nodeId !== item.id ? ` “${e.name}”` : " it"}
+              </span>
+              <span className="text-xs break-words text-muted-foreground">
+                {[full(e.at), e.detail].filter(Boolean).join(" · ")}
+              </span>
+            </li>
+          ))}
+        </ul>
       )}
     </section>
   )

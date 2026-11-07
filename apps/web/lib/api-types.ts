@@ -7,6 +7,7 @@ import type { Notification } from "@/lib/notify"
 import type { Usage } from "@/lib/quota"
 import type * as Files from "@/lib/services/files"
 import type * as Shares from "@/lib/services/shares"
+import type * as Sync from "@/lib/services/sync"
 import type * as Uploads from "@/lib/services/uploads"
 import type * as Vault from "@/lib/services/vault"
 import type { Report } from "@/lib/storage-report"
@@ -34,6 +35,8 @@ export type Checks = [
   Assert<Same<Api.ZipManifest, Uploads.ZipManifest>>,
   Assert<Same<Api.ExistsQuery, Uploads.ExistsQuery>>,
   Assert<Same<Api.ExistsMatch, Uploads.ExistsMatch>>,
+  Assert<Same<Api.TreeEntry, Sync.TreeEntry>>,
+  Assert<Same<Api.TreeResponse, Sync.TreeResponse>>,
   Assert<Same<Api.VaultNode, Vault.VaultNode>>,
   Assert<Same<Api.VaultKeys, Vault.VaultKeys>>,
   Assert<Same<Api.VaultSummary, VaultSummary>>,

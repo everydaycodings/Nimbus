@@ -26,10 +26,12 @@ export default function TabsLayout() {
       }}
     >
       <Tabs.Screen name="(files)" />
-      <Tabs.Screen name="(recent)" />
+      <Tabs.Screen name="photos" />
       <Tabs.Screen name="(shared)" />
       <Tabs.Screen name="(starred)" />
       <Tabs.Screen name="more" />
+      {/* Recent has no tab: a chip on Files and a row in More open it. */}
+      <Tabs.Screen name="(recent)" options={{ href: null }} />
     </Tabs>
     {wide && <View style={{ position: "absolute", bottom: 16, left: 96, width: 360, gap: 8 }}><OfflineBar floating /><UploadStrip floating /></View>}
     </View>

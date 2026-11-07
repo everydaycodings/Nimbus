@@ -5,6 +5,7 @@ import "server-only"
 import { and, eq, inArray, isNull, sql } from "drizzle-orm"
 
 import { folderOwner, ownerIfAll } from "@/lib/access"
+import { record, recordOne } from "@/lib/activity"
 import { db } from "@/lib/db"
 import { nodes } from "@/lib/db/schema"
 import { UUID } from "@/lib/files"
@@ -70,6 +71,10 @@ export async function renameAs(
   const ids = cleanIds([id])
   const owner = await ownerIfAll(userId, ids, "editor")
   if (!owner) return { error: NOT_ALLOWED }
+  const [was] = await db
+    .select({ name: nodes.name })
+    .from(nodes)
+    .where(and(owned(owner, ids), isNull(nodes.trashedAt)))
   try {
     await db
       .update(nodes)
@@ -79,6 +84,8 @@ export async function renameAs(
     if (isClash(e)) return { error: CLASH }
     throw e
   }
+  if (was && was.name !== clean.name)
+    await recordOne(ids[0], userId, "rename", `${was.name} → ${clean.name}`)
   if (owner !== userId) await notifyEdit(userId, ids[0])
   return {}
 }
@@ -122,6 +129,10 @@ export async function moveAs(
     if (up.some((r) => ids.includes(r.id)))
       return { error: "A folder can't go inside itself." }
   }
+  const before = await db
+    .select({ id: nodes.id, name: nodes.name, parentId: nodes.parentId })
+    .from(nodes)
+    .where(and(owned(owner, ids), isNull(nodes.trashedAt)))
   try {
     await db
       .update(nodes)
@@ -134,6 +145,16 @@ export async function moveAs(
       }
     throw e
   }
+  // A same-folder WebDAV MOVE is a rename.
+  await record(
+    before.flatMap((b): Parameters<typeof record>[0] =>
+      b.parentId !== parentId
+        ? [{ nodeId: b.id, actorId: userId, type: "move" as const }]
+        : rename.name && rename.name !== b.name
+          ? [{ nodeId: b.id, actorId: userId, type: "rename" as const, detail: `${b.name} → ${rename.name}` }]
+          : []
+    )
+  )
   if (owner !== userId && parentId) await notifyEdit(userId, parentId)
   return {}
 }
@@ -147,6 +168,7 @@ export async function trashAs(
   const owner = await ownerIfAll(userId, ids, "editor")
   if (!owner) return { error: NOT_ALLOWED }
   await trashNodes(db, owner, ids)
+  await record(ids.map((nodeId) => ({ nodeId, actorId: userId, type: "trash" as const })))
   if (owner !== userId) await notifyEdit(userId, ids[0])
   return {}
 }

@@ -16,5 +16,9 @@ name: quick-actions
 # Upload opens Android's file picker; backing out of it leaves Files home as it was.
 - openLink: nimbus://quick?do=upload
 - extendedWaitUntil: { notVisible: "Search in Nimbus", timeout: 10000 }
+- waitForAnimationToEnd
 - back
+- runFlow:
+    when: { notVisible: "Search in Nimbus" }
+    commands: [ back ]
 - extendedWaitUntil: { visible: "Search in Nimbus", timeout: 10000 }

@@ -1,0 +1,35 @@
+appId: org.nimbus.drive
+name: photos
+# Photos tab (needs at least one photo on the account): timeline, open one and swipe, slideshow,
+# grid size, then Recent from its chip on Files and from More.
+---
+- launchApp
+- extendedWaitUntil: { visible: "Search in Nimbus", timeout: 20000 }
+- assertVisible: "Recent"
+- tapOn: { text: "Photos", below: "New" }  # the tab, not a folder named Photos
+- extendedWaitUntil: { visible: "Slideshow", timeout: 20000 }
+- tapOn:
+    text: "(Photo|Video), .*"
+    index: 0
+- extendedWaitUntil: { visible: "Close preview", timeout: 15000 }
+- swipe: { direction: LEFT }  # may land on a video, which hides the bars while it plays
+- back
+- assertNotVisible: "Close preview"
+- tapOn: "Grid size.*"
+- assertVisible: "Grid size.*"
+- tapOn: "Slideshow"
+- extendedWaitUntil: { visible: "Close slideshow", timeout: 15000 }
+- tapOn: "5 seconds per photo"
+# Controls hide after 3 s while it plays; a tap brings them back.
+- runFlow:
+    when: { notVisible: "Pause slideshow" }
+    commands: [ tapOn: ".*Show controls" ]
+- tapOn: "Pause slideshow"
+- assertVisible: "Play slideshow"
+- tapOn: "Close slideshow"
+- assertVisible: "Slideshow"
+- tapOn: "Files"
+- tapOn: "Recent"
+- extendedWaitUntil: { visible: "Search in Nimbus", timeout: 10000 }
+- tapOn: "More"
+- assertVisible: "Recent"

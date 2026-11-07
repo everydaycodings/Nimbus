@@ -1,12 +1,13 @@
 import {
   AdminPage,
+  SELECT,
   SettingRow,
   SettingsForm,
   resettable,
 } from "@/components/admin/setting"
 import { Input } from "@/components/ui/input"
 import { getSettings } from "@/lib/signup"
-import { setVersionRetention } from "../../actions"
+import { setActivityRetention, setVersionRetention } from "../../actions"
 
 export const metadata = { title: "Versions · Admin · Nimbus" }
 
@@ -75,6 +76,42 @@ export default async function VersionsPage() {
             defaultValue={s.versionMaxAgeDays ?? ""}
             placeholder="Never"
           />
+        </SettingRow>
+      </SettingsForm>
+      <SettingsForm
+        action={setActivityRetention}
+        risks={[
+          {
+            name: "retention",
+            when: "fewer",
+            message: "Activity older than this is deleted the next time cleanup runs.",
+          },
+        ]}
+      >
+        <SettingRow
+          id="activity-retention"
+          label="Keep activity history for"
+          htmlFor="retention"
+          hint="Who uploaded, edited, renamed, moved, shared, trashed or restored what. Views and downloads aren't recorded."
+          tip={{
+            does: "Deletes entries from every file's and folder's Activity list once they're this old.",
+            affects: "The Activity section in everyone's file details.",
+            default: "90 days",
+            example: "1 year",
+          }}
+          reset={reset("activityRetentionDays")}
+        >
+          <select
+            id="retention"
+            name="retention"
+            defaultValue={String(s.activityRetentionDays ?? 0)}
+            className={SELECT}
+          >
+            <option value="30">30 days</option>
+            <option value="90">90 days</option>
+            <option value="365">1 year</option>
+            <option value="0">Forever</option>
+          </select>
         </SettingRow>
       </SettingsForm>
     </AdminPage>

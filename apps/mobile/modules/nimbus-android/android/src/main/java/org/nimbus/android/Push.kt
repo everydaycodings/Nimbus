@@ -189,7 +189,10 @@ class PushWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
     var again = false
     for (a in accounts) try {
       if (endpoint != null) Net.api(a, "POST", "/api/v1/push", JSONObject().put("endpoint", endpoint))
-      else Push.check(ctx, a, all.size > 1)
+      else {
+        Push.check(ctx, a, all.size > 1)
+        FolderSync.signal(ctx, a.id)
+      }
     } catch (e: Refused) {
       // Signed out or refused: retrying the same request won't help.
       Log.w("NimbusPush", "refused for ${a.id}: $e")

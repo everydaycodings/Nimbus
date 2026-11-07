@@ -5,6 +5,7 @@ import { and, eq, ilike, isNotNull, or, sql } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 
 import { MAX_SESSIONS } from "@/lib/accounts"
+import { ACTIVITY_RETENTION } from "@/lib/activity-rules"
 import { audit, saveSettings } from "@/lib/audit"
 import { db } from "@/lib/db"
 import {
@@ -100,6 +101,16 @@ export async function setTrashRetention(form: FormData) {
   const days = Number(form.get("retention"))
   await saveSettings({
     trashRetentionDays: RETENTION.includes(days) ? days : null,
+    updatedAt: new Date(),
+  })
+  revalidatePath("/admin", "layout")
+}
+
+export async function setActivityRetention(form: FormData) {
+  await requireAdmin()
+  const days = Number(form.get("retention"))
+  await saveSettings({
+    activityRetentionDays: ACTIVITY_RETENTION.some((d) => d === days) ? days : null,
     updatedAt: new Date(),
   })
   revalidatePath("/admin", "layout")
@@ -346,6 +357,7 @@ const RESETTABLE: SettingKey[] = [
   "versionKeepLast",
   "versionMaxAgeDays",
   "trashRetentionDays",
+  "activityRetentionDays",
   "publicLinksEnabled",
   "requireLinkPassword",
   "maxLinkDays",

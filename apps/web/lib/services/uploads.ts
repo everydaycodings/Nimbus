@@ -5,6 +5,7 @@ import { and, eq, isNull, sql } from "drizzle-orm"
 import { db } from "@/lib/db"
 import { fileVersions, nodes } from "@/lib/db/schema"
 import { accessOne, atLeast, folderOwner, viewable } from "@/lib/access"
+import { recordOne } from "@/lib/activity"
 import { getPath, markOpened, openableFile, UUID } from "@/lib/files"
 import { formatBytes, zipName } from "@/lib/file-rules"
 import { officeAction, signWopi } from "@/lib/office"
@@ -371,6 +372,7 @@ export async function makeCurrent(
       updatedAt: new Date(),
     })
     .where(eq(nodes.id, v.nodeId))
+  await recordOne(v.nodeId, me.id, "version", "Switched version")
   return {}
 }
 

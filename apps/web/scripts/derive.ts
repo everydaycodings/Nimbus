@@ -1,11 +1,21 @@
 // Thumbnails and search text for files no browser handled: WebDAV and API
 // uploads queue a "derive" job (lib/redis.ts enqueueDerive), and the minute
 // sweep catches the rest. Runs in npm run worker, beside the indexer.
-import { isJunk, previewKind } from "../lib/file-rules.ts"
+import sharp from "sharp"
+
+import { exifTakenAt } from "../lib/exif.ts"
+import {
+  IMAGE,
+  MEDIA_MIME_RE,
+  MEDIA_NAME_RE,
+  NOT_MEDIA_NAME_RE,
+  isJunk,
+  previewKind,
+} from "../lib/file-rules.ts"
 import { MAX_BODY } from "../lib/extract.ts"
 import { saveThumb } from "../lib/thumb-store.ts"
 import { serverThumb, serverThumbable } from "../lib/thumbs-server.ts"
-import { indexFile, read, sql, type IndexFile } from "./indexer.ts"
+import { indexFile, read, sha256Of, sql, type IndexFile } from "./indexer.ts"
 
 type Row = IndexFile & { thumb: string | null; indexed: boolean }
 
@@ -73,4 +83,62 @@ export async function deriveMisses() {
       console.error(`${f.name}: ${e.message}`)
     )
   return todo.length
+}
+
+// The date taken of up to 50 photo and video versions a sweep, newest first: new
+// uploads within a minute, and the whole library over time (the backfill). Always
+// sets taken_at, to the EXIF date or else the upload time, so a version is read once.
+// Videos have no EXIF; they keep the upload time.
+// ponytail: only the first 512 KB is read, so an EXIF block placed later is missed.
+export async function exifMisses() {
+  const rows = await sql<
+    { id: string; key: string; name: string; size: string; created: Date }[]
+  >`select v.id, v.s3_key as key, n.name, v.size, v.created_at as created
+    from file_versions v join nodes n on n.id = v.node_id
+    where v.taken_at is null and v.enc_key is null and n.vault_id is null
+      and (n.name ~* ${MEDIA_NAME_RE}
+        or (v.mime ~ ${MEDIA_MIME_RE} and n.name !~* ${NOT_MEDIA_NAME_RE}))
+    order by v.created_at desc limit 50`
+  for (const f of rows) {
+    let taken: Date | null = null
+    if (IMAGE.test(f.name) && Number(f.size) > 0) {
+      try {
+        const head = await read(f.key, Math.min(Number(f.size), 512 * 1024))
+        const exif = (await sharp(head, { limitInputPixels: false }).metadata()).exif
+        taken = exif ? exifTakenAt(exif) : null
+      } catch (e) {
+        // Gone from the bucket or not readable as an image: keep the upload time.
+        // Anything else (S3 down) tries again next sweep.
+        const err = e as Error
+        if (err.name !== "NoSuchKey" && !/^Input|unsupported|corrupt/i.test(err.message)) {
+          console.error(`${f.name}: ${err.message}`)
+          continue
+        }
+      }
+    }
+    await sql`update file_versions set taken_at = ${taken ?? f.created} where id = ${f.id}`
+  }
+  return rows.length
+}
+
+// Versions saved without a hash (only the browser and the app's uploader send one) get it here,
+// so folder sync and skip-by-hash can tell when a file really changed.
+// ponytail: a version whose object is gone is skipped until restart, then tried once more.
+const unhashable = new Set<string>()
+export async function hashMisses() {
+  const rows = await sql<{ id: string; key: string }[]>`
+    select v.id, v.s3_key as key from file_versions v join nodes n on n.id = v.node_id
+    where v.sha256 is null and v.enc_key is null and n.vault_id is null
+      and not (v.id = any(${[...unhashable]}::uuid[]))
+    order by v.created_at desc limit 20`
+  for (const v of rows) {
+    try {
+      await sql`update file_versions set sha256 = ${await sha256Of(v.key)} where id = ${v.id} and sha256 is null`
+    } catch (e) {
+      const err = e as Error
+      if (err.name === "NoSuchKey") unhashable.add(v.id)
+      else console.error(`hash ${v.id}: ${err.message}`)
+    }
+  }
+  return rows.length
 }

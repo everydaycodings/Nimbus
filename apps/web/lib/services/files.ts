@@ -28,6 +28,7 @@ import {
   ownerIfAll,
   visiblePath,
 } from "@/lib/access"
+import { recordOne } from "@/lib/activity"
 import { getFolder, getPath, markOpened, UUID } from "@/lib/files"
 import { checkStorage } from "@/lib/quota"
 import type { Me } from "@/lib/session"
@@ -100,7 +101,8 @@ export async function restoreItems(me: Me, rawIds: string[]): Promise<Result> {
   const failed: string[] = []
   for (const id of ids) {
     try {
-      await db.transaction((tx) => restoreNode(tx, owner, id))
+      if (await db.transaction((tx) => restoreNode(tx, owner, id)))
+        await recordOne(id, me.id, "restore")
     } catch (e) {
       if (!isClash(e)) throw e
       const [row] = await db

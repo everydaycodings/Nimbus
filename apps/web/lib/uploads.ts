@@ -15,6 +15,7 @@ import {
 
 import { db } from "@/lib/db"
 import { folderOwner } from "@/lib/access"
+import { recordSaved } from "@/lib/activity"
 import {
   fileVersions,
   linkEvents,
@@ -452,6 +453,13 @@ export async function finishTusUpload(
   // Counted in usage now (or refused), so it no longer holds space.
   await release(token.u, key)
   if (result.nodeId) {
+    if (result.versionId)
+      await recordSaved(
+        result.nodeId,
+        result.versionId,
+        token.s ? null : (token.b ?? token.u),
+        token.s ? "via a public link" : undefined
+      )
     await pruneVersions(result.nodeId)
     await checkStorage(token.u)
     // A browser makes these itself; this covers API uploads and closed tabs.

@@ -262,6 +262,24 @@ export type DeleteOlderResponse = { count: number }
 export type UpdateVersionRequest = { note?: string; keep?: boolean }
 export type CopyVersionResponse = { name: string }
 
+// ---- Activity ----
+
+export type ActivityType = "upload" | "version" | "rename" | "move" | "share" | "trash" | "restore"
+export type ActivityEvent = {
+  id: string
+  type: ActivityType
+  /** "old → new" for a rename, who and what for a share. */
+  detail: string | null
+  at: string
+  /** Null: a drop through a public link, or the account is gone. */
+  actorId: string | null
+  actorName: string | null
+  nodeId: string
+  /** The item's name now; tells a folder's children apart. */
+  name: string
+}
+export type ActivityResponse = { events: ActivityEvent[] }
+
 // ---- Uploads ----
 
 export type UploadEntry = {
@@ -635,3 +653,26 @@ export type VaultFileResponse = { url: string; encKey: string; size: number }
 export type PushRequest = { endpoint: string }
 /** What the server POSTs to a registered endpoint. No file names. */
 export type PushPayload = { app: "nimbus"; id: string; text: string }
+
+// ---- Folder sync (Phase 11) ----
+
+export type TreeEntry = {
+  id: string
+  /** Relative to the folder asked about, `/`-separated. */
+  path: string
+  kind: "file" | "folder"
+  size: number
+  modified: string
+  /** Current version's SHA-256; null for folders and for files finished without one. */
+  sha256: string | null
+  versionId: string | null
+}
+/** `truncated`: over 50,000 items, so the list is incomplete and must not drive deletes. */
+export type TreeResponse = { entries: TreeEntry[]; truncated: boolean }
+
+// ---- Photos (Phase 10) ----
+
+/** A photo or video of mine, with when it was taken (EXIF, else uploaded) as an ISO time. */
+export type PhotoItem = Item & { takenAt: string }
+/** `GET /photos?limit=&cursor=`: newest taken first. `total` counts every page. */
+export type PhotosResponse = { items: PhotoItem[]; total: number; nextCursor: string | null }

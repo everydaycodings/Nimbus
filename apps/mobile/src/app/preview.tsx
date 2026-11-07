@@ -1,8 +1,8 @@
 import type { Item, Version } from "@nimbus/shared/api"
 import { router, useFocusEffect } from "expo-router"
 import { StatusBar } from "expo-status-bar"
-import type { VideoPlayer } from "expo-video"
-import { ArrowSquareOut, DownloadSimple, DotsThreeVertical, ShareNetwork, X } from "phosphor-react-native"
+import { isPictureInPictureSupported, type VideoPlayer, type VideoView } from "expo-video"
+import { ArrowSquareOut, DownloadSimple, DotsThreeVertical, NotePencil, PictureInPicture, ShareNetwork, X } from "phosphor-react-native"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { BackHandler, FlatList, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native"
 import Animated, { useAnimatedStyle, useReducedMotion, withTiming } from "react-native-reanimated"
@@ -15,7 +15,9 @@ import { AudioPage, CollaboraView, ImagePage, NoPreview, VideoPage, WebPage, typ
 import { useSnack } from "@/components/snackbar"
 import { IconButton, Text } from "@/components/ui"
 import { errorText } from "@/lib/api"
-import { shareable, useApi, useDetails, useFileActions, type FileSheet } from "@/lib/files"
+import { stopQueue } from "@/lib/audio-queue"
+import { canEdit } from "@/lib/editor-rules"
+import { editable, shareable, useApi, useDetails, useFileActions, type FileSheet } from "@/lib/files"
 import { planFor, type Plan } from "@/lib/preview-rules"
 import { clearPreview, previewSession } from "@/lib/preview-session"
 import { useTransfers } from "@/lib/transfers"
@@ -87,6 +89,7 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
   const [zoomed, setZoomed] = useState(false)
   const [sheet, setSheet] = useState<FileSheet | null>(null)
   const player = useRef<VideoPlayer | null>(null)
+  const videoView = useRef<VideoView | null>(null)
   const [hasPlayer, setHasPlayer] = useState(false)
 
   const shown = items[index]
@@ -165,10 +168,14 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
 
   const onTap = useCallback(() => setBars((b) => !b), [])
   const onScrollDown = useCallback((down: boolean) => setBars(!down), [])
-  const onPlayer = useCallback((p: VideoPlayer | null) => {
+  const onPlayer = useCallback((p: VideoPlayer | null, view?: VideoView | null) => {
     player.current = p
+    videoView.current = view ?? null
     setHasPlayer(!!p)
   }, [])
+
+  // Closing the previewer ends the audio queue; leaving the app keeps it playing.
+  useEffect(() => stopQueue, [])
 
   const onSwiped = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const next = Math.round(e.nativeEvent.contentOffset.x / width)
@@ -189,6 +196,16 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
   const latestEdge = useRef(onEdge)
   latestEdge.current = onEdge
   const edge = useCallback((by: number) => latestEdge.current(by), [])
+  // The audio queue moved on to another track: show it.
+  const onAudioTrack = useCallback(
+    (next: Item) => {
+      const to = items.findIndex((i) => i.id === next.id)
+      if (to < 0) return
+      listRef.current?.scrollToIndex({ index: to, animated: false })
+      goTo(to)
+    },
+    [items]
+  )
 
   // The file left this list: show its neighbour, or leave if it was the last.
   const onTrashed = useCallback(
@@ -249,10 +266,11 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
           onPlaying={onPlaying}
           onPlayer={onPlayer}
           onTouched={onTouched}
+          onAudioTrack={onAudioTrack}
         />
       </View>
     ),
-    [width, height, index, version, top, inset.bottom, edge, onTap, onScrollDown, onPlaying, onPlayer, onTouched]
+    [width, height, index, version, top, inset.bottom, edge, onTap, onScrollDown, onPlaying, onPlayer, onTouched, onAudioTrack]
   )
 
   if (!shown) return <View style={{ flex: 1, backgroundColor: c.background }} />
@@ -320,8 +338,14 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
             <IconButton icon={DownloadSimple} label="Download" onPress={() => vaultItem.download(item)} />
           </>
         )}
+        {hasPlayer && plan?.show === "video" && isPictureInPictureSupported() && (
+          <IconButton icon={PictureInPicture} label="Picture in picture" onPress={() => void videoView.current?.startPictureInPicture().catch(() => snack({ text: "Couldn't start picture in picture.", error: true }))} />
+        )}
         {!vaultId && !version && shareable(item, session.role) && (
           <IconButton icon={ShareNetwork} label="Share" onPress={() => router.push({ pathname: "/share/[id]", params: { id: item.id, name: item.name } })} />
+        )}
+        {!vaultId && !version && editable([item], session.role) && canEdit(item.name, item.mime) && (
+          <IconButton icon={NotePencil} label="Edit" onPress={() => router.push({ pathname: "/edit", params: { id: item.id } })} />
         )}
         {!vaultId && <IconButton icon={DownloadSimple} label="Download" onPress={() => download([item], version)} />}
         {!vaultId && <IconButton icon={DotsThreeVertical} label="More actions" onPress={() => setSheet({ kind: "actions", items: [item] })} />}

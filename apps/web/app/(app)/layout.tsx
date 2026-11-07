@@ -2,6 +2,7 @@ import {
   ClockIcon,
   CloudIcon,
   FolderIcon,
+  ImageIcon,
   EnvelopeSimpleIcon,
   HourglassIcon,
   KeyIcon,
@@ -60,6 +61,7 @@ const ROLE_LABEL = { owner: "Owner", admin: "Admin", member: "Member" }
 
 const FILE_LINKS = [
   { href: "/recent", label: "Recent", icon: ClockIcon },
+  { href: "/photos", label: "Photos", icon: ImageIcon },
   { href: "/starred", label: "Starred", icon: StarIcon },
   { href: "/shared", label: "Shared files", icon: UsersIcon },
 ]

@@ -81,6 +81,7 @@ class LiveService : Service() {
     private fun check(all: Int) {
       try {
         Push.check(ctx, account, all > 1)
+        FolderSync.signal(ctx, account.id)
       } catch (e: Refused) {
         if (e.status == 401) running = false
       }

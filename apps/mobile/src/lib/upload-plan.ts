@@ -9,6 +9,9 @@ export type Answers = Map<string, Choice>
 // A file to send. No uri: an empty folder from a folder upload.
 export type Entry = { path: string; size: number; uri?: string; mime?: string }
 
+// "Scan 2026-11-07 14.32.pdf", from a local ISO stamp ("2026-11-07T14:32:05.000Z" read as the wall clock).
+export const scanName = (localIso: string) => `Scan ${localIso.slice(0, 16).replace("T", " ").replace(":", ".")}.pdf`
+
 export const DATA_PROMPT_BYTES = 100 * 1024 * 1024
 export const askBeforeData = (bytes: number, cellular: boolean) => cellular && bytes > DATA_PROMPT_BYTES
 

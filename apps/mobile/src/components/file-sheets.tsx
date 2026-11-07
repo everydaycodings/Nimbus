@@ -28,6 +28,7 @@ import {
   Info,
   Link as LinkIcon,
   Lock,
+  NotePencil,
   Minus,
   PencilSimple,
   Plus,
@@ -51,6 +52,8 @@ import { FILE_TYPES, FileIcon } from "@/components/file-icon"
 import { useOffice } from "@/components/preview-pages"
 import { CapDialog } from "@/components/offline-ui"
 import { SwitchRow } from "@/components/page"
+import { canEdit } from "@/lib/editor-rules"
+import { ActivityList } from "@/components/activity-list"
 import { Sheet, SheetDivider, SheetRow, useDismiss } from "@/components/sheet"
 import { useSnack } from "@/components/snackbar"
 import { TagDialog } from "@/components/tag-dialog"
@@ -58,6 +61,7 @@ import { VaultPickSheet, canVault } from "@/components/vault-sheets"
 import { useUploader } from "@/components/uploader"
 import { Button, Text } from "@/components/ui"
 import { whilePicking } from "@/lib/picking"
+import { saveToDevice, syncAvailable } from "@/lib/folder-sync"
 import { editable, label, roleOf, shareable, useApi, useDetails, useFileActions, useFolders, useLinks, useShareState, useTags, useVersions, type FileSheet, type Filters } from "@/lib/files"
 import { errorText } from "@/lib/api"
 import { native } from "@/lib/native"
@@ -256,6 +260,7 @@ function CollaboraRow({ item, onClose, icon }: { item: Item; onClose: () => void
 function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectAll, onDone, onTrashed, onUseFrame, previewing, ask }: Props & { items: Item[]; onClose: () => void; ask: (d: Dialog) => void }) {
   const actions = useFileActions()
   const transfers = useTransfers()
+  const api = useApi()
   const snack = useSnack()
   const links = useLinks()
   const offline = useOfflineActions()
@@ -350,6 +355,18 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
           onClose()
         }}
       />
+      {syncAvailable && (
+        <SheetRow
+          label="Save to device…"
+          detail="An SD card, USB drive or any folder"
+          needsNet
+          icon={ic(DownloadSimple)}
+          onPress={async () => {
+            onClose()
+            if (await saveToDevice(api.id, items)) snack({ text: "Saving in the background. You'll get a notification when it's done." })
+          }}
+        />
+      )}
       {file && (
         <SheetRow
           label="Open with"
@@ -368,6 +385,16 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
         trailing={kept ? <CheckCircle size={ICON} color={c.brand} weight="fill" /> : undefined}
         onPress={toggleOffline}
       />
+      {file && edit && canEdit(file.name, file.mime) && (
+        <SheetRow
+          label="Edit"
+          icon={ic(NotePencil)}
+          onPress={() => {
+            onClose()
+            router.push({ pathname: "/edit", params: { id: file.id } })
+          }}
+        />
+      )}
       {file && OFFICE_EXT.test(file.name) && <CollaboraRow item={file} onClose={onClose} icon={ic(FileText)} />}
       {one && edit && <SheetRow label="Rename" icon={ic(PencilSimple)} onPress={() => ask({ kind: "rename", item: one })} />}
       {edit && <SheetRow label="Move" icon={ic(ArrowBendUpRight)} onPress={() => onChange({ kind: "move", items })} />}
@@ -616,6 +643,7 @@ function DetailsSheet({ item, role, trash, tags, onChange, onClose, ask }: Props
       )}
       {!trash && shareable(item, role) ? <WhoHasAccess item={item} fallback={row("Sharing", sharingLine)} /> : row("Sharing", sharingLine)}
       {!trash && item.kind === "file" && editable([item], role) && <VersionsLink item={item} />}
+      <ActivityList item={item} />
       {!trash && (
         <View style={{ paddingHorizontal: 20, paddingVertical: 8, gap: 8 }}>
           <Text variant="caption" color={mute}>
