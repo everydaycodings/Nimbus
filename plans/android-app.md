@@ -30,11 +30,11 @@ API checks: `cd apps/web && node --env-file=.env.local scripts/api-check.ts` (ru
 | 8 | Push, release APK, web download, docs, finish review | Built and checked on the emulator (release APK), see below. Waiting on the user's phone check |
 | A | Full test of 0–8, security audit, licences, crash capture, rate limits, Maestro flows → 0.1.1 | Done 2026-11-07, see below. Phone checklist pending |
 | 9 | App shortcuts, widgets, Quick Settings tile, direct share targets | Done, committed ("added till phase 9") |
-| 10 | Photos tab (replaces Recent), background audio, PiP, slideshow | Built 2026-11-07, checked on the emulator (release APK), see below. Uncommitted |
-| 11 | Back up other folders, two-way folder sync, export to SD/USB | Built 2026-11-07, checked on the emulator (release APK), see below. Uncommitted |
-| 12 | Text editor, multi-page scan, activity feed (web + app) | Built 2026-11-07, checked on the emulator (release APK), see below. Uncommitted |
+| 10 | Photos tab (replaces Recent), background audio, PiP, slideshow | Built 2026-11-07, checked on the emulator (release APK), see below. Committed; 0.2.0 not built yet |
+| 11 | Back up other folders, two-way folder sync, export to SD/USB | Built 2026-11-07, checked on the emulator (release APK), see below. Committed; 0.2.0 not built yet |
+| 12 | Text editor, multi-page scan, activity feed (web + app) | Built 2026-11-07, checked on the emulator (release APK), see below. Committed; 0.2.0 not built yet |
 
-**Phases 9–12 built** (10–12 uncommitted, 2026-11-07). Each means several hours of building, a native build, emulator testing and a commit.
+**Phases 9–12 built and committed** (2026-11-07). API 2, app 0.2.0 (versionCode 3); release APKs not built yet. Each means several hours of building, a native build, emulator testing and a commit.
 Answers are in Claude's project memory (Part A + 9–12 decisions); plan `~/.claude/plans/so-all-phases-8-gentle-popcorn.md`.
 
 - **Phase 9, phone extras** (Kotlin in `modules/nimbus-android`, wired by its config plugin):
