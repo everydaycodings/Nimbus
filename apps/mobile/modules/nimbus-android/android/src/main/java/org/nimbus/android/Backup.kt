@@ -17,6 +17,8 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
@@ -38,7 +40,13 @@ object Backup {
     BackupTile.refresh(context)
     // A new account or a start date further back means everything is looked at again.
     if (before.optString("accountId") != next.optString("accountId")) Store.of(context).clearMedia()
-    if (next.optBoolean("enabled")) {
+    if (next.optBoolean("enabled") && next.optBoolean("paused")) {
+      schedule(context)
+      // The file sending now stops at once; the run sees the flag and ends.
+      Store.of(context).rowsWhere("source = 'backup' and status = 'uploading'", arrayOf()).forEach { Uploads.halted.add(it.id) }
+      pause(context)
+    } else if (next.optBoolean("enabled")) {
+      if (prefs(context).getString("state", null) == "paused") keepCounts(context, "idle")
       schedule(context)
       runNow(context)
     } else {
@@ -57,6 +65,27 @@ object Backup {
     listener?.invoke()
   }
 
+  fun paused(context: Context) = settings(context).optBoolean("paused")
+
+  private fun keepCounts(context: Context, state: String, reason: String? = null) =
+    prefs(context).let { setStatus(context, state, reason, it.getInt("done", 0), it.getInt("total", 0)) }
+
+  fun pause(context: Context) = keepCounts(context, "paused")
+
+  // A file resumed on its own: a run already going picks it up, otherwise start one.
+  fun resumed(context: Context) {
+    if (prefs(context).getString("state", null) != "running") runNow(context)
+  }
+
+  // What backup would still look at: camera and chosen albums, from the start date, not yet tracked.
+  fun fresh(context: Context, account: String): List<Media.Item> {
+    val s = settings(context)
+    val albums = s.optJSONArray("albums")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet()
+    val from = s.optLong("from")
+    val tracked = Store.of(context).trackedMedia(account)
+    return Media.all(context).filter { (it.camera || it.bucketId in albums) && it.taken >= from && it.id !in tracked }.sortedBy { it.taken }
+  }
+
   const val NO_ACCESS = "Nimbus can't see your photos"
 
   fun status(context: Context): String {
@@ -71,14 +100,18 @@ object Backup {
       runNow(context)
     }
     val failed = JSONArray()
+    val skipped = JSONArray()
     if (enabled) for ((id, name, error) in Store.of(context).failedMedia(account))
       failed.put(JSONObject().put("mediaId", id).put("name", name).put("error", error))
+    if (enabled) for ((id, name) in Store.of(context).skippedMedia(account))
+      skipped.put(JSONObject().put("mediaId", id).put("name", name))
     return JSONObject()
       .put("state", if (enabled) p.getString("state", "idle") else "off")
       .put("reason", p.getString("reason", null) ?: JSONObject.NULL)
       .put("done", p.getInt("done", 0)).put("total", p.getInt("total", 0))
       .apply { if (p.contains("lastAt")) put("lastAt", p.getLong("lastAt", 0)) }
       .put("failed", failed)
+      .put("skipped", skipped)
       .put("access", access)
       .toString()
   }
@@ -195,7 +228,13 @@ class BackupWorker(context: Context, params: WorkerParameters) : CoroutineWorker
     try { setForeground(info) } catch (_: Exception) {}
   }
 
-  override suspend fun doWork(): Result = pass(first = true)
+  // Backup's jobs (every 15 minutes, new photo, now, Wi-Fi, charger) can start together. One at a time:
+  // a pass begins by re-queueing uploads that look cut off, which would steal one another run is sending.
+  override suspend fun doWork(): Result = one.withLock { pass(first = true) }
+
+  companion object {
+    private val one = Mutex()
+  }
 
   private suspend fun pass(first: Boolean): Result {
     if (first && Backup.PHOTOS in tags) runCatching { Backup.watchForPhotos(ctx, again = true) }
@@ -204,6 +243,10 @@ class BackupWorker(context: Context, params: WorkerParameters) : CoroutineWorker
     if (!s.optBoolean("enabled")) return Result.success()
     val account = Accounts.get(ctx, s.optString("accountId")) ?: run {
       Backup.setStatus(ctx, "failing", "Sign in to the backup account again")
+      return Result.success()
+    }
+    if (Backup.paused(ctx)) {
+      Backup.pause(ctx)
       return Result.success()
     }
     if (Media.access(ctx) == "none") {
@@ -223,16 +266,11 @@ class BackupWorker(context: Context, params: WorkerParameters) : CoroutineWorker
     }
     val reliable = s.optBoolean("reliable")
     val sender = Sender(ctx) { isStopped }
-    val albums = s.optJSONArray("albums")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } ?: emptySet()
-    val from = s.optLong("from")
     val videosOnWifi = s.optBoolean("videosWifiOnly", true)
 
     try {
       store.recoverBackup()
-      val tracked = store.trackedMedia(account.id)
-      val fresh = Media.all(ctx)
-        .filter { (it.camera || it.bucketId in albums) && it.taken >= from && it.id !in tracked }
-        .sortedBy { it.taken }
+      val fresh = Backup.fresh(ctx, account.id)
       val folders = Backup.Folders(account)
       val instance = Net.api(account, "GET", "/api/v1/instance")
       val me = Net.api(account, "GET", "/api/v1/me")
@@ -248,8 +286,44 @@ class BackupWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         return Result.success()
       }
 
-      for (batch in fresh.chunked(100)) {
+      fun paused(): Result {
+        Backup.pause(ctx)
+        return Result.success()
+      }
+
+      // Sends what's queued. Null: carry on; otherwise the run ends with that result.
+      suspend fun drain(): Result? {
+        val metered = Uploads.metered(ctx)
+        while (!isStopped && !Backup.paused(ctx)) {
+          if (s.optBoolean("chargingOnly") && !Backup.charging(ctx)) break
+          val row = store.claim(metered, "backup") ?: break
+          when (sender.send(row)) {
+            Sender.Outcome.DONE -> store.mediaDone(row.id)
+            Sender.Outcome.FAILED -> store.mediaFailed(row.id)
+            Sender.Outcome.AUTH -> return stop("Sign in to the backup account again", "Backup stopped: sign in again")
+            Sender.Outcome.FULL -> return stop("Your Nimbus storage is full", "Backup stopped: storage is full")
+            Sender.Outcome.OFFLINE -> return Result.retry()
+            Sender.Outcome.HALTED -> {
+              if (isStopped) return Result.retry()
+              if (Backup.paused(ctx)) return paused()
+              // That one file was paused or skipped; carry on with the rest.
+              total--
+              progress(done, total, reliable)
+              continue
+            }
+          }
+          done++
+          progress(done, total, reliable)
+        }
+        return null
+      }
+
+      for (all in fresh.chunked(100)) {
         if (isStopped) return Result.retry()
+        if (Backup.paused(ctx)) return paused()
+        // Skipped from the queue screen since this run listed them.
+        val tracked = store.trackedMedia(account.id)
+        val batch = all.filter { it.id !in tracked }
         // Hash first: the server matches on the bytes, wherever they are.
         val hashed = batch.mapNotNull { item ->
           try { item to sender.hash(item.uri, null) } catch (e: Exception) {
@@ -293,30 +367,21 @@ class BackupWorker(context: Context, params: WorkerParameters) : CoroutineWorker
           }
         }
         // Send what's queued before looking at the next batch, so progress starts early.
-        val metered = Uploads.metered(ctx)
-        while (!isStopped) {
-          if (s.optBoolean("chargingOnly") && !Backup.charging(ctx)) break
-          val row = store.claim(metered, "backup") ?: break
-          when (sender.send(row)) {
-            Sender.Outcome.DONE -> store.mediaDone(row.id)
-            Sender.Outcome.FAILED -> store.mediaFailed(row.id)
-            Sender.Outcome.AUTH -> return stop("Sign in to the backup account again", "Backup stopped: sign in again")
-            Sender.Outcome.FULL -> return stop("Your Nimbus storage is full", "Backup stopped: storage is full")
-            Sender.Outcome.OFFLINE -> return Result.retry()
-            Sender.Outcome.HALTED -> return Result.retry()
-          }
-          done++
-          progress(done, total, reliable)
-        }
+        drain()?.let { return it }
       }
+      // And what an earlier run left queued (resumed, or held for Wi-Fi) when no new photos came.
+      drain()?.let { return it }
       // Photos taken (or copied in) while this run went fire no trigger: the next one is only armed after this
       // run ends. Look again and go round while there are new ones, so "All backed up" is true when it shows.
-      val seen = store.trackedMedia(account.id)
-      if (!isStopped && Media.all(ctx).any { (it.camera || it.bucketId in albums) && it.taken >= from && it.id !in seen }) return pass(first = false)
+      if (Backup.paused(ctx)) return paused()
+      if (!isStopped && Backup.fresh(ctx, account.id).isNotEmpty()) return pass(first = false)
       // Anything still queued here is a video waiting for Wi-Fi.
       if (store.backupPending(account.id) > 0) {
         Backup.setStatus(ctx, "waiting", "Videos are waiting for Wi-Fi", done, total)
         Backup.waitFor(ctx, wifi = true)
+      } else if (store.backupPausedItems(account.id) > 0) {
+        val n = store.backupPausedItems(account.id)
+        Backup.setStatus(ctx, "waiting", "$n paused item${if (n == 1) "" else "s"}", done, total)
       } else Backup.setStatus(ctx, "idle", null, done, total, finished = true)
       return Result.success()
     } catch (e: Refused) {

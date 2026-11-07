@@ -1,9 +1,9 @@
 import { DateTimePickerAndroid } from "@react-native-community/datetimepicker"
 import { formatBytes } from "@nimbus/shared/file-rules"
 import { router } from "expo-router"
-import { ArrowClockwise, CheckCircle, CloudArrowUp, Warning } from "phosphor-react-native"
+import { ArrowClockwise, CaretRight, CheckCircle, CloudArrowUp, Pause, Warning } from "phosphor-react-native"
 import { useEffect, useState } from "react"
-import { Linking, View } from "react-native"
+import { Linking, Pressable, View } from "react-native"
 
 import { Actions, Frame } from "@/components/dialog"
 import { Caret, Group, Page, Row, Section, SwitchRow } from "@/components/page"
@@ -29,7 +29,9 @@ export default function Backup() {
   const [freeUp, setFreeUp] = useState(false)
   const target = accounts.find((a) => a.id === settings.accountId)
   const line = describe(status)
-  const Icon = status.state === "failing" ? Warning : status.state === "idle" ? CheckCircle : CloudArrowUp
+  const Icon = status.state === "failing" ? Warning : status.state === "idle" ? CheckCircle : status.state === "paused" ? Pause : CloudArrowUp
+  // Older APKs have no queue to show.
+  const queue = settings.enabled && typeof native?.backupQueue === "function"
   const tint = status.state === "failing" ? c.destructive : status.state === "off" ? c.mutedForeground : c.brand
   const extras = albums?.filter((a) => settings.albums.includes(a.id)).map((a) => a.name) ?? []
 
@@ -49,7 +51,15 @@ export default function Backup() {
   return (
     <Page title="Camera backup">
       {/* State matters more than the settings, so it comes first. */}
-      <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", gap: 16, alignItems: "center", padding: 16, borderWidth: 1, borderColor: c.border, borderRadius: radius.card, backgroundColor: c.card }}>
+      <Pressable
+        accessibilityLiveRegion="polite"
+        accessibilityRole={queue ? "button" : undefined}
+        accessibilityHint={queue ? "Shows the queue, to pause or skip" : undefined}
+        disabled={!queue}
+        onPress={() => router.push("/backup/queue")}
+        android_ripple={{ color: c.ripple }}
+        style={{ flexDirection: "row", gap: 16, alignItems: "center", padding: 16, borderWidth: 1, borderColor: c.border, borderRadius: radius.card, backgroundColor: c.card, overflow: "hidden" }}
+      >
         <View style={{ width: 40, height: 40, borderRadius: radius.control, backgroundColor: c.muted, alignItems: "center", justifyContent: "center" }}>
           <Icon size={22} color={tint} weight={status.state === "idle" ? "fill" : "regular"} />
         </View>
@@ -57,7 +67,8 @@ export default function Backup() {
           <Text variant="titleSmall">{line.title}</Text>
           <Text variant="bodySmall" color={c.mutedForeground}>{line.detail}</Text>
         </View>
-      </View>
+        {queue && <CaretRight size={20} color={c.mutedForeground} />}
+      </Pressable>
 
       {status.access === "none" && settings.enabled && (
         <Section note="Photo access was turned off for Nimbus, so backup has stopped. Allow photos and videos to start it again.">

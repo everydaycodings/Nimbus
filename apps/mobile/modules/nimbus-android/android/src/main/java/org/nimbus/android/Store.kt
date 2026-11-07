@@ -181,6 +181,29 @@ class Store private constructor(context: Context) : SQLiteOpenHelper(context, "n
     readableDatabase.rawQuery("select media_id, name, coalesce(error, '') from backup_media where account = ? and state = 'failed' order by taken desc", arrayOf(account))
       .use { c -> buildList { while (c.moveToNext()) add(Triple(c.getString(0), c.getString(1), c.getString(2))) } }
 
+  // Skipped from the queue screen: kept out of backup until "Back up" brings it back.
+  fun skippedMedia(account: String): List<Pair<String, String>> =
+    readableDatabase.rawQuery("select media_id, name from backup_media where account = ? and state = 'cancelled' order by taken desc", arrayOf(account))
+      .use { c -> buildList { while (c.moveToNext()) add(c.getString(0) to c.getString(1)) } }
+
+  fun skipQueued(where: String, args: Array<String>) =
+    writableDatabase.execSQL("update backup_media set state = 'cancelled', error = null where upload_id in (select id from uploads where $where)", args)
+
+  fun unskipMedia(mediaId: String?) =
+    if (mediaId == null) writableDatabase.delete("backup_media", "state = 'cancelled'", null)
+    else writableDatabase.delete("backup_media", "state = 'cancelled' and media_id = ?", arrayOf(mediaId))
+
+  fun backupPausedItems(account: String) = readableDatabase.rawQuery("select count(*) from uploads where source = 'backup' and account = ? and status = 'paused'", arrayOf(account)).use { it.moveToFirst(); it.getInt(0) }
+
+  // The backup queue screen, in the order they send. Never reordered, so a row doesn't move under a tap.
+  fun backupQueue(account: String): JSONArray {
+    val out = JSONArray()
+    readableDatabase.rawQuery("select id, name, mime, size, sent, status from uploads where source = 'backup' and account = ? order by created, rowid", arrayOf(account)).use { c ->
+      while (c.moveToNext()) out.put(JSONObject().put("id", c.getString(0)).put("name", c.getString(1)).put("mime", c.getString(2)).put("size", c.getLong(3)).put("sent", c.getLong(4)).put("status", c.getString(5)))
+    }
+    return out
+  }
+
   fun retryMedia() = writableDatabase.delete("backup_media", "state = 'failed'", null)
 
   // Backed up or already there: either way the server has the bytes, so the phone's copy may go.

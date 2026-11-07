@@ -45,6 +45,11 @@ export type NimbusAndroid = {
   // Album[] with counts and sizes, from the whole library.
   backupAlbums(): Promise<string>
   retryBackup(): void
+  // The backup queue (QueueRow[] JSON); per file, pauseUpload/resumeUpload work on its ids. Optional: older APKs.
+  backupQueue?(): string
+  // One file by id, or null for everything still to back up. Skipped items stay out until backupUnskip.
+  backupSkip?(id: string | null): void
+  backupUnskip?(mediaId: string | null): void
   // { count, bytes } of backed-up items older than `days` the server still has.
   freeUpCandidates(days: number): Promise<string>
   // How many Android removed, after its own confirmation.

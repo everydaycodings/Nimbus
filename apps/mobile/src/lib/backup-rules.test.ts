@@ -26,4 +26,5 @@ test("the strip always says why it's waiting", () => {
   })
   assert.equal(describe(status({ state: "running", done: 11, total: 340 }), now).title, "Backing up 12 of 340")
   assert.equal(describe(status({}), now).detail, "Nothing backed up yet")
+  assert.equal(describe(status({ state: "paused", done: 3, total: 10 }), now).title, "Backup is paused")
 })

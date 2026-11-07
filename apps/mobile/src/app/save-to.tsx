@@ -1,18 +1,20 @@
 import { formatBytes } from "@nimbus/shared/file-rules"
 import { router } from "expo-router"
-import { ArrowLeft, CaretRight, Lock, X } from "phosphor-react-native"
+import { ArrowLeft, CaretRight, FolderPlus, Lock, X } from "phosphor-react-native"
 import { useEffect, useState } from "react"
 import { ActivityIndicator, BackHandler, FlatList, Pressable, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { Avatar } from "@/components/avatar"
+import { PromptDialog } from "@/components/dialog"
 import { FileIcon } from "@/components/file-icon"
 import { Sheet, SheetRow } from "@/components/sheet"
 import { Bar, Button, IconButton, Text } from "@/components/ui"
 import { useUploader } from "@/components/uploader"
 import { VaultPickSheet, canVault } from "@/components/vault-sheets"
 import { useAccounts } from "@/lib/accounts"
-import { useFolders } from "@/lib/files"
+import { errorText } from "@/lib/api"
+import { useApi, useFolders } from "@/lib/files"
 import { usePrefs } from "@/lib/prefs"
 import { exitAfterSave, sharedFiles, shareTarget } from "@/lib/share-in"
 import { c, radius } from "@/lib/theme"
@@ -70,6 +72,8 @@ function Chooser() {
   const [accountsOpen, setAccountsOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [vaults, setVaults] = useState(false)
+  const [naming, setNaming] = useState(false)
+  const api = useApi()
   const { send } = useUploader()
   const here = stack[stack.length - 1]
   const q = useFolders(here.id)
@@ -86,6 +90,17 @@ function Chooser() {
     // The upload carries on in the background; the person goes back to what they were doing.
     if (exitAfterSave()) BackHandler.exitApp()
     else router.back()
+  }
+
+  // Like Drive: make the folder and step into it, ready to save there.
+  const newFolder = async (name: string) => {
+    try {
+      const { id } = await api.post<{ id: string }>("/folders", { parentId: here.id, name })
+      q.refetch()
+      setStack((s) => [...s, { id, name }])
+    } catch (e) {
+      return errorText(e)
+    }
   }
 
   return (
@@ -110,6 +125,7 @@ function Chooser() {
       <View style={{ flexDirection: "row", alignItems: "center", minHeight: 56, paddingHorizontal: 4, marginTop: 8, borderBottomWidth: 1, borderBottomColor: c.border }}>
         {stack.length > 1 ? <IconButton icon={ArrowLeft} label="Up a folder" onPress={() => setStack((s) => s.slice(0, -1))} /> : <View style={{ width: 12 }} />}
         <Text variant="titleSmall" numberOfLines={1} style={{ flex: 1 }}>{here.name}</Text>
+        <IconButton icon={FolderPlus} label="New folder" onPress={() => setNaming(true)} />
       </View>
 
       <FlatList
@@ -154,6 +170,7 @@ function Chooser() {
       <View style={{ padding: 16, paddingBottom: inset.bottom + 16, borderTopWidth: 1, borderTopColor: c.border }}>
         <Button label={`Save to ${here.name}`} busy={busy} disabled={!files.length} onPress={save} />
       </View>
+      {naming && <PromptDialog title="New folder" label="Folder name" confirm="Create" onClose={() => setNaming(false)} onSubmit={newFolder} />}
       {vaults && (
         <VaultPickSheet
           title="Save to a vault"

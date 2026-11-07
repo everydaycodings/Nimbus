@@ -155,7 +155,7 @@ class NimbusAndroidModule : Module() {
     Function("resumeUpload") { id: String ->
       Uploads.halted.remove(id)
       store.setStatus("id = ? and status = 'paused'", arrayOf(id), "queued")
-      Uploads.schedule(context)
+      if (store.get(id)?.source == "backup") Backup.resumed(context) else Uploads.schedule(context)
       changed()
     }
     Function("retryUpload") { id: String ->
@@ -196,6 +196,24 @@ class NimbusAndroidModule : Module() {
     AsyncFunction("backupAlbums") { Media.albums(context) }
     Function("retryBackup") {
       store.retryMedia()
+      Backup.runNow(context)
+    }
+
+    Function("backupQueue") { store.backupQueue(Backup.settings(context).optString("accountId")).toString() }
+    // One queued file (id), or with null everything backup still has to send, including photos not looked at yet.
+    Function("backupSkip") { id: String? ->
+      val where = "source = 'backup'" + if (id != null) " and id = ?" else ""
+      val args = if (id != null) arrayOf(id) else arrayOf<String>()
+      store.skipQueued(where, args)
+      cancel(where, args)
+      if (id == null) {
+        val account = Backup.settings(context).optString("accountId")
+        Backup.fresh(context, account).forEach { store.setMedia(it.id, account, "cancelled", it) }
+      }
+      Backup.listener?.invoke()
+    }
+    Function("backupUnskip") { mediaId: String? ->
+      store.unskipMedia(mediaId)
       Backup.runNow(context)
     }
 
