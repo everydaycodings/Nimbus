@@ -12,6 +12,8 @@ export type Abi = (typeof ABIS)[number]
 export type AndroidRelease = {
   version: string
   files: { abi: Abi; url: string; size: number }[]
+  // What's new, from the GitHub release; bundled APKs have none.
+  notes?: string
 }
 
 export const APK_FILE = /^nimbus-(\d+\.\d+\.\d+)-(arm64-v8a|armeabi-v7a|x86_64|universal)\.apk$/
@@ -28,21 +30,25 @@ async function fromGithub(): Promise<AndroidRelease | null> {
   if (!res.ok) return null
   const r = (await res.json()) as {
     assets?: { name: string; size: number; browser_download_url: string }[]
+    body?: string | null
   }
-  return pick(
+  const release = pick(
     (r.assets ?? []).map((a) => ({ name: a.name, size: a.size, url: a.browser_download_url }))
   )
+  return release && r.body?.trim() ? { ...release, notes: r.body.trim() } : release
 }
 
+// Only the newest version's APKs: the bundled folder keeps older ones after an update.
 function pick(list: { name: string; size: number; url: string }[]) {
-  const files: AndroidRelease["files"] = []
-  let version = ""
-  for (const a of list) {
+  const found = list.flatMap((a) => {
     const m = APK_FILE.exec(a.name)
-    if (!m) continue
-    version = m[1]
-    files.push({ abi: m[2] as Abi, url: a.url, size: a.size })
-  }
+    return m ? [{ version: m[1], abi: m[2] as Abi, url: a.url, size: a.size }] : []
+  })
+  const num = (v: string) => v.split(".").reduce((n, p) => n * 1000 + Number(p), 0)
+  const version = found.reduce((best, f) => (num(f.version) > num(best) ? f.version : best), "0.0.0")
+  const files: AndroidRelease["files"] = found
+    .filter((f) => f.version === version)
+    .map(({ abi, url, size }) => ({ abi, url, size }))
   files.sort((a, b) => ABIS.indexOf(a.abi) - ABIS.indexOf(b.abi))
   return files.length ? { version, files } : null
 }

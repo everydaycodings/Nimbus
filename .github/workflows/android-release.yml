@@ -44,7 +44,12 @@ jobs:
           echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
           export NIMBUS_KEYSTORE_FILE="$RUNNER_TEMP/release.jks"
           cd apps/mobile && npm run release:android
+      # The tagged commit's message is the release notes the app shows under "Check for updates".
+      - name: Release notes
+        if: steps.secrets.outputs.build == 'true'
+        run: git log -1 --format=%B | grep -v '^Co-Authored-By:' > "$RUNNER_TEMP/notes.md"
       - uses: softprops/action-gh-release@v2.0.9
         if: steps.secrets.outputs.build == 'true'
         with:
           files: apps/mobile/dist/*.apk
+          body_path: ${{ runner.temp }}/notes.md

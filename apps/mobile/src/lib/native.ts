@@ -45,6 +45,12 @@ export type NimbusAndroid = {
   // Album[] with counts and sizes, from the whole library.
   backupAlbums(): Promise<string>
   retryBackup(): void
+  // In-app updates. Optional: older APKs don't have them.
+  abi?(): string | null
+  canInstallApps?(): boolean
+  allowInstallApps?(): void
+  // A file:// APK in the app's cache, handed to Android's installer.
+  installApk?(fileUri: string): void
   // The backup queue (QueueRow[] JSON); per file, pauseUpload/resumeUpload work on its ids. Optional: older APKs.
   backupQueue?(): string
   // One file by id, or null for everything still to back up. Skipped items stay out until backupUnskip.

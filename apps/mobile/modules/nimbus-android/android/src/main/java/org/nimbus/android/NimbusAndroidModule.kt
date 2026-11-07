@@ -7,6 +7,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import android.provider.Settings
+import androidx.core.content.FileProvider
 import android.view.WindowManager
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.exception.CodedException
@@ -197,6 +199,24 @@ class NimbusAndroidModule : Module() {
     Function("retryBackup") {
       store.retryMedia()
       Backup.runNow(context)
+    }
+
+    // ---- In-app updates (app/about.tsx): which APK suits this phone, and Android's own installer ----
+    Function("abi") { Build.SUPPORTED_ABIS.firstOrNull() }
+    Function("canInstallApps") { Build.VERSION.SDK_INT < 26 || context.packageManager.canRequestPackageInstalls() }
+    // Android's "Install unknown apps" switch for Nimbus; it's asked once, then remembered.
+    Function("allowInstallApps") {
+      if (Build.VERSION.SDK_INT >= 26) (appContext.currentActivity ?: context).startActivity(
+        Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      )
+    }
+    // A downloaded APK (file:// in the app's cache) to the system installer, which asks the person to confirm.
+    Function("installApk") { fileUri: String ->
+      val uri = FileProvider.getUriForFile(context, "${context.packageName}.FileSystemFileProvider", java.io.File(Uri.parse(fileUri).path!!))
+      (appContext.currentActivity ?: context).startActivity(
+        Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
+          .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+      )
     }
 
     Function("backupQueue") { store.backupQueue(Backup.settings(context).optString("accountId")).toString() }
