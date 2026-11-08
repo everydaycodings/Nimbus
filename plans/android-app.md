@@ -37,7 +37,7 @@ API checks: `cd apps/web && node --env-file=.env.local scripts/api-check.ts` (ru
 | 14 | Comments on files (web + app) | Planned |
 | 15 | Photos: On this day, places map, smart groups, shared albums, partner sharing, quick edits | Planned |
 | 16 | Playback: cast to TV, sleep timer and speed, data-saver video quality | Planned |
-| 17 | Passkeys, restore a folder to a point in time | Planned |
+| 17 | Passkeys, 2FA after provider sign-in, restore a folder to a point in time | Planned |
 | 18 | PDF tools (markup, fill, sign), contacts and calendar backup | Planned |
 | 19 | Smart search: server OCR of images, scans and video frames, with where-it-matched results | Planned |
 | 20 | Optional AI service (admin): face grouping, speech search, search by what's in a photo | Planned |
@@ -569,6 +569,14 @@ pass. Found on the phone: a tall dialog (vault link with passphrase) put its but
 - **Passkeys:** add, name and remove passkeys in account settings (web and app), and sign in with one on either. The app uses
   Android's Credential Manager. The server serves `/.well-known/assetlinks.json` with the APK's signing fingerprint. Needs HTTPS
   and a real domain, so the option is hidden on HTTP or IP servers, with a note saying why. Passkeys count as two-factor.
+- **Two-factor after Google, GitHub and OIDC sign-in** (user, 2026-11-08): today Better Auth's 2FA only runs on password sign-in
+  (its hook matches `/sign-in/email|username|phone-number`), so a provider sign-in skips the code. Make it ask too, on web and app.
+  Server: extend the twoFactor plugin's after-hook matcher to `/callback/*` (and the OIDC callback); when the user has 2FA on,
+  drop the new session, set the two-factor cookie, and redirect to the web's code page instead of returning JSON. App: the
+  `nimbus://` return (`app-return`, `stashSession` in `lib/auth.ts`) carries a "2FA pending" code instead of a session; the app
+  trades it for the two-factor cookie and opens its existing `two-factor` screen. Trusted-device cookie works as on password
+  sign-in. Check order with the existing callback hooks (known-accounts, app return, Expo plugin). Decide: whether the admin's
+  OIDC provider is exempt (it may enforce its own MFA).
 - **Restore to a point in time:** on a folder (or all of My files), choose a date and time, see a preview of what changes
   (restored from Trash, older versions, undone renames and moves), then restore. Built from versions, Trash and the Activity
   log, so how far back it reaches follows the activity retention setting. The restore itself can be undone.
