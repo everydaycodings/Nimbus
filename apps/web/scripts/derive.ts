@@ -3,7 +3,7 @@
 // sweep catches the rest. Runs in npm run worker, beside the indexer.
 import sharp from "sharp"
 
-import { exifTakenAt } from "../lib/exif.ts"
+import { exifGps, exifTakenAt } from "../lib/exif.ts"
 import {
   IMAGE,
   MEDIA_MIME_RE,
@@ -12,7 +12,8 @@ import {
   isJunk,
   previewKind,
 } from "../lib/file-rules.ts"
-import { MAX_BODY } from "../lib/extract.ts"
+import { MAX_BODY, OCR_MAX, extractText } from "../lib/extract.ts"
+import { ocrGroups, smartRules } from "@nimbus/shared/smart-groups"
 import { saveThumb } from "../lib/thumb-store.ts"
 import { serverThumb, serverThumbable } from "../lib/thumbs-server.ts"
 import { indexFile, read, sha256Of, sql, type IndexFile } from "./indexer.ts"
@@ -85,27 +86,49 @@ export async function deriveMisses() {
   return todo.length
 }
 
-// The date taken of up to 50 photo and video versions a sweep, newest first: new
-// uploads within a minute, and the whole library over time (the backfill). Always
-// sets taken_at, to the EXIF date or else the upload time, so a version is read once.
-// Videos have no EXIF; they keep the upload time.
+// For up to 50 photo and video versions a sweep, newest first: new uploads within a minute,
+// and the whole library over time (the backfill, for versions with gps_checked = false).
+// Sets taken_at (EXIF date, else upload time, never overwriting one), the GPS, pixel size and
+// smart groups, then gps_checked, so a version is read once. Videos have no EXIF; they keep
+// the upload time and land in the Videos group.
 // ponytail: only the first 512 KB is read, so an EXIF block placed later is missed.
 export async function exifMisses() {
   const rows = await sql<
-    { id: string; key: string; name: string; size: string; created: Date }[]
-  >`select v.id, v.s3_key as key, n.name, v.size, v.created_at as created
+    {
+      id: string
+      key: string
+      name: string
+      mime: string | null
+      size: string
+      created: Date
+      path: string | null
+    }[]
+  >`select v.id, v.s3_key as key, n.name, v.mime, v.size, v.created_at as created,
+      (with recursive up as (
+        select id, parent_id, name, 0 as d from nodes where id = n.parent_id
+        union all
+        select p.id, p.parent_id, p.name, up.d + 1 from nodes p join up on p.id = up.parent_id
+      ) select string_agg(name, '/' order by d desc) from up) as path
     from file_versions v join nodes n on n.id = v.node_id
-    where v.taken_at is null and v.enc_key is null and n.vault_id is null
+    where v.gps_checked = false and v.enc_key is null and n.vault_id is null
       and (n.name ~* ${MEDIA_NAME_RE}
         or (v.mime ~ ${MEDIA_MIME_RE} and n.name !~* ${NOT_MEDIA_NAME_RE}))
     order by v.created_at desc limit 50`
   for (const f of rows) {
     let taken: Date | null = null
+    let gps: { lat: number; lng: number } | null = null
+    let width: number | null = null
+    let height: number | null = null
     if (IMAGE.test(f.name) && Number(f.size) > 0) {
       try {
         const head = await read(f.key, Math.min(Number(f.size), 512 * 1024))
-        const exif = (await sharp(head, { limitInputPixels: false }).metadata()).exif
-        taken = exif ? exifTakenAt(exif) : null
+        const meta = await sharp(head, { limitInputPixels: false }).metadata()
+        taken = meta.exif ? exifTakenAt(meta.exif) : null
+        gps = meta.exif ? exifGps(meta.exif) : null
+        // EXIF orientation 5-8 turns the picture on its side.
+        const turned = (meta.orientation ?? 1) >= 5
+        width = (turned ? meta.height : meta.width) ?? null
+        height = (turned ? meta.width : meta.height) ?? null
       } catch (e) {
         // Gone from the bucket or not readable as an image: keep the upload time.
         // Anything else (S3 down) tries again next sweep.
@@ -116,9 +139,53 @@ export async function exifMisses() {
         }
       }
     }
-    await sql`update file_versions set taken_at = ${taken ?? f.created} where id = ${f.id}`
+    const smart = smartRules({
+      name: f.name,
+      path: f.path ?? "",
+      mime: f.mime,
+      width,
+      height,
+      camera: Boolean(taken || gps),
+    })
+    await sql`update file_versions set
+      taken_at = coalesce(taken_at, ${taken ?? f.created}), lat = ${gps?.lat ?? null}, lng = ${gps?.lng ?? null},
+      width = ${width}, height = ${height}, smart = ${smart}::text[], gps_checked = true
+      where id = ${f.id}`
   }
+  await smartOcr()
   return rows.length
+}
+
+// Images the rules couldn't place (smart is null): OCR a downscaled copy, to tell receipts and
+// documents from plain pictures. Two a sweep, since Tesseract is heavy on the CPU.
+// ponytail: runs whatever the memory gate says and tries an image once; Phase 19's OCR replaces this.
+async function smartOcr() {
+  const [{ langs }] = await limits()
+  const rows = await sql<{ id: string; key: string; name: string }[]>`
+    select v.id, v.s3_key as key, n.name
+    from file_versions v join nodes n on n.id = v.node_id
+    where v.smart is null and v.gps_checked and v.enc_key is null and n.vault_id is null
+      and n.name ~* ${IMAGE.source} and v.size > 0 and v.size <= ${OCR_MAX}
+    order by v.created_at desc limit 2`
+  for (const f of rows) {
+    let smart: string[] = []
+    try {
+      const small = await sharp(await read(f.key, OCR_MAX), { limitInputPixels: false })
+        .rotate()
+        .resize(1000, 1000, { fit: "inside", withoutEnlargement: true })
+        .jpeg()
+        .toBuffer()
+      smart = ocrGroups(await extractText(small, "ocr", langs))
+    } catch (e) {
+      const err = e as Error
+      // S3 down: try again next sweep. Anything else: no group.
+      if (err.name !== "NoSuchKey" && !/^Input|unsupported|corrupt/i.test(err.message)) {
+        console.error(`${f.name}: ${err.message}`)
+        continue
+      }
+    }
+    await sql`update file_versions set smart = ${smart}::text[] where id = ${f.id}`
+  }
 }
 
 // Versions saved without a hash (only the browser and the app's uploader send one) get it here,

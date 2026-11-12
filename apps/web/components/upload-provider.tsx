@@ -27,6 +27,7 @@ import {
   listVersions,
   planUpload,
 } from "@/app/(app)/upload-actions"
+import { ImageEditor, canEditImage } from "@/components/image-editor"
 import { ConflictDialog, type Answers } from "@/components/conflict-dialog"
 import type { Conflict } from "@/app/(app)/upload-actions"
 import { MENU_ITEM, MENU_POPUP } from "@/components/overlay-styles"
@@ -534,6 +535,43 @@ class Engine {
     this.pump()
   }
 
+  // An image of the user's own that hasn't finished going up, for the editor to take.
+  editable(id: string) {
+    const j = this.job(id)
+    const f = this.data.get(id)?.file
+    return j?.kind === "upload" &&
+      !j.vault &&
+      !j.nodeId &&
+      j.status !== "done" &&
+      j.status !== "error" &&
+      f instanceof File
+      ? f
+      : null
+  }
+  // Puts an edited file in place of one still going up; what was sent of the old one is dropped.
+  swap(id: string, file: File) {
+    const d = this.data.get(id)
+    const j = this.job(id)
+    if (!d?.meta || !j) return
+    d.upload?.abort(Boolean(d.upload.url)).catch(() => {})
+    Object.assign(d, {
+      upload: undefined,
+      uploaded: undefined,
+      sha: undefined,
+      file,
+    })
+    d.fingerprint = fingerprintOf(j.parentId, file, d.meta.path)
+    d.meta = { ...d.meta, filetype: file.type }
+    this.patch(id, {
+      size: file.size,
+      sent: 0,
+      mime: file.type,
+      status: "queued",
+      error: undefined,
+    })
+    this.pump()
+  }
+
   pause(id: string) {
     const j = this.job(id)
     if (j?.status !== "uploading" && j?.status !== "queued") return
@@ -607,6 +645,12 @@ type Ctx = {
     onDone?: () => void
   ) => void
   download: (items: Target[]) => void
+  // An edited photo going up as a new version of the file it came from, or as a copy. Resolves to an error message, or null.
+  saveEdit: (
+    file: File,
+    parentId: string | null,
+    as: "version" | "rename"
+  ) => Promise<string | null>
   // Vaults plan their own uploads; these queue them and ask about clashes.
   uploadToVault: (jobs: VaultJob[]) => void
   ask: (conflicts: Conflict[], replace?: boolean) => Promise<Answers | null>
@@ -625,6 +669,7 @@ type Ctx = {
 const UploadContext = createContext<Ctx>({
   upload() {},
   download() {},
+  saveEdit: async () => "Uploads aren't available here.",
   uploadToVault() {},
   ask: async () => null,
   claimPicks: () => () => {},
@@ -827,6 +872,46 @@ export function UploadProvider({
     engine.pump()
   }
 
+  // No conflict question: the editor already chose between a version and a copy.
+  async function saveEdit(
+    file: File,
+    parentId: string | null,
+    as: "version" | "rename"
+  ) {
+    const plan = await planUpload(parentId, [
+      { path: file.name, size: file.size },
+    ]).catch(
+      () => ({ error: "Couldn't start the upload. Try again." }) as const
+    )
+    if (plan.error || !("token" in plan) || !plan.token)
+      return plan.error ?? "Couldn't start the upload. Try again."
+    if (plan.rejected.length) return plan.rejected[0].reason
+    setCollapsed(false)
+    engine.add(
+      {
+        kind: "upload",
+        name: file.name,
+        mime: file.type,
+        parentId,
+        size: file.size,
+        status: "queued",
+      },
+      {
+        file,
+        fingerprint: fingerprintOf(parentId, file, file.name),
+        meta: {
+          filename: file.name,
+          filetype: file.type,
+          token: plan.token,
+          path: file.name,
+          onConflict: as,
+        },
+      }
+    )
+    engine.pump()
+    return null
+  }
+
   function pick(
     kind: "files" | "folder",
     parentId: string | null,
@@ -960,6 +1045,7 @@ export function UploadProvider({
     download,
     uploadToVault,
     ask,
+    saveEdit,
     claimPicks,
     zipVault,
     busy: () => engine.get().jobs.filter(running).length,
@@ -1058,6 +1144,10 @@ function Panel({
 
   // Stable, so the panel's auto-dismiss timer isn't restarted by re-renders.
   const close = useCallback(() => engine.clear(), [engine])
+  // A row being edited: paused while the editor is open, then queued again with the edited file.
+  const [editing, setEditing] = useState<{ id: string; file: File } | null>(
+    null
+  )
   const setNotice = useNotice()
   const router = useRouter()
 
@@ -1088,23 +1178,51 @@ function Panel({
 
   if (!jobs.length && !stale.length) return null
   return (
-    <UploadPanel
-      jobs={jobs}
-      stale={stale.length}
-      collapsed={collapsed}
-      onCollapse={onCollapse}
-      onPause={(id) => (engine.pause(id), engine.pump())}
-      onResume={(id) => (engine.resume(id), engine.pump())}
-      onCancel={(id) => engine.cancel(id)}
-      onPauseAll={() => (engine.pauseAll(), engine.pump())}
-      onResumeAll={() => engine.resumeAll()}
-      onClose={close}
-      onResumeStale={onResumeStale}
-      onDismissStale={() => engine.dismissStale()}
-      onOpen={onOpen}
-      onKeep={(id) => engine.keep(id)}
-      onRemove={removeDuplicate}
-    />
+    <>
+      {editing && (
+        <ImageEditor
+          name={editing.file.name}
+          mime={editing.file.type}
+          src={editing.file}
+          takenAt={new Date(editing.file.lastModified)}
+          saveLabel="Use edited photo"
+          onSave={async (file) => {
+            engine.swap(editing.id, file)
+            setEditing(null)
+            return null
+          }}
+          onClose={() => {
+            engine.resume(editing.id)
+            engine.pump()
+            setEditing(null)
+          }}
+        />
+      )}
+      <UploadPanel
+        jobs={jobs}
+        stale={stale.length}
+        collapsed={collapsed}
+        onCollapse={onCollapse}
+        onPause={(id) => (engine.pause(id), engine.pump())}
+        onResume={(id) => (engine.resume(id), engine.pump())}
+        onCancel={(id) => engine.cancel(id)}
+        onPauseAll={() => (engine.pauseAll(), engine.pump())}
+        onResumeAll={() => engine.resumeAll()}
+        onClose={close}
+        onResumeStale={onResumeStale}
+        onDismissStale={() => engine.dismissStale()}
+        onOpen={onOpen}
+        onKeep={(id) => engine.keep(id)}
+        onRemove={removeDuplicate}
+        canEdit={(j) => canEditImage(j.mime) && engine.editable(j.id) !== null}
+        onEdit={(j) => {
+          const file = engine.editable(j.id)
+          if (!file) return
+          engine.pause(j.id)
+          setEditing({ id: j.id, file })
+        }}
+      />
+    </>
   )
 }
 

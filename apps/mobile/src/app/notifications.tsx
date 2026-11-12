@@ -47,6 +47,7 @@ export default function Notifications() {
   const open = async (n: Notification) => {
     const target = notificationTarget(n)
     if (target.to === "browser") return Linking.openURL(api.account.server + target.path)
+    if (target.to === "album") return router.push({ pathname: "/albums/[id]", params: { id: target.id } })
     if (target.to === "route") return router.push(target.path as Href)
     try {
       const { item } = await api.get<{ item: Item | null }>(`/items/${target.id}`)

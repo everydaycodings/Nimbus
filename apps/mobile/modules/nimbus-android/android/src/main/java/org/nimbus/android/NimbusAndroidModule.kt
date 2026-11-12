@@ -38,6 +38,7 @@ class NimbusAndroidModule : Module() {
       Push.listener = { account, endpoint -> sendEvent("push", mapOf("accountId" to account, "endpoint" to endpoint)) }
       Push.syncPolling(context)
       Live.sync(context)
+      Memories.schedule(context)
       // Anything left from before the app was closed carries on.
       if (store.pending("manual") > 0) Uploads.schedule(context)
       // Opening the app also looks for new photos, in case Android has held the background job back.
@@ -91,6 +92,9 @@ class NimbusAndroidModule : Module() {
     // Instant notifications: the built-in connection (Live.kt).
     Function("liveSet") { on: Boolean -> Live.set(context, on) }
     Function("liveState") { Live.isOn(context) }
+    // Phase 15: the daily On this day notice (Memories.kt).
+    Function("memoriesSet") { enabled: Boolean, hour: Int, minute: Int -> Memories.set(context, enabled, hour, minute) }
+    Function("memoriesState") { Memories.state(context) }
     Function("pushUnregister") { accountId: String -> Push.unregister(context, accountId) }
 
     // The Files app hides Nimbus when the app lock is on and the last unlock is older than the timeout.

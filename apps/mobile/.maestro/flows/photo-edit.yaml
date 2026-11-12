@@ -1,0 +1,52 @@
+appId: org.nimbus.drive
+name: photo-edit
+# Needs a JPEG or PNG photo on the account. Opens it from Photos, crops, rotates and marks it up, then Save as copy (keeps the
+# original untouched). Leaving with edits asks first. A video as the first tile has no Edit photo button, so use a photo-only account.
+---
+- launchApp
+- extendedWaitUntil: { visible: "Search in Nimbus", timeout: 20000 }
+- tapOn: { text: "Photos", below: "New" }  # the tab, not a folder named Photos
+- extendedWaitUntil: { visible: "Slideshow", timeout: 20000 }
+- tapOn:
+    text: "Photo, .*"
+    index: 0
+- extendedWaitUntil: { visible: "Close preview", timeout: 15000 }
+- tapOn: "Edit photo"
+- extendedWaitUntil: { visible: "Close editor", timeout: 30000 }
+# Nothing to save until something changes.
+- assertVisible: "No changes yet"
+- tapOn: "Crop 1:1"
+- tapOn: "Rotate right"
+- tapOn: "Flip horizontally"
+- assertVisible: "Edited"
+# Straighten by a screen reader step, then back to zero.
+- tapOn: "Reset straighten"
+- tapOn: "Markup"
+- extendedWaitUntil: { visible: "Draw with pen", timeout: 30000 }
+- tapOn: "Red"
+- swipe: { start: "30%,35%", end: "70%,55%" }
+- tapOn: "Highlighter"
+- tapOn: "Yellow"
+- swipe: { start: "25%,45%", end: "75%,45%" }
+- tapOn: "Arrow"
+- tapOn: "Blue"
+- swipe: { start: "30%,60%", end: "60%,40%" }
+- tapOn: "Undo"
+- tapOn: "Redo"
+- tapOn: "Text"
+- tapOn: { point: "40%,30%" }
+- inputText: "Look here"
+- hideKeyboard
+- tapOn: "Save as copy"
+- extendedWaitUntil: { visible: "Saved as a copy.", timeout: 90000 }
+# Back in the preview of the original; a second try leaves through the discard question.
+- extendedWaitUntil: { visible: "Close preview", timeout: 15000 }
+- tapOn: "Edit photo"
+- extendedWaitUntil: { visible: "Close editor", timeout: 30000 }
+- tapOn: "Rotate left"
+- tapOn: "Close editor"
+- assertVisible: "Discard your edits?"
+- tapOn: "Keep editing"
+- tapOn: "Close editor"
+- tapOn: "Discard"
+- extendedWaitUntil: { visible: "Close preview", timeout: 15000 }

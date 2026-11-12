@@ -1,0 +1,33 @@
+appId: org.nimbus.drive
+name: memories
+# Photos → Photo settings → Hidden from memories (an empty list is fine). If the account has photos taken on
+# today's date in a past year, the On this day card plays a slideshow with a title card, and hiding a day
+# can be undone. The daily-notice row is only there on a release APK.
+---
+- launchApp
+- extendedWaitUntil: { visible: "Search in Nimbus", timeout: 20000 }
+- tapOn: { text: "Photos", below: "New" }  # the tab, not a folder named Photos
+- extendedWaitUntil: { visible: "Photo settings", timeout: 20000 }
+- tapOn: "Photo settings"
+- assertVisible: "Hidden from memories"
+- assertVisible: "Partner sharing"
+- tapOn: "Hidden from memories"
+- extendedWaitUntil: { visible: "Hidden from memories", timeout: 10000 }
+- tapOn: "Back"
+- extendedWaitUntil: { visible: "Photo settings", timeout: 10000 }
+# Only when today has memories.
+- runFlow:
+    when: { visible: ".* years? ago, .*" }
+    commands:
+      - tapOn:
+          text: ".* years? ago, .*"
+          index: 0
+      - extendedWaitUntil: { visible: "Close slideshow", timeout: 15000 }
+      - tapOn: ".*Show controls"
+      - tapOn: "Pause slideshow"
+      - tapOn: "Hide from memories"
+      - assertVisible: "Hide this day"
+      - tapOn: "Hide this day"
+      - extendedWaitUntil: { visible: "This day is hidden from memories.", timeout: 10000 }
+      - tapOn: "Undo"
+      - tapOn: "Close slideshow"

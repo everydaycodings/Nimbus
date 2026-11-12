@@ -1,0 +1,19 @@
+appId: org.nimbus.drive
+name: places
+# Photos → Places: the map opens (a release APK with MapLibre, and the admin's Map switch on). The Places chip
+# isn't there otherwise, so the flow stops quietly on an Expo Go or older build. Clusters are drawn by the map,
+# not as views, so tapping one is checked by hand.
+---
+- launchApp
+- extendedWaitUntil: { visible: "Search in Nimbus", timeout: 20000 }
+- tapOn: { text: "Photos", below: "New" }  # the tab, not a folder named Photos
+- extendedWaitUntil: { visible: "Albums", timeout: 20000 }
+- runFlow:
+    when: { visible: "Places" }
+    commands:
+      - tapOn: "Places"
+      - extendedWaitUntil:
+          visible: "Showing a Map.*|No places yet"  # MapLibre's own description of its view
+          timeout: 20000
+      - back
+      - extendedWaitUntil: { visible: "Albums", timeout: 10000 }

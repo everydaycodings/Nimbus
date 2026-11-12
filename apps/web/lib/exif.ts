@@ -60,3 +60,55 @@ export function exifTakenAt(exif: Uint8Array): Date | null {
   }
   return null
 }
+
+// Where a photo was taken: the GPS IFD (0x8825) tags 1-4, degrees/minutes/seconds as
+// rationals with N/S/E/W. Null when absent, malformed or exactly 0,0 (cameras write that for "no fix").
+export function exifGps(exif: Uint8Array): { lat: number; lng: number } | null {
+  const v = new DataView(exif.buffer, exif.byteOffset, exif.byteLength)
+  let base = 0
+  if (exif.length > 6 && exif[0] === 0x45 && exif[1] === 0x78) base = 6
+  if (exif.length < base + 8) return null
+  const le = exif[base] === 0x49
+  if (!le && exif[base] !== 0x4d) return null
+  const inside = (o: number, n: number) => o >= 0 && base + o + n <= exif.length
+  const u16 = (o: number) => v.getUint16(base + o, le)
+  const u32 = (o: number) => v.getUint32(base + o, le)
+  // tag -> offset of its value (inline when it fits in 4 bytes)
+  const entries = (ifd: number) => {
+    const found = new Map<number, number>()
+    if (!inside(ifd, 2)) return found
+    const n = u16(ifd)
+    for (let i = 0; i < n && inside(ifd + 2 + i * 12, 12); i++) {
+      const at = ifd + 2 + i * 12
+      found.set(u16(at), at + 8)
+    }
+    return found
+  }
+  const ptr = entries(u32(4)).get(0x8825)
+  if (ptr === undefined) return null
+  const gps = entries(u32(ptr))
+  const ref = (tag: number) => {
+    const at = gps.get(tag)
+    return at === undefined ? null : String.fromCharCode(exif[base + at])
+  }
+  const coord = (tag: number) => {
+    const at = gps.get(tag)
+    if (at === undefined) return null
+    const o = u32(at)
+    if (!inside(o, 24)) return null
+    const part = (i: number) => {
+      const d = u32(o + i * 8 + 4)
+      return d ? u32(o + i * 8) / d : NaN
+    }
+    return part(0) + part(1) / 60 + part(2) / 3600
+  }
+  const lat = coord(2)
+  const lng = coord(4)
+  if (lat === null || lng === null || !Number.isFinite(lat + lng)) return null
+  const out = {
+    lat: ref(1) === "S" ? -lat : lat,
+    lng: ref(3) === "W" ? -lng : lng,
+  }
+  if (Math.abs(out.lat) > 90 || Math.abs(out.lng) > 180) return null
+  return out.lat === 0 && out.lng === 0 ? null : out
+}

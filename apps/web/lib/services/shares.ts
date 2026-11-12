@@ -408,7 +408,7 @@ export async function setAllowReshare(
 }
 
 // Expiry as an ISO date, capped by the admin's maximum. Undefined: no change.
-async function linkExpiry(raw: string | null | undefined) {
+export async function linkExpiry(raw: string | null | undefined) {
   const { maxLinkDays } = await getSettings()
   const cap = maxLinkDays ? new Date(Date.now() + maxLinkDays * DAY) : null
   if (raw === undefined) return { value: undefined }

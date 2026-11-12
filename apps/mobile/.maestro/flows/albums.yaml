@@ -1,0 +1,39 @@
+appId: org.nimbus.drive
+name: albums
+# Photos → Albums: make an album, add the first photo, open it, look at its share screen, rename it, delete it.
+# Needs at least one photo on the account.
+---
+- runScript:
+    file: ../stamp.js
+- launchApp
+- extendedWaitUntil: { visible: "Search in Nimbus", timeout: 20000 }
+- tapOn: { text: "Photos", below: "New" }  # the tab, not a folder named Photos
+- extendedWaitUntil: { visible: "Albums", timeout: 20000 }
+- tapOn: "Albums"
+- extendedWaitUntil: { visible: "New album", timeout: 10000 }
+- tapOn: "New album"
+- inputText: "mae-al-${output.stamp}"
+- tapOn: "Create"
+- extendedWaitUntil: { visible: "No photos in this album", timeout: 15000 }
+- tapOn: "Add photos"
+- extendedWaitUntil: { visible: "Add photos", timeout: 10000 }
+- tapOn:
+    text: "(Photo|Video), .*"
+    index: 0
+- tapOn: "Add 1 photo"
+- extendedWaitUntil: { visible: "1 photo", timeout: 15000 }
+- assertVisible: "Slideshow"
+- tapOn: "Share album"
+- extendedWaitUntil: { visible: "Add people by name", timeout: 10000 }
+- assertVisible: "Public link"
+- tapOn: "Back"
+- tapOn: "More actions"
+- tapOn: "Rename"
+- inputText: "-2"
+- tapOn: "Rename"
+- extendedWaitUntil: { visible: "mae-al-${output.stamp}-2", timeout: 10000 }
+- tapOn: "More actions"
+- tapOn: "Delete album"
+- tapOn: "Delete album"
+- extendedWaitUntil: { visible: "Albums", timeout: 10000 }
+- assertNotVisible: "mae-al-${output.stamp}.*"

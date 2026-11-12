@@ -115,7 +115,8 @@
       ],
       "expo-background-task",
       "./plugins/release-signing.js",
-      "./plugins/shortcuts.js"
+      "./plugins/shortcuts.js",
+      "@maplibre/maplibre-react-native"
     ]
   }
 }

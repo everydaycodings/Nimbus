@@ -278,6 +278,22 @@ export async function setOcrLangs(form: FormData) {
   revalidatePath("/admin", "layout")
 }
 
+// Off hides the Places map on the web and in the app. The style URL is a MapLibre style JSON.
+export async function setMap(form: FormData) {
+  await requireAdmin()
+  const raw = String(form.get("mapStyleUrl") ?? "").trim()
+  let url: URL | null = null
+  try {
+    url = new URL(raw)
+  } catch {}
+  await saveSettings({
+    mapEnabled: form.get("mapEnabled") === "on",
+    ...(url && /^https?:$/.test(url.protocol) && { mapStyleUrl: url.href }),
+    updatedAt: new Date(),
+  })
+  revalidatePath("/", "layout")
+}
+
 // The worker picks these up within a minute. Blank size: the 200 MB default.
 export async function setDerive(form: FormData) {
   await requireAdmin()
@@ -397,6 +413,8 @@ const RESETTABLE: SettingKey[] = [
   "officeUrl",
   "webdav",
   "ocrLangs",
+  "mapEnabled",
+  "mapStyleUrl",
   "deriveConcurrency",
   "deriveMaxBytes",
   "toastPosition",

@@ -30,7 +30,7 @@ type Event = {
 }
 
 // Comments fold too, except mentions, which always get their own row.
-const DIGEST: NotificationKind[] = ["edits", "file_drop", "transfer_download", "comment"]
+const DIGEST: NotificationKind[] = ["edits", "file_drop", "transfer_download", "comment", "album"]
 
 export async function notify(
   userId: string,
@@ -43,7 +43,9 @@ export async function notify(
     ? eq(notifications.nodeId, e.nodeId)
     : e.data?.transfer
       ? sql`${notifications.data}->>'transfer' = ${e.data.transfer}`
-      : null
+      : e.data?.album && e.data.what === "added"
+        ? sql`${notifications.data}->>'album' = ${e.data.album} and ${notifications.data}->>'what' = 'added'`
+        : null
   if (DIGEST.includes(kind) && fold && e.data?.what !== "mention") {
     const [bumped] = await db
       .update(notifications)
@@ -200,6 +202,14 @@ async function describe(userId: string, ids?: string[]) {
         r.count > 1
           ? `${r.count} new comments on ${item}`
           : `${who} ${d.what === "mention" ? "mentioned you on" : d.what === "reply" ? "replied on" : "commented on"} ${item}${d.quote ? `: “${d.quote}”` : ""}`,
+      album:
+        d.what === "added"
+          ? `${who} added photos to the album “${d.name ?? "Album"}”`
+          : `${who} shared the album “${d.name ?? "Album"}” with you as ${d.role ?? "viewer"}`,
+      partner:
+        d.what === "accepted"
+          ? `${who} accepted your photos${d.back ? " and shared theirs with you" : ""}`
+          : `${who} wants to share their photos with you`,
       storage_low: `${r.actor ? `${who} reminded you: your` : "Your"} storage is ${d.percent ?? 90}% full. See what's using it.`,
     }[r.kind]
     const seen = r.nodeId ? access.get(r.nodeId) : undefined
@@ -208,6 +218,10 @@ async function describe(userId: string, ids?: string[]) {
     const href =
       r.kind === "comment" && seen
         ? `${parentSeen ? `/folders/${r.parentId}` : seen.role === "owner" ? "/" : "/shared"}?open=${r.nodeId}&comments=1`
+        : r.kind === "album"
+        ? `/photos/albums/${d.album}`
+        : r.kind === "partner"
+        ? "/account#partner"
         : r.kind === "signup_request"
         ? "/admin/approvals"
         : r.kind === "service_health"

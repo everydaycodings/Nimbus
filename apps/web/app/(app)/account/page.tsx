@@ -11,6 +11,7 @@ import { AppPasswords } from "@/components/app-passwords"
 import { AvatarPicker } from "@/components/avatar-picker"
 import { DeviceAccounts } from "@/components/device-accounts"
 import { DeviceLink } from "@/components/device-link"
+import { PartnerSettings } from "@/components/partner-settings"
 import { PasswordForm } from "@/components/password-form"
 import { SignInMethods } from "@/components/sign-in-methods"
 import { SubmitButton } from "@/components/submit-button"
@@ -32,6 +33,7 @@ import { appUrl, emailEnabled } from "@/lib/email"
 import { channelPrefs } from "@/lib/notify"
 import { OIDC_ID, getOidcConfig } from "@/lib/oidc"
 import { deviceAccounts, getSession, isAdmin } from "@/lib/session"
+import { getPartners } from "@/lib/services/partners"
 import { getSettings } from "@/lib/signup"
 import { setNotificationPrefs, setVaultLock } from "./actions"
 
@@ -44,6 +46,8 @@ const KIND_LABEL = {
   transfer: "Someone offers me ownership of an item",
   transfer_download: "Someone downloads a transfer I sent (at most hourly)",
   comment: "Comments: a new thread on my file, a reply in my thread, or a mention",
+  album: "Someone shares an album with me or adds photos to one (at most hourly)",
+  partner: "Someone shares their photos with me, or accepts mine",
   signup_request: "Someone asks to join this Nimbus",
   service_health: "A service goes down or comes back (Admin → Health)",
   backup: "A backup fails, warns, or hasn't run (Admin → Backups)",
@@ -83,6 +87,7 @@ export default async function AccountPage() {
         .orderBy(desc(appPasswords.createdAt)),
       androidRelease(),
     ])
+  const partner = await getPartners(me)
   const { require2fa, multiAccount } = settings
   const day = (d: Date) =>
     d.toLocaleDateString("en", { day: "numeric", month: "short", year: "numeric" })
@@ -333,6 +338,19 @@ export default async function AccountPage() {
           </CardContent>
         </Card>
       )}
+
+      <Card id="partner" className="scroll-mt-20">
+        <CardHeader>
+          <CardTitle className="text-base">Partner sharing</CardTitle>
+          <CardDescription>
+            Share all your photos with one person, like a partner or a parent. Theirs and yours
+            then show up together in Photos. Locations stay private.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <PartnerSettings first={partner} />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

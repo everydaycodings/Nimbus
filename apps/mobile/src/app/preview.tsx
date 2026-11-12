@@ -2,7 +2,7 @@ import type { Item, Version } from "@nimbus/shared/api"
 import { router, useFocusEffect } from "expo-router"
 import { StatusBar } from "expo-status-bar"
 import { isPictureInPictureSupported, type VideoPlayer, type VideoView } from "expo-video"
-import { ArrowSquareOut, ChatCircle, DownloadSimple, DotsThreeVertical, NotePencil, PictureInPicture, ShareNetwork, X } from "phosphor-react-native"
+import { ArrowSquareOut, ChatCircle, DownloadSimple, DotsThreeVertical, NotePencil, PencilSimpleLine, PictureInPicture, ShareNetwork, X } from "phosphor-react-native"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { BackHandler, FlatList, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native"
 import Animated, { useAnimatedStyle, useReducedMotion, withTiming } from "react-native-reanimated"
@@ -18,6 +18,7 @@ import { IconButton, Text } from "@/components/ui"
 import { errorText } from "@/lib/api"
 import { stopQueue } from "@/lib/audio-queue"
 import { canEdit } from "@/lib/editor-rules"
+import { canEditPhoto } from "@/lib/photo-edit-rules"
 import { editable, shareable, useApi, useDetails, useFileActions, type FileSheet } from "@/lib/files"
 import { planFor, type Plan } from "@/lib/preview-rules"
 import { clearPreview, previewSession } from "@/lib/preview-session"
@@ -373,6 +374,9 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
         )}
         {!vaultId && !version && editable([item], session.role) && canEdit(item.name, item.mime) && (
           <IconButton icon={NotePencil} label="Edit" onPress={() => router.push({ pathname: "/edit", params: { id: item.id } })} />
+        )}
+        {!vaultId && !version && editable([item], session.role) && canEditPhoto(item.mime) && (
+          <IconButton icon={PencilSimpleLine} label="Edit photo" onPress={() => router.push({ pathname: "/photo-edit", params: { id: item.id } })} />
         )}
         {!vaultId && <IconButton icon={DownloadSimple} label="Download" onPress={() => download([item], version)} />}
         {!vaultId && <IconButton icon={DotsThreeVertical} label="More actions" onPress={() => setSheet({ kind: "actions", items: [item] })} />}

@@ -24,6 +24,7 @@ export async function GET() {
       signupMode: settings.signupMode,
       deviceLinks: settings.deviceLinks,
       vaultLinks: settings.vaultLinksEnabled,
+      map: { enabled: settings.mapEnabled, styleUrl: settings.mapStyleUrl },
       passwordPolicy: settings.passwordPolicy,
       email,
       tusUrl: new URL(process.env.TUS_URL ?? "/files/", appUrl()).href,

@@ -8,7 +8,10 @@
     "./vault-crypto": "./vault-crypto.ts",
     "./api": "./api.ts",
     "./photos": "./photos.ts",
-    "./comments": "./comments.ts"
+    "./comments": "./comments.ts",
+    "./exif-write": "./exif-write.ts",
+    "./image-edit": "./image-edit.ts",
+    "./smart-groups": "./smart-groups.ts"
   },
   "scripts": {
     "test": "node --test *.test.ts"

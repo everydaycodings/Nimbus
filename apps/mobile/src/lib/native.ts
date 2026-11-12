@@ -151,6 +151,11 @@ export type NimbusAndroid = {
   setBrightness?(v: number): void
   volume?(): number
   setVolume?(v: number): void
+  // Phase 15, daily On this day notice. Optional: older APKs don't have them.
+  // Once a day at hour:minute (local) the phone asks each account for memories and shows one notice if there are any.
+  memoriesSet?(enabled: boolean, hour: number, minute: number): void
+  // JSON {enabled, hour, minute}; the phone's, not an account's.
+  memoriesState?(): string
   // `json`: the queue as UploadRow[]. "vault" events carry a decrypt job's progress in plaintext bytes. "push" events carry a new endpoint for an account (null: it was dropped).
   addListener(event: "uploads" | "share" | "backup" | "vault" | "push", listener: (e: { json?: string; jobId?: string; done?: number; total?: number; accountId?: string; endpoint?: string | null }) => void): EventSubscription
 }

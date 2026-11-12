@@ -1,55 +1,30 @@
-import type { PhotoItem } from "@nimbus/shared/api"
-import { typeKeyOf } from "@nimbus/shared/file-rules"
 import { monthTitle } from "@nimbus/shared/photos"
-import { Image } from "expo-image"
 import { router } from "expo-router"
-import { GridFour, Play, Slideshow, SquaresFour } from "phosphor-react-native"
-import { memo, useCallback, useMemo, useRef, useState } from "react"
-import { FlatList, Pressable, RefreshControl, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native"
+import { GridFour, Slideshow, SlidersHorizontal, SquaresFour } from "phosphor-react-native"
+import { useCallback, useMemo, useRef, useState } from "react"
+import { FlatList, RefreshControl, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native"
 import { Gesture, GestureDetector } from "react-native-gesture-handler"
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated"
 
-import { FileIcon } from "@/components/file-icon"
+import { MemoriesStrip, STRIP_H } from "@/components/memories-strip"
+import { PhotoChips } from "@/components/photo-chips"
+import { PhotoSettings } from "@/components/photo-settings"
+import { GAP, PhotoTile } from "@/components/photo-grid"
 import { Bar, Button, IconButton, Spinner, Text } from "@/components/ui"
 import { useApi } from "@/lib/files"
 import { photoRows, type PhotoRow } from "@/lib/photo-rows"
-import { thumbSource, usePhotos } from "@/lib/photos"
+import { localDate, useMemories, usePhotos } from "@/lib/photos"
 import { openPreview } from "@/lib/preview-session"
 import { usePrefs } from "@/lib/prefs"
 import { c, radius } from "@/lib/theme"
 
 // Tiles per row on a phone; a tablet's wide list gets twice as many.
 const LEVELS = [3, 5, 7]
-const GAP = 2
 const MONTH_H = 48
 const HANDLE_H = 44
 const LONG = new Date(0)
 
-const Tile = memo(function Tile({ photo, size, account, onPress }: { photo: PhotoItem; size: number; account: { server: string; token: string }; onPress: () => void }) {
-  const source = useMemo(() => (photo.thumb ? thumbSource(account, photo) : null), [account, photo])
-  const video = typeKeyOf("file", photo.mime, photo.name) === "video"
-  const when = new Date(photo.takenAt).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })
-  return (
-    <Pressable
-      onPress={onPress}
-      android_ripple={{ color: c.ripple }}
-      accessibilityRole="button"
-      accessibilityLabel={`${video ? "Video" : "Photo"}, ${photo.name}, ${when}`}
-      style={{ width: size, height: size, backgroundColor: c.card, alignItems: "center", justifyContent: "center", overflow: "hidden" }}
-    >
-      {source ? (
-        <Image source={source} style={{ width: size, height: size }} contentFit="cover" cachePolicy="memory-disk" recyclingKey={photo.id} accessibilityIgnoresInvertColors />
-      ) : (
-        <FileIcon item={photo} size={size > 90 ? 32 : 20} />
-      )}
-      {video && (
-        <View style={{ position: "absolute", right: 6, bottom: 6, width: 22, height: 22, borderRadius: 11, backgroundColor: "rgba(0,0,0,0.6)", alignItems: "center", justifyContent: "center" }}>
-          <Play size={11} weight="fill" color="#fff" />
-        </View>
-      )}
-    </Pressable>
-  )
-})
+type ListRow = PhotoRow | { type: "lead"; key: string; month: string }
 
 // The row at a scroll offset, by bisecting the running offsets.
 function rowAt(layout: { offset: number }[], y: number) {
@@ -64,7 +39,7 @@ function rowAt(layout: { offset: number }[], y: number) {
 }
 
 // A strip along the right edge: drag it to jump through the library, with the month you are at.
-function FastScroller({ height, total, scrollY, rows, layout, onJump }: { height: number; total: number; scrollY: { value: number }; rows: PhotoRow[]; layout: { offset: number }[]; onJump: (y: number) => void }) {
+function FastScroller({ height, total, scrollY, rows, layout, onJump }: { height: number; total: number; scrollY: { value: number }; rows: ListRow[]; layout: { offset: number }[]; onJump: (y: number) => void }) {
   const [drag, setDrag] = useState<number | null>(null)
   const span = Math.max(1, total - height)
   const room = Math.max(1, height - HANDLE_H)
@@ -75,7 +50,7 @@ function FastScroller({ height, total, scrollY, rows, layout, onJump }: { height
     onJump(offset)
     setDrag(offset)
   }
-  const month = drag === null ? null : rows[rowAt(layout, drag)]?.month
+  const month = drag === null ? null : rows[rowAt(layout, drag)]?.month || null
   return (
     <View
       onStartShouldSetResponder={() => true}
@@ -108,18 +83,26 @@ export default function Photos() {
   const photos = usePhotos()
   const [box, setBox] = useState({ w: 0, h: 0 })
   const [refreshing, setRefreshing] = useState(false)
-  const list = useRef<FlatList<PhotoRow>>(null)
+  const list = useRef<FlatList<ListRow>>(null)
+  const [settings, setSettings] = useState(false)
   const scrollY = useSharedValue(0)
 
   const level = Math.max(0, LEVELS.indexOf(prefs.photoColumns ?? LEVELS[0]))
   const perRow = LEVELS[level] * (box.w >= 560 ? 2 : 1)
   const size = Math.floor((box.w - GAP * (perRow - 1)) / perRow)
-  const rows = useMemo(() => photoRows(photos.items, perRow), [photos.items, perRow])
+  const date = useMemo(() => localDate(), [])
+  const memories = useMemories(date)
+  const years = memories.data?.years.filter((y) => y.items.length) ?? []
+  // The On this day strip is the list's first row, so the fast scroller's offsets still add up.
+  const rows = useMemo<ListRow[]>(() => {
+    const body = photoRows(photos.items, perRow)
+    return years.length ? [{ type: "lead", key: "lead", month: "" }, ...body] : body
+  }, [photos.items, perRow, years.length])
   const layout = useMemo(
     () =>
       rows.reduce<{ length: number; offset: number }[]>((all, r) => {
         const last = all[all.length - 1]
-        all.push({ length: r.type === "month" ? MONTH_H : size + GAP, offset: last ? last.offset + last.length : 0 })
+        all.push({ length: r.type === "lead" ? STRIP_H : r.type === "month" ? MONTH_H : size + GAP, offset: last ? last.offset + last.length : 0 })
         return all
       }, []),
     [rows, size]
@@ -163,22 +146,27 @@ export default function Photos() {
   }
 
   const header = (
-    <Bar>
-      <View style={{ flex: 1, paddingLeft: 12 }}>
-        <Text variant="title" numberOfLines={1} accessibilityRole="header">Photos</Text>
-        {photos.total > 0 && (
-          <Text variant="caption" color={c.mutedForeground} style={{ fontVariant: ["tabular-nums"] }}>
-            {photos.total.toLocaleString()} photos and videos
-          </Text>
+    <>
+      <Bar>
+        <View style={{ flex: 1, paddingLeft: 12 }}>
+          <Text variant="title" numberOfLines={1} accessibilityRole="header">Photos</Text>
+          {photos.total > 0 && (
+            <Text variant="caption" color={c.mutedForeground} style={{ fontVariant: ["tabular-nums"] }}>
+              {photos.total.toLocaleString()} photos and videos
+            </Text>
+          )}
+        </View>
+        <IconButton icon={SlidersHorizontal} label="Photo settings" onPress={() => setSettings(true)} />
+        {photos.items.length > 0 && (
+          <>
+            <IconButton icon={level === 0 ? SquaresFour : GridFour} label={`Grid size, ${perRow} per row. Change`} onPress={() => setPrefs({ photoColumns: LEVELS[(level + 1) % LEVELS.length] })} />
+            <IconButton icon={Slideshow} label="Slideshow" onPress={() => router.push({ pathname: "/slideshow", params: { source: "photos" } })} />
+          </>
         )}
-      </View>
-      {photos.items.length > 0 && (
-        <>
-          <IconButton icon={level === 0 ? SquaresFour : GridFour} label={`Grid size, ${perRow} per row. Change`} onPress={() => setPrefs({ photoColumns: LEVELS[(level + 1) % LEVELS.length] })} />
-          <IconButton icon={Slideshow} label="Slideshow" onPress={() => router.push({ pathname: "/slideshow", params: { source: "photos" } })} />
-        </>
-      )}
-    </Bar>
+      </Bar>
+      <PhotoChips />
+      {settings && <PhotoSettings onClose={() => setSettings(false)} />}
+    </>
   )
 
   if (photos.isPending)
@@ -230,14 +218,16 @@ export default function Photos() {
               contentContainerStyle={{ paddingBottom: 16 }}
               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} colors={[c.foreground]} progressBackgroundColor={c.muted} />}
               renderItem={({ item: r }) =>
-                r.type === "month" ? (
+                r.type === "lead" ? (
+                  <MemoriesStrip date={date} years={years} />
+                ) : r.type === "month" ? (
                   <View style={{ height: MONTH_H, justifyContent: "flex-end", paddingHorizontal: 16, paddingBottom: 8 }}>
                     <Text variant="titleSmall" accessibilityRole="header">{r.title}</Text>
                   </View>
                 ) : (
                   <View style={{ flexDirection: "row", gap: GAP, marginBottom: GAP, height: size }}>
                     {r.items.map((p, i) => (
-                      <Tile key={p.id} photo={p} size={size} account={account} onPress={() => open(r.start + i)} />
+                      <PhotoTile key={p.id} photo={p} size={size} account={account} onPress={() => open(r.start + i)} />
                     ))}
                   </View>
                 )

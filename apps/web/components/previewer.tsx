@@ -14,15 +14,19 @@ import {
   InfoIcon,
   MagnifyingGlassMinusIcon,
   MagnifyingGlassPlusIcon,
+  PencilSimpleIcon,
   TextAlignLeftIcon,
   WarningCircleIcon,
   XIcon,
 } from "@phosphor-icons/react"
 import { useEffect, useId, useRef, useState } from "react"
 
+import { getDetails } from "@/app/(app)/file-actions"
 import { officeFrame, previewUrl } from "@/app/(app)/upload-actions"
 import { linkPreviewUrl } from "@/app/s/actions"
 import { Comments } from "@/components/comments"
+import { ImageEditor, canEditImage } from "@/components/image-editor"
+import { useUploads } from "@/components/upload-provider"
 import { Button } from "@/components/ui/button"
 import { Thumb } from "@/components/thumb"
 import { VideoPlayer } from "@/components/video-player"
@@ -70,6 +74,7 @@ export function Previewer({
   link,
   src,
   commentsFirst = false,
+  editable = false,
 }: {
   shown: Shown | null
   open: boolean
@@ -90,8 +95,13 @@ export function Previewer({
   src?: Decrypted
   // Open with the comments panel showing (a notification's link).
   commentsFirst?: boolean
+  // The viewer can change this file (owner or editor): images get an Edit button.
+  editable?: boolean
 }) {
   const item = shown?.item
+  const { saveEdit } = useUploads()
+  const [editing, setEditing] = useState<{ id: string; url: string } | null>(null)
+  const [editFailed, setEditFailed] = useState(false)
   // Members only: not on a public link's page, a vault file or an older version.
   const commentable = !link && src === undefined && !shown?.version
   const [commentsOpen, setCommentsOpen] = useState(commentsFirst)
@@ -101,6 +111,25 @@ export function Previewer({
     if (commentsFirst) setCommentsOpen(true)
   }
   const v = shown?.version
+  // Not on a public link, a vault file (src) or an older version.
+  const editImage = editable && !link && src === undefined && !v && canEditImage(item?.mime ?? null)
+  async function openEditor() {
+    if (!item) return
+    setEditFailed(false)
+    const url = await previewUrl(item.id, null).catch(() => null)
+    if (url) setEditing({ id: item.id, url })
+    else setEditFailed(true)
+  }
+  // A new version goes in the folder the file is in; a copy lands next to it.
+  async function saveEdited(file: File, as: "version" | "copy") {
+    const d = await getDetails(item!.id).catch(() => null)
+    if (!d) return "Couldn't save the edited photo. Try again."
+    if (as === "version" && d.parentId === null && d.role !== "owner")
+      return "A new version can't be saved from here. Use Save as copy."
+    const error = await saveEdit(file, d.parentId, as === "version" ? "version" : "rename")
+    if (!error) setEditing(null)
+    return error
+  }
   const t = item && fileType("file", item.mime, item.name)
   const href =
     src !== undefined ? (src?.url ?? null) : item && downloadHref(item, v, link)
@@ -147,6 +176,17 @@ export function Previewer({
                 <span className="ml-auto hidden shrink-0 text-xs text-muted-foreground tabular-nums sm:block">
                   {position}
                 </span>
+                {editImage && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Edit photo"
+                    title={editFailed ? "Couldn't open the photo. Try again." : "Edit"}
+                    onClick={openEditor}
+                  >
+                    <PencilSimpleIcon className="size-5" />
+                  </Button>
+                )}
                 {href && (
                   <Button
                     variant="ghost"
@@ -195,6 +235,17 @@ export function Previewer({
                 )}
                 {!v && menu}
               </header>
+              {editing && editing.id === item.id && (
+                <ImageEditor
+                  name={item.name}
+                  mime={item.mime ?? "image/jpeg"}
+                  src={editing.url}
+                  takenAt={new Date(item.updatedAt)}
+                  copy
+                  onSave={saveEdited}
+                  onClose={() => setEditing(null)}
+                />
+              )}
               <div className="relative flex min-h-0 flex-1">
               <div
                 data-preview

@@ -1,5 +1,5 @@
-import type { Item, Role, Tag, Version } from "@nimbus/shared/api"
-import { OFFICE_EXT, TYPE_KEYS, formatBytes, previewKind } from "@nimbus/shared/file-rules"
+import type { Item, PhotoItem, Role, Tag, Version } from "@nimbus/shared/api"
+import { OFFICE_EXT, TYPE_KEYS, formatBytes, previewKind, typeKeyOf } from "@nimbus/shared/file-rules"
 import { useQuery } from "@tanstack/react-query"
 import { router } from "expo-router"
 import * as ImagePicker from "expo-image-picker"
@@ -21,6 +21,7 @@ import {
   DownloadSimple,
   FileText,
   FilmStrip,
+  FloppyDisk,
   FolderOpen,
   FolderPlus,
   Image as ImageIcon,
@@ -36,6 +37,7 @@ import {
   Scan,
   SelectionAll,
   ShareNetwork,
+  SquaresFour,
   Star,
   Tag as TagIcon,
   Trash,
@@ -47,6 +49,7 @@ import {
 import { createElement, useState, type ReactNode } from "react"
 import { ActivityIndicator, Pressable, Switch, View } from "react-native"
 
+import { AlbumPickSheet } from "@/components/album-sheets"
 import { Avatar } from "@/components/avatar"
 import { ConfirmDialog, PromptDialog } from "@/components/dialog"
 import { FILE_TYPES, FileIcon } from "@/components/file-icon"
@@ -187,6 +190,8 @@ function SheetFor(props: Props & { sheet: FileSheet; ask: (d: Dialog) => void })
       return <MoveSheet {...props} items={sheet.items} onClose={onClose} />
     case "vault":
       return <VaultPickSheet title={`Move ${plural(sheet.items.length, "item")} to a vault`} intake={{ items: sheet.items }} onClose={onClose} />
+    case "album":
+      return <AlbumPickSheet nodeIds={sheet.items.map((i) => i.id)} onClose={onClose} />
     case "new":
       return <NewSheet {...props} parentId={sheet.parentId} onClose={onClose} />
     case "filter":
@@ -322,6 +327,9 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
 
   const edit = editable(items, role)
   const starred = items.every((i) => i.starred)
+  const media = items.every((i) => i.kind === "file" && ["image", "video"].includes(typeKeyOf("file", i.mime, i.name)))
+  const mine = items.every((i) => !i.role && !i.shortcut)
+  const partnerPhoto = media && items.every((i) => (i as PhotoItem).fromPartner)
   return (
     <Sheet onClose={onClose} header={itemsHeader(items)}>
       {one?.kind === "folder" && <SheetRow label="Open" icon={ic(FolderOpen)} onPress={() => onOpen(one)} />}
@@ -423,6 +431,23 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
         />
       )}
       {edit && <SheetRow label="Move" icon={ic(ArrowBendUpRight)} onPress={() => onChange({ kind: "move", items })} />}
+      {mine && media && <SheetRow label="Add to album" icon={ic(SquaresFour)} onPress={() => onChange({ kind: "album", items })} />}
+      {partnerPhoto && (
+        <SheetRow
+          label="Save to my library"
+          needsNet
+          icon={ic(FloppyDisk)}
+          onPress={async () => {
+            try {
+              await api.post("/partner/save", { nodeIds: items.map((i) => i.id) })
+              snack({ text: "Saved to your files, in Photos." })
+            } catch (e) {
+              snack({ text: errorText(e), error: true })
+            }
+            done()
+          }}
+        />
+      )}
       {edit && canVault && items.every((i) => !i.role && !i.shortcut) && <SheetRow label="Move to vault" needsNet icon={ic(Lock)} onPress={() => onChange({ kind: "vault", items })} />}
       <SheetRow
         label={starred ? "Remove from starred" : "Add to starred"}
@@ -851,10 +876,10 @@ function MoveFooter({ onMove }: { onMove: () => void }) {
 
 function NewSheet({ parentId, onClose, ask }: Props & { parentId: string | null; onClose: () => void; ask: (d: Dialog) => void }) {
   const { account } = useApi()
-  const { send, scan } = useUploader()
+  const { send, scan, review } = useUploader()
   const snack = useSnack()
   const canScan = useQuery({ queryKey: ["scanAvailable"], queryFn: () => native?.scanAvailable() ?? false, staleTime: Infinity }).data
-  const row = (label: string, icon: Icon, chosen: () => Promise<Entry[] | null>) => (
+  const row = (label: string, icon: Icon, chosen: () => Promise<Entry[] | null>, edit = false) => (
     <SheetRow
       label={label}
       icon={createElement(icon, { size: ICON, color: mute })}
@@ -862,7 +887,7 @@ function NewSheet({ parentId, onClose, ask }: Props & { parentId: string | null;
         try {
           const entries = await chosen()
           if (entries === null) snack({ text: "Nimbus needs camera access for that. You can allow it in Android's settings.", error: true })
-          else send(account, parentId, entries)
+          else send(account, parentId, edit ? await review(entries) : entries)
         } catch (e) {
           snack({ text: errorText(e), error: true })
         }
@@ -877,7 +902,7 @@ function NewSheet({ parentId, onClose, ask }: Props & { parentId: string | null;
       {row("Upload folder", FolderOpen, pick.folder)}
       {row("Upload photos or videos", ImagesSquare, pick.media)}
       <SheetDivider />
-      {row("Take a photo", CameraIcon, () => pick.camera("images"))}
+      {row("Take a photo", CameraIcon, () => pick.camera("images"), true)}
       {row("Record a video", VideoCamera, () => pick.camera("videos"))}
       {canScan && row("Scan a document", Scan, scan)}
     </Sheet>

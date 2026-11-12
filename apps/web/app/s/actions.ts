@@ -16,6 +16,7 @@ import {
   unlock,
 } from "@/lib/links"
 import { spaceLeft } from "@/lib/quota"
+import { albumPreviewUrl } from "@/app/a/actions"
 import { transferPreviewUrl } from "@/app/t/actions"
 import { presignGet } from "@/lib/s3"
 import { signUploadToken, splitPath } from "@/lib/upload-rules"
@@ -44,6 +45,8 @@ export async function linkPreviewUrl(token: string, id: string) {
   // The shared Previewer passes transfer tokens as "t:<token>".
   if (String(token).startsWith("t:"))
     return transferPreviewUrl(String(token).slice(2), id)
+  if (String(token).startsWith("a:"))
+    return albumPreviewUrl(String(token).slice(2), id)
   const link = await openLink(String(token))
   if (!link?.allowView) return null
   const node = await linkNode(link, String(id))

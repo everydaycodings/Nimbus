@@ -17,7 +17,9 @@ import { errorText } from "@/lib/api"
 import { useApi, useFolders } from "@/lib/files"
 import { usePrefs } from "@/lib/prefs"
 import { sendWithTransfer, useSent } from "@/lib/sent"
-import { exitAfterSave, sharedFiles, shareTarget } from "@/lib/share-in"
+import { canEditPhoto } from "@/lib/photo-edit-rules"
+import { editShot } from "@/lib/photo-edit-session"
+import { exitAfterSave, replaceShared, sharedFiles, shareTarget } from "@/lib/share-in"
 import { c, radius } from "@/lib/theme"
 
 type Place = { id: string | null; name: string }
@@ -74,6 +76,7 @@ function Chooser() {
   const [busy, setBusy] = useState(false)
   const [vaults, setVaults] = useState(false)
   const [naming, setNaming] = useState(false)
+  const [, edited] = useState(0)
   const api = useApi()
   const sent = useSent()
   const { send } = useUploader()
@@ -82,6 +85,17 @@ function Chooser() {
   const files = sharedFiles()
   const total = files.reduce((n, f) => n + f.size, 0)
   const caption = files.length === 1 ? `${files[0].name} · ${formatBytes(total)}` : `${files.length} files · ${formatBytes(total)}`
+
+  // One shared picture can be edited first; the edited file replaces it in the list.
+  const only = files.length === 1 && canEditPhoto(files[0].mime) ? files[0] : null
+  const edit = async () => {
+    if (!only) return
+    const out = await editShot({ uri: only.uri, name: only.name, mime: only.mime })
+    if (out) {
+      replaceShared(only.uri, out)
+      edited((n) => n + 1)
+    }
+  }
 
   const save = async () => {
     setBusy(true)
@@ -170,6 +184,11 @@ function Chooser() {
       />
 
       <View style={{ padding: 16, paddingBottom: inset.bottom + 16, borderTopWidth: 1, borderTopColor: c.border }}>
+        {only && (
+          <View style={{ marginBottom: 8 }}>
+            <Button variant="outlined" label="Edit photo" onPress={edit} />
+          </View>
+        )}
         <Button label={`Save to ${here.name}`} busy={busy} disabled={!files.length} onPress={save} />
         {sent.data?.options.enabled && files.length > 0 && (
           <View style={{ marginTop: 8 }}>

@@ -1,4 +1,4 @@
-// Sending an edited text file up: as a new version of the file, or as a renamed copy. Used by the editor and by the offline queue.
+// Sending an edited file up: as a new version of the file, or as a renamed copy. Used by the text and photo editors and by the offline queue.
 import type { Instance, ItemResponse, Me } from "@nimbus/shared/api"
 import { File, Paths } from "expo-file-system"
 
@@ -10,13 +10,16 @@ export const CHANGED = "This file changed on the server since you opened it."
 
 export const currentOf = (a: Account, id: string) => json<ItemResponse>(a.server, `/api/v1/items/${id}`, { token: a.token })
 
-// Queues the upload; the previewer and lists refresh when it finishes (components/uploader.tsx).
 export async function uploadText(a: Account, parentId: string | null, name: string, text: string, as: "version" | "copy") {
   const file = new File(Paths.cache, `edit-${Date.now()}-${name.replace(/[^\w.-]/g, "_")}`)
   file.create({ overwrite: true })
   await file.write(text)
-  const size = file.size ?? new TextEncoder().encode(text).length
-  const answer = await plan(a, parentId, [{ path: name, size, uri: file.uri }])
+  return uploadFile(a, parentId, name, file.uri, file.size ?? new TextEncoder().encode(text).length, "text/plain", as)
+}
+
+// Queues the upload; the previewer and lists refresh when it finishes (components/uploader.tsx).
+export async function uploadFile(a: Account, parentId: string | null, name: string, uri: string, size: number, mime: string, as: "version" | "copy") {
+  const answer = await plan(a, parentId, [{ path: name, size, uri }])
   if (answer.error || !answer.token) throw new ApiError(400, "plan", answer.error ?? "Couldn't start the upload. Try again.")
   if (answer.rejected.length) throw new ApiError(400, "rejected", answer.rejected[0].reason)
   const auth = { token: a.token }
@@ -25,10 +28,10 @@ export async function uploadText(a: Account, parentId: string | null, name: stri
     accountId: a.id,
     server: a.server,
     tusUrl: instance.tusUrl,
-    uri: file.uri,
+    uri,
     name,
     size,
-    mime: "text/plain",
+    mime,
     path: name,
     planToken: answer.token,
     parentId,

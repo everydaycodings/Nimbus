@@ -236,6 +236,7 @@ export type FileSheet =
   | { kind: "tags"; items: Item[] }
   | { kind: "move"; items: Item[] }
   | { kind: "vault"; items: Item[] }
+  | { kind: "album"; items: Item[] }
   | { kind: "new"; parentId: string | null }
   | { kind: "filter"; filter: "type" | "modified" | "size" | "tag" }
   | { kind: "sort" }

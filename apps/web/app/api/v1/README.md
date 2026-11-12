@@ -75,7 +75,7 @@ nothing to return answers `200 {}`.
 | GET | `/files` | `ListQuery` | `ListResponse` (My files root + shortcuts) |
 | GET | `/folders/{id}` | `ListQuery` | `FolderResponse` (adds `folder`, `path` breadcrumbs) |
 | GET | `/recent` | `ListQuery` | `ListResponse` |
-| GET | `/photos` | `?limit=` (1-1000, 500), `?cursor=` | `PhotosResponse` (my images and videos, not Vault or trashed, newest `takenAt` first) |
+| GET | `/photos` | `?limit=` (1-1000, 500), `?cursor=`, `?partner=0` | `PhotosResponse` (my images and videos plus my partner's, marked `fromPartner` with `owner` their name, unless they're hidden or `partner=0`; not Vault or trashed, newest `takenAt` first) |
 | GET | `/starred` | `ListQuery` | `ListResponse` |
 | GET | `/shared` | `?by=me` for shared-by-me, `ListQuery` | `ListResponse` |
 | GET | `/trash` | `ListQuery` | `TrashResponse` (adds `retentionDays`) |
@@ -121,6 +121,29 @@ nothing to return answers `200 {}`.
 | PATCH | `/comments/{id}` | `CommentPatch`: `body` (my own) or `resolved` (owner, editors, thread starter) | `{}` |
 | DELETE | `/comments/{id}` | mine; owner and editors: anyone's. A first comment with replies stays as a stub (`body: null`) | `{}` |
 | PUT | `/comments/{id}/reactions` | `{emoji, on}`, emoji from `REACTIONS` (`@nimbus/shared/comments`) | `{}` |
+| **Photos extras** | | | |
+| GET | `/photos/memories` | `?date=YYYY-MM-DD` (the phone's today) | `MemoriesResponse` (this month and day in past years, `years` newest first, hidden ones left out) |
+| GET | `/photos/hides` | | `MemoryHidesResponse` |
+| POST | `/photos/hides` | `NewMemoryHide`: `kind` photo/day/folder, `nodeId` or `day` ("MM-DD") | `{id}` |
+| DELETE | `/photos/hides/{id}` | | `{}` |
+| GET | `/photos/places` | `?bbox=west,south,east,north`; `?items=1` for the photos inside the box (200 newest) | `PlacesResponse` or `PlacesItemsResponse` (my own photos' locations only) |
+| GET | `/photos/smart/{group}` | group: `screenshots`, `documents`, `receipts`, `videos`; `?limit=`, `?cursor=` | `PhotosResponse` (404 for another group) |
+| GET | `/albums` | | `AlbumsResponse` (mine and shared with me) |
+| POST | `/albums` | `NewAlbum` (`nodeIds`: my own photos to start with) | `{id}` |
+| GET | `/albums/{id}` | | `AlbumResponse` (404 if I'm not a member) |
+| PATCH | `/albums/{id}` | `AlbumPatch` (owner) | `{}` |
+| DELETE | `/albums/{id}` | owner | `{}` |
+| POST | `/albums/{id}/items` | `AlbumItemsRequest`: my own photos, owner and contributors | `{added}` |
+| DELETE | `/albums/{id}/items` | `AlbumItemsRequest`: owner any, contributor only what they added | `{}` |
+| GET | `/albums/{id}/shares` | owner | `AlbumSharesResponse` |
+| POST | `/albums/{id}/shares` | `NewAlbumShare` (member, viewer or contributor; again changes the role) | `{id}` |
+| POST | `/albums/{id}/shares/link` | `AlbumLinkRequest` | `{id, token}` (open `<server>/a/<token>`) |
+| PATCH | `/albums/{id}/shares/{shareId}` | `AlbumSharePatch` | `{}` |
+| DELETE | `/albums/{id}/shares/{shareId}` | | `{}` |
+| GET | `/partner` | | `PartnerResponse` |
+| POST | `/partner` | `PartnerInvite` (one person at a time) | `{}` |
+| PATCH | `/partner` | `PartnerPatch` | `{}` |
+| POST | `/partner/save` | `PartnerSaveRequest`: copies into `Photos/From <name>`, counts against my quota | `PartnerSaveResponse` |
 | **Uploads** | | | |
 | POST | `/uploads/plan` | `PlanUploadRequest` | `Plan` |
 | POST | `/uploads/folders` | `CreateFoldersRequest` (empty folders, mkdir -p) | `{}` |
@@ -310,3 +333,18 @@ the latest GitHub release, else from APKs bundled on the server (`GET /android/<
 
 Admin, saved logins and the browser's multi-account switching are web-only.
 Profile name/email editing doesn't exist on the web either, so there's no route.
+
+## Photos: albums, partner, places (Phase 15)
+
+- **Location is the owner's alone.** `lat`/`lng` come back only from `/photos/places`, for my own photos. Items in
+  albums, public album links and partner views never carry them, and the files' bytes are unchanged. `GET /instance`
+  has `map: {enabled, styleUrl}` (the admin can turn the map off or change the MapLibre style URL).
+- **Album and partner photos are readable like shared files.** A photo in an album shared with me, or from a partner
+  (active, taken on or after their `since`), opens through the usual item routes (`/items/{id}/preview`, thumbnails,
+  downloads, comments) with role `viewer`. Vault files are never included. Others' photos in lists carry `owner` (their name)
+  and `role: "viewer"`.
+- **Album roles:** owner, contributor (adds and removes their own additions; photos they add stay theirs and only their
+  own photos can be added) and viewer. Public links are view-only (`/a/<token>`, password and expiry like share links).
+- **Partner:** one outgoing share at a time. A pending invite gives no access until `accept`. `accept` with `shareBack`
+  shares mine with them too. `hidden` only hides their photos from my timeline.
+- Notification kinds `album` (shared with you, photos added; adds fold hourly) and `partner` (invite, accepted).

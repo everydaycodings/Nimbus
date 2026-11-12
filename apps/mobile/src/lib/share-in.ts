@@ -14,6 +14,10 @@ let waiting: SharedFile[] = []
 let exitAfter = true
 let target: ShareTarget | null = null
 export const sharedFiles = () => waiting
+// An edited picture takes the place of the one that was shared.
+export const replaceShared = (uri: string, edited: { uri: string; size: number; mime: string }) => {
+  waiting = waiting.map((f) => (f.uri === uri ? { ...f, ...edited } : f))
+}
 // True when Save should hand back to the app that shared; false to return to Nimbus.
 export const exitAfterSave = () => exitAfter
 export const shareTarget = () => target

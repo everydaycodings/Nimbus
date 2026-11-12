@@ -14,6 +14,7 @@ import {
   CaretRight,
   ClockCounterClockwise,
   DotsThreeVertical,
+  Images,
   Link as LinkIcon,
   MagnifyingGlass,
   Plus,
@@ -539,6 +540,9 @@ export function Browser({
                   else clearSelection()
                 }}
               />
+            )}
+            {selected.every((i) => i.kind === "file" && !i.role && !i.shortcut && ["image", "video"].includes(typeKeyOf(i.kind, i.mime, i.name))) && (
+              <IconButton icon={Images} label="Add to album" onPress={() => setSheet({ kind: "album", items: selected })} />
             )}
             {editable(selected, role) && (
               <>

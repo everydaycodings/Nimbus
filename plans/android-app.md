@@ -1,7 +1,7 @@
 # Nimbus for Android (Expo)
 
 Native Android app with every member feature and no admin panel, for any self-hoster to point at
-their own server. Apple is dropped for now. Last updated 2026-11-12 (Phase 14, comments).
+their own server. Apple is dropped for now. Last updated 2026-11-12 (Phase 15, Photos).
 
 ## Starting a new session
 
@@ -35,7 +35,7 @@ API checks: `cd apps/web && node --env-file=.env.local scripts/api-check.ts` (ru
 | 12 | Text editor, multi-page scan, activity feed (web + app) | Built 2026-11-07, checked on the emulator (release APK), see below. Committed; released as 0.2.0 (GitHub Actions) |
 | 13 | File requests, Transfer, Vault share links | Built 2026-11-07 on web + app. Web: e2e-tested and Impeccable-polished. App: checked on the emulator (Expo Go and the release APK), Maestro 14/14, Kotlin 43/43. Not committed yet. See "Phase 13 status" |
 | 14 | Comments on files (web + app) | Built 2026-11-12 on web + app. Web e2e (comments.spec.ts) passes. App: checked on the emulator in Expo Go (row badge, preview bar button, comments screen, @mention suggestions, a comment with a mention from the phone, reactions shown); release APK (x86_64, Cursor open, 7m 54s) with Maestro 16/16 including the new `comments` flow. Web e2e 9/9, including time and PDF-page chips. Not committed. See "Phase 14 status" |
-| 15 | Photos: On this day, places map, smart groups, shared albums, partner sharing, quick edits | Planned |
+| 15 | Photos: On this day, places map, smart groups, shared albums, partner sharing, quick edits | Built 2026-11-12 on web + app. API check 231/231, web e2e 15/15 (new photos-phase15.spec.ts). App checked in Expo Go and the release APK (x86_64, 9m 10s): map, daily notice, Maestro 19/19, Kotlin 48/48. Not committed. See "Phase 15 status" |
 | 16 | Playback: cast to TV, sleep timer and speed, data-saver video quality | Planned |
 | 17 | Passkeys, 2FA after provider sign-in, restore a folder to a point in time | Planned |
 | 18 | PDF tools (markup, fill, sign), contacts and calendar backup | Planned |
@@ -583,6 +583,82 @@ screens, then commit.
 - **Quick edits:** crop, rotate, straighten and markup (pen, highlighter, text, arrows), from the previewer and before an upload
   (scan, camera, share-in). Saving makes a new version, or a copy if you choose. The original is always kept in versions.
   Web: the same editor (canvas) in the previewer, and an Edit button on images in the upload panel before they're sent.
+
+**Phase 15 status (2026-11-12)**
+
+Decisions (20 answers, user; also in Claude's project memory):
+- **Memories:** On this day is today's date in past years, one card per year. A daily notice runs on the phone (Kotlin
+  WorkManager) with a time picker, off by default. Hide a photo, a day or a folder, with a Hidden page to undo. The
+  slideshow is reused, and the web got its own.
+- **Map:** MapLibre (native in the app, maplibre-gl on the web), with the Places chip hidden in Expo Go. Tiles come from
+  OpenFreeMap by default; the admin can change the style URL or turn the map off. Tapping a cluster opens a sheet grid.
+  GPS is shown to the owner only.
+- **Smart groups:** rules on path, name, size and type, plus tesseract in the worker for undecided images.
+- **Albums:** an album points at photos. It has its own shares (viewer or contributor) and public links.
+- **Partner:** the partner's photos are merged into the timeline with a badge and a toggle. "Save to my library"
+  makes a copy. The share can be all photos or from a date, and accepting offers to share back.
+- **Quick edits:** crop, rotate, flip, straighten and markup. Save makes a new version (or a copy) and keeps the EXIF date and GPS.
+  Edit before upload covers the camera, share-in and the web upload panel.
+
+Built (four builder agents: server, editor, web UI, app UI):
+- Schema: `drizzle/0032_phase15_photos.sql`. It adds `file_versions` lat/lng/width/height/gps_checked/smart, `albums`,
+  `album_items`, `album_shares`, `partners`, `memory_hides`, and the settings `map_enabled` and `map_style_url`.
+- Server:
+  - `lib/exif.ts` `exifGps`; worker `exifMisses` reads GPS, size and smart groups, with a backfill on `gps_checked`.
+  - `packages/shared/smart-groups.ts`.
+  - `lib/access.ts` gives viewer access to album photos and active partner photos.
+  - Services `lib/services/photos.ts`, `albums.ts` and `partners.ts`, with routes under `/api/v1/photos/*`, `/albums/*` and
+    `/partner`.
+  - Public album page `/a/[token]`, notification kinds `album` and `partner`, and the admin page System → Photos map.
+- Editor: `packages/shared/exif-write.ts` (`withExif`, `readExif`) and `image-edit.ts`; web `components/image-editor.tsx`
+  (previewer and upload panel); app `src/app/photo-edit.tsx` (preview bar, camera and share-in), with `editor-save.ts`
+  `uploadFile`.
+- Web: chips, the memories strip, `components/slideshow.tsx`, the hidden page, smart group pages, `components/places-map.tsx`,
+  the album pages and dialogs, `components/album-share-dialog.tsx`, partner settings in Account, and "Add to album" in the
+  file browser.
+- App:
+  - Chips, the memories strip, the photo settings sheet, albums (list, detail, add, share), smart group screens,
+    `places.tsx` (`@maplibre/maplibre-react-native`), `account/partner.tsx`, and "Add to album" and "Save to my library" in the
+    file sheet.
+  - Kotlin `Memories.kt` (a chain of one-time WorkManager jobs) behind `memoriesSet?` and `memoriesState?`.
+  - Maestro flows `memories`, `albums`, `places`, `photo-edit`.
+
+Fixed while checking:
+- **Web map, worker:** maplibre-gl couldn't find its worker once bundled. It now uses `setWorkerUrl(new URL(...,
+  import.meta.url))`.
+- **Web map, container:** its own CSS (`.maplibregl-map { position: relative }`) collapsed the absolutely placed container.
+  It is now wrapped in a sized box.
+- **Web map, cluster box:** the bounding box for a cluster's photos is padded, because the worker rounds coordinates.
+- **App editor:** the crop handles were offset on the right and bottom and clipped by the frame. They are now placed by
+  fraction, outside the clip.
+- **API check:** the partner timeline check pages through, because newbie has more than 1000 photos.
+
+Checked:
+- `scripts/api-check.ts` 231/231.
+- Playwright: all 15 pass, including `photos-phase15.spec.ts` (memories, hide/undo, slideshow, smart chip, album to a second
+  account plus a public link, partner merge and switch, map cluster to the previewer, and a quick edit that keeps EXIF).
+- Mobile typecheck is clean; unit tests pass (mobile 86, shared 29).
+- Expo Go on the emulator: memories card and slideshow, album create/add/share (person plus link), the editor (1:1, rotate,
+  straighten, Save as copy gives an 863×863 JPEG), the Screenshots chip, photo settings (no daily row in Expo Go) and the
+  partner screen.
+
+Notes:
+- **Memories day:** matched on UTC days, so near midnight in far-off time zones the day can be off by one.
+- **Re-edits clear markup:** changing the crop, rotation, flip or straighten after drawing clears the markup.
+- **EXIF:** an edited JPEG keeps only the date, GPS and Orientation from the original EXIF.
+- **Offline:** photo edits aren't queued while offline.
+
+Release APK (x86_64, 2026-11-12; emulator, Metro and next dev stopped during Gradle; --max-workers=2, -Xmx2g):
+- Kotlin tests 48/48, including `MemoriesRulesTest`.
+- **Places:** the chip shows only in the APK. The map loads OpenFreeMap tiles over Paris, and a cluster tap opens
+  "2 photos here".
+- **Daily notice:** switched on with a 9:00 time; a forced WorkManager job posted "On this day · <account>" / "2 photos
+  from 7 years ago", and tapping it opens the memories slideshow.
+- **Maestro:** 19/19. `places` now matches MapLibre's own view description and goes back with the system Back key.
+- **Phone check, map text:** no map text drew on the emulator (no place names and no cluster counts), because SwiftShader
+  is software GL. Check on a real phone.
+- **Notice tap with a sheet open:** tapping the notice while a sheet (Photo settings) is open leaves you on that sheet.
+- **Notice title:** it names the account by email even when only one account is on the phone.
 
 **Phase 16, playback**
 - **Cast to TV** (Chromecast) for video, photos and slideshows: the server gives the TV a short-lived signed URL. Hidden without

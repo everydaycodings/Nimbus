@@ -7,6 +7,7 @@ import {
   CheckCircleIcon,
   ClockCounterClockwiseIcon,
   PauseIcon,
+  PencilSimpleIcon,
   PlayIcon,
   XIcon,
 } from "@phosphor-icons/react"
@@ -75,6 +76,8 @@ export function UploadPanel({
   onOpen,
   onKeep,
   onRemove,
+  canEdit,
+  onEdit,
 }: {
   jobs: Job[]
   // Unfinished uploads remembered from a previous visit.
@@ -93,6 +96,9 @@ export function UploadPanel({
   // A finished upload that matches another file ("Same as …").
   onKeep: (id: string) => void
   onRemove: (j: Job) => void
+  // A photo that hasn't gone up yet can be edited first.
+  canEdit: (j: Job) => boolean
+  onEdit: (j: Job) => void
 }) {
   const ups = jobs.filter((j) => j.kind === "upload")
   const done = ups.filter((j) => j.status === "done").length
@@ -254,6 +260,8 @@ export function UploadPanel({
                 onOpen={onOpen}
                 onKeep={onKeep}
                 onRemove={onRemove}
+                editable={canEdit(j)}
+                onEdit={onEdit}
               />
             ))}
           </ul>
@@ -271,6 +279,8 @@ function Row({
   onOpen,
   onKeep,
   onRemove,
+  editable,
+  onEdit,
 }: {
   job: Job
   onPause: (id: string) => void
@@ -279,6 +289,8 @@ function Row({
   onOpen: (j: Job) => void
   onKeep: (id: string) => void
   onRemove: (j: Job) => void
+  editable: boolean
+  onEdit: (j: Job) => void
 }) {
   const t = fileType("file", j.mime || null, j.name)
   const zip = j.kind === "zip"
@@ -379,6 +391,17 @@ function Row({
     <li className="flex items-center gap-3 py-2 pr-2 pl-4">
       {body}
       <span className="flex shrink-0 items-center">
+        {editable && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Edit ${j.name}`}
+            title="Edit before uploading"
+            onClick={() => onEdit(j)}
+          >
+            <PencilSimpleIcon />
+          </Button>
+        )}
         {!zip && (j.status === "uploading" || j.status === "queued") && (
           <Button
             variant="ghost"

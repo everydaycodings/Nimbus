@@ -62,6 +62,8 @@ export type Instance = {
   deviceLinks: boolean
   /** Vault share links are on; older servers omit it (no links there). */
   vaultLinks?: boolean
+  /** The Places map: off, or on with the MapLibre style URL. Older servers omit it (no map). */
+  map?: MapConfig
   passwordPolicy: {
     min: number
     lower: boolean
@@ -549,6 +551,8 @@ export type NotificationKind =
   | "storage_low"
   | "transfer_download"
   | "comment"
+  | "album"
+  | "partner"
 export type Notification = {
   id: string
   kind: NotificationKind
@@ -770,8 +774,14 @@ export type TreeResponse = { entries: TreeEntry[]; truncated: boolean }
 // ---- Photos (Phase 10) ----
 
 /** A photo or video of mine, with when it was taken (EXIF, else uploaded) as an ISO time. */
-export type PhotoItem = Item & { takenAt: string }
-/** `GET /photos?limit=&cursor=`: newest taken first. `total` counts every page. */
+export type PhotoItem = Item & {
+  takenAt: string
+  /** The folder it's in (for "hide this folder" from memories). */
+  folderId?: string | null
+  /** A partner's photo merged into my timeline (`owner` is their name, `role` viewer). */
+  fromPartner?: boolean
+}
+/** `GET /photos?limit=&cursor=&partner=`: newest taken first. `total` counts every page. */
 export type PhotosResponse = { items: PhotoItem[]; total: number; nextCursor: string | null }
 
 // ---- Transfer (Phase 13b) ----
@@ -841,3 +851,127 @@ export type TransferResponse = { transfer: Transfer; events: TransferEvent[] }
 export type TransferFileTokenRequest = { name: string; size: number }
 /** tus metadata `token`; then POST /uploads/finish with the upload URL. */
 export type TransferFileTokenResponse = { token: string }
+
+// ---- Photos extras (Phase 15) ----
+// GPS never leaves the server except as `PlacePoint`s to the photo's owner.
+
+export type MapConfig = { enabled: boolean; styleUrl: string }
+
+export type SmartGroup = "screenshots" | "documents" | "receipts" | "videos"
+
+/** `GET /photos/memories?date=YYYY-MM-DD` (the client's today): this month and day in past years, newest year first. Hidden ones left out. */
+export type MemoryYear = { year: number; yearsAgo: number; items: PhotoItem[] }
+export type MemoriesResponse = { date: string; years: MemoryYear[] }
+
+/** What I keep out of memories: one photo, a day (`day` is "MM-DD") or a folder. */
+export type MemoryHide = {
+  id: string
+  kind: "photo" | "day" | "folder"
+  nodeId: string | null
+  /** The photo's or folder's name; null for a day or when it's gone. */
+  name: string | null
+  day: string | null
+  createdAt: string
+}
+export type MemoryHidesResponse = { hides: MemoryHide[] }
+export type NewMemoryHide = { kind: "photo" | "day" | "folder"; nodeId?: string; day?: string }
+
+/** My own photos with a location. */
+export type PlacePoint = {
+  id: string
+  lat: number
+  lng: number
+  takenAt: string
+  version: string | null
+  thumb: string | null
+}
+/** `GET /photos/places?bbox=west,south,east,north`; `items=1` returns the photos inside instead (up to 200, newest first). */
+export type PlacesResponse = { points: PlacePoint[] }
+export type PlacesItemsResponse = { items: PhotoItem[]; total: number }
+
+export type AlbumRole = "owner" | "contributor" | "viewer"
+export type Album = {
+  id: string
+  name: string
+  ownerId: string
+  ownerName: string
+  /** What I can do: owner, contributor (add my photos) or viewer. */
+  role: AlbumRole
+  count: number
+  /** The cover photo (a node id) with its current version and thumbnail revision. */
+  cover: { id: string; version: string | null; thumb: string | null } | null
+  /** Shared with people or a link. */
+  shared: boolean
+  createdAt: string
+  updatedAt: string
+}
+export type AlbumsResponse = { albums: Album[] }
+/** A photo in an album; `addedBy` is a user id, and `canRemove` says if I may take it out. */
+export type AlbumPhoto = PhotoItem & { addedBy: string | null; canRemove: boolean }
+export type AlbumResponse = { album: Album; items: AlbumPhoto[] }
+export type NewAlbum = { name: string; nodeIds?: string[] }
+export type AlbumPatch = { name?: string; coverNodeId?: string | null }
+/** POST and DELETE `/albums/{id}/items`. Contributors may add only their own photos and remove what they added. */
+export type AlbumItemsRequest = { nodeIds: string[] }
+export type AlbumPerson = {
+  shareId: string
+  userId: string
+  name: string
+  email: string
+  image: string | null
+  role: "viewer" | "contributor"
+}
+export type AlbumLink = {
+  shareId: string
+  token: string
+  name: string | null
+  expiresAt: string | null
+  hasPassword: boolean
+  allowDownload: boolean
+  views: number
+}
+export type AlbumSharesResponse = { people: AlbumPerson[]; links: AlbumLink[] }
+export type NewAlbumShare = { userId: string; role: "viewer" | "contributor" }
+export type AlbumLinkRequest = { name?: string; password?: string }
+/** PATCH `/albums/{id}/shares/{shareId}`: `role` for a person; the rest for a link (`password: ""` removes it). */
+export type AlbumSharePatch = {
+  role?: "viewer" | "contributor"
+  name?: string
+  expiresAt?: string | null
+  password?: string
+  allowDownload?: boolean
+}
+
+/** Partner sharing. `outgoing`: I share with them; `incoming`: they share with me. */
+export type PartnerPerson = { id: string; name: string; email: string; image: string | null }
+export type PartnerShare = {
+  person: PartnerPerson
+  status: "pending" | "active"
+  /** Photos taken on or after this (ISO); null: all. */
+  since: string | null
+  /** Incoming only: I hide their photos from my timeline. */
+  hidden: boolean
+}
+export type PartnerResponse = {
+  outgoing: PartnerShare | null
+  incoming: PartnerShare[]
+}
+/** POST `/partner`: invite a member to see my photos. */
+export type PartnerInvite = { userId: string; since?: string | null }
+/**
+ * PATCH `/partner`. `userId` is the other person.
+ * Mine: `since` (change from when), `stop: true`. Theirs: `accept: true` (`shareBack`: also share mine with them),
+ * `decline: true`, `hidden`.
+ */
+export type PartnerPatch = {
+  userId: string
+  since?: string | null
+  stop?: boolean
+  accept?: boolean
+  shareBack?: boolean
+  decline?: boolean
+  hidden?: boolean
+}
+/** POST `/partner/save`: copy a partner's photos into my files under "Photos/From <name>" (counts against my quota). */
+export type PartnerSaveRequest = { nodeIds: string[] }
+export type PartnerSaveResponse = { saved: number; folderId: string }

@@ -13,6 +13,8 @@ import { useSnack } from "@/components/snackbar"
 import { Button, Text } from "@/components/ui"
 import { errorText, json, send as request, type Account } from "@/lib/api"
 import { native, type NativeJob } from "@/lib/native"
+import { canEditPhoto } from "@/lib/photo-edit-rules"
+import { editShot } from "@/lib/photo-edit-session"
 import { c } from "@/lib/theme"
 import { applyAnswers, askBeforeData, pendingConflicts, scanName, type Answers, type Choice, type Entry } from "@/lib/upload-plan"
 import { engine, localStamp, plan } from "@/lib/uploads"
@@ -23,6 +25,8 @@ type Ctx = {
   scan: () => Promise<Entry[]>
   // The conflict sheet on its own, for a vault, which finds its own clashes. `replace`: Replace in place of New version.
   ask: (conflicts: Conflict[], replace?: boolean) => Promise<Answers | null>
+  // A single new photo: offers Edit before it goes up. Returns the entries to send, edited or as they were.
+  review: (entries: Entry[]) => Promise<Entry[]>
 }
 const Uploader = createContext<Ctx | null>(null)
 export const useUploader = () => use(Uploader)!
@@ -30,6 +34,7 @@ export const useUploader = () => use(Uploader)!
 type Prompt =
   | { kind: "conflicts"; conflicts: Conflict[]; replace?: boolean; done: (a: Answers | null) => void }
   | { kind: "data"; bytes: number; done: (wifiOnly: boolean) => void }
+  | { kind: "edit"; name: string; done: (edit: boolean) => void }
 
 export function UploaderProvider({ children }: { children: ReactNode }) {
   const snack = useSnack()
@@ -127,12 +132,31 @@ export function UploaderProvider({ children }: { children: ReactNode }) {
     return answers
   }, [])
 
-  const value = useMemo(() => ({ send, scan, ask }), [send, scan, ask])
+  const review = useCallback<Ctx["review"]>(async (entries) => {
+    const [e] = entries
+    if (entries.length !== 1 || !e.uri || !canEditPhoto(e.mime ?? null)) return entries
+    const edit = await new Promise<boolean>((done) => setPrompt({ kind: "edit", name: e.path, done }))
+    setPrompt(null)
+    if (!edit) return entries
+    const out = await editShot({ uri: e.uri, name: e.path, mime: e.mime! })
+    return out ? [{ ...e, uri: out.uri, size: out.size, mime: out.mime }] : entries
+  }, [])
+
+  const value = useMemo(() => ({ send, scan, ask, review }), [send, scan, ask, review])
   return (
     <Uploader value={value}>
       {children}
       {prompt?.kind === "conflicts" && <ConflictSheet conflicts={prompt.conflicts} replace={prompt.replace} onDone={prompt.done} />}
       {prompt?.kind === "data" && <DataDialog bytes={prompt.bytes} onDone={prompt.done} />}
+      {prompt?.kind === "edit" && (
+        <Frame title="Edit this photo?" onClose={() => prompt.done(false)}>
+          <Text color={c.mutedForeground}>Crop, rotate or mark up “{prompt.name}” before it goes up, or upload it as it is.</Text>
+          <Actions>
+            <Button variant="text" label="Upload now" onPress={() => prompt.done(false)} />
+            <Button label="Edit" onPress={() => prompt.done(true)} />
+          </Actions>
+        </Frame>
+      )}
     </Uploader>
   )
 }

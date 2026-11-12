@@ -709,6 +709,61 @@ async function main() {
     await call(A, "POST", "/items/trash", { ids: [old.nodeId] })
     check("trashed photos leave the timeline", !(await call(A, "GET", "/photos?limit=1000")).body.items.some((i: any) => i.id === old.nodeId))
     await call(A, "POST", "/items/restore", { ids: [old.nodeId] })
+
+    // ---- Phase 15: albums, partner, memories, places
+    const thumb = (tok: string) => call(tok, "GET", `/items/${old.nodeId}/preview`)
+    check("a stranger can't open a photo", (await thumb(B)).status === 404)
+    const alb = await call(A, "POST", "/albums", { name: `${RUN} album`, nodeIds: [old.nodeId] })
+    check("create an album with a photo", alb.status === 200 && alb.body.id, alb.body)
+    cleanup.push(async () => void (await call(A, "DELETE", `/albums/${alb.body.id}`)))
+    check("album is invisible to a stranger", (await call(B, "GET", `/albums/${alb.body.id}`)).status === 404)
+    check("...and refuses their share changes", (await call(B, "POST", `/albums/${alb.body.id}/shares`, { userId: meB.id, role: "viewer" })).status !== 200)
+    check("share the album as viewer", (await call(A, "POST", `/albums/${alb.body.id}/shares`, { userId: meB.id, role: "viewer" })).status === 200)
+    const asB = await call(B, "GET", `/albums/${alb.body.id}`)
+    check("the member reads the album", asB.body.album?.role === "viewer" && asB.body.items?.length === 1 && !asB.body.items[0].canRemove, asB.body)
+    check("...their photos carry no GPS", !JSON.stringify(asB.body).match(/"(lat|lng)"/))
+    check("an album member can open the photo (viewer)", (await thumb(B)).status === 200)
+    check("a viewer can't add", (await call(B, "POST", `/albums/${alb.body.id}/items`, { nodeIds: [old.nodeId] })).status !== 200)
+    check("a viewer can't remove", (await call(B, "DELETE", `/albums/${alb.body.id}/items`, { nodeIds: [old.nodeId] })).status !== 200)
+    const link = await call(A, "POST", `/albums/${alb.body.id}/shares/link`, {})
+    check("create a public album link", link.status === 200 && link.body.token, link.body)
+    check("the public thumbnail route answers", [200, 404].includes((await fetch(`${BASE}/a/${link.body.token}/thumb/${old.nodeId}`)).status))
+    check("a public link page opens", (await fetch(`${BASE}/a/${link.body.token}`)).status === 200)
+    const albShares = (await call(A, "GET", `/albums/${alb.body.id}/shares`)).body
+    await call(A, "DELETE", `/albums/${alb.body.id}/shares/${albShares.people[0].shareId}`)
+    check("unsharing closes it again", (await thumb(B)).status === 404)
+
+    check("partner invite", (await call(A, "POST", "/partner", { userId: meB.id })).status === 200)
+    cleanup.push(async () => {
+      await call(A, "PATCH", "/partner", { userId: meB.id, stop: true })
+    })
+    check("a pending invite gives no access", (await thumb(B)).status === 404)
+    check("B accepts", (await call(B, "PATCH", "/partner", { userId: me.id, accept: true })).status === 200)
+    check("an active partner sees the photo", (await thumb(B)).status === 200)
+    const timelineOf = async (tok: string) => {
+      const all: any[] = []
+      let cur = ""
+      do {
+        const p = await call(tok, "GET", `/photos?limit=1000${cur ? `&cursor=${cur}` : ""}`)
+        all.push(...p.body.items)
+        cur = p.body.nextCursor ?? ""
+      } while (cur)
+      return all
+    }
+    check("...merged into their timeline, marked", (await timelineOf(B)).some((i: any) => i.id === old.nodeId && i.fromPartner))
+    await call(B, "PATCH", "/partner", { userId: me.id, hidden: true })
+    check("hidden partner photos leave the timeline", !(await timelineOf(B)).some((i: any) => i.id === old.nodeId))
+    check("a since date after the photo hides it", (await call(A, "PATCH", "/partner", { userId: meB.id, since: "2030-01-01" })).status === 200 && (await thumb(B)).status === 404)
+    await call(A, "PATCH", "/partner", { userId: meB.id, stop: true })
+    check("stopping ends the access", (await thumb(B)).status === 404)
+
+    check("places lists only mine", Array.isArray((await call(A, "GET", "/photos/places")).body.points) && (await call(B, "GET", "/photos/places")).body.points.every((p: any) => p.id !== old.nodeId))
+    check("memories answer", Array.isArray((await call(A, "GET", "/photos/memories?date=2026-01-15")).body.years))
+    const hide = await call(A, "POST", "/photos/hides", { kind: "day", day: "01-15" })
+    check("hide a day from memories", hide.status === 200 && hide.body.id, hide.body)
+    check("...so that day has none", (await call(A, "GET", "/photos/memories?date=2026-01-15")).body.years.length === 0)
+    check("...and it can be undone", (await call(A, "DELETE", `/photos/hides/${hide.body.id}`)).status === 200)
+    check("smart groups answer", (await call(A, "GET", "/photos/smart/videos")).status === 200 && (await call(A, "GET", "/photos/smart/nope")).status === 404)
   })
 }
 

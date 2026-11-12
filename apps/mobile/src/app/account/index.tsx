@@ -1,5 +1,5 @@
 import { router } from "expo-router"
-import { Bell, CheckCircle, DeviceMobile, Key, LockKey, PencilSimple, Password, ShieldCheck } from "phosphor-react-native"
+import { Bell, CheckCircle, DeviceMobile, Key, LockKey, PencilSimple, Password, ShieldCheck, UsersThree } from "phosphor-react-native"
 import { useState } from "react"
 import { Pressable, View } from "react-native"
 
@@ -108,6 +108,7 @@ export default function Account() {
                   onPress={() => router.push("/account/devices")}
                 />
               )}
+              <Row label="Partner sharing" detail="Share your photos with one person" icon={icon(UsersThree)} trailing={<Caret />} onPress={() => router.push("/account/partner")} />
               <Row label="Vault lock" detail={`After ${a.vaultLockMinutes} minutes idle`} icon={icon(LockKey)} trailing={<Caret />} onPress={() => router.push("/account/vault-lock")} />
             </Group>
           </>

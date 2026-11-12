@@ -15,6 +15,12 @@ test("account and storage alerts open their screens", () => {
   assert.deepEqual(notificationTarget({ kind: "comment", href: "/?open=n1&comments=1", nodeId: "n1" }), { to: "item", id: "n1", comments: true })
 })
 
+test("album and partner notices open their screens", () => {
+  assert.deepEqual(notificationTarget({ kind: "album", href: "/photos/albums/a1", nodeId: null }), { to: "album", id: "a1" })
+  assert.deepEqual(notificationTarget({ kind: "album", href: "/photos/albums/a1", nodeId: "n9" }), { to: "album", id: "a1" })
+  assert.deepEqual(notificationTarget({ kind: "partner", href: "/account#partner", nodeId: null }), { to: "route", path: "/account/partner" })
+})
+
 test("the rest go to their item, or Shared when there's none", () => {
   assert.deepEqual(notificationTarget({ kind: "shared", href: "/shared", nodeId: "n1" }), { to: "item", id: "n1" })
   assert.deepEqual(notificationTarget({ kind: "access_removed", href: "/shared", nodeId: null }), { to: "route", path: "/(tabs)/(shared)/home" })

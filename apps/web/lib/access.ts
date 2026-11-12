@@ -7,7 +7,7 @@ import "server-only"
 import { sql } from "drizzle-orm"
 
 import { db } from "@/lib/db"
-import { UUID } from "@/lib/file-rules"
+import { MEDIA_MIME_RE, MEDIA_NAME_RE, NOT_MEDIA_NAME_RE, UUID } from "@/lib/file-rules"
 
 export type Access = "owner" | "editor" | "viewer"
 
@@ -23,7 +23,9 @@ export type NodeAccess = {
   trashed: boolean
 }
 
-// One recursive walk up from every id. Vault items are never shared.
+// One recursive walk up from every id. Vault items are never shared. A photo is also
+// viewable (never more) by someone an album it is in is shared with, and by a partner of its
+// owner (photos and videos taken on or after the partner row's `since`, null: all).
 export async function accessTo(userId: string, rawIds: string[]) {
   const ids = [...new Set(rawIds)].filter((id) => UUID.test(id))
   const out = new Map<string, NodeAccess>()
@@ -33,7 +35,7 @@ export async function accessTo(userId: string, rawIds: string[]) {
     owner_id: string
     kind: "file" | "folder"
     trashed: boolean
-    rank: number | null
+    rank: number
   }>(sql`
     with recursive up as (
       select id as node, id, parent_id from nodes
@@ -42,9 +44,22 @@ export async function accessTo(userId: string, rawIds: string[]) {
       select up.node, n.id, n.parent_id from nodes n join up on n.id = up.parent_id
     )
     select n.id as node, n.owner_id, n.kind, n.trashed_at is not null as trashed,
-      (select max(case s.role when 'editor' then 2 else 1 end)
-       from up join shares s on s.node_id = up.id and s.grantee_id = ${userId}
-       where up.node = n.id) as rank
+      greatest(
+        coalesce((select max(case s.role when 'editor' then 2 else 1 end)
+          from up join shares s on s.node_id = up.id and s.grantee_id = ${userId}
+          where up.node = n.id), 0),
+        case when n.kind = 'file' and (
+          exists (select 1 from album_items ai
+            join album_shares s on s.album_id = ai.album_id and s.grantee_id = ${userId}
+            where ai.node_id = n.id)
+          or (
+            (n.name ~* ${MEDIA_NAME_RE}
+              or (n.mime ~ ${MEDIA_MIME_RE} and n.name !~* ${NOT_MEDIA_NAME_RE}))
+            and exists (select 1 from partners p
+              join file_versions v on v.id = n.current_version_id
+              where p.owner_id = n.owner_id and p.partner_id = ${userId} and p.status = 'active'
+                and (p.since is null or coalesce(v.taken_at, v.created_at) >= p.since)))
+        ) then 1 else 0 end) as rank
     from nodes n where n.id in (select node from up)`)
   for (const r of rows) {
     const role: Access | null =

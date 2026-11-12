@@ -10,7 +10,7 @@ object PushRules {
 
   // The notification kinds of packages/shared/api.ts. Anything new lands under Account & security.
   fun channelFor(kind: String) = when (kind) {
-    "shared", "access_changed", "access_removed", "transfer" -> SHARING
+    "shared", "access_changed", "access_removed", "transfer", "album", "partner" -> SHARING
     "file_drop", "edits" -> DROPS
     else -> ACCOUNT // app_password, storage_low, signup_request, service_health, backup
   }

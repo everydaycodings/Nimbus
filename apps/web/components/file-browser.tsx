@@ -15,6 +15,7 @@ import {
   CalendarBlankIcon,
   HardDrivesIcon,
   ImageSquareIcon,
+  ImagesIcon,
   ShapesIcon,
   CaretDownIcon,
   InfoIcon,
@@ -68,7 +69,9 @@ import type { Version } from "@/app/(app)/upload-actions"
 import { CommentCount } from "@/components/comments"
 import { DetailsSheet } from "@/components/details-sheet"
 import { useNotice, type Notice } from "@/components/toaster"
+import { AddToAlbumDialog } from "@/components/album-dialogs"
 import { ShareDialog } from "@/components/share-dialog"
+import { IMAGE, VIDEO } from "@/lib/file-rules"
 import { UserAvatar } from "@/components/user-avatar"
 import { Previewer, type Shown } from "@/components/previewer"
 import { Thumb } from "@/components/thumb"
@@ -256,6 +259,8 @@ export function FileBrowser({
   // The item whose Share dialog is open.
   const [sharing, setSharing] = useState<Item | null>(null)
   const [requesting, setRequesting] = useState(false)
+  // Photos waiting for the Add to album picker.
+  const [albumIds, setAlbumIds] = useState<string[] | null>(null)
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>(
     view === "recent" || view === "search"
       ? { key: "rank", desc: false }
@@ -736,6 +741,18 @@ export function FileBrowser({
         icon: ArrowBendUpRightIcon,
         group: 1,
         run: () => move(t),
+      },
+      t.every(
+        (i) =>
+          i.kind === "file" &&
+          roleOf(i) === "owner" &&
+          !i.shortcut &&
+          (IMAGE.test(i.name) || VIDEO.test(i.name))
+      ) && {
+        label: "Add to album…",
+        icon: ImagesIcon,
+        group: 1,
+        run: () => setAlbumIds(t.map((i) => i.id)),
       },
       t.every((i) => roleOf(i) === "owner" && !i.shortcut) && {
         label: "Move to vault…",
@@ -1928,6 +1945,8 @@ export function FileBrowser({
         }}
       />
 
+      <AddToAlbumDialog ids={albumIds} onClose={() => setAlbumIds(null)} />
+
       <ShareDialog
         item={sharing}
         request={requesting}
@@ -1988,6 +2007,7 @@ export function FileBrowser({
           setCommentsFirst(false)
         }}
         commentsFirst={commentsFirst}
+        editable={previewItem ? editable([previewItem]) : false}
         onPrev={previewAt(-1)}
         onNext={previewAt(1)}
         position={

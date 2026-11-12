@@ -12,6 +12,7 @@ import {
   LinkSimpleIcon,
   ListChecksIcon,
   LockIcon,
+  MapTrifoldIcon,
   PaperPlaneTiltIcon,
   PaletteIcon,
   ScanIcon,
@@ -105,6 +106,7 @@ export const ADMIN_GROUPS: { title: string; pages: AdminPage[] }[] = [
       },
       { href: "/admin/system/webdav", label: "WebDAV", icon: HardDriveIcon },
       { href: "/admin/system/ocr", label: "Text in images", icon: ScanIcon },
+      { href: "/admin/system/photos", label: "Photos map", icon: MapTrifoldIcon },
       {
         href: "/admin/system/appearance",
         label: "Appearance",
@@ -410,6 +412,18 @@ export const ADMIN_SETTINGS: {
     label: "Text recognition languages",
     href: "/admin/system/ocr",
     keywords: "ocr tesseract images screenshots language",
+  },
+  {
+    id: "map-enabled",
+    label: "Photos map",
+    href: "/admin/system/photos",
+    keywords: "places map photos location gps tiles openstreetmap",
+  },
+  {
+    id: "map-style",
+    label: "Map style URL",
+    href: "/admin/system/photos",
+    keywords: "places map tiles maplibre openfreemap style third party",
   },
   {
     id: "derive-jobs",

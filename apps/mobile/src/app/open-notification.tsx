@@ -30,8 +30,11 @@ export default function OpenNotification() {
     ;(async () => {
       await switchTo(account.id)
       router.replace("/home")
+      // The daily On this day notice (Memories.kt) isn't a server notification: href is the date it was made for.
+      if (p.kind === "memories") return router.push({ pathname: "/slideshow", params: { memories: p.href } })
       const target = notificationTarget({ kind: (p.kind ?? "shared") as NotificationKind, href: p.href ?? "", nodeId: p.node || null })
       if (target.to === "browser") return Linking.openURL(account.server + target.path)
+      if (target.to === "album") return router.push({ pathname: "/albums/[id]", params: { id: target.id } })
       if (target.to === "route") return router.push(target.path as Href)
       try {
         const { item } = await json<{ item: Item | null }>(account.server, `/api/v1/items/${target.id}`, { token: account.token })

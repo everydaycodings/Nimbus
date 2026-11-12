@@ -11,6 +11,7 @@ import {
   isNull,
   or,
   sql,
+  type SQL,
 } from "drizzle-orm"
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
@@ -272,47 +273,104 @@ export async function listRecent(viewer: string) {
   return withAccess(viewer, rows)
 }
 
-// The viewer's own photos and videos, newest taken first (the Photos timeline).
-// Keyset paging on (time, id) so uploads between pages don't shift the list.
-// ponytail: the match is by name or mime only (a .pdf labelled image/* counts); no index beyond owner/parent.
-export async function listPhotos(viewer: string, limit: number, cursor?: string) {
-  const when = sql`date_trunc('milliseconds', coalesce(${fileVersions.takenAt}, ${fileVersions.createdAt}))`
-  const media = and(
-    live(viewer),
+// A photo or video of the viewer's plus, for the merged timeline, a partner's (see
+// lib/services/partners). Others' photos carry `owner` (their name) and `role: "viewer"`.
+export type PhotoRow = Item & { takenAt: string; fromPartner?: boolean; folderId: string | null }
+
+export const photoWhen = sql`date_trunc('milliseconds', coalesce(${fileVersions.takenAt}, ${fileVersions.createdAt}))`
+const isMedia = sql`(${nodes.name} ~* ${MEDIA_NAME_RE} or (${nodes.mime} ~ ${MEDIA_MIME_RE} and ${nodes.name} !~* ${NOT_MEDIA_NAME_RE}))`
+
+// The viewer's own live media, and `extra` to narrow it (smart group, a day, ...).
+export const ownMedia = (viewer: string) =>
+  and(live(viewer), eq(nodes.kind, "file"), notJunk, isMedia)
+
+// Media of partners who share with the viewer and haven't been hidden, from their `since` on.
+const partnerMedia = (viewer: string) =>
+  and(
+    isNull(nodes.trashedAt),
+    isNull(nodes.vaultId),
     eq(nodes.kind, "file"),
     notJunk,
-    sql`(${nodes.name} ~* ${MEDIA_NAME_RE} or (${nodes.mime} ~ ${MEDIA_MIME_RE} and ${nodes.name} !~* ${NOT_MEDIA_NAME_RE}))`
+    isMedia,
+    sql`exists (select 1 from partners p where p.owner_id = "nodes".owner_id
+      and p.partner_id = ${viewer} and p.status = 'active' and not p.hidden
+      and (p.since is null or ${photoWhen} >= p.since))`
   )
+
+// Photos matching `cond`, newest taken first, paged by (time, id) so uploads between pages
+// don't shift the list. The caller has already decided the viewer may see what `cond` matches;
+// the sharing facts of items that aren't the viewer's are dropped.
+// ponytail: the match is by name or mime only (a .pdf labelled image/* counts); no index beyond owner/parent.
+export async function photoItems(
+  viewer: string,
+  cond: SQL | undefined,
+  limit: number,
+  cursor?: string
+) {
   const c = parsePhotoCursor(cursor)
   const rows = await db
     .select({
       ...cols(viewer),
-      takenAt: sql<string>`to_char(${when} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
+      takenAt: sql<string>`to_char(${photoWhen} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
+      ownerId: nodes.ownerId,
+      folderId: nodes.parentId,
+      ownerName: sql<string>`(select coalesce(nullif(name, ''), email) from "user" where id = "nodes".owner_id)`,
     })
     .from(nodes)
     .innerJoin(fileVersions, eq(fileVersions.id, nodes.currentVersionId))
     .where(
       and(
-        media,
+        cond,
         c
-          ? sql`(${when}, ${nodes.id}) < (${new Date(c.ms).toISOString()}::timestamptz, ${c.id}::uuid)`
+          ? sql`(${photoWhen}, ${nodes.id}) < (${new Date(c.ms).toISOString()}::timestamptz, ${c.id}::uuid)`
           : undefined
       )
     )
-    .orderBy(desc(when), desc(nodes.id))
+    .orderBy(desc(photoWhen), desc(nodes.id))
     .limit(limit + 1)
   const [{ total }] = await db
     .select({ total: sql<number>`count(*)`.mapWith(Number) })
     .from(nodes)
     .innerJoin(fileVersions, eq(fileVersions.id, nodes.currentVersionId))
-    .where(media)
-  const page = rows.slice(0, limit).map((r) => ({ ...toItem(r), takenAt: r.takenAt }))
+    .where(cond)
+  const page = rows.slice(0, limit).map(({ ownerId, ownerName, ...r }): PhotoRow => {
+    const item = { ...toItem(r), takenAt: r.takenAt, folderId: r.folderId }
+    return ownerId === viewer
+      ? item
+      : {
+          ...item,
+          owner: ownerName,
+          role: "viewer",
+          sharedWithPeople: false,
+          hasLink: false,
+        }
+  })
   const last = page[page.length - 1]
   return {
     items: page,
     total,
     nextCursor:
       rows.length > limit && last ? photoCursor(last.takenAt, last.id) : null,
+  }
+}
+
+// The viewer's own photos and videos (the Photos timeline), plus their partners' (marked
+// `fromPartner`) unless left out.
+export async function listPhotos(
+  viewer: string,
+  limit: number,
+  cursor?: string,
+  partners = true
+) {
+  const r = await photoItems(
+    viewer,
+    partners ? or(ownMedia(viewer), partnerMedia(viewer)) : ownMedia(viewer),
+    limit,
+    cursor
+  )
+  return {
+    ...r,
+    items: r.items.map((i) => (i.owner ? { ...i, fromPartner: true } : i)),
   }
 }
 

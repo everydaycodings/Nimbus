@@ -4,6 +4,7 @@ import {
   boolean,
   check,
   customType,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -174,6 +175,15 @@ export const fileVersions = pgTable(
     // Photos and videos: when it was taken (EXIF), else its upload time. The
     // worker fills it in; null means not looked at yet (the timeline then uses createdAt).
     takenAt: timestamp("taken_at", { withTimezone: true }),
+    // Photos: where (EXIF GPS, owner-only), pixel size, and the smart groups the
+    // worker found (null: not decided yet, empty: none). gpsChecked marks versions
+    // the worker has read these from, since takenAt is set before it gets here.
+    lat: doublePrecision("lat"),
+    lng: doublePrecision("lng"),
+    width: integer("width"),
+    height: integer("height"),
+    gpsChecked: boolean("gps_checked").notNull().default(false),
+    smart: text("smart").array(),
     createdAt: createdAt(),
   },
   (t) => [
@@ -552,6 +562,9 @@ export const NOTIFICATION_KINDS = [
   "transfer_download",
   // A new thread on your file, a reply in a thread you're in, or an @mention.
   "comment",
+  // Photos shared with you in an album, or added to one (folded hourly); and partner sharing.
+  "album",
+  "partner",
   "signup_request",
   "service_health",
   "backup",
@@ -703,6 +716,11 @@ export const settings = pgTable(
     // Rules for new passwords and vault passphrases. Null: the owner hasn't
     // chosen, so the industry-standard defaults apply (lib/password-policy).
     passwordPolicy: jsonb("password_policy").$type<PasswordPolicy>(),
+    // Photos map (Places): the tile style URL goes to a third party by default.
+    mapEnabled: boolean("map_enabled").notNull().default(true),
+    mapStyleUrl: text("map_style_url")
+      .notNull()
+      .default("https://tiles.openfreemap.org/styles/liberty"),
     // Thumbnails and search text the worker makes for files no browser handled.
     deriveConcurrency: integer("derive_concurrency").notNull().default(1),
     deriveMaxBytes: bigint("derive_max_bytes", { mode: "number" })
@@ -1195,4 +1213,125 @@ export const commentReactions = pgTable(
     emoji: text("emoji").notNull(),
   },
   (t) => [primaryKey({ columns: [t.commentId, t.userId, t.emoji] })]
+)
+
+// Albums point at photos, which stay where they are. Members of an album see its photos
+// (lib/access accessTo); contributors may add their own.
+export const albums = pgTable(
+  "albums",
+  {
+    id: id(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    coverNodeId: uuid("cover_node_id").references(() => nodes.id, {
+      onDelete: "set null",
+    }),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("albums_owner_idx").on(t.ownerId)]
+)
+
+export const albumItems = pgTable(
+  "album_items",
+  {
+    albumId: uuid("album_id")
+      .notNull()
+      .references(() => albums.id, { onDelete: "cascade" }),
+    nodeId: uuid("node_id")
+      .notNull()
+      .references(() => nodes.id, { onDelete: "cascade" }),
+    addedBy: text("added_by").references(() => user.id, { onDelete: "set null" }),
+    addedAt: timestamp("added_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.albumId, t.nodeId] }),
+    index("album_items_node_idx").on(t.nodeId),
+  ]
+)
+
+// A person (grantee_id) or a public link (token, with expiry and password like shares).
+export const albumShares = pgTable(
+  "album_shares",
+  {
+    id: id(),
+    albumId: uuid("album_id")
+      .notNull()
+      .references(() => albums.id, { onDelete: "cascade" }),
+    granteeId: text("grantee_id").references(() => user.id, {
+      onDelete: "cascade",
+    }),
+    token: text("token").unique(),
+    role: text("role").$type<"viewer" | "contributor">().notNull().default("viewer"),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    passwordHash: text("password_hash"),
+    pwRev: integer("pw_rev").notNull().default(0),
+    allowDownload: boolean("allow_download").notNull().default(true),
+    viewCount: integer("view_count").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("album_shares_album_idx").on(t.albumId),
+    index("album_shares_grantee_idx").on(t.granteeId),
+    uniqueIndex("album_shares_album_grantee_idx")
+      .on(t.albumId, t.granteeId)
+      .where(sql`${t.granteeId} is not null`),
+    check(
+      "album_shares_has_target",
+      sql`${t.granteeId} is not null or ${t.token} is not null`
+    ),
+  ]
+)
+
+// Partner sharing: `ownerId` shares their photos (all, or taken on/after `since`) with
+// `partnerId`, who merges them into their timeline unless `hidden`.
+export const partners = pgTable(
+  "partners",
+  {
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    partnerId: text("partner_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    since: timestamp("since", { withTimezone: true }),
+    status: text("status").$type<"pending" | "active">().notNull().default("pending"),
+    hidden: boolean("hidden").notNull().default(false),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.ownerId, t.partnerId] }),
+    index("partners_partner_idx").on(t.partnerId),
+  ]
+)
+
+// What a member keeps out of "On this day": one photo, a day ("MM-DD") or a folder.
+export const memoryHides = pgTable(
+  "memory_hides",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<"photo" | "day" | "folder">().notNull(),
+    nodeId: uuid("node_id").references(() => nodes.id, { onDelete: "cascade" }),
+    day: text("day"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("memory_hides_node_idx")
+      .on(t.userId, t.nodeId)
+      .where(sql`${t.nodeId} is not null`),
+    uniqueIndex("memory_hides_day_idx")
+      .on(t.userId, t.day)
+      .where(sql`${t.day} is not null`),
+  ]
 )

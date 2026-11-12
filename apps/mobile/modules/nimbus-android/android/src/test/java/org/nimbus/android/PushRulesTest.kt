@@ -9,7 +9,7 @@ class PushRulesTest {
   private fun item(id: String, at: String, read: Boolean = false, kind: String = "shared") = PushRules.Item(id, kind, "t", "/x", at, read, null)
 
   @Test fun kindsGoToTheirChannels() {
-    for (k in listOf("shared", "access_changed", "access_removed", "transfer")) assertEquals(PushRules.SHARING, PushRules.channelFor(k))
+    for (k in listOf("shared", "access_changed", "access_removed", "transfer", "album", "partner")) assertEquals(PushRules.SHARING, PushRules.channelFor(k))
     for (k in listOf("file_drop", "edits")) assertEquals(PushRules.DROPS, PushRules.channelFor(k))
     for (k in listOf("app_password", "storage_low", "signup_request", "service_health", "backup", "something_new")) assertEquals(PushRules.ACCOUNT, PushRules.channelFor(k))
   }
