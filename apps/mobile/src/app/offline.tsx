@@ -7,6 +7,7 @@ import { View } from "react-native"
 import { ConfirmDialog } from "@/components/dialog"
 import { FileIcon } from "@/components/file-icon"
 import { Group, Page, Row, Section, SwitchRow } from "@/components/page"
+import { ChoiceRow } from "@/components/playback-settings"
 import { Sheet, SheetRow } from "@/components/sheet"
 import { useSnack } from "@/components/snackbar"
 import { Button, IconButton, Text } from "@/components/ui"
@@ -15,6 +16,7 @@ import { useFolderSync } from "@/lib/folder-sync"
 import { useApi } from "@/lib/files"
 import { backgroundRefreshAvailable } from "@/lib/offline-task"
 import { getCap, getCellular, lastRefresh, refreshAll, removeAll, setCap, setCellular, takeNotices, unmark, useOffline, useRefreshStatus } from "@/lib/offline"
+import { getOfflineCopy, setOfflineCopy } from "@/lib/playback"
 import { discardFailed, replay, retryFailed, useQueue } from "@/lib/offline-queue"
 import { CAPS, capLabel } from "@/lib/offline-rules"
 import { c, radius } from "@/lib/theme"
@@ -136,6 +138,13 @@ export default function Offline() {
       <Section title="Settings">
         <Group>
           <Row label="Storage limit" detail="Saving past it asks first. Nothing is removed on its own." trailing={<Text color={c.mutedForeground}>{capLabel(cap)}</Text>} onPress={() => setPicker(true)} />
+          <ChoiceRow
+            label="Video copy to save"
+            detail="Data-saver videos are smaller. Videos with no copy ready save as the original."
+            options={[{ value: "original", label: "Original" }, { value: "data-saver", label: "Data-saver" }]}
+            get={getOfflineCopy}
+            set={setOfflineCopy}
+          />
           <SwitchRow
             label="Refresh on mobile data"
             detail={backgroundRefreshAvailable() ? "Nimbus checks for changes when you open it and every few hours. By default that waits for Wi-Fi." : "Nimbus checks for changes when you open it. By default that waits for Wi-Fi."}

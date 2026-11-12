@@ -10,7 +10,9 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react"
 
 import { previewUrl } from "@/app/(app)/upload-actions"
+import { CastButton } from "@/components/player-controls"
 import { Button } from "@/components/ui/button"
+import { castPhoto, useCastButton, useCastFollow } from "@/lib/cast"
 import type { Item } from "@/lib/files"
 import { cn } from "@/lib/utils"
 
@@ -62,6 +64,10 @@ export function Slideshow({
       previewUrl(s.item.id, null).then((u) => u && setUrls((m) => ({ ...m, [s.id]: u })), () => {})
     }
   }, [slides, i, urls])
+
+  // A TV shows the same photos; the interval above drives it.
+  useCastFollow(cur?.item)
+  const canCast = useCastButton()
 
   // Stops at the last slide.
   useEffect(() => {
@@ -144,6 +150,12 @@ export function Slideshow({
       <div className={cn(bar, "top-0 h-14 bg-gradient-to-b from-black/70 to-transparent")}>
         <p className="min-w-0 flex-1 truncate text-sm">{label(cur)}</p>
         {actions?.(cur)}
+        {canCast && cur.item && (
+          <CastButton
+            className="grid size-9 place-items-center rounded-md text-white outline-none hover:bg-white/15 focus-visible:ring-[3px] focus-visible:ring-ring/50 [&_svg]:size-5"
+            onClick={() => castPhoto(cur.item!)}
+          />
+        )}
         <Button variant="ghost" size="icon" aria-label="Close slideshow" onClick={onClose} className="text-white hover:bg-white/15 hover:text-white">
           <XIcon />
         </Button>

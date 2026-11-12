@@ -11,6 +11,7 @@ import {
 import { Upload } from "@aws-sdk/lib-storage"
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 
+import { QUALITIES, previewKey, renditionKey } from "./playback-rules.ts"
 import { enqueue } from "./redis.ts"
 import { contentDisposition } from "./upload-rules.ts"
 
@@ -131,11 +132,17 @@ export async function getText(key: string) {
 }
 
 // Deletes the objects, the `.info` files tusd keeps beside them and their
-// thumbnails, in the worker (/api/jobs), retried until S3 takes it. The rows are
+// thumbnails and video copies, in the worker (/api/jobs), retried until S3 takes it. The rows are
 // already gone, so with Redis away it's tried once from here.
 // Anything that slips through is caught by the weekly orphan sweep (lib/orphan-sweep.ts).
 export async function deleteKeys(keys: string[]) {
-  const all = [...new Set(keys)].flatMap((k) => [k, `${k}.info`, thumbKey(k)])
+  const all = [...new Set(keys)].flatMap((k) => [
+    k,
+    `${k}.info`,
+    thumbKey(k),
+    previewKey(k),
+    ...QUALITIES.map((q) => renditionKey(k, q)),
+  ])
   for (let i = 0; i < all.length; i += 1000) {
     const batch = all.slice(i, i + 1000)
     await enqueue("delete-keys", { keys: batch }).catch(() =>

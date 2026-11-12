@@ -4,12 +4,14 @@ import { Menu } from "@base-ui/react/menu"
 import {
   CheckIcon,
   CircleNotchIcon,
+  GearSixIcon,
   CornersInIcon,
   CornersOutIcon,
   ImageSquareIcon,
   PauseIcon,
   PictureInPictureIcon,
   PlayIcon,
+  ScreencastIcon,
   SpeakerHighIcon,
   SpeakerLowIcon,
   SpeakerSlashIcon,
@@ -17,21 +19,46 @@ import {
 } from "@phosphor-icons/react"
 import { useEffect, useRef, useState } from "react"
 
+import { previewUrl } from "@/app/(app)/upload-actions"
+import { albumPreviewUrl } from "@/app/a/actions"
+import { linkCopies, linkPreviewUrl } from "@/app/s/actions"
 import { MENU_ITEM, MENU_POPUP } from "@/components/overlay-styles"
+import {
+  CastButton,
+  ResumePrompt,
+  SleepMenu,
+  SpeedMenu,
+} from "@/components/player-controls"
+import { audioPause } from "@/lib/audio-store"
+import {
+  castHandlers,
+  castLoad,
+  castPick,
+  castStore,
+  castSkip,
+  castToggle,
+  startCast,
+  useCastButton,
+} from "@/lib/cast"
+import {
+  createResume,
+  createSleep,
+  loadSpeed,
+  makeCopy,
+  saveSpeed,
+  useStore,
+  type Resume,
+} from "@/lib/media-extras"
+import { clock, defaultQuality, usableQuality } from "@/lib/player-rules"
 import { cn } from "@/lib/utils"
+import type { PlaybackInfo } from "@nimbus/shared/api"
 
-const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2]
 const VOLUME_KEY = "nimbus_volume"
 const HIDE_AFTER = 2500
 
-function clock(s: number) {
-  if (!Number.isFinite(s)) return "0:00"
-  const t = Math.floor(s)
-  const h = Math.floor(t / 3600)
-  const m = Math.floor((t % 3600) / 60)
-  const sec = String(t % 60).padStart(2, "0")
-  return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`
-}
+const saveData = () =>
+  typeof navigator !== "undefined" &&
+  Boolean((navigator as { connection?: { saveData?: boolean } }).connection?.saveData)
 
 function savedVolume() {
   try {
@@ -50,11 +77,22 @@ const BTN =
 export function VideoPlayer({
   src,
   title,
+  id,
+  version,
+  linkToken,
+  fileId,
   onError,
   onUseFrame,
 }: {
   src: string
   title: string
+  // My own file (not a vault file, public link or old version): resume, Cast and
+  // data-saver copies work through its id.
+  id?: string
+  version?: string | null
+  // On a public link or album share: its token, which serves the copies under the link's rules.
+  linkToken?: string
+  fileId?: string
   onError: () => void
   // Shown to the file's editors: makes the current frame its thumbnail.
   onUseFrame?: (video: HTMLVideoElement) => Promise<void>
@@ -75,6 +113,105 @@ export function VideoPlayer({
   const [idle, setIdle] = useState(false)
   const [hover, setHover] = useState<{ x: number; t: number } | null>(null)
   const [frame, setFrame] = useState<"saving" | "saved" | "failed" | null>(null)
+  // The timer reads the element later, when it ticks, never during render.
+  // eslint-disable-next-line react-hooks/refs
+  const [sleep] = useState(() => createSleep(() => video.current))
+  const [resume, setResume] = useState<Resume | null>(null)
+  const [info, setInfo] = useState<PlaybackInfo | null | undefined>(id ? undefined : null)
+  // With Save-Data on, hold the video until we know whether a copy is ready.
+  const [url, setUrl] = useState<string | undefined>(saveData() && (id || linkToken) ? undefined : src)
+  const [wanted, setWanted] = useState<number | null>(null)
+  const [linkSizes, setLinkSizes] = useState<number[] | null>(null)
+  const [copyMsg, setCopyMsg] = useState<string | null>(null)
+  const [remote, setRemote] = useState(false)
+  const back = useRef<{ t: number; play: boolean } | null>(null)
+  const cs = useStore(castStore)
+  const castable = useCastButton() && Boolean(id)
+  const casting = cs.connected && Boolean(id) && cs.loaded?.id === id
+
+  // Sizes that are ready, biggest first.
+  const ready =
+    linkSizes ??
+    info?.copies.filter((c) => c.status === "done").map((c) => c.height).sort((a, b) => b - a) ??
+    []
+  const preparing = info?.copies.some((c) => c.status === "pending") ?? false
+  const quality = usableQuality(wanted, ready)
+
+  async function urlFor(q: number | null) {
+    if (q === null) return src
+    if (linkToken) {
+      const t = linkToken
+      const u = await (t.startsWith("a:") ? albumPreviewUrl(t.slice(2), fileId!, q as 480 | 720) : linkPreviewUrl(t, fileId!, q as 480 | 720)).catch(() => null)
+      return u ?? src
+    }
+    return (await previewUrl(id!, version, true, q as 480 | 720).catch(() => null)) ?? src
+  }
+  // Switching size keeps the time (and whether it was playing).
+  async function pickQuality(q: number | null) {
+    const m = video.current
+    if (m && q !== wanted) back.current = { t: m.currentTime, play: !m.paused }
+    setWanted(q)
+    setUrl(await urlFor(q))
+  }
+
+  // What this file offers, then where to start: Original, or 480p when the browser asks to save data.
+  useEffect(() => {
+    const save = saveData()
+    let live = true
+    const start = async (list: number[]) => {
+      const q = defaultQuality(save, list)
+      if (q === null) return setUrl(src)
+      setWanted(q)
+      const u = await urlFor(q)
+      if (live) setUrl(u)
+    }
+    if (linkToken) {
+      linkCopies(linkToken, fileId!).then(
+        (list) => {
+          if (!live) return
+          setLinkSizes(list)
+          start(list)
+        },
+        () => live && setUrl(src)
+      )
+      return () => {
+        live = false
+      }
+    }
+    if (!id) return
+    fetch(`/api/v1/files/${id}/playback${version ? `?v=${version}` : ""}`)
+      .then((r) => (r.ok ? (r.json() as Promise<PlaybackInfo>) : null))
+      .catch(() => null)
+      .then((i) => {
+        if (!live) return
+        setInfo(i)
+        start(i?.copies.filter((c) => c.status === "done").map((c) => c.height) ?? [])
+      })
+    return () => {
+      live = false
+    }
+    // Once per file; urlFor and src are what the file arrived with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, linkToken])
+
+  useEffect(() => {
+    if (!id) return
+    const r = createResume(video.current!, id, version)
+    setResume(r)
+    return () => r.dispose()
+  }, [id, version])
+  useEffect(() => () => sleep.cancel(), [sleep])
+
+  // Where Cast isn't there (Edge, Safari), the browser's own Remote Playback API.
+  useEffect(() => {
+    const r = video.current?.remote
+    if (!id || !r || cs.sdk === "loading" || cs.sdk === "ready") return
+    let watch: number | undefined
+    r.watchAvailability(setRemote).then((n) => (watch = n), () => {})
+    return () => {
+      if (watch !== undefined) r.cancelWatchAvailability(watch).catch(() => {})
+    }
+  }, [id, cs.sdk])
 
   // Fit the video's own shape into the space the previewer gives it.
   useEffect(() => {
@@ -102,6 +239,8 @@ export function VideoPlayer({
     const v = video.current!
     v.volume = savedVolume()
     setVolume(v.volume)
+    v.preservesPitch = true
+    v.playbackRate = v.defaultPlaybackRate = loadSpeed("video")
     const onFull = () => setFull(document.fullscreenElement === box.current)
     document.addEventListener("fullscreenchange", onFull)
     return () => {
@@ -118,12 +257,15 @@ export function VideoPlayer({
 
   const v = () => video.current!
   const toggle = () =>
-    v().paused
-      ? v()
-          .play()
-          .catch(() => {})
-      : v().pause()
+    casting
+      ? castToggle()
+      : v().paused
+        ? v()
+            .play()
+            .catch(() => {})
+        : v().pause()
   const skip = (s: number) => {
+    if (casting) return castSkip(s)
     v().currentTime = Math.min(Math.max(v().currentTime + s, 0), duration)
     wake()
   }
@@ -143,6 +285,25 @@ export function VideoPlayer({
       setFrame("failed")
     }
     setTimeout(() => setFrame(null), 2000)
+  }
+
+  async function cast() {
+    startCast()
+    if (!castStore.get().connected) await castPick()
+    if (!castStore.get().connected) return
+    const m = v()
+    m.pause()
+    castHandlers({
+      end: (t) => {
+        castHandlers({})
+        if (video.current) video.current.currentTime = t
+      },
+    })
+    castLoad({ id: id!, name: title, kind: "video", version, duration: m.duration, startAt: m.currentTime })
+  }
+  async function makeIt() {
+    setCopyMsg("Asking…")
+    setCopyMsg((await makeCopy(id!)) ?? "Making copies. They'll show up here when ready.")
   }
 
   const toggleFull = () =>
@@ -195,14 +356,23 @@ export function VideoPlayer({
     >
       <video
         ref={video}
-        src={src}
+        src={url}
         // CORS mode, so a frame can be drawn to a canvas for the thumbnail.
         crossOrigin="anonymous"
         autoPlay
         playsInline
         onClick={toggle}
         onDoubleClick={toggleFull}
+        onLoadedMetadata={() => {
+          const b = back.current
+          if (!b) return
+          back.current = null
+          v().currentTime = b.t
+          if (!b.play) v().pause()
+        }}
+        onEnded={() => sleep.ended()}
         onPlay={() => {
+          audioPause()
           setPlaying(true)
           wake()
         }}
@@ -225,10 +395,22 @@ export function VideoPlayer({
         className="size-full object-contain"
       />
 
-      {waiting && (
+      {resume && (
+        <ResumePrompt resume={resume} className="absolute top-4 left-1/2 z-10 -translate-x-1/2" />
+      )}
+      {casting && (
+        <div className="absolute inset-0 grid place-items-center bg-black/80 text-center text-white">
+          <div className="flex flex-col items-center gap-2 px-6">
+            <ScreencastIcon weight="fill" className="size-10 text-brand" />
+            <p className="text-sm">Casting to {cs.device || "your TV"}</p>
+            <p className="text-xs text-white/60">{cs.problem?.message ?? "Use the remote at the bottom of the screen."}</p>
+          </div>
+        </div>
+      )}
+      {waiting && !casting && (
         <CircleNotchIcon className="pointer-events-none absolute inset-0 m-auto size-10 animate-spin text-white/80 motion-reduce:animate-none" />
       )}
-      {!playing && !waiting && (
+      {!playing && !waiting && !casting && (
         <button
           type="button"
           aria-label="Play"
@@ -338,41 +520,68 @@ export function VideoPlayer({
 
           <span className="ml-auto" />
 
-          <Menu.Root>
-            <Menu.Trigger
-              className={cn(
-                BTN,
-                "w-auto min-w-11 px-2 text-sm font-medium tabular-nums"
-              )}
-              aria-label={`Playback speed, ${speed}×`}
-              title="Playback speed"
-            >
-              {speed}×
-            </Menu.Trigger>
-            <Menu.Portal container={box}>
-              <Menu.Positioner side="top" align="end" sideOffset={8}>
-                <Menu.Popup className={cn("w-36", MENU_POPUP)}>
-                  <Menu.RadioGroup
-                    value={speed}
-                    onValueChange={(s: number) => (v().playbackRate = s)}
-                  >
-                    {SPEEDS.map((s) => (
-                      <Menu.RadioItem
-                        key={s}
-                        value={s}
-                        className={cn(MENU_ITEM, "tabular-nums")}
-                      >
-                        {s === 1 ? "Normal" : `${s}×`}
-                        <Menu.RadioItemIndicator className="ml-auto">
-                          <CheckIcon />
-                        </Menu.RadioItemIndicator>
-                      </Menu.RadioItem>
-                    ))}
-                  </Menu.RadioGroup>
-                </Menu.Popup>
-              </Menu.Positioner>
-            </Menu.Portal>
-          </Menu.Root>
+          <SpeedMenu
+            speed={speed}
+            container={box}
+            className={cn(BTN, "w-auto min-w-11 px-2 text-sm font-medium tabular-nums")}
+            onChange={(s) => {
+              v().playbackRate = v().defaultPlaybackRate = s
+              saveSpeed("video", s)
+            }}
+          />
+          <SleepMenu
+            timer={sleep}
+            container={box}
+            endLabel="End of video"
+            className={cn(BTN, "w-auto px-2")}
+          />
+          {(ready.length > 0 || info?.canMakeCopy || preparing) && (
+            <Menu.Root>
+              <Menu.Trigger
+                className={cn(BTN, "inline-flex w-auto items-center px-2")}
+                aria-label={`Video quality, ${quality ? `${quality}p` : "Original"}`}
+                title="Quality"
+              >
+                <GearSixIcon />
+                {quality && <span className="ml-1 text-xs tabular-nums">{quality}p</span>}
+              </Menu.Trigger>
+              <Menu.Portal container={box}>
+                <Menu.Positioner side="top" align="end" sideOffset={8} className="z-[80]">
+                  <Menu.Popup className={cn("w-56", MENU_POPUP)}>
+                    <Menu.RadioGroup
+                      value={quality ?? 0}
+                      onValueChange={(q: number) => pickQuality(q || null)}
+                    >
+                      {[0, ...ready].map((q) => (
+                        <Menu.RadioItem key={q} value={q} closeOnClick className={cn(MENU_ITEM, "tabular-nums")}>
+                          {q ? `${q}p data saver` : "Original"}
+                          <Menu.RadioItemIndicator className="ml-auto">
+                            <CheckIcon />
+                          </Menu.RadioItemIndicator>
+                        </Menu.RadioItem>
+                      ))}
+                    </Menu.RadioGroup>
+                    {preparing && (
+                      <p className="px-2 py-1.5 text-xs text-muted-foreground">Making data-saver copies…</p>
+                    )}
+                    {info?.canMakeCopy && !preparing && ready.length === 0 && (
+                      <Menu.Item className={cn(MENU_ITEM, "mt-1 border-t pt-1")} closeOnClick={false} onClick={makeIt}>
+                        Make data-saver copy
+                      </Menu.Item>
+                    )}
+                    {copyMsg && <p className="px-2 py-1.5 text-xs text-muted-foreground">{copyMsg}</p>}
+                  </Menu.Popup>
+                </Menu.Positioner>
+              </Menu.Portal>
+            </Menu.Root>
+          )}
+          {(castable || remote) && (
+            <CastButton
+              className={BTN}
+              active={casting}
+              onClick={castable ? cast : () => video.current?.remote.prompt().catch(() => {})}
+            />
+          )}
 
           {onUseFrame && (
             <button

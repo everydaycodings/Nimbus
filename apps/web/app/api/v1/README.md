@@ -152,9 +152,16 @@ nothing to return answers `200 {}`.
 | POST | `/zip-manifest` | `IdsRequest` | `ZipManifest` |
 | GET | `/tree` | `?folder=` (omit: My files) | `TreeResponse` (every file and folder below it: relative `path`, `size`, `modified`, `sha256`, `versionId`; `truncated` past 50,000) |
 | **Previews and files** | | | |
-| GET | `/items/{id}/preview` | `?v=` older version, `?open=1` counts as opened | `PreviewResponse` (short-lived storage URL) |
+| GET | `/items/{id}/preview` | `?v=` older version, `?open=1` counts as opened, `?quality=480\|720` a video's data-saver copy (else the original) | `PreviewResponse` (short-lived storage URL, `copies` ready) |
 | GET | `/items/{id}/office` | `?v=` | `OfficeResponse` |
-| GET | `/api/files/{id}/download` | `?v=` | 302 to a storage URL |
+| GET | `/api/files/{id}/download` | `?v=`, `?quality=480\|720` | 302 to a storage URL |
+| GET | `/files/{id}/playback` | `?v=` | `PlaybackInfo` (copies and their state, cast source) |
+| POST | `/files/{id}/copy` | owner; none | `MakeCopyResponse` (400 when copies are off or capped) |
+| GET | `/files/{id}/cast` | `?duration=` seconds, `?v=` | `CastUrlResponse` (valid duration + 1 h; call again to refresh); 409 `CastNoCopy` |
+| GET | `/files/{id}/subtitles` | `?v=` | `SubtitlesResponse` |
+| GET | `/files/{id}/subtitles/{track}` | signed in, or `?t=` from the track's `url` | `text/vtt` |
+| GET | `/files/{id}/position` | none | `PositionResponse` |
+| PUT | `/files/{id}/position` | `PositionPut` | `PositionPutResponse` |
 | GET | `/api/files/{id}/thumb` | `?v=<version>` | `image/webp` |
 | POST | `/api/files/{id}/thumb` | `?v=<version>`, raw WebP body (<= 512 KB), or an empty body for "couldn't make one" | `{thumb: revision}` (editors) |
 | DELETE | `/api/files/{id}/thumb` | back to automatic | 204 |

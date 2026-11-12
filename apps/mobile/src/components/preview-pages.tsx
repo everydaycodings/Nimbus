@@ -7,7 +7,7 @@ import { fetch as streamingFetch } from "expo/fetch"
 import { Image } from "expo-image"
 import { useNetworkState, NetworkStateType } from "expo-network"
 import type { VideoPlayer, VideoView } from "expo-video"
-import { ArrowClockwise, ArrowCounterClockwise, Pause, Play, SkipBack, SkipForward } from "phosphor-react-native"
+import { ArrowClockwise, ArrowCounterClockwise, Moon, Pause, Play, SkipBack, SkipForward } from "phosphor-react-native"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ActivityIndicator, Linking, Pressable, ScrollView, View, useWindowDimensions, type GestureResponderEvent } from "react-native"
 import { Gesture, GestureDetector } from "react-native-gesture-handler"
@@ -17,7 +17,11 @@ import { WebView, type WebViewMessageEvent } from "react-native-webview"
 import { FileIcon } from "@/components/file-icon"
 import { Button, IconButton, Text } from "@/components/ui"
 import { errorText } from "@/lib/api"
-import { startQueue, useQueue, type Queue } from "@/lib/audio-queue"
+import { CastBar, CastRemote, useCastItem } from "@/components/cast-ui"
+import { CustomSleep, SleepRows, sleepDetail } from "@/components/sleep-menu"
+import { Sheet } from "@/components/sheet"
+import { answerResume, setSleep, startQueue, useAudioExtras, useQueue, type Queue } from "@/lib/audio-queue"
+import { getSpeed, setSpeed, type Sleep } from "@/lib/playback"
 import { cachedFile, fetchToCache, offlineFile } from "@/lib/file-cache"
 import { registerAnchor } from "@/lib/comment-anchor"
 import { useApi } from "@/lib/files"
@@ -27,6 +31,7 @@ import { useVaultItem } from "@/components/vault-item"
 import { needsDataWarning, toBase64, type Plan, type Viewer } from "@/lib/preview-rules"
 import { useTransfers } from "@/lib/transfers"
 import { c, radius } from "@/lib/theme"
+import { clock } from "@/lib/time"
 
 export type PageProps = {
   item: Item
@@ -65,7 +70,7 @@ const sizeOf = (item: Item, version?: Version) => version?.size ?? item.size
 const versionId = (item: Item, version?: Version) => version?.id ?? item.version
 
 // Signed URLs last an hour, and a stale one is refetched on a load error.
-export function usePreviewUrl(item: Item, version: Version | undefined, enabled: boolean) {
+export function usePreviewUrl(item: Item, version: Version | undefined, enabled: boolean, quality?: number) {
   const api = useApi()
   const vault = previewSession()?.vault
   const local = useVaultFile(vault, item, enabled)
@@ -75,13 +80,13 @@ export function usePreviewUrl(item: Item, version: Version | undefined, enabled:
     return f?.exists ? f.uri : undefined
   }, [api.id, item.id, item.version, version])
   const query = useQuery({
-    queryKey: [api.id, "preview", item.id, version?.id],
+    queryKey: [api.id, "preview", item.id, version?.id, quality],
     enabled: enabled && !kept && !vault,
     staleTime: 50 * 60_000,
-    queryFn: () => api.get<PreviewResponse>(`/items/${item.id}/preview${version ? `?v=${version.id}` : ""}`),
+    queryFn: () => api.get<PreviewResponse>(`/items/${item.id}/preview${version ? `?v=${version.id}` : quality ? `?quality=${quality}` : ""}`),
   })
-  if (vault) return local
-  return { url: kept ?? query.data?.url, error: kept ? null : query.error, refetch: query.refetch }
+  if (vault) return { ...local, copies: undefined }
+  return { url: kept ?? query.data?.url, copies: query.data?.copies, error: kept ? null : query.error, refetch: query.refetch }
 }
 
 // ---- When there's nothing to show, or it failed: always a way forward ----
@@ -126,8 +131,10 @@ export const Loading = ({ progress }: { progress?: number }) => (
 
 const TAP_SLOP = 12
 
-export function ImagePage({ item, version, active, near, onTap, onZoom }: PageProps & { near: boolean }) {
+export function ImagePage({ item, version, active, near, bottom, onTap, onZoom }: PageProps & { near: boolean }) {
   const { account } = useApi()
+  // The TV follows the swipes.
+  const cast = useCastItem({ item, kind: "image", active: active && !version && !previewSession()?.vault })
   const { url, error, refetch } = usePreviewUrl(item, version, near)
   const { width: W, height: H } = useWindowDimensions()
   const [failed, setFailed] = useState(false)
@@ -207,6 +214,7 @@ export function ImagePage({ item, version, active, near, onTap, onZoom }: PagePr
     return <NoPreview item={item} version={version} reason="Couldn't show this image." onRetry={() => { retried.current = false; setFailed(false); refetch() }} />
 
   return (
+    <>
     <GestureDetector gesture={gesture}>
       <Animated.View collapsable={false} style={[{ flex: 1 }, style]} accessible accessibilityRole="image" accessibilityLabel={item.name}>
         <Image
@@ -231,6 +239,8 @@ export function ImagePage({ item, version, active, near, onTap, onZoom }: PagePr
         />
       </Animated.View>
     </GestureDetector>
+    {cast.casting && <CastBar bottom={bottom + 24} />}
+    </>
   )
 }
 
@@ -238,13 +248,7 @@ export function ImagePage({ item, version, active, near, onTap, onZoom }: PagePr
 
 const SPEEDS = [1, 1.25, 1.5, 2, 0.75]
 
-export const clock = (s: number) => {
-  const t = Math.max(0, Math.floor(s || 0))
-  const h = Math.floor(t / 3600)
-  const m = Math.floor((t % 3600) / 60)
-  const sec = String(t % 60).padStart(2, "0")
-  return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`
-}
+export { clock }
 
 type AudioViewProps = {
   item: Item
@@ -258,12 +262,17 @@ type AudioViewProps = {
   onSpeed: (rate: number) => void
   // Next and previous track, when there is a queue.
   onSkip?: (by: 1 | -1) => void
+  // The sleep timer, and a long track waiting for the choice of where to start (the queue only).
+  sleep?: { value: Sleep; onChange: (s: Sleep) => void }
+  resume?: { at: number; answer: (resume: boolean) => void }
 }
 
 // The controls, for whichever player is behind them.
-function AudioView({ item, version, top, position: playedTo, duration, playing, onSeek, onToggle, onSpeed, onSkip }: AudioViewProps) {
+function AudioView({ item, version, top, position: playedTo, duration, playing, onSeek, onToggle, onSpeed, onSkip, sleep, resume }: AudioViewProps) {
   const { account } = useApi()
-  const [speed, setSpeed] = useState(1)
+  const [speed, setRate] = useState(getSpeed("audio"))
+  const [sleepSheet, setSleepSheet] = useState(false)
+  const [custom, setCustom] = useState(false)
   const [barWidth, setBarWidth] = useState(1)
   const [drag, setDrag] = useState<number | null>(null)
 
@@ -332,7 +341,8 @@ function AudioView({ item, version, top, position: playedTo, duration, playing, 
         <Pressable
           onPress={() => {
             const next = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]
-            setSpeed(next)
+            setRate(next)
+            setSpeed("audio", next)
             onSpeed(next)
           }}
           accessibilityRole="button"
@@ -342,12 +352,29 @@ function AudioView({ item, version, top, position: playedTo, duration, playing, 
           <Text variant="label" style={{ fontVariant: ["tabular-nums"] }}>{speed}×</Text>
         </Pressable>
       </View>
-      {onSkip && (
+      {(onSkip || sleep) && (
         <View style={{ flexDirection: "row", gap: 32 }}>
-          <IconButton icon={SkipBack} label="Previous track" onPress={() => onSkip(-1)} />
-          <IconButton icon={SkipForward} label="Next track" onPress={() => onSkip(1)} />
+          {onSkip && <IconButton icon={SkipBack} label="Previous track" onPress={() => onSkip(-1)} />}
+          {sleep && <IconButton icon={Moon} label={`Sleep timer, ${sleepDetail(sleep.value, "End of track")}`} color={sleep.value === null ? c.foreground : c.brand} onPress={() => setSleepSheet(true)} />}
+          {onSkip && <IconButton icon={SkipForward} label="Next track" onPress={() => onSkip(1)} />}
         </View>
       )}
+      {resume && (
+        <View style={{ flexDirection: "row", alignItems: "center", paddingLeft: 4, borderRadius: 24, backgroundColor: c.card, borderWidth: 1, borderColor: c.border }}>
+          <Pressable onPress={() => resume.answer(true)} accessibilityRole="button" style={{ height: 44, paddingHorizontal: 12, justifyContent: "center" }}>
+            <Text variant="label" color={c.brand} style={{ fontVariant: ["tabular-nums"] }}>Resume from {clock(resume.at)}</Text>
+          </Pressable>
+          <Pressable onPress={() => resume.answer(false)} accessibilityRole="button" style={{ height: 44, paddingHorizontal: 12, justifyContent: "center" }}>
+            <Text variant="label" color={c.brand}>Start over</Text>
+          </Pressable>
+        </View>
+      )}
+      {sleep && sleepSheet && (
+        <Sheet onClose={() => setSleepSheet(false)} header={<Text variant="titleSmall" style={{ paddingHorizontal: 20, paddingBottom: 8 }}>Sleep timer</Text>}>
+          <SleepRows sleep={sleep.value} endLabel="End of track" onSleep={sleep.onChange} onCustom={() => setCustom(true)} />
+        </Sheet>
+      )}
+      {sleep && custom && <CustomSleep onSet={(m) => sleep.onChange(Date.now() + m * 60_000)} onClose={() => setCustom(false)} />}
     </View>
   )
 }
@@ -362,6 +389,7 @@ function LocalAudioPage({ item, version, active, top }: PageProps) {
   useEffect(() => {
     if (!url || !active || started.current === url || !status.isLoaded) return
     started.current = url
+    player.setPlaybackRate(getSpeed("audio"))
     player.play()
   }, [url, active, status.isLoaded, player])
   useEffect(() => {
@@ -404,6 +432,17 @@ function LocalAudioPage({ item, version, active, top }: PageProps) {
 function QueueAudioPage({ item, active, top, onAudioTrack }: PageProps) {
   const api = useApi()
   const queue = useQueue()
+  const live = queue?.account === api.id && queue.items.some((i) => i.id === item.id) ? queue : null
+  // The TV plays it: the queue holds still here, and takes the TV's place when casting ends.
+  const cast = useCastItem({
+    item,
+    kind: "audio",
+    active,
+    time: () => (live ? live.playlist.currentTime : 0),
+    duration: () => (live ? live.playlist.duration : 0),
+    onTaken: () => live?.playlist.pause(),
+    onEnded: (at) => void live?.playlist.seekTo(at),
+  })
   const [error, setError] = useState<string | null>(null)
   const starting = useRef(false)
   const mine = queue?.account === api.id && queue.items.some((i) => i.id === item.id)
@@ -435,11 +474,18 @@ function QueueAudioPage({ item, active, top, onAudioTrack }: PageProps) {
 
   if (error) return <NoPreview item={item} reason={error} onRetry={() => setError(null)} />
   if (!mine) return <Loading />
-  return <QueueControls queue={queue} item={item} top={top} />
+  return (
+    <>
+      <QueueControls queue={queue} item={item} top={top} />
+      {cast.casting && <CastRemote item={item} kind="audio" top={top} nav={{ prev: queue.playlist.currentIndex > 0, next: queue.playlist.currentIndex < queue.items.length - 1, go: (by) => (by > 0 ? queue.playlist.next() : queue.playlist.previous()) }} />}
+      {cast.sheet}
+    </>
+  )
 }
 
 function QueueControls({ queue, item, top }: { queue: Queue; item: Item; top: number }) {
   const status = useAudioPlaylistStatus(queue.playlist)
+  const extras = useAudioExtras()
   const at = useRef(0)
   at.current = status.currentTime ?? 0
   useEffect(
@@ -465,6 +511,8 @@ function QueueControls({ queue, item, top }: { queue: Queue; item: Item; top: nu
       onToggle={() => (status.playing ? queue.playlist.pause() : queue.playlist.play())}
       onSpeed={(r) => (queue.playlist.playbackRate = r)}
       onSkip={(by) => (by > 0 ? queue.playlist.next() : queue.playlist.previous())}
+      sleep={{ value: extras.sleep, onChange: setSleep }}
+      resume={extras.resume?.id === item.id ? { at: extras.resume.at, answer: answerResume } : undefined}
     />
   )
 }

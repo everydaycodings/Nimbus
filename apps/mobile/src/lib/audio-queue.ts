@@ -3,14 +3,15 @@
 // (play, pause, next, previous, seek). Closing the previewer stops it. Vault audio never comes here.
 import type { Item, PreviewResponse } from "@nimbus/shared/api"
 import { createAudioPlaylist, setAudioModeAsync, type AudioPlaylist } from "expo-audio"
-import Storage from "expo-sqlite/kv-store"
 import { useSyncExternalStore } from "react"
 
-import { queueWindow, resumeAt } from "./audio-rules"
+import { queueWindow } from "./audio-rules"
 import { offlineFile } from "./file-cache"
+import { getPosition, getSpeed, putPosition, runSleep, type Sleep } from "./playback"
+import { offerResume } from "./playback-rules"
 
 export type Queue = { account: string; items: Item[]; playlist: AudioPlaylist }
-type Api = { id: string; get: <T>(path: string) => Promise<T> }
+type Api = { id: string; get: <T>(path: string) => Promise<T>; put: <T>(path: string, body?: unknown) => Promise<T>; post: <T>(path: string, body?: unknown) => Promise<T> }
 
 let queue: Queue | null = null
 let teardown: (() => void) | null = null
@@ -23,22 +24,44 @@ const subscribe = (fn: () => void) => {
 
 export const useQueue = () => useSyncExternalStore(subscribe, () => queue)
 
-const key = (account: string, id: string) => `audio.pos.${account}.${id}`
+// What the player shows besides the queue itself: the sleep timer, and a long track waiting for "Resume / Start over".
+type Extras = { sleep: Sleep; resume: { id: string; at: number } | null }
+let extras: Extras = { sleep: null, resume: null }
+let stopSleep: (() => void) | null = null
+const setExtras = (change: Partial<Extras>) => {
+  extras = { ...extras, ...change }
+  changed()
+}
+export const useAudioExtras = () => useSyncExternalStore(subscribe, () => extras)
 
-export function savedPosition(account: string, id: string) {
-  try {
-    return Number(Storage.getItemSync(key(account, id))) || 0
-  } catch {
-    return 0
+export function setSleep(sleep: Sleep) {
+  stopSleep?.()
+  stopSleep = null
+  const playlist = queue?.playlist
+  if (playlist) playlist.volume = 1
+  if (typeof sleep === "number" && playlist) {
+    stopSleep = runSleep(
+      sleep,
+      (g) => (playlist.volume = g),
+      () => {
+        playlist.pause()
+        playlist.volume = 1
+        stopSleep = null
+        setExtras({ sleep: null })
+      }
+    )
   }
+  setExtras({ sleep })
 }
 
-export function savePosition(account: string, id: string, position: number, duration: number) {
-  try {
-    const at = resumeAt(position, duration)
-    if (at) Storage.setItemSync(key(account, id), String(Math.floor(at)))
-    else Storage.removeItemSync(key(account, id))
-  } catch {}
+// "Resume from…" or "Start over", for the track that is waiting.
+export function answerResume(resume: boolean) {
+  const pending = extras.resume
+  const playlist = queue?.playlist
+  setExtras({ resume: null })
+  if (!pending || !playlist) return
+  if (resume) void playlist.seekTo(pending.at)
+  playlist.play()
 }
 
 // The phone's own copy when it's kept offline, else a fresh download link.
@@ -59,31 +82,39 @@ export async function startQueue(api: Api, items: Item[], index: number) {
   stopQueue()
   const { start, end } = queueWindow(items.length, index)
   const window = items.slice(start, end)
-  const urls = await Promise.all(window.map((i) => urlOf(api, i)))
+  const [urls, saved] = await Promise.all([Promise.all(window.map((i) => urlOf(api, i))), getPosition(api, items[index].id)])
   const tracks = window.flatMap((item, n) => (urls[n] ? [{ item, uri: urls[n]! }] : []))
   const first = tracks.findIndex((t) => t.item.id === items[index].id)
   if (first < 0) throw new Error("Couldn't play this file.")
 
   await setAudioModeAsync({ shouldPlayInBackground: true, playsInSilentMode: true, interruptionMode: "doNotMix" })
   const playlist = createAudioPlaylist({ sources: tracks.map((t) => ({ uri: t.uri })), updateInterval: 500 })
+  playlist.playbackRate = getSpeed("audio")
+  // A track with a place saved waits for the choice of where to start.
+  const held = (saved ?? 0) > 5
   const q: Queue = { account: api.id, items: tracks.map((t) => t.item), playlist }
   queue = q
 
   let current = first
   let seeked = -1
   let lastSave = 0
+  let seen = { id: "", time: 0, duration: 0 }
   const status = playlist.addListener("playlistStatusUpdate", (s) => {
     current = s.currentIndex
     const item = q.items[current]
     if (!item || !s.isLoaded) return
-    // Pick a track up where it was left, once it has loaded.
+    seen = { id: item.id, time: s.currentTime, duration: s.duration }
     if (seeked !== current) {
       seeked = current
-      const at = resumeAt(savedPosition(api.id, item.id), s.duration)
-      if (at) void playlist.seekTo(at)
-    } else if (Date.now() - lastSave > 5000) {
+      if (held && current === first) {
+        if (offerResume(saved, s.duration)) {
+          playlist.pause()
+          setExtras({ resume: { id: item.id, at: saved! } })
+        } else playlist.play()
+      }
+    } else if (Date.now() - lastSave > 15_000) {
       lastSave = Date.now()
-      savePosition(api.id, item.id, s.currentTime, s.duration)
+      putPosition(api, item.id, s.currentTime, s.duration)
     }
   })
   const changedTrack = playlist.addListener("trackChanged", (e) => {
@@ -91,13 +122,29 @@ export async function startQueue(api: Api, items: Item[], index: number) {
     if (item) playlist.updateLockScreenMetadata(meta(item))
     // The one just played starts over next time.
     const done = q.items[e.previousIndex]
-    if (done) savePosition(api.id, done.id, 0, 0)
+    if (done && done.id === seen.id) putPosition(api, done.id, seen.duration, seen.duration)
+    if (extras.resume) setExtras({ resume: null })
+    if (extras.sleep === "end") {
+      playlist.pause()
+      setSleep(null)
+    } else if (item) {
+      // A long track picks up where it was left, when the choice comes in.
+      void getPosition(api, item.id).then((at) => {
+        const now = playlist.currentStatus
+        if (queue !== q || q.items[playlist.currentIndex]?.id !== item.id || !now || !offerResume(at, now.duration) || now.currentTime > 5) return
+        playlist.pause()
+        setExtras({ resume: { id: item.id, at: at! } })
+      })
+    }
     changed()
   })
   teardown = () => {
     const item = q.items[current]
     const s = playlist.currentStatus
-    if (item && s) savePosition(api.id, item.id, s.currentTime, s.duration)
+    if (item && s) putPosition(api, item.id, s.currentTime, s.duration)
+    stopSleep?.()
+    stopSleep = null
+    extras = { sleep: null, resume: null }
     status.remove()
     changedTrack.remove()
     try {
@@ -119,7 +166,7 @@ export async function startQueue(api: Api, items: Item[], index: number) {
     seekBackwardIntervalSeconds: 10,
     seekForwardIntervalSeconds: 10,
   })
-  playlist.play()
+  if (!held) playlist.play()
   changed()
   return q
 }

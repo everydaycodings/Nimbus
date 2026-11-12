@@ -438,6 +438,12 @@ export const ADMIN_SETTINGS: {
     keywords: "worker thumbnails search index size limit",
   },
   {
+    id: "video-copies",
+    label: "Video copies (data-saver)",
+    href: "/admin/system/ocr",
+    keywords: "video transcode 720p 480p data saver ffmpeg cast mobile data size limit",
+  },
+  {
     id: "toast-position",
     label: "Action message position",
     href: "/admin/system/appearance",

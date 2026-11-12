@@ -10,8 +10,12 @@ import { Pressable, View } from "react-native"
 import { useReducedMotion } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
+import { CastBar, CastBtn } from "@/components/cast-ui"
 import { Sheet, SheetRow } from "@/components/sheet"
+import { useSnack } from "@/components/snackbar"
 import { Spinner, Text, IconButton } from "@/components/ui"
+import { errorText } from "@/lib/api"
+import { castLoad, useCasting } from "@/lib/cast"
 import { offlineFile } from "@/lib/file-cache"
 import { useApi, useList } from "@/lib/files"
 import { memorySlides, photoSlides, type Slide } from "@/lib/memory-slides"
@@ -49,7 +53,10 @@ function HideSheet({ item, date, onClose }: { item: PhotoItem; date: string; onC
 
 function Show({ title, slides, loading, startAt = 0, memoryDate }: { title: string; slides: Slide[]; loading: boolean; startAt?: number; memoryDate?: string }) {
   useKeepAwake()
-  const { id } = useApi()
+  const api = useApi()
+  const { id } = api
+  const snack = useSnack()
+  const casting = useCasting()
   const inset = useSafeAreaInsets()
   const still = useReducedMotion()
   const [prefs, setPrefs] = usePrefs(id)
@@ -66,6 +73,12 @@ function Show({ title, slides, loading, startAt = 0, memoryDate }: { title: stri
   const itemOf = (s?: Slide) => (s?.kind === "photo" ? s.item : undefined)
   const url = useSlideUrl(itemOf(slide))
   const nextUrl = useSlideUrl(n > 1 ? itemOf(slides[(at + 1) % n]) : undefined)
+  // The TV shows the same photos at the same pace; a title card leaves the last photo up.
+  const photo = itemOf(slide)
+  useEffect(() => {
+    if (!casting || !photo) return
+    castLoad(api, { item: photo, kind: "image" }).catch((e) => snack({ text: errorText(e), error: true }))
+  }, [casting, photo, api, snack])
   // Keeps the last photo up until the next one has an address.
   if (url && url !== shown) setShown(url)
   useEffect(() => {
@@ -123,6 +136,7 @@ function Show({ title, slides, loading, startAt = 0, memoryDate }: { title: stri
             <Text variant="titleSmall" numberOfLines={1}>{title}</Text>
             <Text variant="caption" color={c.mutedForeground} style={{ fontVariant: ["tabular-nums"] }}>{at + 1} of {n}</Text>
           </View>
+          <CastBtn />
           {memoryDate && slide.kind === "photo" && <IconButton icon={EyeSlash} label="Hide from memories" onPress={() => setHiding(true)} />}
         </View>
       )}
@@ -151,6 +165,7 @@ function Show({ title, slides, loading, startAt = 0, memoryDate }: { title: stri
           </View>
         </View>
       )}
+      <CastBar bottom={inset.bottom + (bars ? 130 : 24)} />
       {hiding && memoryDate && slide.kind === "photo" && <HideSheet item={slide.item as PhotoItem} date={memoryDate} onClose={() => setHiding(false)} />}
     </View>
   )

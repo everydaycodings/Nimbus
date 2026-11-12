@@ -27,7 +27,7 @@ export type Report = Awaited<ReturnType<typeof report>>
 // Vault files are left out: their names are sealed. Old version bytes are
 // distinct by S3 key, like getUsage(), so a restored copy isn't counted twice.
 export async function report(ownerId: string, folderId: string | null) {
-  const [usage, largest, old, trash, folder, [sent]] = await Promise.all([
+  const [usage, largest, old, trash, folder, [sent], [copies]] = await Promise.all([
     getUsage(ownerId),
     db.execute<Omit<ReportRow, "where">>(sql`
       select id, kind, name, mime, size::float8 as size, parent_id as "parentId"
@@ -59,6 +59,11 @@ export async function report(ownerId: string, folderId: string | null) {
       select count(distinct t.id)::int as count, coalesce(sum(f.size), 0)::float8 as bytes
       from transfers t join transfer_files f on f.transfer_id = t.id
       where t.sender_id = ${ownerId} and t.revoked_at is null and t.expires_at > now()`),
+    // Data-saver copies of their videos: not counted against the quota.
+    db.execute<{ count: number; bytes: number }>(sql`
+      select count(*)::int as count, coalesce(sum(r.size), 0)::float8 as bytes
+      from video_renditions r join nodes n on n.id = r.node_id
+      where n.owner_id = ${ownerId} and r.status = 'done'`),
   ])
   const trashBytes = trash.reduce((n, t) => n + t.size, 0)
   const top = [...trash].sort((a, b) => b.size - a.size).slice(0, 10)
@@ -78,6 +83,7 @@ export async function report(ownerId: string, folderId: string | null) {
     largest: largest.map(placed),
     old: old.map(placed),
     transfers: { count: sent?.count ?? 0, bytes: sent?.bytes ?? 0 },
+    videoCopies: { count: copies?.count ?? 0, bytes: copies?.bytes ?? 0 },
     trash: {
       bytes: trashBytes,
       count: trash.length,

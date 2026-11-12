@@ -1,11 +1,13 @@
 import { linkNode, logLinkEvent, openLink } from "@/lib/links"
-import { presignGet } from "@/lib/s3"
+import { parseQuality } from "@/lib/playback-rules"
+import { streamUrl } from "@/lib/video-copies"
 
 const notFound = () => new Response("Not found", { status: 404 })
 
-// A file from a public link, when the link allows downloads.
+// A file from a public link, when the link allows downloads. ?quality=480|720: a
+// video's data-saver copy, under the same link rules.
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ token: string; id: string }> }
 ) {
   const { token, id } = await params
@@ -14,5 +16,5 @@ export async function GET(
   const node = await linkNode(link, id)
   if (node?.kind !== "file" || !node.key) return notFound()
   await logLinkEvent(link.id, "download", node.name)
-  return Response.redirect(await presignGet(node.key, node.name), 302)
+  return Response.redirect(await streamUrl({ key: node.key, name: node.name }, parseQuality(new URL(req.url).searchParams.get("quality"))), 302)
 }

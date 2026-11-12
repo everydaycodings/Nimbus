@@ -1,5 +1,6 @@
 // The previewer's video page: our own controls over expo-video, with gestures, rotation,
 // tracks, resume and next/previous. app/preview.tsx holds the pager and the top bar.
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Image } from "expo-image"
 import { VideoView, useVideoPlayer, type VideoContentFit, type VideoPlayer, type VideoThumbnail } from "expo-video"
 import {
@@ -28,21 +29,25 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler"
 import Animated, { useAnimatedStyle, useReducedMotion, withTiming } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
+import { CastRemote, useCastItem } from "@/components/cast-ui"
 import { clock, Loading, NoPreview, usePreviewUrl, type PageProps } from "@/components/preview-pages"
 import { Sheet, SheetDivider, SheetRow } from "@/components/sheet"
+import { CustomSleep, SleepRows, sleepDetail } from "@/components/sleep-menu"
+import { useSnack } from "@/components/snackbar"
 import { IconButton, Text } from "@/components/ui"
-import { savedPosition, savePosition } from "@/lib/audio-queue"
-import { resumeAt } from "@/lib/audio-rules"
 import { registerAnchor } from "@/lib/comment-anchor"
 import { useApi } from "@/lib/files"
+import { onMobileData } from "@/lib/connectivity"
+import { errorText } from "@/lib/api"
 import { native } from "@/lib/native"
+import { getMobileQuality, getPlayback, getPosition, getSpeed, makeCopy, putPosition, runSleep, setSpeed, type Sleep } from "@/lib/playback"
+import { offerResume, pickQuality, qualityLabel, type Quality } from "@/lib/playback-rules"
 import { previewSession } from "@/lib/preview-session"
 import { c, radius } from "@/lib/theme"
 
 const HIDE_MS = 3000
 const SKIP = 10
 const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 3]
-const SLEEP_MIN = [15, 30, 45, 60]
 const FITS: { fit: VideoContentFit; label: string }[] = [
   { fit: "contain", label: "Fit" },
   { fit: "cover", label: "Fill (crop)" },
@@ -54,7 +59,7 @@ const EDGE = 32
 
 type Icon = ComponentType<{ size?: number; color?: string; weight?: "regular" | "bold" | "fill" }>
 type Hud = { icon: Icon; text?: string; level?: number }
-type Menu = "main" | "speed" | "subs" | "audio" | "fit" | "sleep"
+type Menu = "main" | "speed" | "subs" | "audio" | "fit" | "sleep" | "quality"
 
 // Rotation, system bars and brightness carry from one video to the next, so moving
 // between videos doesn't flip the screen. The previewer resets them when it leaves video.
@@ -71,23 +76,56 @@ const fmtRate = (r: number) => `${r}×`
 
 export function VideoPage(props: PageProps) {
   const { item, version, active } = props
-  const { url, error, refetch } = usePreviewUrl(item, version, active)
+  const vault = !!previewSession()?.vault
+  const base = usePreviewUrl(item, version, active)
+  // Wi-Fi plays the original; mobile data plays the person's default copy. A choice in the settings wins.
+  const [mobile, setMobile] = useState<boolean | null>(null)
+  const [choice, setChoice] = useState<Quality | null>(null)
+  const startAt = useRef<number | null>(null)
+  useEffect(() => void onMobileData().then(setMobile), [])
+  const copies = base.copies ?? []
+  const quality: Quality | null = version || vault ? "original" : choice ?? (mobile === null ? null : pickQuality(mobile, getMobileQuality(), copies))
+  const copy = usePreviewUrl(item, version, active && typeof quality === "number", typeof quality === "number" ? quality : undefined)
+  const src = quality === "original" ? base : typeof quality === "number" ? copy : null
   const [failed, setFailed] = useState(false)
   const retried = useRef(false)
+  const refetch = src?.refetch
   const onError = useCallback(() => {
     if (retried.current) return setFailed(true)
     retried.current = true
-    refetch()
+    refetch?.()
   }, [refetch])
+  // A copy that can't be fetched falls back to the original.
+  useEffect(() => {
+    if (typeof quality === "number" && copy.error && !copy.url) setChoice("original")
+  }, [quality, copy.error, copy.url])
 
-  if (failed || (error && !url))
-    return <NoPreview item={item} version={version} reason="Couldn't play this video." onRetry={() => { retried.current = false; setFailed(false); refetch() }} />
-  if (!active || !url) return <Loading />
-  return <Player {...props} url={url} onError={onError} />
+  if (failed || (base.error && !base.url))
+    return <NoPreview item={item} version={version} reason="Couldn't play this video." onRetry={() => { retried.current = false; setFailed(false); base.refetch() }} />
+  if (!active || !src?.url || quality === null) return <Loading />
+  return (
+    <Player
+      key={quality}
+      {...props}
+      url={src.url}
+      onError={onError}
+      quality={quality}
+      copies={copies}
+      startAt={startAt.current}
+      onQuality={(q, at) => {
+        startAt.current = at
+        setChoice(q)
+      }}
+    />
+  )
 }
 
-function Player({ item, version, url, bottom, onBars, onZoom, onFullscreen, onPlayer, videoNav, onError }: PageProps & { url: string; onError: () => void }) {
+type PlayerProps = PageProps & { url: string; onError: () => void; quality: Quality; copies: number[]; startAt: number | null; onQuality: (q: Quality, at: number) => void }
+
+function Player({ item, version, url, top, bottom, onBars, onZoom, onFullscreen, onPlayer, videoNav, onError, quality, copies, startAt, onQuality }: PlayerProps) {
   const api = useApi()
+  const snack = useSnack()
+  const queries = useQueryClient()
   const vault = !!previewSession()?.vault
   const still = useReducedMotion()
   const { width, height } = useWindowDimensions()
@@ -114,14 +152,16 @@ function Player({ item, version, url, bottom, onBars, onZoom, onFullscreen, onPl
   // From a decoded frame, which has the phone's rotation applied; the track's own size doesn't.
   const [wide, setWide] = useState<boolean | null>(null)
   const [fit, setFit] = useState<VideoContentFit>("contain")
-  const [rate, setRate] = useState(1)
+  const [rate, setRate] = useState(getSpeed("video"))
   const [loop, setLoop] = useState(false)
-  const [sleep, setSleep] = useState<number | "end" | null>(null)
+  const [sleep, setSleep] = useState<Sleep>(null)
+  const [customSleep, setCustomSleep] = useState(false)
   const [hud, setHud] = useState<Hud | null>(null)
   const [tapSeek, setTapSeek] = useState<{ side: 1 | -1; total: number } | null>(null)
   const [scrub, setScrub] = useState<number | null>(null)
   const [thumb, setThumb] = useState<VideoThumbnail | null>(null)
-  const [resumed, setResumed] = useState<number | null>(null)
+  // A long video left in the middle waits here for "Resume from…" or "Start over".
+  const [resume, setResume] = useState<number | null>(null)
   const [upNext, setUpNext] = useState<number | null>(null)
   const [menu, setMenu] = useState<Menu | null>(null)
   const [pip, setPip] = useState(false)
@@ -134,8 +174,27 @@ function Player({ item, version, url, bottom, onBars, onZoom, onFullscreen, onPl
   // Kept from the time updates: on close the player may already be released when this saves.
   const last = useRef({ at: 0, time: 0, duration: 0 })
   const save = useCallback(() => {
-    if (!version && last.current.duration) savePosition(api.id, item.id, last.current.time, last.current.duration)
-  }, [api.id, item.id, version])
+    if (!version && !vault && last.current.duration) putPosition(api, item.id, last.current.time, last.current.duration)
+  }, [api, item.id, version, vault])
+  // Asked for now, so the answer is there by the time the video can play.
+  const saved = useRef<Promise<number | null> | null>(null)
+  if (!saved.current) saved.current = version || vault ? Promise.resolve(null) : getPosition(api, item.id)
+  const playback = useQuery({ queryKey: [api.id, "playback", item.id], enabled: !version && !vault, staleTime: 60_000, queryFn: () => getPlayback(api, item.id) })
+
+  // On the TV: this player holds still.
+  const cast = useCastItem({
+    item,
+    kind: "video",
+    active: !version && !vault,
+    time: () => player.currentTime,
+    duration: () => player.duration,
+    onTaken: () => player.pause(),
+    onEnded: (at) => {
+      player.currentTime = at
+    },
+  })
+  const castingRef = useRef(false)
+  castingRef.current = cast.casting
 
   useEffect(() => {
     onPlayer(player, view.current)
@@ -173,13 +232,16 @@ function Player({ item, version, url, bottom, onBars, onZoom, onFullscreen, onPl
         first = false
         setDuration(player.duration)
         // Picks up where it was left, with a way back to the start.
-        const at = version ? 0 : resumeAt(savedPosition(api.id, item.id), player.duration)
-        if (at) {
-          player.currentTime = at
-          setResumed(at)
-        }
-        // Asking before it has loaded is ignored, so it starts here.
-        player.play()
+        // Asking before it has loaded is ignored, so it starts here. A new quality carries on from the same second.
+        if (startAt) {
+          player.currentTime = startAt
+          if (!castingRef.current) player.play()
+        } else
+          void saved.current!.then((at) => {
+            if (castingRef.current) return
+            if (offerResume(at, player.duration)) setResume(at)
+            else player.play()
+          })
         player.generateThumbnailsAsync(0, { maxWidth: 64 }).then(([f]) => f && setWide(f.width >= f.height), () => {})
       }),
       player.addListener("sourceLoad", (e) => setDuration(e.duration)),
@@ -188,14 +250,14 @@ function Player({ item, version, url, bottom, onBars, onZoom, onFullscreen, onPl
         setBuffered(e.bufferedPosition)
         last.current.time = e.currentTime
         last.current.duration = player.duration
-        if (Date.now() - last.current.at > 5000) {
+        if (Date.now() - last.current.at > 15_000) {
           last.current.at = Date.now()
           save()
         }
       }),
       player.addListener("playToEnd", () => {
-        last.current.time = 0
-        if (!version) savePosition(api.id, item.id, 0, 0)
+        last.current.time = player.duration
+        save()
         if (sleepRef.current === "end") {
           player.pause()
           return setSleep(null)
@@ -208,7 +270,7 @@ function Player({ item, version, url, bottom, onBars, onZoom, onFullscreen, onPl
       subs.forEach((s) => s.remove())
       save()
     }
-  }, [player, api.id, item.id, version, save, onError])
+  }, [player, startAt, save, onError])
 
   // ---- Controls showing and hiding ----
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -231,7 +293,7 @@ function Player({ item, version, url, bottom, onBars, onZoom, onFullscreen, onPl
   }, [])
 
   // The top bar comes and goes with the controls.
-  useEffect(() => onBars(shown && !locked && !pip && menu === null), [shown, locked, pip, menu, onBars])
+  useEffect(() => onBars(cast.casting || (shown && !locked && !pip && menu === null)), [cast.casting, shown, locked, pip, menu, onBars])
   // The pager holds still in fullscreen and while locked, so a drag can seek.
   useEffect(() => onZoom(fullscreen || locked), [fullscreen, locked, onZoom])
   useEffect(() => onFullscreen(fullscreen), [fullscreen, onFullscreen])
@@ -271,6 +333,7 @@ function Player({ item, version, url, bottom, onBars, onZoom, onFullscreen, onPl
   const toggle = () => {
     poke()
     setUpNext(null)
+    setResume(null)
     if (player.playing) player.pause()
     else if (duration && player.currentTime >= duration - 0.5) player.replay()
     else player.play()
@@ -428,12 +491,21 @@ function Player({ item, version, url, bottom, onBars, onZoom, onFullscreen, onPl
   // ---- Sleep timer and up next ----
   useEffect(() => {
     if (typeof sleep !== "number") return
-    const t = setTimeout(() => {
-      player.pause()
-      setSleep(null)
-      flash({ icon: Pause, text: "Sleep timer: paused" }, 2000)
-    }, Math.max(0, sleep - Date.now()))
-    return () => clearTimeout(t)
+    const stop = runSleep(
+      sleep,
+      (g) => (player.volume = g),
+      () => {
+        player.pause()
+        setSleep(null)
+        flash({ icon: Pause, text: "Sleep timer: paused" }, 2000)
+      }
+    )
+    return () => {
+      stop()
+      try {
+        player.volume = 1
+      } catch {}
+    }
   }, [sleep, player, flash])
   useEffect(() => {
     if (upNext === null) return
@@ -445,11 +517,6 @@ function Player({ item, version, url, bottom, onBars, onZoom, onFullscreen, onPl
     const t = setTimeout(() => setUpNext(upNext - 1), 1000)
     return () => clearTimeout(t)
   }, [upNext])
-  useEffect(() => {
-    if (resumed === null) return
-    const t = setTimeout(() => setResumed(null), 6000)
-    return () => clearTimeout(t)
-  }, [resumed])
 
   useEffect(() => {
     player.playbackRate = rate
@@ -459,7 +526,7 @@ function Player({ item, version, url, bottom, onBars, onZoom, onFullscreen, onPl
   }, [loop, player])
 
   const fade = useAnimatedStyle(() => ({ opacity: still ? (shown ? 1 : 0) : withTiming(shown ? 1 : 0, { duration: 180 }) }))
-  const showControls = !locked && !pip
+  const showControls = !locked && !pip && !cast.casting
   const sideGutter = Math.max(16, inset.left, inset.right)
 
   return (
@@ -552,11 +619,11 @@ function Player({ item, version, url, bottom, onBars, onZoom, onFullscreen, onPl
         </Animated.View>
       )}
 
-      {(resumed !== null || upNext !== null) && showControls && (
+      {(resume !== null || upNext !== null) && showControls && (
         <View style={{ position: "absolute", left: sideGutter, right: sideGutter, bottom: bottom + 112, alignItems: "flex-start" }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingLeft: 16, borderRadius: 24, backgroundColor: "rgba(23,23,23,0.92)", borderWidth: 1, borderColor: c.border }}>
             <Text variant="bodySmall" color="#fff" style={{ fontVariant: ["tabular-nums"] }}>
-              {upNext !== null ? `Next video in ${upNext}` : `Resumed at ${clock(resumed ?? 0)}`}
+              {upNext !== null ? `Next video in ${upNext}` : `Resume from ${clock(resume ?? 0)}`}
             </Text>
             {upNext !== null ? (
               <>
@@ -564,7 +631,10 @@ function Player({ item, version, url, bottom, onBars, onZoom, onFullscreen, onPl
                 <Chip label="Cancel" onPress={() => setUpNext(null)} />
               </>
             ) : (
-              <Chip label="Start over" onPress={() => { setResumed(null); seekTo(0); player.play() }} />
+              <>
+                <Chip label="Resume" onPress={() => { seekTo(resume ?? 0); setResume(null); player.play() }} />
+                <Chip label="Start over" onPress={() => { setResume(null); player.play() }} />
+              </>
             )}
           </View>
         </View>
@@ -578,7 +648,41 @@ function Player({ item, version, url, bottom, onBars, onZoom, onFullscreen, onPl
         </View>
       )}
 
-      {menu && <SettingsSheet menu={menu} onMenu={setMenu} player={player} rate={rate} onRate={setRate} fit={fit} onFit={setFit} loop={loop} onLoop={setLoop} sleep={sleep} onSleep={setSleep} />}
+      {cast.casting && <CastRemote item={item} kind="video" top={top} nav={videoNav} />}
+      {cast.sheet}
+      {customSleep && <CustomSleep onSet={(m) => setSleep(Date.now() + m * 60_000)} onClose={() => setCustomSleep(false)} />}
+      {menu && (
+        <SettingsSheet
+          menu={menu}
+          onMenu={setMenu}
+          player={player}
+          rate={rate}
+          onRate={(r) => {
+            setRate(r)
+            setSpeed("video", r)
+          }}
+          fit={fit}
+          onFit={setFit}
+          loop={loop}
+          onLoop={setLoop}
+          sleep={sleep}
+          onSleep={setSleep}
+          onCustomSleep={() => setCustomSleep(true)}
+          quality={quality}
+          copies={copies}
+          onQuality={(q) => onQuality(q, player.currentTime)}
+          copyState={playback.data?.canMakeCopy ? (playback.data.copies.some((x) => x.status === "pending") ? "pending" : "can") : null}
+          onMakeCopy={() =>
+            makeCopy(api, item.id).then(
+              () => {
+                snack({ text: "Making a data-saver copy. It appears here when it's ready." })
+                void queries.invalidateQueries({ queryKey: [api.id, "playback", item.id] })
+              },
+              (e) => snack({ text: errorText(e), error: true })
+            )
+          }
+        />
+      )}
     </View>
   )
 }
@@ -655,15 +759,21 @@ type SettingsProps = {
   onFit: (f: VideoContentFit) => void
   loop: boolean
   onLoop: (l: boolean) => void
-  sleep: number | "end" | null
-  onSleep: (s: number | "end" | null) => void
+  sleep: Sleep
+  onSleep: (s: Sleep) => void
+  onCustomSleep: () => void
+  quality: Quality
+  copies: number[]
+  onQuality: (q: Quality) => void
+  // Owners can ask for a data-saver copy; "pending" while the worker makes it.
+  copyState: "can" | "pending" | null
+  onMakeCopy: () => void
 }
 
-function SettingsSheet({ menu, onMenu, player, rate, onRate, fit, onFit, loop, onLoop, sleep, onSleep }: SettingsProps) {
+function SettingsSheet({ menu, onMenu, player, rate, onRate, fit, onFit, loop, onLoop, sleep, onSleep, onCustomSleep, quality, copies, onQuality, copyState, onMakeCopy }: SettingsProps) {
   const subs = player.availableSubtitleTracks
   const audio = player.availableAudioTracks
   const trackName = (t: { label?: string; language?: string; name?: string }, i: number) => t.label || t.name || t.language || `Track ${i + 1}`
-  const sleepText = sleep === null ? "Off" : sleep === "end" ? "End of video" : `Pauses in ${Math.max(1, Math.round((sleep - Date.now()) / 60_000))} min`
   const tick = (on: boolean) => (on ? <Check size={20} color={c.brand} weight="bold" /> : undefined)
   const back = <SheetRow label="Back" icon={<CaretLeft size={20} color={c.foreground} />} stay onPress={() => onMenu("main")} />
 
@@ -676,7 +786,9 @@ function SettingsSheet({ menu, onMenu, player, rate, onRate, fit, onFit, loop, o
           {audio.length > 1 && <SheetRow label="Audio track" detail={player.audioTrack ? trackName(player.audioTrack, audio.findIndex((a) => a.id === player.audioTrack?.id)) : "Default"} stay onPress={() => onMenu("audio")} />}
           <SheetRow label="Picture" detail={FITS.find((f) => f.fit === fit)?.label} stay onPress={() => onMenu("fit")} />
           <SheetRow label="Loop" detail={loop ? "On" : "Off"} selected={loop} trailing={tick(loop)} stay onPress={() => onLoop(!loop)} />
-          <SheetRow label="Sleep timer" detail={sleepText} stay onPress={() => onMenu("sleep")} />
+          <SheetRow label="Sleep timer" detail={sleepDetail(sleep, "End of video")} stay onPress={() => onMenu("sleep")} />
+          {copies.length > 0 && <SheetRow label="Quality" detail={qualityLabel(quality)} stay onPress={() => onMenu("quality")} />}
+          {copyState && <SheetRow label={copyState === "pending" ? "Making data-saver copy…" : "Make data-saver copy"} detail={copyState === "pending" ? undefined : "A smaller version for mobile data and casting"} onPress={copyState === "pending" ? () => {} : onMakeCopy} />}
         </>
       )}
       {menu === "speed" && (
@@ -708,13 +820,18 @@ function SettingsSheet({ menu, onMenu, player, rate, onRate, fit, onFit, loop, o
           {FITS.map((f) => <SheetRow key={f.fit} label={f.label} selected={f.fit === fit} trailing={tick(f.fit === fit)} onPress={() => onFit(f.fit)} />)}
         </>
       )}
+      {menu === "quality" && (
+        <>
+          {back}
+          <SheetDivider />
+          {(["original", ...[...copies].sort((x, y) => y - x)] as Quality[]).map((q) => <SheetRow key={q} label={qualityLabel(q)} selected={q === quality} trailing={tick(q === quality)} onPress={() => q !== quality && onQuality(q)} />)}
+        </>
+      )}
       {menu === "sleep" && (
         <>
           {back}
           <SheetDivider />
-          <SheetRow label="Off" selected={sleep === null} trailing={tick(sleep === null)} onPress={() => onSleep(null)} />
-          {SLEEP_MIN.map((m) => <SheetRow key={m} label={`${m} minutes`} onPress={() => onSleep(Date.now() + m * 60_000)} />)}
-          <SheetRow label="End of video" selected={sleep === "end"} trailing={tick(sleep === "end")} onPress={() => onSleep("end")} />
+          <SleepRows sleep={sleep} endLabel="End of video" onSleep={onSleep} onCustom={onCustomSleep} />
         </>
       )}
     </Sheet>

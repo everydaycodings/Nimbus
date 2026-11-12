@@ -97,6 +97,11 @@ test("orphans only picks old, unreferenced keys under known prefixes", () => {
     "thumbs/used.webp",
     "thumbs/lost.webp",
     "thumbs/nested/lost.webp",
+    "renditions/used.720.mp4",
+    "renditions/lost.480.mp4",
+    "renditions/lost.1080.mp4",
+    "previews/used.1920.jpg",
+    "previews/lost.1920.jpg",
     "avatars/me-1.jpg",
     "avatars/gone-2.jpg",
     "backups/db/2026.dump",
@@ -116,6 +121,8 @@ test("orphans only picks old, unreferenced keys under known prefixes", () => {
     "lost.info",
     "lost.part",
     "thumbs/lost.webp",
+    "renditions/lost.480.mp4",
+    "previews/lost.1920.jpg",
     "avatars/gone-2.jpg",
   ])
 })

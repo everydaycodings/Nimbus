@@ -6,9 +6,12 @@ import {
   resettable,
   sizeField,
 } from "@/components/admin/setting"
+import { SubmitButton } from "@/components/submit-button"
 import { Input } from "@/components/ui/input"
+import { formatBytes } from "@/lib/file-rules"
 import { getSettings } from "@/lib/signup"
-import { setDerive, setOcrLangs } from "../../actions"
+import { copyStats } from "@/lib/video-copies"
+import { deleteVideoCopies, setDerive, setOcrLangs, setVideoCopies } from "../../actions"
 
 export const metadata = { title: "Text in images · Admin · Nimbus" }
 
@@ -16,6 +19,8 @@ export default async function OcrPage() {
   const s = await getSettings()
   const reset = resettable(s)
   const max = sizeField(s.deriveMaxBytes, "MB", "GB")
+  const cap = sizeField(s.videoCopyCapBytes, "MB", "GB")
+  const copies = await copyStats()
 
   return (
     <AdminPage
@@ -110,6 +115,60 @@ export default async function OcrPage() {
           </div>
         </SettingRow>
       </SettingsForm>
+
+      <SettingsForm
+        action={setVideoCopies}
+        title="Video copies"
+        description={`The worker makes 720p and 480p data-saver copies of videos, one at a time, for phones on mobile data, slow connections and Cast. Needs ffmpeg next to the worker. ${copies.count} ready (${formatBytes(copies.bytes)}), ${copies.pending} waiting${copies.failed ? `, ${copies.failed} failed` : ""}. Copies don't count against anyone's storage.`}
+      >
+        <SettingRow
+          id="video-copies"
+          label="Make data-saver copies"
+          htmlFor="enabled"
+          hint="New videos get copies within a few minutes; existing ones slowly, in the background."
+          tip={{
+            does: "Lets the worker re-encode videos to 720p and 480p, and lets owners tap Make data-saver copy.",
+            affects: "Videos from now on. Off keeps the copies that exist.",
+            default: "Off",
+          }}
+          reset={reset("videoCopies")}
+        >
+          <input
+            type="checkbox"
+            id="enabled"
+            name="enabled"
+            defaultChecked={s.videoCopies}
+            className="size-4 shrink-0 accent-primary self-start sm:self-end"
+          />
+        </SettingRow>
+        <SettingRow
+          id="video-copy-cap"
+          label="Size limit for all copies"
+          htmlFor="cap"
+          hint="Blank: no limit. New copies stop once the copies together reach it."
+          tip={{
+            does: "Caps the total size of all video copies.",
+            affects: "Copies made from now on.",
+            default: "No limit",
+            example: "200 GB",
+          }}
+          reset={reset("videoCopyCapBytes")}
+        >
+          <div className="grid grid-cols-[1fr_5rem] gap-2">
+            <Input id="cap" name="cap" type="number" min={1} step="any" defaultValue={cap.value} />
+            <select aria-label="Unit" name="unit" defaultValue={cap.unit} className={SELECT}>
+              <option value="MB">MB</option>
+              <option value="GB">GB</option>
+            </select>
+          </div>
+        </SettingRow>
+      </SettingsForm>
+      <form action={deleteVideoCopies} className="flex max-w-3xl items-center gap-4">
+        <SubmitButton variant="outline">Delete all copies</SubmitButton>
+        <p className="text-sm text-muted-foreground">
+          Removes every copy and turns copies off. Originals are untouched.
+        </p>
+      </form>
     </AdminPage>
   )
 }

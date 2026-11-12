@@ -22,6 +22,7 @@ import { redirect } from "next/navigation"
 
 import { AdminNav } from "@/components/admin-nav"
 import { Search } from "@/components/admin-search"
+import { PlaybackDock } from "@/components/playback-dock"
 import { NavLink } from "@/components/nav-link"
 import { SIDEBAR_COOKIE } from "@/components/nav-styles"
 import { NavUser } from "@/components/nav-user"
@@ -378,6 +379,7 @@ export default async function AppLayout({
             </PasswordPolicyProvider>
           </VaultKeysProvider>
         </SidebarShell>
+        <PlaybackDock />
         {offerSave && (
           <SaveLoginPrompt
             name={me.name}

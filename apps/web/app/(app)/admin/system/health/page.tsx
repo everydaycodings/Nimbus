@@ -26,6 +26,7 @@ import {
   ago,
 } from "@/lib/health-rules"
 import { lastSweep } from "@/lib/orphan-sweep"
+import { copyStats } from "@/lib/video-copies"
 import { getSettings } from "@/lib/signup"
 import { cn } from "@/lib/utils"
 import {
@@ -49,10 +50,11 @@ export default async function HealthPage({
   searchParams: Promise<{ range?: string }>
 }) {
   const range: Range = (await searchParams).range === "7d" ? "7d" : "24h"
-  const [s, h, sweep] = await Promise.all([
+  const [s, h, sweep, copies] = await Promise.all([
     getSettings(),
     healthOverview(range),
     lastSweep(),
+    copyStats(),
   ])
   const reset = resettable(s)
 
@@ -189,6 +191,21 @@ export default async function HealthPage({
         <form action={runOrphanSweep}>
           <SubmitButton variant="outline">Run now</SubmitButton>
         </form>
+      </section>
+
+      <section
+        aria-labelledby="copies-title"
+        className={cn(FRAME, "grid gap-0.5 px-5 py-4 max-w-3xl")}
+      >
+        <h2 id="copies-title" className="text-sm font-semibold">
+          Video copies
+        </h2>
+        <p className="text-sm text-pretty text-muted-foreground">
+          {s.videoCopies ? "On" : "Off"}: {copies.count} ready (
+          {formatBytes(copies.bytes)}), {copies.pending} waiting
+          {copies.failed ? `, ${copies.failed} failed` : ""}. The worker makes
+          them one at a time.
+        </p>
       </section>
 
       <div className="flex max-w-3xl flex-col gap-10">

@@ -12,3 +12,11 @@ export function since(iso: string, now = Date.now()) {
   }
   return "just now"
 }
+
+export const clock = (s: number) => {
+  const t = Math.max(0, Math.floor(s || 0))
+  const h = Math.floor(t / 3600)
+  const m = Math.floor((t % 3600) / 60)
+  const sec = String(t % 60).padStart(2, "0")
+  return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`
+}

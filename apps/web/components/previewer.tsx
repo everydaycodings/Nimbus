@@ -24,12 +24,15 @@ import { useEffect, useId, useRef, useState } from "react"
 import { getDetails } from "@/app/(app)/file-actions"
 import { officeFrame, previewUrl } from "@/app/(app)/upload-actions"
 import { linkPreviewUrl } from "@/app/s/actions"
+import { AudioView } from "@/components/audio-player"
 import { Comments } from "@/components/comments"
+import { CastButton } from "@/components/player-controls"
+import { PlaybackDock } from "@/components/playback-dock"
 import { ImageEditor, canEditImage } from "@/components/image-editor"
 import { useUploads } from "@/components/upload-provider"
 import { Button } from "@/components/ui/button"
-import { Thumb } from "@/components/thumb"
 import { VideoPlayer } from "@/components/video-player"
+import { castPhoto, useCastButton, useCastFollow } from "@/lib/cast"
 import { parseCsv } from "@/lib/csv"
 import { fileType, formatBytes, linkBase } from "@/lib/file-types"
 import {
@@ -73,6 +76,7 @@ export function Previewer({
   onUseFrame,
   link,
   src,
+  queue,
   commentsFirst = false,
   editable = false,
 }: {
@@ -93,6 +97,8 @@ export function Previewer({
   link?: { token: string; download: boolean }
   // Decrypted bytes to show instead of fetching the file from the server.
   src?: Decrypted
+  // The folder's files: audio plays them as a queue.
+  queue?: Item[]
   // Open with the comments panel showing (a notification's link).
   commentsFirst?: boolean
   // The viewer can change this file (owner or editor): images get an Edit button.
@@ -131,6 +137,10 @@ export function Previewer({
     return error
   }
   const t = item && fileType("file", item.mime, item.name)
+  // Photos of mine can go to a TV, which then follows the arrows.
+  const photo = open && item && !link && src === undefined && !v && previewKind(item.mime, item.name) === "image" ? item : undefined
+  useCastFollow(photo)
+  const canCast = useCastButton(Boolean(photo))
   const href =
     src !== undefined ? (src?.url ?? null) : item && downloadHref(item, v, link)
 
@@ -176,6 +186,12 @@ export function Previewer({
                 <span className="ml-auto hidden shrink-0 text-xs text-muted-foreground tabular-nums sm:block">
                   {position}
                 </span>
+                {canCast && photo && (
+                  <CastButton
+                    className="grid size-9 place-items-center rounded-md outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 [&_svg]:size-5"
+                    onClick={() => castPhoto(photo)}
+                  />
+                )}
                 {editImage && (
                   <Button
                     variant="ghost"
@@ -259,6 +275,7 @@ export function Previewer({
                   version={v}
                   href={href ?? null}
                   link={link?.token}
+                  queue={queue}
                   src={src}
                   onUseFrame={
                     onUseFrame && !v
@@ -282,6 +299,7 @@ export function Previewer({
                 </aside>
               )}
               </div>
+              <PlaybackDock within />
             </>
           )}
         </Dialog.Popup>
@@ -338,6 +356,7 @@ export function View({
   version,
   href,
   link,
+  queue,
   src,
   onUseFrame,
 }: {
@@ -346,6 +365,8 @@ export function View({
   href: string | null
   // A public link's token: URLs come from the link, and Collabora is skipped.
   link?: string
+  // The folder's files, for the audio queue.
+  queue?: Item[]
   // Already-decrypted bytes: no server URL, and Collabora is skipped.
   src?: Decrypted
   onUseFrame?: (video: HTMLVideoElement) => Promise<void>
@@ -409,12 +430,23 @@ export function View({
         <VideoPlayer
           src={shownUrl}
           title={item.name}
+          // Resume, Cast and copies: my own files only, not vault, links or old versions.
+          id={!link && src === undefined && !version ? item.id : undefined}
+          linkToken={link && !version ? link : undefined}
+          fileId={item.id}
           onUseFrame={onUseFrame}
           onError={() => setFailed("This video can't play in this browser.")}
         />
       )
     case "audio":
-      return <AudioView {...props} />
+      return (
+        <AudioView
+          item={item}
+          url={shownUrl}
+          queue={version ? undefined : queue?.filter((q) => previewKind(q.mime, q.name) === "audio")}
+          ephemeral={Boolean(link) || src !== undefined || Boolean(version)}
+        />
+      )
     case "pdf":
       return (
         <iframe
@@ -693,28 +725,6 @@ function ImageView({ url, item, href }: ViewProps) {
           </Button>
         )}
       </div>
-    </div>
-  )
-}
-
-function AudioView({ url, item, href }: ViewProps) {
-  const t = fileType("file", item.mime, item.name)
-  return (
-    <div className="m-auto flex w-full max-w-md flex-col items-center gap-6">
-      <Thumb
-        item={item}
-        make={false}
-        className="grid aspect-square w-56 place-items-center rounded-xl border bg-muted/40 shadow-lg"
-      >
-        <t.icon weight="light" className={cn("size-20", t.color)} />
-      </Thumb>
-      <audio
-        src={url}
-        controls
-        controlsList={href ? undefined : "nodownload"}
-        autoPlay
-        className="w-full"
-      />
     </div>
   )
 }

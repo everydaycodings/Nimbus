@@ -3,7 +3,7 @@
     "name": "Nimbus",
     "slug": "nimbus",
     "scheme": "nimbus",
-    "version": "0.2.6",
+    "version": "0.2.7",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -52,7 +52,7 @@
           ]
         }
       ],
-      "versionCode": 9
+      "versionCode": 10
     },
     "plugins": [
       "expo-router",
@@ -116,7 +116,15 @@
       "expo-background-task",
       "./plugins/release-signing.js",
       "./plugins/shortcuts.js",
-      "@maplibre/maplibre-react-native"
+      "@maplibre/maplibre-react-native",
+      [
+        "react-native-google-cast",
+        {
+          "receiverAppId": "CC1AD845",
+          "expandedController": true,
+          "androidPlayServicesCastFrameworkVersion": "21.5.0"
+        }
+      ]
     ]
   }
 }

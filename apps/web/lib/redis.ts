@@ -19,6 +19,7 @@ const globalForRedis = globalThis as unknown as {
   jobsQueue?: Queue
   backupsQueue?: Queue
   deriveQueue?: Queue
+  transcodeQueue?: Queue
 }
 export const redis =
   globalForRedis.redis ??
@@ -38,6 +39,7 @@ export const BACKUPS_QUEUE = "backups"
 // The last orphan sweep's {at, count, bytes}, for Admin → Health.
 export const ORPHANS_KEY = "jobs:orphans"
 export const DERIVE_QUEUE = "derive"
+export const TRANSCODE_QUEUE = "transcode"
 // Set by npm run worker:backup while it's up.
 export const BACKUP_HEARTBEAT_KEY = "backups:heartbeat"
 
@@ -49,6 +51,9 @@ export const backupsQueue =
   globalForRedis.backupsQueue ?? new Queue(BACKUPS_QUEUE, { connection: redis })
 export const deriveQueue =
   globalForRedis.deriveQueue ?? new Queue(DERIVE_QUEUE, { connection: redis })
+export const transcodeQueue =
+  globalForRedis.transcodeQueue ??
+  new Queue(TRANSCODE_QUEUE, { connection: redis })
 if (process.env.NODE_ENV !== "production")
   Object.assign(globalForRedis, {
     redis,
@@ -56,6 +61,7 @@ if (process.env.NODE_ENV !== "production")
     jobsQueue,
     backupsQueue,
     deriveQueue,
+    transcodeQueue,
   })
 
 // Runs the checks every `minutes`, or stops the schedule when null.
@@ -97,6 +103,21 @@ export async function enqueueDerive(versionId: string) {
       backoff: { type: "exponential", delay: 60_000 },
       removeOnComplete: true,
       removeOnFail: { age: 7 * 24 * 3600 },
+    }
+  )
+}
+
+// Data-saver copies of a video's current version, made by the worker
+// (scripts/transcode.ts), one at a time. Retried once.
+export async function enqueueTranscode(nodeId: string) {
+  await transcodeQueue.add(
+    "transcode",
+    { nodeId },
+    {
+      attempts: 2,
+      backoff: { type: "exponential", delay: 5 * 60_000 },
+      removeOnComplete: true,
+      removeOnFail: 50,
     }
   )
 }

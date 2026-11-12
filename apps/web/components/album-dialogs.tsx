@@ -217,7 +217,7 @@ export function PickPhotosDialog({
       .then((res) => (res.ok ? (res.json() as Promise<PhotosResponse>) : Promise.reject()))
       .then(
         (page) => {
-          setItems((m) => [...m, ...page.items])
+          setItems((m) => (from ? [...m, ...page.items] : page.items))
           setCursor(page.nextCursor)
           setLoaded(true)
         },

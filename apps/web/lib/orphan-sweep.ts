@@ -19,7 +19,7 @@ export async function sweepOrphans(): Promise<SweepResult> {
   // Listed before the references are read, so an object that lands in between
   // is either missing from the list or already referenced.
   const objects = (
-    await Promise.all(["", "thumbs/", "avatars/"].map((p) => listKeys(p)))
+    await Promise.all(["", "thumbs/", "renditions/", "previews/", "avatars/"].map((p) => listKeys(p)))
   ).flat()
   const [files, avatars, live] = await Promise.all([
     db.execute<{ k: string }>(sql`
@@ -31,6 +31,11 @@ export async function sweepOrphans(): Promise<SweepResult> {
       where starts_with(image, ${AVATAR_URL})`),
     reservedIds(),
   ])
+  // Rows for objects that are gone (a pruned version, a replaced file).
+  await db.execute(sql`
+    delete from video_renditions r
+    where not exists (select 1 from file_versions v where v.s3_key = r.source_key)
+      and not exists (select 1 from nodes n where n.s3_key = r.source_key)`)
   const used = new Set([...files.map((r) => r.k), ...live])
   const gone = orphans(objects, {
     files: used,

@@ -16,6 +16,9 @@ RUN NODE_ENV=production DATABASE_URL=postgres://build@localhost/build REDIS_URL=
     npm run build -w web && npm prune --omit=dev
 
 FROM node:24-slim
+# ffmpeg: data-saver video copies (the worker) and embedded subtitles (the app).
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV NODE_ENV=production
 # The backup worker runs pg_dump and its scratch database through Docker.

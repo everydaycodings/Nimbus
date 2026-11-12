@@ -10,7 +10,9 @@ import { getPath, markOpened, openableFile, UUID } from "@/lib/files"
 import { formatBytes, zipName } from "@/lib/file-rules"
 import { officeAction, signWopi } from "@/lib/office"
 import { checkStorage, spaceLeft } from "@/lib/quota"
+import type { Quality } from "@/lib/playback-rules"
 import { presignGet } from "@/lib/s3"
+import { streamUrl } from "@/lib/video-copies"
 import { freeName, signUploadToken, splitPath } from "@/lib/upload-rules"
 import {
   addVersion,
@@ -562,12 +564,15 @@ export async function previewUrl(
   me: Me,
   id: string,
   v?: string | null,
-  open = false
+  open = false,
+  quality: Quality | null = null
 ): Promise<string | null> {
   const file = await openableFile(me.id, id, v)
   if (!file) return null
   if (open) await markOpened(me.id, id)
   const pdf = file.mime === "application/pdf"
+  // A video's data-saver copy, or the original when it has none.
+  if (quality) return streamUrl(file, quality, { inline: pdf })
   return presignGet(file.key, file.name, {
     inline: pdf,
     type: pdf ? "application/pdf" : undefined,

@@ -7,9 +7,14 @@
 //
 // Needs a running Nimbus (API_URL, default http://localhost:3000) with tusd, and
 // the test accounts: API_EMAIL / API_EMAIL2, password API_PASSWORD.
+import { execFileSync } from "node:child_process"
 import { createHash, createHmac, randomBytes } from "node:crypto"
+import { mkdtempSync, readFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 
 import postgres from "postgres"
+import sharp from "sharp"
 
 const BASE = process.env.API_URL ?? "http://localhost:3000"
 const A_EMAIL = process.env.API_EMAIL ?? "browser-test@example.invalid"
@@ -764,6 +769,68 @@ async function main() {
     check("...so that day has none", (await call(A, "GET", "/photos/memories?date=2026-01-15")).body.years.length === 0)
     check("...and it can be undone", (await call(A, "DELETE", `/photos/hides/${hide.body.id}`)).status === 200)
     check("smart groups answer", (await call(A, "GET", "/photos/smart/videos")).status === 200 && (await call(A, "GET", "/photos/smart/nope")).status === 404)
+  })
+
+  // ---- playback (phase 16): cast URLs, subtitles, resume, data-saver copies
+  await group("playback", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "api-check-"))
+    const mp4 = join(dir, "clip.mp4")
+    execFileSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=10", "-t", "2", "-c:v", "libx264", "-pix_fmt", "yuv420p", mp4])
+    const files: [string, string, Uint8Array][] = [
+      ["clip.mp4", "video/mp4", readFileSync(mp4)],
+      ["clip.srt", "application/x-subrip", Buffer.from("1\n00:00:00,000 --> 00:00:01,500\nHello there\n")],
+      ["pic.jpg", "image/jpeg", await sharp({ create: { width: 2400, height: 1600, channels: 3, background: "#3a7" } }).jpeg().toBuffer()],
+    ]
+    const ids: Record<string, string> = {}
+    for (const [name, type, data] of files) {
+      const plan = await call(A, "POST", "/uploads/plan", { parentId: folderId, entries: [{ path: name, size: data.length }] })
+      const url = await tusUpload(instance.tusUrl, data, { filename: name, filetype: type, token: plan.body.token, path: name, onConflict: "rename" })
+      ids[name] = (await call(A, "POST", "/uploads/finish", { uploadUrl: url, sha256: sha(data) })).body?.nodeId
+    }
+    check("upload a video, its subtitles and a photo", ids["clip.mp4"] && ids["clip.srt"] && ids["pic.jpg"], ids)
+    const vid = ids["clip.mp4"]
+
+    const info = await call(A, "GET", `/files/${vid}/playback`)
+    check("playback info", info.status === 200 && Array.isArray(info.body.copies) && info.body.cast === "original", info.body)
+    const copy = await call(A, "POST", `/files/${vid}/copy`)
+    check(
+      "make copy answers (refused when copies are off)",
+      info.body.copiesEnabled ? copy.status === 200 : copy.status === 400 && copy.body.message,
+      copy
+    )
+    check("B can't make a copy of A's video", [403, 404].includes((await call(B, "POST", `/files/${vid}/copy`)).status))
+
+    const before = Date.now()
+    const cast = await call(A, "GET", `/files/${vid}/cast?duration=7200`)
+    const life = new Date(cast.body?.expiresAt).getTime() - before
+    check("cast URL for a video lasts its length + 1 h", cast.status === 200 && cast.body.kind === "video" && life > 3 * 3600_000 - 60_000 && life < 3 * 3600_000 + 60_000, cast.body)
+    const media = await fetch(cast.body.url, { headers: { range: "bytes=0-99" } })
+    check("the TV can fetch the cast URL without a session", media.status === 206, media.status)
+    check("signed-out cast is 401", (await call(null, "GET", `/files/${vid}/cast`)).status === 401)
+    check("B can't cast A's video", (await call(B, "GET", `/files/${vid}/cast`)).status === 404)
+    const pic = await call(A, "GET", `/files/${ids["pic.jpg"]}/cast`)
+    const shown = pic.body?.url && (await fetch(pic.body.url))
+    const size = shown && (await sharp(Buffer.from(await shown.arrayBuffer())).metadata())
+    check("a photo casts as a 1920 px JPEG preview", pic.body?.kind === "image" && pic.body.quality === "preview" && size?.format === "jpeg" && size.width === 1920, { body: pic.body, size })
+
+    const subs = await call(A, "GET", `/files/${vid}/subtitles`)
+    const side = subs.body?.tracks?.find((t: any) => t.source === "sidecar")
+    check("subtitles list the sidecar .srt", side?.url, subs.body)
+    const vtt = side && (await fetch(new URL(side.url, BASE)))
+    const text = vtt ? await vtt.text() : ""
+    check("the track is WebVTT, fetchable with its token alone", vtt?.status === 200 && text.startsWith("WEBVTT") && text.includes("Hello there") && vtt.headers.get("access-control-allow-origin") === "*", { status: vtt?.status, text: text.slice(0, 80) })
+
+    check("no position yet", (await call(A, "GET", `/files/${vid}/position`)).body?.position === null)
+    const put = await call(A, "PUT", `/files/${vid}/position`, { position: 300, duration: 1200 })
+    const got = await call(A, "GET", `/files/${vid}/position`)
+    check("a long file remembers its position", put.body?.stored === true && got.body?.position?.position === 300, got.body)
+    check("a short file isn't remembered", (await call(A, "PUT", `/files/${vid}/position`, { position: 30, duration: 120 })).body?.stored === false)
+    check("near the end clears it", (await call(A, "PUT", `/files/${vid}/position`, { position: 1190, duration: 1200 })).body?.stored === false && (await call(A, "GET", `/files/${vid}/position`)).body?.position === null)
+    check("B can't read A's position", [403, 404].includes((await call(B, "GET", `/files/${vid}/position`)).status))
+
+    const taxes = (await call(A, "GET", "/vaults")).body.vaults?.find((v: any) => v.name === "Taxes")
+    const locked = taxes && (await call(A, "GET", `/vaults/${taxes.id}/tree`)).body.nodes.find((n: any) => n.kind === "file")
+    if (locked) check("vault files can't be cast", (await call(A, "GET", `/files/${locked.id}/cast`)).status === 404)
   })
 }
 

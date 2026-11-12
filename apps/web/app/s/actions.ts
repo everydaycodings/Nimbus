@@ -18,7 +18,9 @@ import {
 import { spaceLeft } from "@/lib/quota"
 import { albumPreviewUrl } from "@/app/a/actions"
 import { transferPreviewUrl } from "@/app/t/actions"
+import { albumNode, openAlbumLink } from "@/lib/album-links"
 import { presignGet } from "@/lib/s3"
+import { copiesOf, readyHeights, streamUrl } from "@/lib/video-copies"
 import { signUploadToken, splitPath } from "@/lib/upload-rules"
 import {
   dropped,
@@ -41,17 +43,40 @@ export async function unlockLink(
   return unlock(link, String(password ?? ""))
 }
 
-export async function linkPreviewUrl(token: string, id: string) {
+// Data-saver sizes ready for a video on a share or album link (480|720, biggest first), under the link's checks.
+export async function linkCopies(token: string, id: string): Promise<number[]> {
+  const t = String(token)
+  if (t.startsWith("t:")) return []
+  let key: string | null | undefined
+  if (t.startsWith("a:")) {
+    const link = await openAlbumLink(t.slice(2))
+    key = link && (await albumNode(link, String(id)))?.key
+  } else {
+    const link = await openLink(t)
+    const node = link?.allowView ? await linkNode(link, String(id)) : null
+    key = node?.kind === "file" ? node.key : null
+  }
+  return key ? readyHeights(await copiesOf(key)) : []
+}
+
+// `quality`: a video's ready data-saver copy under the same link checks, else the original.
+// Not a download, so nothing is logged.
+export async function linkPreviewUrl(
+  token: string,
+  id: string,
+  quality: 480 | 720 | null = null
+) {
   // The shared Previewer passes transfer tokens as "t:<token>".
   if (String(token).startsWith("t:"))
     return transferPreviewUrl(String(token).slice(2), id)
   if (String(token).startsWith("a:"))
-    return albumPreviewUrl(String(token).slice(2), id)
+    return albumPreviewUrl(String(token).slice(2), id, quality)
   const link = await openLink(String(token))
   if (!link?.allowView) return null
   const node = await linkNode(link, String(id))
   if (node?.kind !== "file" || !node.key) return null
   const pdf = node.mime === "application/pdf"
+  if (quality) return streamUrl({ key: node.key, name: node.name }, quality)
   return presignGet(node.key, node.name, {
     inline: pdf,
     type: pdf ? "application/pdf" : undefined,

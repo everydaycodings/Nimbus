@@ -1,7 +1,7 @@
 # Nimbus for Android (Expo)
 
 Native Android app with every member feature and no admin panel, for any self-hoster to point at
-their own server. Apple is dropped for now. Last updated 2026-11-12 (Phase 15, Photos).
+their own server. Apple is dropped for now. Last updated 2026-11-12 (Phase 16, playback).
 
 ## Starting a new session
 
@@ -36,7 +36,7 @@ API checks: `cd apps/web && node --env-file=.env.local scripts/api-check.ts` (ru
 | 13 | File requests, Transfer, Vault share links | Built 2026-11-07 on web + app. Web: e2e-tested and Impeccable-polished. App: checked on the emulator (Expo Go and the release APK), Maestro 14/14, Kotlin 43/43. Not committed yet. See "Phase 13 status" |
 | 14 | Comments on files (web + app) | Built 2026-11-12 on web + app. Web e2e (comments.spec.ts) passes. App: checked on the emulator in Expo Go (row badge, preview bar button, comments screen, @mention suggestions, a comment with a mention from the phone, reactions shown); release APK (x86_64, Cursor open, 7m 54s) with Maestro 16/16 including the new `comments` flow. Web e2e 9/9, including time and PDF-page chips. Not committed. See "Phase 14 status" |
 | 15 | Photos: On this day, places map, smart groups, shared albums, partner sharing, quick edits | Built 2026-11-12 on web + app. API check 231/231, web e2e 15/15 (new photos-phase15.spec.ts). App checked in Expo Go and the release APK (x86_64, 9m 10s): map, daily notice, Maestro 19/19, Kotlin 48/48. Not committed. See "Phase 15 status" |
-| 16 | Playback: cast to TV, sleep timer and speed, data-saver video quality | Planned |
+| 16 | Playback: cast to TV, sleep timer and speed, data-saver video quality | Built 2026-11-12 on web + app. API check 248/248 (17 new playback checks), web e2e 15/15, browser-checked and Impeccable-polished on the web. App 0.2.7: tsc and 92 unit tests pass; release APK (x86_64, Cursor open, 9m 24s), Maestro 19/19, emulator-checked. Cast on a real TV untested. Not committed. See "Phase 16 status" |
 | 17 | Passkeys, 2FA after provider sign-in, restore a folder to a point in time | Planned |
 | 18 | PDF tools (markup, fill, sign), contacts and calendar backup | Planned |
 | 19 | Smart search: server OCR of images, scans and video frames, with where-it-matched results | Planned |
@@ -667,6 +667,41 @@ Release APK (x86_64, 2026-11-12; emulator, Metro and next dev stopped during Gra
 - **Sleep timer** (15/30/60 min, end of track) and **playback speed** for audio and video.
 - **Data-saver quality:** the worker makes a 720p (and 480p) H.264 copy of each video, and the player uses it on mobile data,
   with a quality picker. Admin switch, off by default (heavy on CPU and space); each copy counts as a derived file, not as quota.
+
+**Phase 16 status (2026-11-12)**
+
+Decisions (19 answers, user; also in Claude's project memory):
+- **Cast:** video, photos, slideshows and audio, from My files and Shared (not vault, not public links). Google's Default
+  Media Receiver. The TV gets a signed URL valid for the media's length + 1 h, reloaded at the same spot before it expires.
+  Formats a Chromecast can't play cast the 720p copy, or say "This video can't be cast yet" with Make copy. Subtitles go
+  as WebVTT (sidecar and embedded). Photos go as a 1920 px JPEG preview (HEIC through heic-decode, RAW through its
+  embedded JPEG) and follow swipes. Web: Cast Web SDK in Chrome, Remote Playback elsewhere. Full remote; notification
+  controls on Android. Audio and video art go to the TV through a token-signed `art` URL.
+- **Audio, sleep, speed, resume:** a real web audio player (queue, shuffle/repeat, mini-player across pages, Media
+  Session). Sleep timer everywhere: 15/30/45/60, end of track, custom, 10 s fade. Speed per device, separate for audio
+  and video. Resume over 10 min, synced to the account (`playback_positions`), replacing the app's local positions.
+- **Data-saver copies:** 720p and 480p H.264/AAC MP4, never upscaled, skipped when the original is H.264 at or under
+  that size. Admin switch (off by default) and size cap on Admin → Text in images; Delete all also turns it off. The
+  worker's minute sweep queues the newest video with no copies, one at a time, nice'd ffmpeg veryfast. Owners can ask
+  for a copy. Shown as "Video copies" in health and the storage report, not counted against quota. App: 480p on mobile
+  data by default (setting), Original on Wi-Fi; offline can save the copy. Web: picker, 480p with Save-Data. Share and
+  album links get the picker without a download event.
+
+Release APK 0.2.7 (x86_64, 2026-11-12; Cursor open, --max-workers=2; Cast framework 21.5.0 resolved):
+- Maestro 19/19 (`photos` flaked once on "Grid size", passed alone).
+- Emulator: video settings show Sleep timer (15/30/45/60, Custom… with the fade note, End of video; "Pauses in 1 min"
+  after a custom 1) and Quality (Original / 480p; switching kept the time and played the softer copy). No Cast button
+  with no TV on the network. Long MP3: "Resume from 1:01 / Start over" from the server, Resume plays from 1:01, the moon
+  sheet has the same rows with End of track, the media pause key works, and the server then held 145 s. More shows
+  "Video on mobile data: 480p".
+- Traps: a short video auto-advances into the next one in the list (search put a seed `teaser.mp4` with a missing
+  object next to it); uiautomator dumps hang while audio plays (pause first).
+
+Not done or to check:
+- Casting to a real TV (web and app), the HEIC cast path, and whether the Default Media Receiver shows `artUrl`.
+- The bucket needs CORS GET for any origin so a TV can fetch signed URLs (deployment note).
+- Copies are made only for the current version; a failed copy is retried only by Make copy.
+- Fixed on the way: the album photo picker appended its first page twice under React's dev double effect.
 
 **Phase 17, sign-in and safety**
 - **Passkeys:** add, name and remove passkeys in account settings (web and app), and sign in with one on either. The app uses

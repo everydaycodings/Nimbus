@@ -104,9 +104,10 @@ export async function zipManifest(ids: string[]): Promise<svc.ZipManifest> {
 export async function previewUrl(
   id: string,
   v?: string | null,
-  open = false
+  open = false,
+  quality: 480 | 720 | null = null
 ): Promise<string | null> {
-  return svc.previewUrl(await requireMember(), id, v, open)
+  return svc.previewUrl(await requireMember(), id, v, open, quality)
 }
 
 // Collabora's viewer for an office file, or null to use the built-in viewers.

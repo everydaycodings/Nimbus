@@ -726,6 +726,10 @@ export const settings = pgTable(
     deriveMaxBytes: bigint("derive_max_bytes", { mode: "number" })
       .notNull()
       .default(200 * 1024 * 1024),
+    // Data-saver video copies (720p and 480p) the worker makes. Off until an admin
+    // turns them on. Cap: total bytes of all copies; null: no cap.
+    videoCopies: boolean("video_copies").notNull().default(false),
+    videoCopyCapBytes: bigint("video_copy_cap_bytes", { mode: "number" }),
     // One OpenID Connect provider, used when no OIDC_ISSUER is set in env. The
     // secret is sealed by lib/crypto. Null issuer: off.
     oidcName: text("oidc_name"),
@@ -1334,4 +1338,51 @@ export const memoryHides = pgTable(
       .on(t.userId, t.day)
       .where(sql`${t.day} is not null`),
   ]
+)
+
+// Data-saver copies of a video: one row per source object (s3_key, which versions share)
+// and size. "skipped": the original already is that size (or smaller) in H.264.
+// The object is renditions/<source_key>.<height>.mp4. Not counted against quota.
+export const videoRenditions = pgTable(
+  "video_renditions",
+  {
+    id: id(),
+    nodeId: uuid("node_id")
+      .notNull()
+      .references(() => nodes.id, { onDelete: "cascade" }),
+    sourceKey: text("source_key").notNull(),
+    height: integer("height").notNull(),
+    key: text("key"),
+    size: bigint("size", { mode: "number" }).notNull().default(0),
+    status: text("status")
+      .$type<"pending" | "done" | "skipped" | "failed">()
+      .notNull()
+      .default("pending"),
+    // The original's video codec as ffprobe names it (h264, hevc ...).
+    codec: text("codec"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("video_renditions_source_idx").on(t.sourceKey, t.height),
+    index("video_renditions_node_idx").on(t.nodeId),
+  ]
+)
+
+// Where a member left off in a long video or audio file, synced across their devices.
+export const playbackPositions = pgTable(
+  "playback_positions",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    nodeId: uuid("node_id")
+      .notNull()
+      .references(() => nodes.id, { onDelete: "cascade" }),
+    positionSec: doublePrecision("position_sec").notNull(),
+    durationSec: doublePrecision("duration_sec").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.nodeId] })]
 )

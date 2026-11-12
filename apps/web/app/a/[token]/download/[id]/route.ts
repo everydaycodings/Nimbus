@@ -1,12 +1,14 @@
 import { limitIp } from "@/lib/api"
 import { albumNode, openAlbumLink } from "@/lib/album-links"
-import { presignGet } from "@/lib/s3"
+import { parseQuality } from "@/lib/playback-rules"
+import { streamUrl } from "@/lib/video-copies"
 
 const notFound = () => new Response("Not found", { status: 404 })
 
-// A photo from a public album link, when the link allows downloads.
+// A photo or video from a public album link, when the link allows downloads. ?quality=480|720: a
+// video's data-saver copy.
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ token: string; id: string }> }
 ) {
   const limited = await limitIp("album")
@@ -16,5 +18,5 @@ export async function GET(
   if (!link?.allowDownload) return notFound()
   const node = await albumNode(link, id)
   if (!node?.key) return notFound()
-  return Response.redirect(await presignGet(node.key, node.name), 302)
+  return Response.redirect(await streamUrl({ key: node.key, name: node.name }, parseQuality(new URL(req.url).searchParams.get("quality"))), 302)
 }

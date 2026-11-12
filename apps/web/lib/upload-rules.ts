@@ -132,7 +132,7 @@ export function reservedBytes(
 }
 
 // The bucket keys the orphan sweep may delete: tusd uploads at the root (with
-// their .info and .part), thumbnails and uploaded avatars, when nothing points
+// their .info and .part), thumbnails, video copies and uploaded avatars, when nothing points
 // at them and they're over a day old. Any other key (a backup sharing the
 // bucket, say) is never touched.
 export function orphans<T extends { key: string; lastModified: number }>(
@@ -146,6 +146,10 @@ export function orphans<T extends { key: string; lastModified: number }>(
       return !used.files.has(key.replace(/\.(info|part)$/, ""))
     const thumb = /^thumbs\/([^/]+)\.webp$/.exec(key)
     if (thumb) return !used.files.has(thumb[1])
+    const copy = /^renditions\/([^/]+)\.(?:720|480)\.mp4$/.exec(key)
+    if (copy) return !used.files.has(copy[1])
+    const preview = /^previews\/([^/]+)\.1920\.jpg$/.exec(key)
+    if (preview) return !used.files.has(preview[1])
     const avatar = /^avatars\/([^/]+)\.jpg$/.exec(key)
     if (avatar) return !used.avatars.has(avatar[1])
     return false

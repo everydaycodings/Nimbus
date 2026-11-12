@@ -1,12 +1,5 @@
 // Rules for the audio queue, apart from the player so they can be tested.
 
-// Where to pick a track up again: the start when you barely began or were nearly done.
-export function resumeAt(position: number, duration: number) {
-  if (!(position > 5)) return 0
-  if (duration > 0 && position > duration - 10) return 0
-  return position
-}
-
 const BEFORE = 5
 const AFTER = 25
 

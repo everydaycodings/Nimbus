@@ -10,6 +10,7 @@ import { useSafeAreaFrame, useSafeAreaInsets } from "react-native-safe-area-cont
 
 import { Directory } from "expo-file-system"
 
+import { CastBtn } from "@/components/cast-ui"
 import { FileSheets } from "@/components/file-sheets"
 import { AudioPage, CollaboraView, ImagePage, NoPreview, WebPage, type PageProps } from "@/components/preview-pages"
 import { resetScreen, VideoPage } from "@/components/video-page"
@@ -362,6 +363,7 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
         {hasPlayer && plan?.show === "video" && isPictureInPictureSupported() && (
           <IconButton icon={PictureInPicture} label="Picture in picture" onPress={() => void videoView.current?.startPictureInPicture().catch(() => snack({ text: "Couldn't start picture in picture.", error: true }))} />
         )}
+        {!vaultId && !version && (plan?.show === "image" || plan?.show === "video" || plan?.show === "audio") && <CastBtn />}
         {!vaultId && !version && (
           <IconButton
             icon={ChatCircle}

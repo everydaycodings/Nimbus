@@ -113,7 +113,7 @@ export function SidebarShell({
             </Button>
             <div className="ml-auto flex items-center gap-1">{actions}</div>
           </header>
-          <main className="min-w-0 flex-1 p-4 sm:p-6 lg:p-10">{children}</main>
+          <main className="mb-(--dock-h,0px) min-w-0 flex-1 p-4 sm:p-6 lg:p-10">{children}</main>
         </div>
       </div>
     </div>

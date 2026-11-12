@@ -427,7 +427,11 @@ export type ZipManifest = {
 
 // ---- Previews ----
 
-export type PreviewResponse = { url: string }
+export type PreviewResponse = {
+  url: string
+  /** Data-saver sizes ready for this file, biggest first (`?quality=` takes them). Empty for anything but videos with copies. */
+  copies?: number[]
+}
 /** POST `access_token=<token>&access_token_ttl=0` as a form into a WebView at `action`. */
 export type OfficeResponse = {
   office: { action: string; token: string } | null
@@ -650,6 +654,8 @@ export type StorageReport = {
   old: ReportRow[]
   /** Copies held for Transfers until they expire. */
   transfers: { bytes: number; count: number }
+  /** Data-saver copies of my videos; they don't count against my quota. */
+  videoCopies: { bytes: number; count: number }
   trash: { bytes: number; count: number; top: ReportRow[] }
   folder: {
     id: string | null
@@ -975,3 +981,61 @@ export type PartnerPatch = {
 /** POST `/partner/save`: copy a partner's photos into my files under "Photos/From <name>" (counts against my quota). */
 export type PartnerSaveRequest = { nodeIds: string[] }
 export type PartnerSaveResponse = { saved: number; folderId: string }
+
+// ---- Playback ----
+
+/** `?quality=` on `/items/{id}/preview`, `/api/files/{id}/download` and a public link's `/s/{token}/download/{id}` (and `/a/`): a video's data-saver copy, else the original. */
+export type VideoQuality = 480 | 720
+
+/** GET `/files/{id}/playback`. */
+export type PlaybackInfo = {
+  /** An admin has data-saver copies on. */
+  copiesEnabled: boolean
+  /** I may tap "Make data-saver copy" (copies on, my video). POST `/files/{id}/copy`. */
+  canMakeCopy: boolean
+  /** Skipped sizes (the original is already that small in H.264) aren't listed. */
+  copies: { height: VideoQuality; status: "pending" | "done" | "failed"; size: number }[]
+  /** What Cast sends: the original, the 720p copy, a ~1920 px JPEG preview (photos), or nothing yet ("none": show "can't be cast yet" and Make copy). */
+  cast: "original" | "copy" | "preview" | "none"
+}
+
+/** POST `/files/{id}/copy` (owner only). 400 when copies are off or the size limit is reached. */
+export type MakeCopyResponse = { status: "pending" | "done" }
+
+/** GET `/files/{id}/cast?duration=<seconds>`. Call again to refresh before `expiresAt`. */
+export type CastUrlResponse = {
+  /** Presigned storage URL. The bucket needs CORS (GET from any origin) for Cast. */
+  url: string
+  expiresAt: string
+  quality: "original" | "preview" | VideoQuality
+  contentType: string
+  kind: "video" | "audio" | "image"
+  /** Audio cover art, or a video's poster thumbnail: absolute, signed, CORS open, valid as long as `url`. Omitted when there is none. */
+  artUrl?: string
+}
+/** Photos: `url` is a ~1920 px JPEG (`quality: "preview"`, `contentType: "image/jpeg"`), HEIC and camera RAW included. */
+/** 409 from `/files/{id}/cast` when a video needs a copy that isn't ready. */
+export type CastNoCopy = { error: "no-copy"; message: string; canMakeCopy: boolean }
+
+/** GET `/files/{id}/subtitles`. */
+export type SubtitleTrack = {
+  /** `s:<file id>` (a .srt/.vtt beside the video) or `e:<n>` (inside it). */
+  id: string
+  label: string
+  source: "sidecar" | "embedded"
+  /** Absolute WebVTT URL with a signed token, valid 12 hours, usable by a TV without signing in. */
+  url: string
+}
+export type SubtitlesResponse = { tracks: SubtitleTrack[] }
+
+export type PlaybackPosition = {
+  /** Seconds. */
+  position: number
+  duration: number
+  updatedAt: string
+}
+/** GET `/files/{id}/position`. */
+export type PositionResponse = { position: PlaybackPosition | null }
+/** PUT `/files/{id}/position`. Kept only for media over 10 minutes; near the start or end it clears. */
+export type PositionPut = { position: number; duration: number }
+export type PositionPutResponse = { stored: boolean }

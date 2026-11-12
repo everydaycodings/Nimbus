@@ -1908,7 +1908,7 @@ export function FileBrowser({
           aria-hidden
           className="pointer-events-none absolute -inset-2 z-20 rounded-xl border-2 border-dashed border-brand/70 bg-brand/5"
         >
-          <p className="fixed bottom-8 left-1/2 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-lg">
+          <p className="fixed bottom-[calc(2rem+var(--dock-h,0px))] left-1/2 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-lg">
             <UploadSimpleIcon className="size-4 shrink-0" />
             <span className="truncate">Drop to upload to {dropName}</span>
           </p>
@@ -2007,6 +2007,7 @@ export function FileBrowser({
           setCommentsFirst(false)
         }}
         commentsFirst={commentsFirst}
+        queue={files}
         editable={previewItem ? editable([previewItem]) : false}
         onPrev={previewAt(-1)}
         onNext={previewAt(1)}

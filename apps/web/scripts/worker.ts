@@ -2,7 +2,7 @@
 // background jobs the app queues (lib/redis.ts enqueue). For the health checks
 // and most jobs it only keeps time and retries: the app does the work
 // (POST /api/health/run, /api/jobs). The search indexer and server-made
-// thumbnails (scripts/derive.ts) run here, since they're heavy and native.
+// thumbnails (scripts/derive.ts) and video copies (scripts/transcode.ts) run here, since they're heavy and native.
 // Run: npm run worker
 import { Worker } from "bullmq"
 import postgres from "postgres"
@@ -16,11 +16,13 @@ import {
   redis,
   scheduleHealth,
   scheduleJobs,
+  TRANSCODE_QUEUE,
   workerConnection,
 } from "../lib/redis.ts"
 import { signToken } from "../lib/upload-rules.ts"
 import { derive, deriveMisses, exifMisses, hashMisses } from "./derive.ts"
 import { sql as indexSql, sweep } from "./indexer.ts"
+import { transcode, transcodeMisses } from "./transcode.ts"
 
 const app = process.env.BETTER_AUTH_URL ?? "http://localhost:3000"
 
@@ -72,6 +74,18 @@ derives.on("failed", (job, e) =>
   )
 )
 
+// Data-saver video copies, one at a time: ffmpeg is heavy.
+const transcodes = new Worker(
+  TRANSCODE_QUEUE,
+  (job) => transcode(job.data.nodeId),
+  { connection: workerConnection(), concurrency: 1 }
+)
+transcodes.on("failed", (job, e) =>
+  console.error(
+    `${new Date().toISOString()} transcode ${job?.data.nodeId} failed: ${e.message}`
+  )
+)
+
 // A sweep longer than a minute meets the next one; that one waits on the first.
 let sweeping: Promise<unknown> | undefined
 async function index() {
@@ -80,6 +94,7 @@ async function index() {
     await deriveMisses()
     await exifMisses()
     await hashMisses()
+    await transcodeMisses()
     // Admin → System: how many derive jobs run at once.
     const [{ n }] = await indexSql`select derive_concurrency as n from settings`
     derives.concurrency = Math.max(1, n)

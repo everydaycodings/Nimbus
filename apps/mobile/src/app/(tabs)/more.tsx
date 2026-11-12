@@ -8,6 +8,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { lockSetting, setLock } from "@/components/lock"
 import { Group, Row, SwitchRow } from "@/components/page"
+import { getMobileQuality, setMobileQuality } from "@/lib/playback"
+import { ChoiceRow } from "@/components/playback-settings"
 import { StorageMeter } from "@/components/storage-meter"
 import { Button, Text } from "@/components/ui"
 import { useSnack } from "@/components/snackbar"
@@ -105,6 +107,13 @@ export default function More() {
               icon={<FolderOpen size={24} color={c.mutedForeground} />}
               trailing={caret}
               onPress={() => chooseFolder()}
+            />
+            <ChoiceRow
+              label="Video on mobile data"
+              detail="Wi-Fi always plays the original. Needs data-saver copies from your server."
+              options={[{ value: 480, label: "480p" }, { value: 720, label: "720p" }, { value: "original", label: "Original" }]}
+              get={getMobileQuality}
+              set={setMobileQuality}
             />
             <SwitchRow icon={<Fingerprint size={24} color={c.mutedForeground} />} label="App lock" detail="Ask for your fingerprint, face or screen lock when Nimbus opens" value={locked} onChange={flipLock} />
             <Row

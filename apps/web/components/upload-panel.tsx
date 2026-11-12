@@ -164,7 +164,7 @@ export function UploadPanel({
       onBlur={(e) =>
         !e.currentTarget.contains(e.relatedTarget as Node) && setHeld(false)
       }
-      className="fixed right-4 bottom-4 z-40 flex w-96 flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-lg max-sm:inset-x-2 max-sm:bottom-2 max-sm:w-auto"
+      className="fixed right-4 bottom-[calc(1rem+var(--dock-h,0px))] z-40 flex w-96 flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-lg max-sm:inset-x-2 max-sm:bottom-[calc(0.5rem+var(--dock-h,0px))] max-sm:w-auto"
     >
       <div className="relative flex h-12 shrink-0 items-center gap-1 pr-2 pl-4">
         <h2 className="min-w-0 flex-1 truncate text-sm font-medium tabular-nums">

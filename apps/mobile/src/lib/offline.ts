@@ -12,6 +12,8 @@ import { fetchTo, offlineFile, offlineFolder } from "./file-cache"
 import { native } from "./native"
 import { db } from "./offline-db"
 import { DEFAULT_CAP, planRefresh } from "./offline-rules"
+import { getOfflineCopy } from "./playback"
+import { offlineQuality } from "./playback-rules"
 
 // ---- Settings ----
 
@@ -182,6 +184,13 @@ export function forgetAccount(account: string) {
 const call = <T>(a: Account, path: string) => json<T>(a.server, `/api/v1${path}`, { token: a.token })
 const gone = (e: unknown) => e instanceof ApiError && (e.status === 404 || e.status === 403)
 
+// A video's data-saver copy when that's what the setting asks for and one is ready; the original otherwise.
+async function sourceUrl(a: Account, id: string) {
+  const first = await call<PreviewResponse>(a, `/items/${id}/preview`)
+  const q = offlineQuality(getOfflineCopy(), first.copies ?? [])
+  return q === "original" ? first.url : (await call<PreviewResponse>(a, `/items/${id}/preview?quality=${q}`)).url
+}
+
 type Report = { lost: string[]; skipped: number; failed: number; downloaded: number }
 
 async function walk(a: Account, root: Item) {
@@ -268,7 +277,7 @@ async function refreshRoot(a: Account, id: string, budget: { room: number | null
     const dest = offlineFile(a.id, f.id, f.version)
     try {
       setStatus({ running: true, text: f.name })
-      if (!dest.exists) await fetchTo(dest, async () => (await call<PreviewResponse>(a, `/items/${f.id}/preview`)).url)
+      if (!dest.exists) await fetchTo(dest, () => sourceUrl(a, f.id))
       const old = known.find((k) => k.id === f.id)
       d.runSync(
         "INSERT OR REPLACE INTO offline_files(account,id,version,name,mime,size,path,parent,root) VALUES(?,?,?,?,?,?,?,?,?)",

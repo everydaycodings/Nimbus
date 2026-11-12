@@ -20,6 +20,7 @@ import {
   type ToastPosition,
 } from "@/lib/db/schema"
 import { POLICY_MAX, POLICY_MIN } from "@/lib/password-policy"
+import { turnCopiesOffAndDelete } from "@/lib/video-copies"
 import { scheduleBackups, scheduleHealth } from "@/lib/redis"
 import { hasPassword, requireAdmin } from "@/lib/session"
 import { getSettings, settingDefault, type SettingKey } from "@/lib/signup"
@@ -309,6 +310,28 @@ export async function setDerive(form: FormData) {
   revalidatePath("/admin", "layout")
 }
 
+// Data-saver video copies: the worker makes 720p and 480p copies of videos. Blank cap: no limit
+// on their total size. Off stops new copies; existing ones keep playing.
+export async function setVideoCopies(form: FormData) {
+  await requireAdmin()
+  const n = limit(form, "cap")
+  const unit = UNITS[String(form.get("unit"))] ?? UNITS.GB
+  await saveSettings({
+    videoCopies: form.get("enabled") === "on",
+    videoCopyCapBytes: n === null ? null : Math.round(n * unit),
+    updatedAt: new Date(),
+  })
+  revalidatePath("/", "layout")
+}
+
+// Removes every copy and switches copies off, or the sweep would start making them again.
+export async function deleteVideoCopies() {
+  await requireAdmin()
+  const n = await turnCopiesOffAndDelete()
+  await audit("settings", { detail: `videoCopies: deleted ${n} copies` })
+  revalidatePath("/", "layout")
+}
+
 // Off stops new vaults; existing ones keep working for their owners.
 export async function setVaultPolicy(form: FormData) {
   await requireAdmin()
@@ -417,6 +440,8 @@ const RESETTABLE: SettingKey[] = [
   "mapStyleUrl",
   "deriveConcurrency",
   "deriveMaxBytes",
+  "videoCopies",
+  "videoCopyCapBytes",
   "toastPosition",
   "healthIntervalMin",
   "healthFailures",
