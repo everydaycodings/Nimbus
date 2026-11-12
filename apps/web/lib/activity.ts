@@ -67,8 +67,9 @@ export type ActivityEvent = {
 // tree, so whoever may open the folder may see its children's events). Null: not theirs to see.
 export async function listActivity(
   userId: string,
-  id: string
-): Promise<ActivityEvent[] | null> {
+  id: string,
+  { offset = 0, limit = ACTIVITY_LIMIT } = {}
+): Promise<{ events: ActivityEvent[]; total: number } | null> {
   if (!UUID.test(id)) return null
   const a = await accessOne(userId, id)
   if (!a || (a.trashed && a.role !== "owner")) return null
@@ -84,6 +85,14 @@ export async function listActivity(
             select id from d`)
         ).map((r) => r.id)
       : [id]
+  const where = and(
+    inArray(activity.nodeId, ids),
+    inArray(activity.type, visibleTypes(a.role))
+  )
+  const [{ total }] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(activity)
+    .where(where)
   const rows = await db
     .select({
       id: activity.id,
@@ -98,15 +107,11 @@ export async function listActivity(
     .from(activity)
     .innerJoin(nodes, eq(nodes.id, activity.nodeId))
     .leftJoin(user, eq(user.id, activity.actorId))
-    .where(
-      and(
-        inArray(activity.nodeId, ids),
-        inArray(activity.type, visibleTypes(a.role))
-      )
-    )
-    .orderBy(desc(activity.at))
-    .limit(ACTIVITY_LIMIT)
-  return rows.map((r) => ({ ...r, at: r.at.toISOString() }))
+    .where(where)
+    .orderBy(desc(activity.at), desc(activity.id))
+    .offset(offset)
+    .limit(limit)
+  return { events: rows.map((r) => ({ ...r, at: r.at.toISOString() })), total }
 }
 
 // Run with the hourly purge.

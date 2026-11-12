@@ -667,6 +667,15 @@ function DetailsSheet({ item, role, trash, tags, onChange, onClose, ask }: Props
         />
       )}
       {!trash && shareable(item, role) ? <WhoHasAccess item={item} fallback={row("Sharing", sharingLine)} /> : row("Sharing", sharingLine)}
+      {!trash && item.kind === "file" && (
+        <DetailLink
+          caption="Comments"
+          label={`Comments, ${item.comments ? `${item.comments} open` : "none open"}`}
+          onPress={() => router.push({ pathname: "/comments/[id]", params: { id: item.id, name: item.name } })}
+        >
+          <Text>{item.comments ? `${item.comments} open thread${item.comments === 1 ? "" : "s"}` : "Add a comment"}</Text>
+        </DetailLink>
+      )}
       {!trash && item.kind === "file" && editable([item], role) && <VersionsLink item={item} />}
       <ActivityList item={item} />
       {!trash && (

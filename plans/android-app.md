@@ -1,7 +1,7 @@
 # Nimbus for Android (Expo)
 
 Native Android app with every member feature and no admin panel, for any self-hoster to point at
-their own server. Apple is dropped for now. Last updated 2026-11-07 (Part A, 0.1.1).
+their own server. Apple is dropped for now. Last updated 2026-11-12 (Phase 14, comments).
 
 ## Starting a new session
 
@@ -34,7 +34,7 @@ API checks: `cd apps/web && node --env-file=.env.local scripts/api-check.ts` (ru
 | 11 | Back up other folders, two-way folder sync, export to SD/USB | Built 2026-11-07, checked on the emulator (release APK), see below. Committed; released as 0.2.0 (GitHub Actions) |
 | 12 | Text editor, multi-page scan, activity feed (web + app) | Built 2026-11-07, checked on the emulator (release APK), see below. Committed; released as 0.2.0 (GitHub Actions) |
 | 13 | File requests, Transfer, Vault share links | Built 2026-11-07 on web + app. Web: e2e-tested and Impeccable-polished. App: checked on the emulator (Expo Go and the release APK), Maestro 14/14, Kotlin 43/43. Not committed yet. See "Phase 13 status" |
-| 14 | Comments on files (web + app) | Planned |
+| 14 | Comments on files (web + app) | Built 2026-11-12 on web + app. Web e2e (comments.spec.ts) passes. App: checked on the emulator in Expo Go (row badge, preview bar button, comments screen, @mention suggestions, a comment with a mention from the phone, reactions shown); release APK (x86_64, Cursor open, 7m 54s) with Maestro 16/16 including the new `comments` flow. Web e2e 9/9, including time and PDF-page chips. Not committed. See "Phase 14 status" |
 | 15 | Photos: On this day, places map, smart groups, shared albums, partner sharing, quick edits | Planned |
 | 16 | Playback: cast to TV, sleep timer and speed, data-saver video quality | Planned |
 | 17 | Passkeys, 2FA after provider sign-in, restore a folder to a point in time | Planned |
@@ -541,6 +541,33 @@ pass. Found on the phone: a tall dialog (vault link with passphrase) put its but
   delete your own, and Resolve/Reopen. Mentions and replies notify through the bell, push and email, using the existing notification
   preferences plus a new "Comments" toggle. Comments show in the Activity feed. They're kept across versions and go with the file
   on ownership transfer. Vault files can't have comments, since the server can't see them.
+
+**Phase 14 status (2026-11-12)**
+
+Decisions (7 answers, user): the owner (new threads), thread participants (replies) and @mentioned people are notified,
+with a new "Comments" preference; signed-in members only, no comments on public links; anchors are the whole file plus a
+video/audio timestamp or a PDF page, shown as chips that jump the previewer there; only people with access can be
+@mentioned; an open-thread count badge on file rows (web + app); extras: reactions 👍 ❤️ 😂 🎉 👀, live updates (web SSE,
+the app polls every 8 s), autolinked URLs, search over comment text plus `has:comments`. Deleting a first comment that has
+replies leaves a "Comment deleted" stub. Rules: owner and editors delete any comment and resolve any thread, the thread
+starter can resolve their own; mentions never fold, other comment notifications fold per file per hour; Vault files excluded.
+
+Built:
+- Schema: `comments` and reactions, `drizzle/0031_phase14_comments.sql`. Mention tokens (`<@userId>`), `REACTIONS` and
+  helpers in `packages/shared/comments.ts` (tested); types in `packages/shared/api.ts` (Comments section, `Item.comments`,
+  `Hit.inComment`, notification kind and activity type `comment`).
+- Service `lib/services/comments.ts`; routes `/api/v1/files/{id}/comments` (+ `/events` SSE), `/api/v1/comments/{id}`
+  (PATCH, DELETE), `/api/v1/comments/{id}/reactions`; web actions `app/(app)/comment-actions.ts`; search in `lib/files.ts`.
+- Web: `components/comments.tsx` in Details and as a previewer side panel; notifications deep-link with
+  `?open=<id>&comments=1`; count badge in the file browser; comment hits in the search palette.
+- App: `src/app/comments/[id].tsx`, `src/lib/comment-anchor.ts`, a Comments row in Details, a button in the preview bar,
+  notification routing to the thread, the "Comments" notification toggle, count badge on tiles.
+
+Also (user request): Details "Activity" is paged 10 at a time ("1–10 of N" with newer/older buttons; web + app; `?offset=`/`limit`, `total`), and
+the web Details thumbnail no longer shrinks to a line when the activity list is long (`shrink-0`).
+
+Checked: web Playwright `e2e/comments.spec.ts` passes; app typecheck clean. Still to do: an emulator check of the app
+screens, then commit.
 
 **Phase 15, Photos**
 - **On this day:** a card at the top of Photos, "N years ago", grouped by year from `takenAt`, opening a slideshow. An optional

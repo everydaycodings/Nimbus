@@ -52,7 +52,10 @@ export default function Notifications() {
       const { item } = await api.get<{ item: Item | null }>(`/items/${target.id}`)
       if (!item || item.trashedAt) return snack({ text: GONE })
       if (item.kind === "folder") router.push({ pathname: folderHref(item.role ? "(shared)" : "(files)", item.id), params: { name: item.name } })
-      else openPreview({ items: [item], index: 0, role: item.role ?? "owner" })
+      else {
+          openPreview({ items: [item], index: 0, role: item.role ?? "owner" })
+          if (target.comments) router.push({ pathname: "/comments/[id]", params: { id: item.id, name: item.name } })
+        }
     } catch {
       snack({ text: GONE })
     }

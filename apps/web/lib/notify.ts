@@ -29,7 +29,8 @@ type Event = {
   data?: Record<string, string>
 }
 
-const DIGEST: NotificationKind[] = ["edits", "file_drop", "transfer_download"]
+// Comments fold too, except mentions, which always get their own row.
+const DIGEST: NotificationKind[] = ["edits", "file_drop", "transfer_download", "comment"]
 
 export async function notify(
   userId: string,
@@ -43,7 +44,7 @@ export async function notify(
     : e.data?.transfer
       ? sql`${notifications.data}->>'transfer' = ${e.data.transfer}`
       : null
-  if (DIGEST.includes(kind) && fold) {
+  if (DIGEST.includes(kind) && fold && e.data?.what !== "mention") {
     const [bumped] = await db
       .update(notifications)
       .set({ count: sql`${notifications.count} + 1` })
@@ -52,6 +53,7 @@ export async function notify(
           eq(notifications.userId, userId),
           eq(notifications.kind, kind),
           fold,
+          sql`coalesce(${notifications.data}->>'what', '') <> 'mention'`,
           isNull(notifications.readAt),
           gt(notifications.createdAt, sql`now() - interval '1 hour'`)
         )
@@ -165,7 +167,7 @@ async function describe(userId: string, ids?: string[]) {
     .limit(50)
   const access = await accessTo(
     userId,
-    rows.flatMap((r) => (r.nodeId ? [r.nodeId] : []))
+    rows.flatMap((r) => [r.nodeId, r.parentId].filter((x) => x !== null))
   )
   const offers = new Set(
     (
@@ -194,11 +196,19 @@ async function describe(userId: string, ids?: string[]) {
         r.count > 1
           ? `Your transfer “${d.title || "Untitled"}” was downloaded ${r.count} times`
           : `${d.who || "Someone"} downloaded your transfer “${d.title || "Untitled"}”`,
+      comment:
+        r.count > 1
+          ? `${r.count} new comments on ${item}`
+          : `${who} ${d.what === "mention" ? "mentioned you on" : d.what === "reply" ? "replied on" : "commented on"} ${item}${d.quote ? `: “${d.quote}”` : ""}`,
       storage_low: `${r.actor ? `${who} reminded you: your` : "Your"} storage is ${d.percent ?? 90}% full. See what's using it.`,
     }[r.kind]
     const seen = r.nodeId ? access.get(r.nodeId) : undefined
+    // Opens the file with its comments: in its folder when they can see that, else from Shared.
+    const parentSeen = r.parentId ? access.get(r.parentId) : undefined
     const href =
-      r.kind === "signup_request"
+      r.kind === "comment" && seen
+        ? `${parentSeen ? `/folders/${r.parentId}` : seen.role === "owner" ? "/" : "/shared"}?open=${r.nodeId}&comments=1`
+        : r.kind === "signup_request"
         ? "/admin/approvals"
         : r.kind === "service_health"
           ? `/admin/system/health#health-${d.service}`

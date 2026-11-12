@@ -1,0 +1,28 @@
+appId: org.nimbus.drive
+name: comments
+# Preview app.ts → Comments; post a unique comment, react to it, then delete it. Assumes no other
+# comments of mine on app.ts (the flow deletes its own).
+---
+- runScript:
+    file: ../stamp.js
+- launchApp
+- extendedWaitUntil: { visible: "Search in Nimbus", timeout: 20000 }
+- scrollUntilVisible: { element: "app.ts", direction: DOWN, centerElement: true }
+- tapOn: "app.ts"
+- extendedWaitUntil: { visible: "Close preview", timeout: 15000 }
+- tapOn: "Comments.*"
+- extendedWaitUntil: { visible: "Comment", timeout: 15000 }
+- tapOn: "Comment"
+- inputText: "mae-cm-${output.stamp}"
+- tapOn: "Send"
+- extendedWaitUntil: { visible: "mae-cm-${output.stamp}", timeout: 10000 }
+- tapOn: "Actions for your comment"
+- tapOn: "React 👍"
+- extendedWaitUntil: { visible: "👍 1, including you", timeout: 10000 }
+- tapOn: "Actions for your comment"
+- tapOn: "Delete"
+- extendedWaitUntil: { visible: "Delete this comment?", timeout: 5000 }
+- tapOn: "Delete"
+- extendedWaitUntil: { notVisible: "mae-cm-${output.stamp}", timeout: 10000 }
+- tapOn: "Back"
+- tapOn: "Close preview"

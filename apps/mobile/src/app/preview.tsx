@@ -2,7 +2,7 @@ import type { Item, Version } from "@nimbus/shared/api"
 import { router, useFocusEffect } from "expo-router"
 import { StatusBar } from "expo-status-bar"
 import { isPictureInPictureSupported, type VideoPlayer, type VideoView } from "expo-video"
-import { ArrowSquareOut, DownloadSimple, DotsThreeVertical, NotePencil, PictureInPicture, ShareNetwork, X } from "phosphor-react-native"
+import { ArrowSquareOut, ChatCircle, DownloadSimple, DotsThreeVertical, NotePencil, PictureInPicture, ShareNetwork, X } from "phosphor-react-native"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { BackHandler, FlatList, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native"
 import Animated, { useAnimatedStyle, useReducedMotion, withTiming } from "react-native-reanimated"
@@ -360,6 +360,13 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
         )}
         {hasPlayer && plan?.show === "video" && isPictureInPictureSupported() && (
           <IconButton icon={PictureInPicture} label="Picture in picture" onPress={() => void videoView.current?.startPictureInPicture().catch(() => snack({ text: "Couldn't start picture in picture.", error: true }))} />
+        )}
+        {!vaultId && !version && (
+          <IconButton
+            icon={ChatCircle}
+            label={item.comments ? `Comments, ${item.comments} open` : "Comments"}
+            onPress={() => router.push({ pathname: "/comments/[id]", params: { id: item.id, name: item.name } })}
+          />
         )}
         {!vaultId && !version && shareable(item, session.role) && (
           <IconButton icon={ShareNetwork} label="Share" onPress={() => router.push({ pathname: "/share/[id]", params: { id: item.id, name: item.name } })} />

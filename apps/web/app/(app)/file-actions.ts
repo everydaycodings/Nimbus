@@ -76,9 +76,12 @@ export async function getDetails(id: string) {
   return svc.getDetails(await requireMember(), id)
 }
 
-// For the details panel: who changed this, newest first. Null: not theirs to see.
-export async function getActivity(id: string) {
-  return listActivity((await requireMember()).id, id)
+// For the details panel: a page of who changed this, newest first. Null: not theirs to see.
+export async function getActivity(id: string, offset = 0, limit = 10) {
+  return listActivity((await requireMember()).id, id, {
+    offset: Math.max(0, Math.floor(offset)) || 0,
+    limit: Math.min(50, Math.max(1, Math.floor(limit))) || 10,
+  })
 }
 
 // Makes a tag and puts it on `applyTo` in one go, the way "New tag…" is used.

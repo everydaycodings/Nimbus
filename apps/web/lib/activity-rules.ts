@@ -1,5 +1,5 @@
 // Who sees what in the activity feed, and how long it's kept. No imports, so node --test can run it.
-export const ACTIVITY_TYPES = ["upload", "version", "rename", "move", "share", "trash", "restore"] as const
+export const ACTIVITY_TYPES = ["upload", "version", "rename", "move", "share", "trash", "restore", "comment"] as const
 export type ActivityType = (typeof ACTIVITY_TYPES)[number]
 
 // Days an admin may pick; null keeps everything.

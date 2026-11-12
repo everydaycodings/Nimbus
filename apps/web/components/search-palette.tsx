@@ -242,7 +242,14 @@ export function SearchPalette({ admin }: { admin: boolean }) {
       label: h.name,
       icon: t.icon,
       iconClass: t.color,
-      detail: h.snippet ? <Snippet text={h.snippet} /> : h.where,
+      detail: h.snippet ? (
+        <>
+          {h.inComment && "In a comment: "}
+          <Snippet text={h.snippet} />
+        </>
+      ) : (
+        h.where
+      ),
       run: () => openHit(h),
     }
   }

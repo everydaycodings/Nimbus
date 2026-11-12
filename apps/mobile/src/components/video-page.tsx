@@ -33,6 +33,7 @@ import { Sheet, SheetDivider, SheetRow } from "@/components/sheet"
 import { IconButton, Text } from "@/components/ui"
 import { savedPosition, savePosition } from "@/lib/audio-queue"
 import { resumeAt } from "@/lib/audio-rules"
+import { registerAnchor } from "@/lib/comment-anchor"
 import { useApi } from "@/lib/files"
 import { native } from "@/lib/native"
 import { previewSession } from "@/lib/preview-session"
@@ -145,6 +146,19 @@ function Player({ item, version, url, bottom, onBars, onZoom, onFullscreen, onPl
   nav.current = videoNav
   const sleepRef = useRef(sleep)
   sleepRef.current = sleep
+  // A comment can take the time and jump back to it (lib/comment-anchor.ts).
+  useEffect(
+    () =>
+      registerAnchor({
+        id: item.id,
+        time: () => player.currentTime,
+        seek: (t) => {
+          player.currentTime = t
+          player.play()
+        },
+      }),
+    [item.id, player]
+  )
   useEffect(() => {
     let first = true
     const subs = [

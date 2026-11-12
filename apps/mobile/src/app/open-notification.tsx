@@ -37,7 +37,10 @@ export default function OpenNotification() {
         const { item } = await json<{ item: Item | null }>(account.server, `/api/v1/items/${target.id}`, { token: account.token })
         if (!item || item.trashedAt) return snack({ text: "This is gone, or you can't see it any more." })
         if (item.kind === "folder") router.push({ pathname: folderHref(item.role ? "(shared)" : "(files)", item.id), params: { name: item.name } })
-        else openPreview({ items: [item], index: 0, role: item.role ?? "owner" })
+        else {
+          openPreview({ items: [item], index: 0, role: item.role ?? "owner" })
+          if (target.comments) router.push({ pathname: "/comments/[id]", params: { id: item.id, name: item.name } })
+        }
       } catch {
         snack({ text: "This is gone, or you can't see it any more." })
       }

@@ -19,6 +19,7 @@ import { Button, IconButton, Text } from "@/components/ui"
 import { errorText } from "@/lib/api"
 import { startQueue, useQueue, type Queue } from "@/lib/audio-queue"
 import { cachedFile, fetchToCache, offlineFile } from "@/lib/file-cache"
+import { registerAnchor } from "@/lib/comment-anchor"
 import { useApi } from "@/lib/files"
 import { previewSession } from "@/lib/preview-session"
 import { decryptTemp, useVaultFile, vaultNative, vaultTemp } from "@/lib/vault"
@@ -369,6 +370,18 @@ function LocalAudioPage({ item, version, active, top }: PageProps) {
     if (status.playing) player.pause()
   }, [active, status.playing, player])
 
+  useEffect(() => {
+    if (!active) return
+    return registerAnchor({
+      id: item.id,
+      time: () => player.currentTime,
+      seek: (s) => {
+        player.seekTo(s)
+        player.play()
+      },
+    })
+  }, [active, item.id, player])
+
   if (error && !url) return <NoPreview item={item} version={version} reason="Couldn't play this file." onRetry={() => refetch()} />
 
   return (
@@ -427,6 +440,20 @@ function QueueAudioPage({ item, active, top, onAudioTrack }: PageProps) {
 
 function QueueControls({ queue, item, top }: { queue: Queue; item: Item; top: number }) {
   const status = useAudioPlaylistStatus(queue.playlist)
+  const at = useRef(0)
+  at.current = status.currentTime ?? 0
+  useEffect(
+    () =>
+      registerAnchor({
+        id: item.id,
+        time: () => at.current,
+        seek: (s) => {
+          void queue.playlist.seekTo(s)
+          queue.playlist.play()
+        },
+      }),
+    [item.id, queue]
+  )
   return (
     <AudioView
       item={item}
@@ -470,6 +497,18 @@ export function WebPage({ item, version, plan, active, top, bottom, onScrollDown
   const localFile = () => (vault && vn ? vaultTemp(vn, api, vault, item) : cachedFile(api.id, item.id, ver))
   const cached = plan.fetch === "cache" && localFile().exists
   const warn = needsDataWarning(plan, net.type === NetworkStateType.CELLULAR, cached) && !allowed
+
+  // A comment's "Page n" chip scrolls the PDF there.
+  useEffect(() => {
+    if (!active || plan.viewer !== "pdf") return
+    return registerAnchor({
+      id: item.id,
+      page: (n) =>
+        web.current?.injectJavaScript(
+          `(function(){var p=document.querySelector('.page[data-n="${Math.floor(n)}"]');if(p)p.scrollIntoView()})();true;`
+        ),
+    })
+  }, [active, plan.viewer, item.id])
 
   const url = useCallback(
     async () => (await api.get<PreviewResponse>(`/items/${item.id}/preview${version ? `?v=${version.id}` : ""}`)).url,

@@ -1,7 +1,7 @@
 import type { Hit, Item, Tag } from "@nimbus/shared/api"
 import { formatBytes } from "@nimbus/shared/file-rules"
 import { Image } from "expo-image"
-import { ArrowCircleDown, CheckCircle, Clock, DotsThreeVertical, Link, Star, UsersThree } from "phosphor-react-native"
+import { ArrowCircleDown, ChatCircle, CheckCircle, Clock, DotsThreeVertical, Link, Star, UsersThree } from "phosphor-react-native"
 import { memo, type ReactNode } from "react"
 import { PixelRatio, Pressable, View } from "react-native"
 import { useReducedMotion } from "react-native-reanimated"
@@ -72,6 +72,12 @@ function Markers({ item, tags, pinned, pending }: { item: Item; tags: Map<string
       {item.starred && <Star size={14} weight="fill" color={c.mutedForeground} />}
       {item.sharedWithPeople && <UsersThree size={14} color={c.mutedForeground} />}
       {item.hasLink && <Link size={14} color={c.mutedForeground} />}
+      {!!item.comments && (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }} accessible accessibilityLabel={`${item.comments} open comment thread${item.comments === 1 ? "" : "s"}`}>
+          <ChatCircle size={14} color={c.mutedForeground} />
+          <Text variant="caption" color={c.mutedForeground} style={{ fontVariant: ["tabular-nums"] }}>{item.comments}</Text>
+        </View>
+      )}
       {dots.slice(0, 5).map((t) => (
         <View key={t.id} style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: c.tag[t.color] }} />
       ))}
@@ -154,7 +160,7 @@ function FolderTileImpl(p: TileProps) {
           {item.owner ? (
             <Meta item={item} tags={tags} text={item.owner} pinned={pinned} pending={pending} />
           ) : (
-            (item.starred || item.sharedWithPeople || item.hasLink || item.tags.length > 0 || pinned || pending) && (
+            (item.starred || item.sharedWithPeople || item.hasLink || !!item.comments || item.tags.length > 0 || pinned || pending) && (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                 <Markers item={item} tags={tags} pinned={pinned} pending={pending} />
               </View>
@@ -209,10 +215,11 @@ function FileCardImpl(p: TileProps) {
 export const FileCard = memo(FileCardImpl)
 
 // \u0001 and \u0002 wrap the matched words in a snippet.
-function Snippet({ text }: { text: string }) {
+function Snippet({ text, inComment }: { text: string; inComment?: boolean }) {
   const [first, ...rest] = text.split("\u0001")
   return (
     <Text variant="caption" color={c.mutedForeground} numberOfLines={2}>
+      {inComment && "In a comment: "}
       {first}
       {rest.map((part, i) => {
         const [hit, tail] = part.split("\u0002")
@@ -232,6 +239,7 @@ function Snippet({ text }: { text: string }) {
 function ListRowImpl(p: TileProps) {
   const { item, tags, selecting, selected, compact, pinned, pending, dim } = p
   const snippet = "snippet" in item ? item.snippet : null
+  const inComment = "inComment" in item && !!item.inComment
   return (
     <View style={{ borderBottomWidth: 1, borderBottomColor: c.border }}>
       <Frame p={p} outlined={false}>
@@ -245,7 +253,7 @@ function ListRowImpl(p: TileProps) {
               {item.name}
             </Text>
             <Meta item={item} tags={tags} text={dim ? "Not available offline" : metaText(item)} pinned={pinned} pending={pending} />
-            {snippet ? <Snippet text={snippet} /> : null}
+            {snippet ? <Snippet text={snippet} inComment={inComment} /> : null}
           </View>
           {!selecting && <MenuButton item={item} onMenu={p.onMenu} />}
         </View>

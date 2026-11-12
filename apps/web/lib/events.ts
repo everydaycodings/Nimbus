@@ -1,5 +1,6 @@
 // Live "something new" pings for the Android app's built-in connection (GET /api/v1/events).
 // notify() publishes to Redis so any server process can reach the person's open streams.
+// A key is a user id, or "node:<id>" for a file's comments.
 import { redis } from "@/lib/redis"
 
 const channel = (userId: string) => `events:${userId}`
@@ -41,4 +42,43 @@ export function listen(userId: string, send: (id: string) => void) {
       sub().unsubscribe(channel(userId)).catch(() => {})
     }
   }
+}
+
+// Server-Sent Events: `event` with {id} for each publish to `key`, and a ping comment every 25
+// seconds so proxies keep it open.
+export function eventStream(req: Request, key: string, event: string) {
+  const enc = new TextEncoder()
+  let stop = () => {}
+  const body = new ReadableStream({
+    start(controller) {
+      const write = (s: string) => {
+        try {
+          controller.enqueue(enc.encode(s))
+        } catch {
+          stop()
+        }
+      }
+      const off = listen(key, (id) =>
+        write(`event: ${event}\ndata: ${JSON.stringify({ id })}\n\n`)
+      )
+      const timer = setInterval(() => write(": ping\n\n"), 25_000)
+      stop = () => {
+        clearInterval(timer)
+        off()
+        try {
+          controller.close()
+        } catch {}
+      }
+      req.signal.addEventListener("abort", stop)
+      write("retry: 10000\n\n")
+    },
+    cancel: () => stop(),
+  })
+  return new Response(body, {
+    headers: {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache",
+      "x-accel-buffering": "no",
+    },
+  })
 }

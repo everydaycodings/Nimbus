@@ -550,6 +550,8 @@ export const NOTIFICATION_KINDS = [
   "transfer",
   // Someone downloaded a Transfer you sent (labelled "Transfers").
   "transfer_download",
+  // A new thread on your file, a reply in a thread you're in, or an @mention.
+  "comment",
   "signup_request",
   "service_health",
   "backup",
@@ -1138,4 +1140,59 @@ export const vaultLinkVersions = pgTable(
       .references(() => fileVersions.id, { onDelete: "cascade" }),
   },
   (t) => [primaryKey({ columns: [t.linkId, t.versionId] })]
+)
+
+// Threads on files. A reply's parent is the thread's first comment; threads are one level deep.
+// Kept across versions and with the file on ownership transfer (they hang off the node).
+// Deleting a comment that has replies keeps a stub (body null, deletedAt set).
+export const comments = pgTable(
+  "comments",
+  {
+    id: id(),
+    nodeId: uuid("node_id")
+      .notNull()
+      .references(() => nodes.id, { onDelete: "cascade" }),
+    parentId: uuid("parent_id").references((): AnyPgColumn => comments.id, {
+      onDelete: "cascade",
+    }),
+    authorId: text("author_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    body: text("body"),
+    // Mentioned user ids, kept so an edit only notifies the newly mentioned.
+    mentions: text("mentions").array().notNull().default(sql`'{}'`),
+    // Optional anchors: a point in a video or audio file, or a page of a PDF or document.
+    atSeconds: integer("at_seconds"),
+    page: integer("page"),
+    // On a thread's first comment only.
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolvedBy: text("resolved_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    editedAt: timestamp("edited_at", { withTimezone: true }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("comments_node_idx").on(t.nodeId, t.createdAt),
+    index("comments_parent_idx").on(t.parentId),
+    index("comments_body_fts_idx").using(
+      "gin",
+      sql`to_tsvector('simple', coalesce(${t.body}, ''))`
+    ),
+  ]
+)
+
+export const commentReactions = pgTable(
+  "comment_reactions",
+  {
+    commentId: uuid("comment_id")
+      .notNull()
+      .references(() => comments.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    emoji: text("emoji").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.commentId, t.userId, t.emoji] })]
 )

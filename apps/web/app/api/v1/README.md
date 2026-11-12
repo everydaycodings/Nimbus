@@ -80,7 +80,7 @@ nothing to return answers `200 {}`.
 | GET | `/shared` | `?by=me` for shared-by-me, `ListQuery` | `ListResponse` |
 | GET | `/trash` | `ListQuery` | `TrashResponse` (adds `retentionDays`) |
 | GET | `/tags/{tagId}` | `ListQuery` | `TagResponse` (items with that tag) |
-| GET | `/search` | `?q=`, `ListQuery`. With a filter and no `q`: everything I can see that matches, newest first | `SearchResponse` (`Hit`: adds `where`, `byName`, `snippet`) |
+| GET | `/search` | `?q=`, `ListQuery`. With a filter and no `q`: everything I can see that matches, newest first. Matches comment text too; `has:comments` in `q` keeps files with comments (alone: all of them) | `SearchResponse` (`Hit`: adds `where`, `byName`, `snippet`, `inComment` when the snippet is from a comment) |
 | GET | `/search?q=&quick=1` | | `QuickSearchResponse` (12 hits) |
 | GET | `/search/langs` | | `OcrLangsResponse` |
 | PUT | `/items/{id}/content` | `SaveContentRequest` (search text the app extracted) | `{}` |
@@ -113,7 +113,14 @@ nothing to return answers `200 {}`.
 | POST | `/versions/{vid}/copy` | | `CopyVersionResponse` |
 | DELETE | `/versions/{vid}` | not the current one | `{}` |
 | **Activity** | | | |
-| GET | `/files/{id}/activity` | a file, or a folder with everything inside it; newest first, 50 at most | `ActivityResponse` (404 if I can't open it) |
+| GET | `/files/{id}/activity` | a file, or a folder with everything inside it; newest first; `?offset=`, `?limit=` (1-50, 50) | `ActivityResponse` (`total`: every event; 404 if I can't open it) |
+| **Comments** (files, not folders or Vault) | | | |
+| GET | `/files/{id}/comments` | | `CommentsResponse` (threads oldest first; 404 if I can't open it) |
+| POST | `/files/{id}/comments` | `NewComment` (`parentId` for a reply; `atSeconds`/`page` anchors on a new thread) | `{id}` |
+| GET | `/files/{id}/comments/events` | SSE | `event: comment` on any change; refetch |
+| PATCH | `/comments/{id}` | `CommentPatch`: `body` (my own) or `resolved` (owner, editors, thread starter) | `{}` |
+| DELETE | `/comments/{id}` | mine; owner and editors: anyone's. A first comment with replies stays as a stub (`body: null`) | `{}` |
+| PUT | `/comments/{id}/reactions` | `{emoji, on}`, emoji from `REACTIONS` (`@nimbus/shared/comments`) | `{}` |
 | **Uploads** | | | |
 | POST | `/uploads/plan` | `PlanUploadRequest` | `Plan` |
 | POST | `/uploads/folders` | `CreateFoldersRequest` (empty folders, mkdir -p) | `{}` |
@@ -199,6 +206,15 @@ restore are recorded with who did them; views and downloads aren't. Owners see e
 files. Editors and viewers see the events on what they can currently open, except `share` events, which
 are the owner's. The admin keeps them 30, 90 (default), 365 days or forever (Admin, Storage, Versions);
 the worker's hourly purge deletes older ones. Vault items record nothing.
+
+## Comments
+
+Anyone who can open a file can comment, viewers included; signed-in members only (no public-link
+comments). Mentions are `<@userId>` tokens in `body` (helpers in `@nimbus/shared/comments`); only people
+with access can be mentioned (`CommentPerson.mentionable`). Notifications (`NotificationKind` `comment`,
+"Comments" preference): the owner on a new thread, thread participants on replies, and @mentions. Mentions
+never fold; the rest fold per file per hour. Comments show in Activity (`comment`), and `Item.comments` is
+the open-thread count.
 
 ## Uploads
 

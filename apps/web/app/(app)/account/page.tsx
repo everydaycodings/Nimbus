@@ -43,6 +43,7 @@ const KIND_LABEL = {
   edits: "Editors change things in my shared folders (at most hourly)",
   transfer: "Someone offers me ownership of an item",
   transfer_download: "Someone downloads a transfer I sent (at most hourly)",
+  comment: "Comments: a new thread on my file, a reply in my thread, or a mention",
   signup_request: "Someone asks to join this Nimbus",
   service_health: "A service goes down or comes back (Admin → Health)",
   backup: "A backup fails, warns, or hasn't run (Admin → Backups)",

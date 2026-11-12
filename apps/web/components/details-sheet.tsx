@@ -2,11 +2,12 @@
 
 import { Dialog } from "@base-ui/react/dialog"
 import { Menu } from "@base-ui/react/menu"
-import { PlusIcon, StarIcon, XIcon } from "@phosphor-icons/react"
+import { CaretLeftIcon, CaretRightIcon, PlusIcon, StarIcon, XIcon } from "@phosphor-icons/react"
 import { useEffect, useState } from "react"
 
 import { getActivity, getDetails, type ActivityEvent, type Details } from "@/app/(app)/file-actions"
 import type { Version } from "@/app/(app)/upload-actions"
+import { Comments } from "@/components/comments"
 import { MENU_ITEM, MENU_POPUP } from "@/components/overlay-styles"
 import { Thumb } from "@/components/thumb"
 import { Button } from "@/components/ui/button"
@@ -198,7 +199,7 @@ export function DetailsSheet({
             <Thumb
               item={item}
               make={editable}
-              className="grid aspect-[4/3] place-items-center rounded-xl border bg-muted/40"
+              className="grid aspect-[4/3] shrink-0 place-items-center rounded-xl border bg-muted/40"
             >
               <t.icon
                 weight={item.kind === "folder" ? "fill" : "light"}
@@ -238,6 +239,9 @@ export function DetailsSheet({
                     </div>
                   ))}
               </dl>
+            )}
+            {open && item.kind === "file" && details !== null && !item.trashedAt && (
+              <Comments item={item} />
             )}
             {open && details !== null && <Activity item={item} />}
             {open && item.kind === "file" && details !== null && tags && (
@@ -308,31 +312,78 @@ const SAID: Record<ActivityEvent["type"], string> = {
   share: "changed sharing of",
   trash: "trashed",
   restore: "restored",
+  comment: "commented on",
 }
 
-// Who changed this, newest first; a folder's list covers what's inside it.
+const PAGE = 10
+
+// Who changed this, newest first, ten at a time; a folder's list covers what's inside it.
 function Activity({ item }: { item: Item }) {
-  const [loaded, setLoaded] = useState<{ id: string; events: ActivityEvent[] | null } | null>(null)
+  const [offset, setOffset] = useState(0)
+  const [loaded, setLoaded] = useState<{
+    key: string
+    page: { events: ActivityEvent[]; total: number } | null
+  } | null>(null)
+  const key = `${item.id}:${item.updatedAt}:${offset}`
   useEffect(() => {
     let live = true
-    getActivity(item.id).then((events) => live && setLoaded({ id: item.id, events }))
+    getActivity(item.id, offset, PAGE).then(
+      (page) => live && setLoaded({ key, page })
+    )
     return () => {
       live = false
     }
-  }, [item.id, item.updatedAt])
-  const events = loaded?.id === item.id ? loaded.events : undefined
-  if (events === null) return null
+  }, [item.id, offset, key])
+  // Another item: back to its newest page.
+  const [shownFor, setShownFor] = useState(item.id)
+  if (shownFor !== item.id) {
+    setShownFor(item.id)
+    setOffset(0)
+  }
+  // The last page stays on screen, dimmed, while the next one loads, so the panel doesn't jump.
+  const stale = loaded?.key !== key
+  const shown = loaded?.key.startsWith(`${item.id}:`) ? loaded.page : undefined
+  if (shown === null) return null
+  const events = shown?.events
+  const total = shown?.total ?? 0
   return (
     <section aria-labelledby="activity-heading" className="flex flex-col gap-2">
-      <h3 id="activity-heading" className="text-sm font-medium">
-        Activity
-      </h3>
+      <div className="flex items-center gap-2">
+        <h3 id="activity-heading" className="text-sm font-medium">
+          Activity
+        </h3>
+        {total > PAGE && (
+          <nav aria-label="Activity pages" className="ml-auto flex items-center gap-1">
+            <span className="text-xs text-muted-foreground tabular-nums" aria-live="polite">
+              {offset + 1}–{Math.min(offset + PAGE, total)} of {total}
+            </span>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label="Newer activity"
+              disabled={offset === 0}
+              onClick={() => setOffset((o) => Math.max(0, o - PAGE))}
+            >
+              <CaretLeftIcon />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label="Older activity"
+              disabled={offset + PAGE >= total}
+              onClick={() => setOffset((o) => o + PAGE)}
+            >
+              <CaretRightIcon />
+            </Button>
+          </nav>
+        )}
+      </div>
       {events === undefined ? (
         <span className="h-4 w-32 animate-pulse rounded bg-muted/60 motion-reduce:animate-none" />
       ) : !events.length ? (
         <p className="text-xs text-muted-foreground">Nothing recorded yet.</p>
       ) : (
-        <ul className="flex flex-col gap-2 text-sm">
+        <ul className={`flex flex-col gap-2 text-sm transition-opacity ${stale ? "opacity-60" : ""}`}>
           {events.map((e) => (
             <li key={e.id} className="flex flex-col">
               <span className="break-words">

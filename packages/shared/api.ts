@@ -140,6 +140,8 @@ export type Item = {
   shortcut?: boolean
   /** Its current version's text is in the search index. */
   indexed?: boolean
+  /** Open comment threads on a file. Missing on older servers. */
+  comments?: number
 }
 
 export type TypeKey =
@@ -195,6 +197,8 @@ export type Hit = Item & {
   byName: boolean
   /** Text around the match, with \u0001 and \u0002 around the matched words. */
   snippet: string | null
+  /** The snippet is from a comment on it, not its text. Missing on older servers. */
+  inComment?: boolean
 }
 export type SearchResponse = ListResponse<Hit>
 export type QuickSearchResponse = { items: Hit[] }
@@ -268,7 +272,7 @@ export type CopyVersionResponse = { name: string }
 
 // ---- Activity ----
 
-export type ActivityType = "upload" | "version" | "rename" | "move" | "share" | "trash" | "restore"
+export type ActivityType = "upload" | "version" | "rename" | "move" | "share" | "trash" | "restore" | "comment"
 export type ActivityEvent = {
   id: string
   type: ActivityType
@@ -282,7 +286,51 @@ export type ActivityEvent = {
   /** The item's name now; tells a folder's children apart. */
   name: string
 }
-export type ActivityResponse = { events: ActivityEvent[] }
+/** `?offset=` pages it (`limit` 1 to 50, default 50); `total` is every event there is. */
+export type ActivityResponse = { events: ActivityEvent[]; total?: number }
+
+// ---- Comments ----
+
+/** Mentions in `body` are "<@userId>"; see @nimbus/shared/comments. */
+export type Comment = {
+  id: string
+  authorId: string | null
+  /** Null once deleted: a stub kept for the thread's replies. */
+  body: string | null
+  /** Optional anchors, on a thread's first comment: a point in a video or audio file, a PDF page. */
+  atSeconds: number | null
+  page: number | null
+  createdAt: string
+  editedAt: string | null
+  reactions: { emoji: string; count: number; mine: boolean }[]
+}
+export type CommentThread = Comment & {
+  resolvedAt: string | null
+  resolvedBy: string | null
+  replies: Comment[]
+}
+export type CommentPerson = {
+  id: string
+  name: string
+  image: string | null
+  /** Has access now, so can be @mentioned. Past authors without access are listed for their names. */
+  mentionable: boolean
+}
+export type CommentsResponse = {
+  /** My user id, to tell my own comments apart. */
+  me: string
+  /** Oldest first. */
+  threads: CommentThread[]
+  people: CommentPerson[]
+  /** Owner or editor: may delete anyone's comment and resolve any thread. */
+  canModerate: boolean
+  /** False on a trashed file. */
+  canComment: boolean
+}
+/** POST /files/{id}/comments. Anchors are ignored on replies. */
+export type NewComment = { body: string; parentId?: string; atSeconds?: number; page?: number }
+/** PATCH /comments/{id}: an edit of your own comment, or resolving a thread. */
+export type CommentPatch = { body?: string; resolved?: boolean }
 
 // ---- Uploads ----
 
@@ -500,6 +548,7 @@ export type NotificationKind =
   | "app_password"
   | "storage_low"
   | "transfer_download"
+  | "comment"
 export type Notification = {
   id: string
   kind: NotificationKind

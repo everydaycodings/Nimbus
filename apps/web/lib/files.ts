@@ -46,6 +46,7 @@ import {
   UUID,
 } from "@/lib/file-rules"
 import { parsePhotoCursor, photoCursor } from "@nimbus/shared/photos"
+import { decodeMentions, mentionIds } from "@nimbus/shared/comments"
 import { purgeSavedLogins } from "@/lib/saved-logins"
 import { getSession } from "@/lib/session"
 import { deleteNodes } from "@/lib/uploads"
@@ -79,6 +80,8 @@ export type Item = {
   shortcut?: boolean
   // Its current version's text is in the search index (or had none to read).
   indexed?: boolean
+  // Open comment threads.
+  comments?: number
 }
 
 export type Tag = { id: string; name: string; color: TagColor }
@@ -141,6 +144,8 @@ const cols = (viewer: string) => ({
   indexed: sql<boolean>`exists (
     select 1 from node_content
     where node_id = "nodes".id and version_id = "nodes".current_version_id)`,
+  comments: sql<number>`(select count(*)::int from comments
+    where node_id = "nodes".id and parent_id is null and resolved_at is null)`,
 })
 
 type Row = Omit<Item, "updatedAt" | "trashedAt"> & {
@@ -330,6 +335,8 @@ export type Hit = Item & {
   byName: boolean
   // Text around the match, with \u0001…\u0002 around the matched words.
   snippet: string | null
+  // The snippet is from a comment, not the file's text.
+  inComment?: boolean
 }
 
 // Everything the viewer can see, newest first, for search's filters with no text.
@@ -386,13 +393,16 @@ export async function searchItems(
   raw: string,
   limit = 50
 ): Promise<Hit[]> {
-  const q = raw.trim().slice(0, 200)
-  if (!q) return []
+  // "has:comments" keeps files with comments; alone, it lists them all.
+  const hasComments = /(^|\s)has:comments(?=\s|$)/i.test(raw)
+  const q = raw.replace(/(^|\s)has:comments(?=\s|$)/gi, " ").trim().slice(0, 200)
+  if (!q && !hasComments) return []
   const found = await db.execute<{
     id: string
     where: string | null
     by_name: boolean
     snippet: string | null
+    in_comment: boolean
   }>(sql`
     with recursive shared as (
       select n.id from nodes n
@@ -409,17 +419,27 @@ export async function searchItems(
           when strpos(lower(n.name), q.s) > 0 then 2 + similarity(q.s, lower(n.name))
           when word_similarity(q.s, lower(n.name)) >= 0.4 then word_similarity(q.s, lower(n.name))
         end as name_score,
-        case when c.tsv @@ q.tq then 0.4 + ts_rank(c.tsv, q.tq) end as text_score
+        case when c.tsv @@ q.tq then 0.4 + ts_rank(c.tsv, q.tq) end as text_score,
+        0.3 + cm.score as comment_score, cm.body as comment_body
       from nodes n
       cross join q
       left join node_content c
         on c.node_id = n.id and c.version_id = n.current_version_id
+      left join lateral (
+        select ts_rank(to_tsvector('simple', coalesce(k.body, '')), q.tq) as score, k.body
+        from comments k
+        where k.node_id = n.id and k.deleted_at is null
+          and to_tsvector('simple', coalesce(k.body, '')) @@ q.tq
+        order by 1 desc limit 1
+      ) cm on true
       where n.trashed_at is null and n.vault_id is null and n.name !~* ${JUNK}
         and (n.owner_id = ${viewer} or n.id in (select id from shared))
+        and (not ${hasComments} or exists (
+          select 1 from comments k where k.node_id = n.id and k.deleted_at is null))
     ), top as (
       select * from scored
-      where name_score is not null or text_score is not null
-      order by greatest(name_score, text_score) desc
+      where name_score is not null or text_score is not null or comment_score is not null
+      order by greatest(name_score, text_score, comment_score) desc
       limit ${limit}
     )
     select top.id, top.name_score is not null as by_name,
@@ -429,15 +449,33 @@ export async function searchItems(
           where node_id = top.id and grantee_id = ${viewer}) then 'Shared with me'
         else p.name
       end as where,
-      case when top.text_score is not null then ts_headline('simple', c.body, q.tq,
-        'StartSel=' || chr(1) || ', StopSel=' || chr(2) || ', MaxFragments=1, MaxWords=18, MinWords=6')
+      top.text_score is null and top.comment_score is not null as in_comment,
+      case
+        when top.text_score is not null then ts_headline('simple', c.body, q.tq,
+          'StartSel=' || chr(1) || ', StopSel=' || chr(2) || ', MaxFragments=1, MaxWords=18, MinWords=6')
+        when top.comment_score is not null then ts_headline('simple', top.comment_body, q.tq,
+          'StartSel=' || chr(1) || ', StopSel=' || chr(2) || ', MaxFragments=1, MaxWords=18, MinWords=6')
       end as snippet
     from top
     cross join q
     left join nodes p on p.id = top.parent_id
     left join node_content c on c.node_id = top.id
-    order by greatest(top.name_score, top.text_score) desc`)
+    order by greatest(top.name_score, top.text_score, top.comment_score) desc`)
   if (!found.length) return []
+  // Mentions in a comment snippet read as names.
+  const ids = [
+    ...new Set(found.flatMap((f) => (f.in_comment && f.snippet ? mentionIds(f.snippet) : []))),
+  ]
+  const names = new Map(
+    ids.length
+      ? (
+          await db
+            .select({ id: user.id, name: sql<string>`coalesce(nullif(${user.name}, ''), ${user.email})` })
+            .from(user)
+            .where(inArray(user.id, ids))
+        ).map((u) => [u.id, u.name])
+      : []
+  )
   const meta = new Map(found.map((f, i) => [f.id, { ...f, i }]))
   const rows = await db
     .select(cols(viewer))
@@ -456,7 +494,11 @@ export async function searchItems(
         ...item,
         where: m.where ?? "",
         byName: m.by_name,
-        snippet: m.snippet,
+        snippet:
+          m.in_comment && m.snippet
+            ? decodeMentions(m.snippet, (id) => names.get(id))
+            : m.snippet,
+        inComment: m.in_comment,
       }
     })
 }

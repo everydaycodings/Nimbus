@@ -5,6 +5,7 @@ import {
   ArrowsInIcon,
   CaretLeftIcon,
   CaretRightIcon,
+  ChatCircleIcon,
   CheckIcon,
   CircleNotchIcon,
   CopyIcon,
@@ -21,6 +22,7 @@ import { useEffect, useId, useRef, useState } from "react"
 
 import { officeFrame, previewUrl } from "@/app/(app)/upload-actions"
 import { linkPreviewUrl } from "@/app/s/actions"
+import { Comments } from "@/components/comments"
 import { Button } from "@/components/ui/button"
 import { Thumb } from "@/components/thumb"
 import { VideoPlayer } from "@/components/video-player"
@@ -67,6 +69,7 @@ export function Previewer({
   onUseFrame,
   link,
   src,
+  commentsFirst = false,
 }: {
   shown: Shown | null
   open: boolean
@@ -85,8 +88,18 @@ export function Previewer({
   link?: { token: string; download: boolean }
   // Decrypted bytes to show instead of fetching the file from the server.
   src?: Decrypted
+  // Open with the comments panel showing (a notification's link).
+  commentsFirst?: boolean
 }) {
   const item = shown?.item
+  // Members only: not on a public link's page, a vault file or an older version.
+  const commentable = !link && src === undefined && !shown?.version
+  const [commentsOpen, setCommentsOpen] = useState(commentsFirst)
+  const [wasFirst, setWasFirst] = useState(commentsFirst)
+  if (commentsFirst !== wasFirst) {
+    setWasFirst(commentsFirst)
+    if (commentsFirst) setCommentsOpen(true)
+  }
   const v = shown?.version
   const t = item && fileType("file", item.mime, item.name)
   const href =
@@ -147,6 +160,28 @@ export function Previewer({
                     <DownloadSimpleIcon className="size-5" />
                   </Button>
                 )}
+                {commentable && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={
+                      item.comments
+                        ? `Comments, ${item.comments} open`
+                        : "Comments"
+                    }
+                    title="Comments"
+                    aria-pressed={commentsOpen}
+                    onClick={() => setCommentsOpen((o) => !o)}
+                    className={cn("relative", commentsOpen && "bg-accent")}
+                  >
+                    <ChatCircleIcon className="size-5" />
+                    {Boolean(item.comments) && (
+                      <span className="absolute top-1 right-1 grid h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[10px] leading-none font-semibold text-primary-foreground tabular-nums">
+                        {item.comments}
+                      </span>
+                    )}
+                  </Button>
+                )}
                 {onDetails && (
                   <Button
                     variant="ghost"
@@ -160,8 +195,10 @@ export function Previewer({
                 )}
                 {!v && menu}
               </header>
+              <div className="relative flex min-h-0 flex-1">
               <div
-                className="relative flex min-h-0 flex-1 px-2 pb-2 sm:px-16 sm:pb-6"
+                data-preview
+                className="relative flex min-h-0 min-w-0 flex-1 px-2 pb-2 sm:px-16 sm:pb-6"
                 // No right-click "Save as" when a link turned downloads off.
                 onContextMenu={href ? undefined : (e) => e.preventDefault()}
               >
@@ -184,6 +221,15 @@ export function Previewer({
                 {onNext && (
                   <Step label="Next file" onClick={onNext} side="right" />
                 )}
+              </div>
+              {commentable && commentsOpen && (
+                <aside
+                  aria-label="Comments"
+                  className="absolute inset-0 z-10 overflow-y-auto border-l bg-popover p-4 text-popover-foreground sm:static sm:w-96 sm:shrink-0 sm:rounded-tl-xl"
+                >
+                  <Comments key={item.id} item={item} anchors />
+                </aside>
+              )}
               </div>
             </>
           )}
@@ -323,6 +369,7 @@ export function View({
         <iframe
           // Hides the browser's PDF toolbar, and its download button.
           src={href ? shownUrl : `${shownUrl}#toolbar=0`}
+          data-pdf
           title={item.name}
           className="size-full rounded-lg border bg-white"
         />

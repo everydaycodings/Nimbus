@@ -13,6 +13,7 @@ executionOrder:
     - share
     - request
     - transfer
+    - comments
     - about
     - quick-actions
     - account-switch

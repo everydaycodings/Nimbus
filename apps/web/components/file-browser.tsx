@@ -65,6 +65,7 @@ import {
   trashItems,
 } from "@/app/(app)/file-actions"
 import type { Version } from "@/app/(app)/upload-actions"
+import { CommentCount } from "@/components/comments"
 import { DetailsSheet } from "@/components/details-sheet"
 import { useNotice, type Notice } from "@/components/toaster"
 import { ShareDialog } from "@/components/share-dialog"
@@ -384,6 +385,24 @@ export function FileBrowser({
     setPreview({ id, version })
     setPreviewOpen(true)
   }
+
+  // ?open=<file id>&comments=1, from a comment notification: preview it with its comments showing.
+  const [commentsFirst, setCommentsFirst] = useState(false)
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    const id = url.searchParams.get("open")
+    if (!id) return
+    if (all.some((i) => i.id === id && i.kind === "file")) {
+      setCommentsFirst(url.searchParams.get("comments") === "1")
+      setPreview({ id })
+      setPreviewOpen(true)
+    }
+    url.searchParams.delete("open")
+    url.searchParams.delete("comments")
+    window.history.replaceState(null, "", url)
+    // Once, on arrival.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // The current version previews like the file itself, with arrows.
   function previewVersion(id: string, v: Version) {
@@ -1180,6 +1199,7 @@ export function FileBrowser({
             className="size-3 shrink-0 text-muted-foreground"
           />
         )}
+        <CommentCount n={item.comments} />
         {item.tags.length > 0 && (
           <span className="flex shrink-0 -space-x-0.5" title={tagNames(item)}>
             <span className="sr-only">Tags: {tagNames(item)}</span>
@@ -1963,7 +1983,11 @@ export function FileBrowser({
         shown={previewItem && { item: previewItem, version: preview?.version }}
         // A file trashed or moved away from the previewer closes it.
         open={previewOpen && Boolean(previewItem)}
-        onClose={() => setPreviewOpen(false)}
+        onClose={() => {
+          setPreviewOpen(false)
+          setCommentsFirst(false)
+        }}
+        commentsFirst={commentsFirst}
         onPrev={previewAt(-1)}
         onNext={previewAt(1)}
         position={
