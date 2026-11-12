@@ -99,6 +99,10 @@ nothing to return answers `200 {}`.
 | GET | `/picker` | `?parent=` (omit: My files) | `PickerResponse` (folder picker) |
 | POST | `/shortcuts` | `ShortcutRequest` | `{}` |
 | DELETE | `/shortcuts/{nodeId}` | | `{}` |
+| **Signatures** | | | |
+| GET | `/signatures` | | `SignaturesResponse` (the saved signature and initials, PNG as base64) |
+| PUT | `/signatures` | `SaveSignatureRequest` (PNG, at most 300 KB) | `{}` |
+| DELETE | `/signatures?kind=` | `signature` or `initials` | `{}` |
 | **Tags** | | | |
 | GET | `/tags` | | `TagsResponse` |
 | POST | `/tags` | `CreateTagRequest` | `CreateTagResponse` |

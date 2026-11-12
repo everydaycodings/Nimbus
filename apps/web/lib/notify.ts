@@ -211,6 +211,7 @@ async function describe(userId: string, ids?: string[]) {
           ? `${who} accepted your photos${d.back ? " and shared theirs with you" : ""}`
           : `${who} wants to share their photos with you`,
       storage_low: `${r.actor ? `${who} reminded you: your` : "Your"} storage is ${d.percent ?? 90}% full. See what's using it.`,
+      phone_backup: `${d.device ?? "Your phone"} hasn't backed up contacts or calendar for 7 days`,
     }[r.kind]
     const seen = r.nodeId ? access.get(r.nodeId) : undefined
     // Opens the file with its comments: in its folder when they can see that, else from Shared.
@@ -232,6 +233,8 @@ async function describe(userId: string, ids?: string[]) {
             ? "/account#connect"
           : r.kind === "storage_low"
             ? "/storage"
+          : r.kind === "phone_backup"
+            ? `/account/phone-backup/${d.id}`
           : r.kind === "transfer_download"
             ? "/transfers"
           : !seen

@@ -44,8 +44,18 @@ const css = readFileSync(join(root, "viewer/viewer.css"), "utf8")
 
 const pdfWorker = await bundle(require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs"))
 
+// The PDF editor's page needs pdf.js's own stylesheet (text and form layers); the pictures it points at can't load here anyway.
+const pdfViewerCss = readFileSync(require.resolve("pdfjs-dist/web/pdf_viewer.css"), "utf8").replace(/url\([^)]*\)/g, "none")
+// The signature pad's handwriting fonts (OFL), the same three as the web's.
+const hand = (family, file) =>
+  `@font-face{font-family:"${family}";font-weight:400;src:url(data:font/woff2;base64,${readFileSync(require.resolve(`@fontsource/${file}/files/${file}-latin-400-normal.woff2`)).toString("base64")})}`
+const handwriting = [hand("Caveat", "caveat"), hand("Dancing Script", "dancing-script"), hand("Great Vibes", "great-vibes")].join("")
+
 const VIEWERS = {
   pdf: { define: { __PDF_WORKER__: JSON.stringify(pdfWorker) }, fonts: "" },
+  // Edit mode is its own page, so reading a PDF never loads the editor.
+  "pdf-edit": { define: { __PDF_WORKER__: JSON.stringify(pdfWorker) }, fonts: pdfViewerCss },
+  signature: { fonts: handwriting },
   docx: { fonts: geist },
   sheet: { fonts: geist },
   pptx: { fonts: geist },

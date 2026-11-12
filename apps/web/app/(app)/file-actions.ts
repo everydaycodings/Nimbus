@@ -7,6 +7,7 @@ import { type TagColor } from "@/lib/db/schema"
 import * as pr from "@/lib/services/point-restore"
 import * as svc from "@/lib/services/files"
 import { requireMember } from "@/lib/session"
+import { getSettings } from "@/lib/signup"
 
 export type { ActivityEvent } from "@/lib/activity"
 export type { Details, TagSnapshot } from "@/lib/services/files"
@@ -76,6 +77,12 @@ export async function listFolders(parentId: string | null) {
 // For the details panel.
 export async function getDetails(id: string) {
   return svc.getDetails(await requireMember(), id)
+}
+
+// The admin's cap on the PDF size the editor opens, in bytes.
+export async function pdfEditLimit() {
+  await requireMember()
+  return (await getSettings()).maxPdfEditBytes
 }
 
 // For the details panel: a page of who changed this, newest first. Null: not theirs to see.

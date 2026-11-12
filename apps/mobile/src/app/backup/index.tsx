@@ -2,31 +2,51 @@ import { DateTimePickerAndroid } from "@react-native-community/datetimepicker"
 import { formatBytes } from "@nimbus/shared/file-rules"
 import { router } from "expo-router"
 import { ArrowClockwise, CaretRight, CheckCircle, CloudArrowUp, Pause, Warning } from "phosphor-react-native"
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Linking, Pressable, View } from "react-native"
 
 import { Actions, Frame } from "@/components/dialog"
 import { Caret, Group, Page, Row, Section, SwitchRow } from "@/components/page"
 import { Sheet, SheetRow } from "@/components/sheet"
 import { useSnack } from "@/components/snackbar"
-import { Button, IconButton, Text } from "@/components/ui"
+import { Button, IconButton, Spinner, Text } from "@/components/ui"
+import type { PhoneBackupDevice } from "@nimbus/shared/api"
 import { useAccounts } from "@/lib/accounts"
-import { errorText } from "@/lib/api"
+import { errorText, type Account } from "@/lib/api"
 import { askForMedia, useAlbums, useBackup } from "@/lib/backup"
 import { describe } from "@/lib/backup-rules"
 import { syncAvailable } from "@/lib/folder-sync"
 import { native } from "@/lib/native"
+import { askFor, deviceName, listCalendars, openCopy, phoneCopies, runNow, usePhoneBackup } from "@/lib/phone-backup"
+import { chosenCalendars, type PhoneType } from "@/lib/phone-backup-rules"
 import { c, radius } from "@/lib/theme"
 
 const day = (ms: number) => new Date(ms).toLocaleDateString(undefined, { dateStyle: "medium" })
+const when = (ms: number) => new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+const KEEPS = [
+  { keep: 3, label: "Last 3 copies" },
+  { keep: 10, label: "Last 10 copies" },
+  { keep: 30, label: "Last 30 copies" },
+  { keep: null, label: "All copies" },
+] as const
 
 export default function Backup() {
-  const { accounts } = useAccounts()
+  const { accounts, active } = useAccounts()
   const { settings, status, change, refresh } = useBackup()
   const albums = useAlbums()
   const snack = useSnack()
   const [pickAccount, setPickAccount] = useState(false)
   const [freeUp, setFreeUp] = useState(false)
+  const phone = usePhoneBackup()
+  const [denied, setDenied] = useState<PhoneType | null>(null)
+  const [pickKeep, setPickKeep] = useState(false)
+  const [restore, setRestore] = useState(false)
+  const [running, setRunning] = useState(false)
+  const [calendarCount, setCalendarCount] = useState<string | null>(null)
+  const phoneOn = phone.settings.contacts || phone.settings.calendar
+  // Phone backup follows camera backup's account while that's on; otherwise the account in use.
+  const preferredId = (settings.enabled ? settings.accountId : null) ?? active?.id ?? null
+  const phoneAccount = accounts.find((a) => a.id === (phone.settings.accountId ?? preferredId)) ?? active ?? accounts[0]
   const target = accounts.find((a) => a.id === settings.accountId)
   const line = describe(status)
   const Icon = status.state === "failing" ? Warning : status.state === "idle" ? CheckCircle : status.state === "paused" ? Pause : CloudArrowUp
@@ -39,6 +59,36 @@ export default function Backup() {
     if (on && !(await askForMedia())) return snack({ text: "Nimbus needs access to your photos and videos to back them up.", error: true })
     change({ enabled: on, accountId: settings.accountId ?? accounts[0]?.id ?? null, from: settings.from || (on ? Date.now() : 0) })
   }
+
+  const turnOnPhone = async (type: PhoneType, on: boolean) => {
+    if (!on) return phone.change({ [type]: false })
+    if (!(await askFor(type))) return setDenied(type)
+    setDenied(null)
+    // The first type turned on picks the account; the second joins it.
+    phone.change({ [type]: true, accountId: (phoneOn && phone.settings.accountId) || preferredId })
+  }
+
+  useEffect(() => {
+    if (!phone.settings.calendar) return
+    listCalendars()
+      .then((all) => setCalendarCount(`${chosenCalendars(phone.settings, all).length} of ${all.length}`))
+      .catch(() => setCalendarCount(null))
+  }, [phone.settings])
+
+  const backUpNow = async () => {
+    if (!phoneAccount) return
+    setRunning(true)
+    try {
+      const results = await runNow(phoneAccount)
+      const bad = results.find((r) => r.state === "failed" || r.state === "waiting")
+      if (bad) snack({ text: bad.text ?? "Couldn't back up.", error: true })
+      else snack({ text: results.every((r) => r.state === "same") ? "Nothing changed since the last backup." : "Backed up." })
+    } finally {
+      setRunning(false)
+      phone.reread()
+    }
+  }
+  const lastPhone = Math.max(phone.settings.lastAt.contacts ?? 0, phone.settings.lastAt.calendar ?? 0)
 
   const chooseFrom = () =>
     DateTimePickerAndroid.open({
@@ -130,6 +180,25 @@ export default function Backup() {
         </>
       )}
 
+      {denied && (
+        <Section note={`Nimbus needs permission to read your ${denied}. Allow it in Settings, then turn this on again.`}>
+          <View style={{ alignItems: "flex-start" }}>
+            <Button variant="outlined" label="Open settings" onPress={() => Linking.openSettings()} />
+          </View>
+        </Section>
+      )}
+
+      <Section title="Contacts and calendar" note="Saves your contacts as a .vcf file and your calendar as an .ics file in My files, under Phone backup. Contact photos are included.">
+        <Group>
+          <SwitchRow label="Back up contacts" detail={phone.settings.lastAt.contacts ? `Last backup ${when(phone.settings.lastAt.contacts)}` : undefined} value={phone.settings.contacts} onChange={(v) => turnOnPhone("contacts", v)} />
+          <SwitchRow label="Back up calendar" detail={phone.settings.lastAt.calendar ? `Last backup ${when(phone.settings.lastAt.calendar)}` : undefined} value={phone.settings.calendar} onChange={(v) => turnOnPhone("calendar", v)} />
+          {phone.settings.calendar && <Row label="Calendars" detail={calendarCount} trailing={<Caret />} onPress={() => router.push("/backup/calendars")} />}
+          {phoneOn && <Row label="Keep" detail={KEEPS.find((k) => k.keep === phone.settings.keep)?.label} trailing={<Caret />} onPress={() => setPickKeep(true)} />}
+          {phoneOn && <Row label="Back up now" detail={lastPhone ? `Last backup ${when(lastPhone)}` : "Nothing backed up yet"} trailing={running ? <Spinner /> : undefined} disabled={running || !phoneAccount} onPress={backUpNow} />}
+          <Row label="Restore" detail="Open a saved copy in Contacts or Calendar" trailing={<Caret />} onPress={() => setRestore(true)} />
+        </Group>
+      </Section>
+
       {syncAvailable && (
         <Section title="Other folders">
           <Group>
@@ -166,8 +235,51 @@ export default function Backup() {
           ))}
         </Sheet>
       )}
+      {pickKeep && (
+        <Sheet onClose={() => setPickKeep(false)}>
+          {KEEPS.map((k) => (
+            <SheetRow key={String(k.keep)} selected={k.keep === phone.settings.keep} label={k.label} onPress={() => phone.change({ keep: k.keep })} />
+          ))}
+        </Sheet>
+      )}
+      {restore && phoneAccount && <RestoreSheet account={phoneAccount} onClose={() => setRestore(false)} onError={(e) => snack({ text: errorText(e), error: true })} />}
       {freeUp && <FreeUp onClose={() => setFreeUp(false)} onError={(e) => snack({ text: errorText(e), error: true })} onDone={(n) => snack({ text: n ? `Removed ${n} item${n === 1 ? "" : "s"} from this phone.` : "Nothing was removed." })} />}
     </Page>
+  )
+}
+
+// The copies the server holds, this phone's first. Tapping one hands it to Android's Contacts or Calendar import.
+function RestoreSheet({ account, onClose, onError }: { account: Account; onClose: () => void; onError: (e: unknown) => void }) {
+  const [devices, setDevices] = useState<PhoneBackupDevice[] | null>(null)
+  useEffect(() => {
+    phoneCopies(account).then((r) => setDevices(r.devices), (e) => (onError(e), onClose()))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const copies = useMemo(
+    () =>
+      (devices ?? [])
+        .sort((a, b) => Number(b.deviceName === deviceName()) - Number(a.deviceName === deviceName()))
+        .flatMap((d) => [...d.copies].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((copy) => ({ copy, device: d.deviceName }))),
+    [devices]
+  )
+  return (
+    <Sheet onClose={onClose}>
+      {!devices ? (
+        <View style={{ height: 120 }}><Spinner /></View>
+      ) : copies.length === 0 ? (
+        <Text color={c.mutedForeground} style={{ padding: 16 }}>No copies yet. Turn on contacts or calendar backup first.</Text>
+      ) : (
+        copies.map(({ copy, device }) => (
+          <SheetRow
+            key={copy.id}
+            label={copy.name}
+            detail={`${device} · ${formatBytes(copy.size)}`}
+            needsNet
+            onPress={() => openCopy(account, copy).catch(onError)}
+          />
+        ))
+      )}
+    </Sheet>
   )
 }
 

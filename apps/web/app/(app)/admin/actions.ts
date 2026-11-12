@@ -222,6 +222,19 @@ export async function setUploadLimit(form: FormData) {
   revalidatePath("/admin", "layout")
 }
 
+// Required: the PDF editor always has a cap (100 MB until changed). Needs settings.maxPdfEditBytes, a bigint with that default.
+export async function setPdfEditLimit(form: FormData) {
+  await requireAdmin()
+  const n = limit(form, "pdfMax")
+  if (n === null) return
+  const unit = UNITS[String(form.get("unit"))] ?? UNITS.MB
+  await saveSettings({
+    maxPdfEditBytes: Math.round(n * unit),
+    updatedAt: new Date(),
+  })
+  revalidatePath("/admin", "layout")
+}
+
 export async function setUploadSpeed(form: FormData) {
   await requireAdmin()
   const n = limit(form, "speed")
@@ -454,6 +467,7 @@ const RESETTABLE: SettingKey[] = [
   "deviceLinks",
   "defaultQuotaBytes",
   "maxUploadBytes",
+  "maxPdfEditBytes",
   "uploadSpeedBytes",
   "blockedExtensions",
   "versionKeepLast",

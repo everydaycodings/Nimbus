@@ -760,6 +760,29 @@ Not done or to check:
   when you turn it on. Web: a Phone backup page for each device with the latest backup time, a searchable list of contacts and
   events read from the `.vcf`/`.ics`, and a download of any copy (to import into Google, Outlook or another phone).
 
+**Phase 18 status (2026-11-13, uncommitted)**
+- **PDF tools:** one model of our own for every mark. `packages/shared/pdf-annot.ts` (pdf-lib) reads and writes real
+  annotations with appearance streams; `packages/shared/pdf-editor.ts` is a framework-free editor on pdf.js (canvas, text
+  layer, form fields) with an SVG overlay, used by the web (`components/pdf-editor.tsx`) and the app's WebView
+  (`viewer/pdf-edit.ts`, screen `/pdf-edit`). pdf.js's own editor isn't used: it has no underline, strike, shapes or eraser.
+  Signatures in `signatures` (migration 0037), `/api/v1/signatures`; admin "Largest PDF to edit" (`settings.max_pdf_edit_bytes`,
+  0038, Office documents page, `/instance.maxPdfEditBytes`). App saves queue offline (`savePdf` op).
+- **Phone backup:** `packages/shared/vcard.ts` / `ical.ts`; `phone_backups` table, `/api/v1/phone-backup` (+ `/{id}/done`, which
+  trims to Keep); web page `/account/phone-backup/[id]` (contacts, events, compare, single export) linked from Account; daily
+  `phone-backup-stale` job → bell. App: section in Backup settings (expo-contacts, expo-calendar, expo-battery), runs from the
+  background task and on open, restore through Android's import.
+- Checked: web by Playwright scripts (every tool, forms, signature, conflict → Save as copy, eraser/undo, viewer has no Edit,
+  saved file read back with pdf-lib); app in Expo Go on the emulator (draw, forms, typed initials, Save, Save as copy, conflict
+  → Overwrite, discard prompt, offline open + queued copy synced; contacts and calendar backup, unchanged skip, restore opens
+  Google Contacts' vCard import).
+- Fixed while testing: pdf.js page border offset, mouse selection never marked, opaque highlight overlay, checkbox looks
+  (`annotationCanvasMap`), field layer collapsed on WebViews without CSS `round()` (Chrome < 125), offline open of an older
+  kept copy, phone backup picking a stale camera-backup account, async kv write losing the last backup time.
+- Not done: native build/APK (new modules: expo-contacts, expo-calendar, expo-battery; READ_CONTACTS/READ_CALENDAR), so the
+  background run, Wi-Fi/charging gates and real permission flow in the APK are untested. Free text is Helvetica only (no
+  non-Latin) and doesn't wrap. Repeating events lose weekdays (Android gives only frequency/interval). `pdf-saves` files
+  aren't swept. The admin cap row and the web signature Type/Upload tabs were not checked by eye.
+
 **Phase 19, smart search (OCR)**
 - OCR moves from the browser to the worker (tesseract, already a dependency), so it runs for every upload, including from the
   app and WebDAV: images, scanned PDFs (pages with no text layer) and video frames (one every few seconds, plus scene changes,

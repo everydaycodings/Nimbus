@@ -576,6 +576,8 @@ export const NOTIFICATION_KINDS = [
   "backup",
   "app_password",
   "storage_low",
+  // A phone has had no new contacts or calendar copy for 7 days.
+  "phone_backup",
 ] as const
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number]
 // Only admins get these, so only admins see their settings.
@@ -683,6 +685,8 @@ export const settings = pgTable(
     uploadSpeedBytes: bigint("upload_speed_bytes", { mode: "number" }),
     // Storage each member gets unless they have their own. Null: unlimited.
     defaultQuotaBytes: bigint("default_quota_bytes", { mode: "number" }),
+    // Largest PDF the PDF tools open for editing (Phase 18).
+    maxPdfEditBytes: bigint("max_pdf_edit_bytes", { mode: "number" }).notNull().default(104857600),
     // Lowercase, without the dot.
     blockedExtensions: text("blocked_extensions").array().notNull().default([]),
     versionKeepLast: integer("version_keep_last"),
@@ -1421,4 +1425,39 @@ export const pointRestores = pgTable(
     undoneAt: timestamp("undone_at", { withTimezone: true }),
   },
   (t) => [index("point_restores_owner_idx").on(t.ownerId, t.createdAt)]
+)
+
+// Phase 18: a saved signature and initials per account, placed on PDFs. PNG as base64 (small, capped by the API).
+export const signatures = pgTable(
+  "signatures",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<"signature" | "initials">().notNull(),
+    png: text("png").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.kind] })]
+)
+
+// Phase 18: contacts and calendar backup, one row per phone. The phone reports what it has on and when it last
+// wrote a copy; the daily job sends a bell after 7 days without one. Files live in My files → Phone backup → <device>.
+export const phoneBackups = pgTable(
+  "phone_backups",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    deviceName: text("device_name").notNull(),
+    folderId: uuid("folder_id").references(() => nodes.id, { onDelete: "set null" }),
+    contacts: boolean("contacts").notNull().default(false),
+    calendar: boolean("calendar").notNull().default(false),
+    lastContactsAt: timestamp("last_contacts_at", { withTimezone: true }),
+    lastCalendarAt: timestamp("last_calendar_at", { withTimezone: true }),
+    staleNotifiedAt: timestamp("stale_notified_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("phone_backups_user_device_idx").on(t.userId, t.deviceName)]
 )

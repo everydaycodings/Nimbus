@@ -82,6 +82,8 @@ export type Instance = {
   /** null: no limit. */
   maxUploadBytes: number | null
   blockedExtensions: string[]
+  /** Largest PDF the editor opens, in bytes; older servers omit it (no PDF editing). */
+  maxPdfEditBytes?: number
 }
 
 // ---- GET /me ----
@@ -224,6 +226,8 @@ export type Details = {
   /** Folder it's in; null at the top of My files or when that folder isn't visible to me. */
   parentId: string | null
   role: Role
+  /** Id of the current version (null for a folder); an editor compares it to see if the file changed under it. */
+  version: string | null
   contents: { folders: number; files: number; bytes: number } | null
   /** Number of shares; null unless I own it. */
   shares: number | null
@@ -239,6 +243,13 @@ export type StarRequest = { ids: string[]; starred: boolean }
 export type IdsRequest = { ids: string[] }
 export type PickerResponse = { folders: { id: string; name: string }[] }
 export type ShortcutRequest = { nodeId: string }
+
+// ---- Signatures (PDF editor) ----
+
+export type SignatureKind = "signature" | "initials"
+/** PNG as base64, null when none is saved. */
+export type SignaturesResponse = { signature: string | null; initials: string | null }
+export type SaveSignatureRequest = { kind: SignatureKind; png: string }
 
 // ---- Tags ----
 
@@ -584,6 +595,7 @@ export type NotificationKind =
   | "comment"
   | "album"
   | "partner"
+  | "phone_backup"
 export type Notification = {
   id: string
   kind: NotificationKind
@@ -1069,3 +1081,29 @@ export type PositionResponse = { position: PlaybackPosition | null }
 /** PUT `/files/{id}/position`. Kept only for media over 10 minutes; near the start or end it clears. */
 export type PositionPut = { position: number; duration: number }
 export type PositionPutResponse = { stored: boolean }
+
+// ---- Phone backup (Phase 18) ----
+
+export type PhoneBackupType = "contacts" | "calendar"
+/** A `contacts-YYYY-MM-DD.vcf` or `calendar-YYYY-MM-DD.ics` in the phone's folder. Download it like any file. */
+export type PhoneBackupCopy = { id: string; name: string; size: number; createdAt: string; type: PhoneBackupType }
+export type PhoneBackupDevice = {
+  id: string
+  deviceName: string
+  /** My files / Phone backup / <deviceName>. */
+  folderId: string | null
+  contacts: boolean
+  calendar: boolean
+  lastContactsAt: string | null
+  lastCalendarAt: string | null
+  /** Newest first. */
+  copies: PhoneBackupCopy[]
+}
+/** GET `/phone-backup`. */
+export type PhoneBackupResponse = { devices: PhoneBackupDevice[] }
+/** POST `/phone-backup`: the phone's settings; makes the folders. Call before uploading. */
+export type PhoneBackupRegister = { deviceName: string; contacts: boolean; calendar: boolean }
+export type PhoneBackupRegisterResponse = { id: string; folderId: string }
+/** POST `/phone-backup/{id}/done` after uploading a copy. `keep` null keeps every copy. */
+export type PhoneBackupDone = { type: PhoneBackupType; keep: number | null }
+export type PhoneBackupDoneResponse = { trashed: number }

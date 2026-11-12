@@ -122,7 +122,7 @@ export async function enqueueTranscode(nodeId: string) {
   )
 }
 
-// Trash and old link events hourly, orphaned objects weekly; the indexer sweeps every minute.
+// Trash and old link events hourly, orphaned objects weekly, stale phone backups daily; the indexer sweeps every minute.
 export async function scheduleJobs() {
   const opts = { removeOnComplete: true, removeOnFail: 50 }
   await jobsQueue.upsertJobScheduler(
@@ -134,6 +134,11 @@ export async function scheduleJobs() {
     "orphan-sweep",
     { every: 7 * 24 * 3600_000 },
     { name: "orphan-sweep", opts }
+  )
+  await jobsQueue.upsertJobScheduler(
+    "phone-backup-stale",
+    { every: 24 * 3600_000 },
+    { name: "phone-backup-stale", opts }
   )
   await jobsQueue.upsertJobScheduler(
     "index",

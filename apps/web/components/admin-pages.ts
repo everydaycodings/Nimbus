@@ -419,6 +419,12 @@ export const ADMIN_SETTINGS: {
     keywords: "office word excel powerpoint collabora wopi",
   },
   {
+    id: "largest-pdf-to-edit",
+    label: "Largest PDF to edit",
+    href: "/admin/system/office",
+    keywords: "pdf edit annotate sign size limit mb",
+  },
+  {
     id: "allow-webdav",
     label: "Allow WebDAV",
     href: "/admin/system/webdav",

@@ -27,6 +27,16 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 }
 .counter:empty { display: none; }
 
+/* PDF editor: its container is the scroller; the app's native bars sit outside the page. */
+.pdfedit { position: fixed; inset: 0; overflow: auto; overscroll-behavior: contain; }
+
+/* Signature pad: white paper with a baseline, sized by the app. */
+body.sig { padding: 0; overflow: hidden; background: #fff; }
+.sigpad {
+  display: block; width: 100%; aspect-ratio: 1120 / 400; touch-action: none;
+  background-image: linear-gradient(transparent calc(100% - 44px), #d4d4d4 calc(100% - 44px) calc(100% - 43px), transparent calc(100% - 43px));
+}
+
 /* Word: paper, reflowed to the screen */
 .docx-wrapper { background: var(--bg) !important; padding: 0 !important; }
 .docx-wrapper > section.docx {

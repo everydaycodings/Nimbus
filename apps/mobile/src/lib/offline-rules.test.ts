@@ -72,3 +72,10 @@ test("moves into a folder made offline get its real id, and fail if it was never
   // Its own temporary id is the creation, not a dependency.
   assert.ok(!unresolved({ op: "newFolder", parentId: null, name: "n", tempId: temp }, {}))
 })
+
+test("a queued PDF save is tied to its file, its folder and its server version", () => {
+  const op: Op = { op: "savePdf", id: "f", parentId: "temp-1", name: "a.pdf", uri: "file:///x.pdf", size: 9, base: "v1", as: "version" }
+  assert.ok(canQueue("savePdf"))
+  assert.deepEqual(idsOf(op), ["f", "temp-1"])
+  assert.equal((remap(op, { "temp-1": "real" }) as typeof op).parentId, "real")
+})

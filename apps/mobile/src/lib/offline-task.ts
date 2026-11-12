@@ -3,6 +3,7 @@
 import { requireOptionalNativeModule } from "expo"
 
 import { refreshAll } from "./offline"
+import { runDue } from "./phone-backup"
 
 const TASK = "nimbus-offline-refresh"
 // Android won't run it more often than every 15 minutes anyway; a few hours is plenty for files.
@@ -16,6 +17,8 @@ if (backgroundRefreshAvailable()) {
   TaskManager.defineTask(TASK, async () => {
     try {
       await refreshAll()
+      // Contacts and calendar backup, when it is due; it applies the camera backup's Wi-Fi and charging rules itself.
+      await runDue()
       return BackgroundTaskResult.Success
     } catch {
       return BackgroundTaskResult.Failed

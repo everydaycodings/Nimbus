@@ -162,6 +162,7 @@ export async function getDetails(me: Me, id: string) {
       owner: user.name,
       parentId: nodes.parentId,
       kind: nodes.kind,
+      version: nodes.currentVersionId,
       createdAt: nodes.createdAt,
       trashedAt: nodes.trashedAt,
     })
@@ -220,6 +221,8 @@ export async function getDetails(me: Me, id: string) {
     parentId:
       row.parentId && (mine || (await accessOne(me.id, row.parentId))) ? row.parentId : null,
     role: access.role,
+    // The current version's id: an editor compares it to see if the file changed under it.
+    version: row.version,
     contents: contents && {
       folders: contents.folders,
       files: contents.files,

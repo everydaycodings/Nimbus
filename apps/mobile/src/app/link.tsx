@@ -1,17 +1,15 @@
 import { useLocalSearchParams, router } from "expo-router"
 import { DeviceMobile } from "phosphor-react-native"
 import { useCallback, useEffect, useRef, useState } from "react"
-import { ActivityIndicator, Platform, View } from "react-native"
+import { ActivityIndicator, View } from "react-native"
 
 import { offerLockIfNew } from "@/components/lock"
 import { InsecureWarning, ConfirmServer } from "@/components/server-confirm"
 import { Button, ErrorText, Field, FormScreen, Text } from "@/components/ui"
 import { useAccounts } from "@/lib/accounts"
 import { ApiError, connect, errorText, json, send } from "@/lib/api"
+import { deviceName } from "@/lib/phone-backup"
 import { c } from "@/lib/theme"
-
-const deviceName = () =>
-  String((Platform.constants as { Model?: string }).Model ?? "Android phone")
 
 // Reached three ways: the in-app scanner, the phone's own camera opening a
 // nimbus://link address, and "Use a code", which arrives with no token.

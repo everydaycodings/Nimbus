@@ -12,6 +12,7 @@ import { json } from "@/lib/api"
 import { setUnreachable, useOnline } from "@/lib/connectivity"
 import { refreshAll, takeNotices } from "@/lib/offline"
 import { replay, useQueue } from "@/lib/offline-queue"
+import { runDue } from "@/lib/phone-backup"
 import { scheduleBackgroundRefresh } from "@/lib/offline-task"
 import { c, radius } from "@/lib/theme"
 
@@ -80,6 +81,7 @@ export function OfflineWatcher() {
     if (Date.now() - lastRefresh.current > 10 * 60_000) {
       lastRefresh.current = Date.now()
       await refreshAll().catch(() => {})
+      runDue().catch(() => {})
     }
     const told = takeNotices()
     if (told.length) snack({ text: told.length > 1 ? `${told[0]} And ${told.length - 1} more.` : told[0] })

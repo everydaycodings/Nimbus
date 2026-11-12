@@ -4,6 +4,7 @@ import {
   WarningCircleIcon,
 } from "@phosphor-icons/react/dist/ssr"
 import { desc, eq } from "drizzle-orm"
+import Link from "next/link"
 import { redirect } from "next/navigation"
 
 import { AndroidDownload } from "@/components/android-download"
@@ -15,6 +16,7 @@ import { PartnerSettings } from "@/components/partner-settings"
 import { AddPasskey, PasskeyList } from "@/components/passkeys"
 import { PasswordForm } from "@/components/password-form"
 import { SignInMethods } from "@/components/sign-in-methods"
+import { buttonVariants } from "@/components/ui/button"
 import { SubmitButton } from "@/components/submit-button"
 import { ResendVerification } from "@/components/resend-verification"
 import { TwoFactorManage, TwoFactorSetup } from "@/components/two-factor"
@@ -41,6 +43,7 @@ import { channelPrefs } from "@/lib/notify"
 import { OIDC_ID, getOidcConfig } from "@/lib/oidc"
 import { deviceAccounts, getSession, isAdmin } from "@/lib/session"
 import { getPartners } from "@/lib/services/partners"
+import { listPhones } from "@/lib/services/phone-backup"
 import { getSettings } from "@/lib/signup"
 import { setNotificationPrefs, setVaultLock } from "./actions"
 
@@ -60,6 +63,7 @@ const KIND_LABEL = {
   backup: "A backup fails, warns, or hasn't run (Admin → Backups)",
   app_password: "A new app password is made for my account",
   storage_low: "My storage is nearly full (90%)",
+  phone_backup: "My phone hasn't backed up contacts or calendar for 7 days",
 } as const
 
 const PROVIDER = { google: "Google", github: "GitHub" } as Record<
@@ -101,6 +105,7 @@ export default async function AccountPage() {
       passkeyStatus(),
     ])
   const partner = await getPartners(me)
+  const phones = await listPhones(me)
   const { require2fa, multiAccount } = settings
   const day = (d: Date) =>
     d.toLocaleDateString("en", { day: "numeric", month: "short", year: "numeric" })
@@ -349,6 +354,36 @@ export default async function AccountPage() {
                 <AndroidDownload release={release} />
               </div>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {phones.length > 0 && (
+        <Card id="phone-backup" className="scroll-mt-20">
+          <CardHeader>
+            <CardTitle className="text-base">Phone backup</CardTitle>
+            <CardDescription>
+              Contacts and calendars your phones back up. Open one to read, compare or download them.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="flex flex-col divide-y">
+              {phones.map((p) => (
+                <li key={p.id} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{p.deviceName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {[p.contacts && "Contacts", p.calendar && "Calendar"].filter(Boolean).join(" and ") || "Backup off"}
+                      {" · "}
+                      {p.copies.length} {p.copies.length === 1 ? "copy" : "copies"}
+                    </p>
+                  </div>
+                  <Link href={`/account/phone-backup/${p.id}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                    Phone backup
+                  </Link>
+                </li>
+              ))}
+            </ul>
           </CardContent>
         </Card>
       )}

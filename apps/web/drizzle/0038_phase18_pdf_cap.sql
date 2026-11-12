@@ -1,0 +1,1 @@
+ALTER TABLE "settings" ADD COLUMN "max_pdf_edit_bytes" bigint DEFAULT 104857600 NOT NULL;

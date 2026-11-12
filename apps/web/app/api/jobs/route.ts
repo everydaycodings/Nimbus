@@ -10,6 +10,7 @@ import { sweepOrphans } from "@/lib/orphan-sweep"
 import { sendPush } from "@/lib/push"
 import { recheckWarned } from "@/lib/quota"
 import { removeObjects } from "@/lib/s3"
+import { alertStalePhones } from "@/lib/services/phone-backup"
 import { purgeTransfers } from "@/lib/services/transfers"
 import { readToken } from "@/lib/upload-rules"
 import { finishTusUpload } from "@/lib/uploads"
@@ -23,6 +24,7 @@ const jobs: Record<string, (data: never) => Promise<unknown>> = {
     await recheckWarned()
   },
   "orphan-sweep": sweepOrphans,
+  "phone-backup-stale": alertStalePhones,
   email: (m: Message) => sendNow(m),
   "delete-keys": ({ keys }: { keys: string[] }) => removeObjects(keys),
   "backup-alert": backupAlert,

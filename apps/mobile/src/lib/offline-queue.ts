@@ -8,7 +8,7 @@ import { ApiError, json, type Account } from "./api"
 import { db } from "./offline-db"
 import { idsOf, remap, renamed, classify, unresolved, type Op } from "./offline-rules"
 import { savedAccounts, tellNative } from "./offline"
-import { CHANGED, currentOf, uploadText } from "./editor-save"
+import { CHANGED, currentOf, uploadFile, uploadText } from "./editor-save"
 
 export type Failed = { id: number; op: Op; label: string; error: string; created: number }
 type Snap = { waiting: number; pending: Set<string>; ops: Op[]; failed: Failed[] }
@@ -129,6 +129,13 @@ async function exec(a: Account, op: Op): Promise<string | void> {
       const now = (await currentOf(a, op.id)).item
       if (!now || now.trashedAt || now.version !== op.base) throw new ApiError(409, "changed", CHANGED)
       return void (await uploadText(a, op.parentId, now.name, op.text, "version"))
+    }
+    case "savePdf": {
+      // ponytail: the file in pdf-saves stays after the upload (the native job reads it later); sweep the folder
+      // against the queue and the upload jobs if it ever grows.
+      const now = (await currentOf(a, op.id)).item
+      if (!now || now.trashedAt || (op.as === "version" && now.version !== op.base)) throw new ApiError(409, "changed", CHANGED)
+      return void (await uploadFile(a, op.parentId, now.name, op.uri, op.size, "application/pdf", op.as))
     }
   }
 }

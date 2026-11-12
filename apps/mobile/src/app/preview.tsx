@@ -20,7 +20,8 @@ import { errorText } from "@/lib/api"
 import { stopQueue } from "@/lib/audio-queue"
 import { canEdit } from "@/lib/editor-rules"
 import { canEditPhoto } from "@/lib/photo-edit-rules"
-import { editable, shareable, useApi, useDetails, useFileActions, type FileSheet } from "@/lib/files"
+import { canEditPdf } from "@/lib/pdf-edit-rules"
+import { editable, shareable, useApi, useDetails, useFileActions, useInstance, type FileSheet } from "@/lib/files"
 import { planFor, type Plan } from "@/lib/preview-rules"
 import { clearPreview, previewSession } from "@/lib/preview-session"
 import { useTransfers } from "@/lib/transfers"
@@ -106,6 +107,8 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
     if (locked) router.back()
   }, [locked])
   const details = useDetails(shown?.id ?? "", !vaultId)
+  // The admin's cap on editable PDFs; an older server or no connection falls back to the default.
+  const instance = useInstance()
   const item: Item = (details.data?.item?.id === shown?.id ? details.data?.item : null) ?? shown
   const plan = shown ? planOf(item.name, version ? version.mime : item.mime, version?.size ?? item.size) : null
   const immersive = plan?.show === "image" || plan?.show === "video"
@@ -379,6 +382,9 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
         )}
         {!vaultId && !version && editable([item], session.role) && canEditPhoto(item.mime) && (
           <IconButton icon={PencilSimpleLine} label="Edit photo" onPress={() => router.push({ pathname: "/photo-edit", params: { id: item.id } })} />
+        )}
+        {canEditPdf(item, { editable: editable([item], session.role), vault: !!vaultId, version: !!version, max: instance.data?.maxPdfEditBytes }) && (
+          <IconButton icon={PencilSimpleLine} label="Edit PDF" onPress={() => router.push({ pathname: "/pdf-edit", params: { id: item.id } })} />
         )}
         {!vaultId && <IconButton icon={DownloadSimple} label="Download" onPress={() => download([item], version)} />}
         {!vaultId && <IconButton icon={DotsThreeVertical} label="More actions" onPress={() => setSheet({ kind: "actions", items: [item] })} />}

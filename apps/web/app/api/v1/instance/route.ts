@@ -32,6 +32,7 @@ export async function GET() {
       tusUrl: new URL(process.env.TUS_URL ?? "/files/", appUrl()).href,
       maxUploadBytes: limits.maxUploadBytes,
       blockedExtensions: limits.blockedExtensions,
+      maxPdfEditBytes: settings.maxPdfEditBytes,
     },
     { headers: { "Cache-Control": "no-store" } }
   )

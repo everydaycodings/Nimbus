@@ -19,9 +19,10 @@ import {
   WarningCircleIcon,
   XIcon,
 } from "@phosphor-icons/react"
+import dynamic from "next/dynamic"
 import { useEffect, useId, useRef, useState } from "react"
 
-import { getDetails } from "@/app/(app)/file-actions"
+import { getDetails, pdfEditLimit } from "@/app/(app)/file-actions"
 import { officeFrame, previewUrl } from "@/app/(app)/upload-actions"
 import { linkPreviewUrl } from "@/app/s/actions"
 import { AudioView } from "@/components/audio-player"
@@ -29,6 +30,7 @@ import { Comments } from "@/components/comments"
 import { CastButton } from "@/components/player-controls"
 import { PlaybackDock } from "@/components/playback-dock"
 import { ImageEditor, canEditImage } from "@/components/image-editor"
+import { PDF_CHANGED } from "@/components/pdf-editor-types"
 import { useUploads } from "@/components/upload-provider"
 import { Button } from "@/components/ui/button"
 import { VideoPlayer } from "@/components/video-player"
@@ -57,6 +59,11 @@ export type Shown = {
   item: Item
   version?: { id: string; number: number; size: number; mime: string | null }
 }
+
+// pdf.js and the editor load only when someone edits a PDF.
+const PdfEditor = dynamic(() => import("@/components/pdf-editor").then((m) => m.PdfEditor), { ssr: false })
+// The admin's largest editable PDF, asked once per page load.
+let pdfLimit: Promise<number | null> | null = null
 
 const OPEN_FAILED = "Couldn't open this file."
 // fetch() rejects with a TypeError when the bucket's CORS rule blocks it.
@@ -108,6 +115,8 @@ export function Previewer({
   const { saveEdit } = useUploads()
   const [editing, setEditing] = useState<{ id: string; url: string } | null>(null)
   const [editFailed, setEditFailed] = useState(false)
+  const [editingPdf, setEditingPdf] = useState<{ id: string; url: string; version: string | null } | null>(null)
+  const [pdfMax, setPdfMax] = useState<number | null>(null)
   // Members only: not on a public link's page, a vault file or an older version.
   const commentable = !link && src === undefined && !shown?.version
   const [commentsOpen, setCommentsOpen] = useState(commentsFirst)
@@ -119,6 +128,24 @@ export function Previewer({
   const v = shown?.version
   // Not on a public link, a vault file (src) or an older version.
   const editImage = editable && !link && src === undefined && !v && canEditImage(item?.mime ?? null)
+  // Same rules as photos, plus the admin's size cap (Edit shows disabled, with the reason, above it).
+  const editPdf = editable && !link && src === undefined && !v && previewKind(item?.mime ?? null, item?.name ?? "") === "pdf"
+  useEffect(() => {
+    if (!editPdf) return
+    pdfLimit ??= pdfEditLimit().catch(() => null)
+    void pdfLimit.then(setPdfMax)
+  }, [editPdf])
+  const pdfTooBig = editPdf && pdfMax !== null && (item?.size ?? 0) > pdfMax
+  async function openPdfEditor() {
+    if (!item) return
+    setEditFailed(false)
+    const [url, d] = await Promise.all([
+      previewUrl(item.id, null).catch(() => null),
+      getDetails(item.id).catch(() => null),
+    ])
+    if (url && d) setEditingPdf({ id: item.id, url, version: d.version })
+    else setEditFailed(true)
+  }
   async function openEditor() {
     if (!item) return
     setEditFailed(false)
@@ -127,13 +154,18 @@ export function Previewer({
     else setEditFailed(true)
   }
   // A new version goes in the folder the file is in; a copy lands next to it.
-  async function saveEdited(file: File, as: "version" | "copy") {
+  // `opened`: the version the PDF editor opened on; a different current one means someone saved meanwhile.
+  async function saveEdited(file: File, as: "version" | "copy", opened?: { version: string | null; overwrite: boolean }) {
     const d = await getDetails(item!.id).catch(() => null)
-    if (!d) return "Couldn't save the edited photo. Try again."
+    if (!d) return `Couldn't save the ${opened ? "PDF" : "edited photo"}. Try again.`
     if (as === "version" && d.parentId === null && d.role !== "owner")
       return "A new version can't be saved from here. Use Save as copy."
+    if (opened && as === "version" && !opened.overwrite && d.version !== opened.version) return PDF_CHANGED
     const error = await saveEdit(file, d.parentId, as === "version" ? "version" : "rename")
-    if (!error) setEditing(null)
+    if (!error) {
+      setEditing(null)
+      setEditingPdf(null)
+    }
     return error
   }
   const t = item && fileType("file", item.mime, item.name)
@@ -203,6 +235,24 @@ export function Previewer({
                     <PencilSimpleIcon className="size-5" />
                   </Button>
                 )}
+                {editPdf && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={pdfTooBig ? "Edit PDF, unavailable" : "Edit PDF"}
+                    title={
+                      pdfTooBig
+                        ? `Too big to edit here (the limit is ${formatBytes(pdfMax!)}).`
+                        : editFailed
+                          ? "Couldn't open the PDF. Try again."
+                          : "Edit"
+                    }
+                    disabled={pdfTooBig}
+                    onClick={openPdfEditor}
+                  >
+                    <PencilSimpleIcon className="size-5" />
+                  </Button>
+                )}
                 {href && (
                   <Button
                     variant="ghost"
@@ -260,6 +310,16 @@ export function Previewer({
                   copy
                   onSave={saveEdited}
                   onClose={() => setEditing(null)}
+                />
+              )}
+              {editingPdf && editingPdf.id === item.id && (
+                <PdfEditor
+                  name={item.name}
+                  src={editingPdf.url}
+                  onSave={(file, as, overwrite) =>
+                    saveEdited(file, as, { version: editingPdf.version, overwrite })
+                  }
+                  onClose={() => setEditingPdf(null)}
                 />
               )}
               <div className="relative flex min-h-0 flex-1">

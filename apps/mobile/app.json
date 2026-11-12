@@ -22,6 +22,8 @@
       "permissions": [
         "android.permission.ACCESS_MEDIA_LOCATION",
         "android.permission.POST_NOTIFICATIONS",
+        "android.permission.READ_CALENDAR",
+        "android.permission.READ_CONTACTS",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.READ_MEDIA_IMAGES",
         "android.permission.READ_MEDIA_VIDEO",
