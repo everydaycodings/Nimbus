@@ -216,7 +216,8 @@ export function SignatureDialog({
 
           <div
             className="rounded-lg border bg-white text-neutral-900"
-            style={{ backgroundImage: "linear-gradient(transparent calc(100% - 44px), #d4d4d4 calc(100% - 44px) calc(100% - 43px), transparent calc(100% - 43px))" }}
+            // The signing line is a guide for drawing only.
+            style={tab === "draw" ? { backgroundImage: "linear-gradient(transparent calc(100% - 44px), #d4d4d4 calc(100% - 44px) calc(100% - 43px), transparent calc(100% - 43px))" } : undefined}
           >
             {tab === "draw" && (
               <div className="relative">
@@ -269,7 +270,7 @@ export function SignatureDialog({
                       aria-checked={font === f}
                       onClick={() => setFont(f)}
                       className={cn(
-                        "flex h-16 items-center justify-center overflow-hidden rounded-md border px-2 text-3xl outline-none focus-visible:ring-[3px] focus-visible:ring-blue-400/50",
+                        "flex h-16 items-center justify-center overflow-hidden whitespace-nowrap rounded-md border px-2 text-2xl outline-none focus-visible:ring-[3px] focus-visible:ring-blue-400/50",
                         font === f ? "border-blue-500 bg-blue-50" : "border-neutral-200 hover:bg-neutral-50"
                       )}
                       style={{ fontFamily: `"${f}"`, color: ink }}

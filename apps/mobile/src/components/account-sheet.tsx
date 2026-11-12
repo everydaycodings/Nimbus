@@ -31,7 +31,7 @@ export function AccountSheet({ onClose }: { onClose: () => void }) {
     const backingUp = backupAvailable && readSettings().enabled && readSettings().accountId === active.id
     await remove(active.id)
     // Signing out stops camera backup into that account; say so rather than let it go quiet.
-    if (backingUp) snack({ text: `Camera backup stopped, because it was backing up to ${active.email}. Turn it on again in More.` })
+    if (backingUp) snack({ text: `Photo backup stopped, because it was backing up to ${active.email}. Turn it on again in More.` })
     // Another account is now active; with none left the tabs layout goes to /connect.
     if (accounts.length > 1) router.replace("/")
   }

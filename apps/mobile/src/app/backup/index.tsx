@@ -99,59 +99,62 @@ export default function Backup() {
     })
 
   return (
-    <Page title="Camera backup">
-      {/* State matters more than the settings, so it comes first. */}
-      <Pressable
-        accessibilityLiveRegion="polite"
-        accessibilityRole={queue ? "button" : undefined}
-        accessibilityHint={queue ? "Shows the queue, to pause or skip" : undefined}
-        disabled={!queue}
-        onPress={() => router.push("/backup/queue")}
-        android_ripple={{ color: c.ripple }}
-        style={{ flexDirection: "row", gap: 16, alignItems: "center", padding: 16, borderWidth: 1, borderColor: c.border, borderRadius: radius.card, backgroundColor: c.card, overflow: "hidden" }}
-      >
-        <View style={{ width: 40, height: 40, borderRadius: radius.control, backgroundColor: c.muted, alignItems: "center", justifyContent: "center" }}>
-          <Icon size={22} color={tint} weight={status.state === "idle" ? "fill" : "regular"} />
-        </View>
-        <View style={{ flex: 1, gap: 2 }}>
-          <Text variant="titleSmall">{line.title}</Text>
-          <Text variant="bodySmall" color={c.mutedForeground}>{line.detail}</Text>
-        </View>
-        {queue && <CaretRight size={20} color={c.mutedForeground} />}
-      </Pressable>
-
-      {status.access === "none" && settings.enabled && (
-        <Section note="Photo access was turned off for Nimbus, so backup has stopped. Allow photos and videos to start it again.">
-          <View style={{ alignItems: "flex-start" }}>
-            {/* Asks again; after "Don't ask again" Android only allows it from Settings. */}
-            <Button variant="outlined" label="Allow access" onPress={async () => ((await askForMedia()) ? refresh() : Linking.openSettings())} />
+    <Page title="Backup">
+      {/* Each block has its own heading: this screen holds photos, contacts and calendar, and other folders. */}
+      <Section title="Photos and videos">
+        {/* State matters more than the settings, so it comes first. */}
+        <Pressable
+          accessibilityLiveRegion="polite"
+          accessibilityRole={queue ? "button" : undefined}
+          accessibilityHint={queue ? "Shows the queue, to pause or skip" : undefined}
+          disabled={!queue}
+          onPress={() => router.push("/backup/queue")}
+          android_ripple={{ color: c.ripple }}
+          style={{ flexDirection: "row", gap: 16, alignItems: "center", padding: 16, borderWidth: 1, borderColor: c.border, borderRadius: radius.card, backgroundColor: c.card, overflow: "hidden" }}
+        >
+          <View style={{ width: 40, height: 40, borderRadius: radius.control, backgroundColor: c.muted, alignItems: "center", justifyContent: "center" }}>
+            <Icon size={22} color={tint} weight={status.state === "idle" ? "fill" : "regular"} />
           </View>
-        </Section>
-      )}
-
-      {status.access === "partial" && settings.enabled && (
-        <Section note="You allowed Nimbus to see only some photos, so new ones won't back up until you allow all of them.">
-          <View style={{ alignItems: "flex-start" }}>
-            <Button variant="outlined" label="Allow all photos" onPress={() => Linking.openSettings()} />
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text variant="titleSmall">{line.title}</Text>
+            <Text variant="bodySmall" color={c.mutedForeground}>{line.detail}</Text>
           </View>
-        </Section>
-      )}
+          {queue && <CaretRight size={20} color={c.mutedForeground} />}
+        </Pressable>
 
-      <Group>
-        <SwitchRow label="Back up photos and videos" detail="Into Camera in My files, by year and month" value={settings.enabled} onChange={turnOn} />
-        {settings.enabled && (
-          <Row
-            label="Backing up to"
-            detail={target ? `${target.email} · ${target.server.replace(/^https?:\/\//, "")}` : "Choose an account"}
-            trailing={<Caret />}
-            onPress={() => setPickAccount(true)}
-          />
+        {status.access === "none" && settings.enabled && (
+          <Section note="Photo access was turned off for Nimbus, so backup has stopped. Allow photos and videos to start it again.">
+            <View style={{ alignItems: "flex-start" }}>
+              {/* Asks again; after "Don't ask again" Android only allows it from Settings. */}
+              <Button variant="outlined" label="Allow access" onPress={async () => ((await askForMedia()) ? refresh() : Linking.openSettings())} />
+            </View>
+          </Section>
         )}
-      </Group>
+
+        {status.access === "partial" && settings.enabled && (
+          <Section note="You allowed Nimbus to see only some photos, so new ones won't back up until you allow all of them.">
+            <View style={{ alignItems: "flex-start" }}>
+              <Button variant="outlined" label="Allow all photos" onPress={() => Linking.openSettings()} />
+            </View>
+          </Section>
+        )}
+
+        <Group>
+          <SwitchRow label="Back up photos and videos" detail="Into Camera in My files, by year and month" value={settings.enabled} onChange={turnOn} />
+          {settings.enabled && (
+            <Row
+              label="Backing up to"
+              detail={target ? `${target.email} · ${target.server.replace(/^https?:\/\//, "")}` : "Choose an account"}
+              trailing={<Caret />}
+              onPress={() => setPickAccount(true)}
+            />
+          )}
+        </Group>
+      </Section>
 
       {settings.enabled && (
         <>
-          <Section title="What">
+          <Section title="Which photos">
             <Group>
               <Row label="Items from" detail={settings.from ? `Taken on or after ${day(settings.from)}` : "Everything on this phone"} trailing={<Caret />} onPress={chooseFrom} />
               {!!settings.from && <Row label="Back up everything instead" onPress={() => change({ from: 0 })} />}
@@ -164,7 +167,7 @@ export default function Backup() {
             </Group>
           </Section>
 
-          <Section title="When">
+          <Section title="When photos back up">
             <Group>
               <SwitchRow label="Use mobile data" detail="Otherwise backup waits for Wi-Fi" value={settings.mobileData} onChange={(v) => change({ mobileData: v })} />
               {settings.mobileData && <SwitchRow label="Videos on Wi-Fi only" value={settings.videosWifiOnly} onChange={(v) => change({ videosWifiOnly: v })} />}
@@ -180,14 +183,6 @@ export default function Backup() {
         </>
       )}
 
-      {denied && (
-        <Section note={`Nimbus needs permission to read your ${denied}. Allow it in Settings, then turn this on again.`}>
-          <View style={{ alignItems: "flex-start" }}>
-            <Button variant="outlined" label="Open settings" onPress={() => Linking.openSettings()} />
-          </View>
-        </Section>
-      )}
-
       <Section title="Contacts and calendar" note="Saves your contacts as a .vcf file and your calendar as an .ics file in My files, under Phone backup. Contact photos are included.">
         <Group>
           <SwitchRow label="Back up contacts" detail={phone.settings.lastAt.contacts ? `Last backup ${when(phone.settings.lastAt.contacts)}` : undefined} value={phone.settings.contacts} onChange={(v) => turnOnPhone("contacts", v)} />
@@ -197,6 +192,13 @@ export default function Backup() {
           {phoneOn && <Row label="Back up now" detail={lastPhone ? `Last backup ${when(lastPhone)}` : "Nothing backed up yet"} trailing={running ? <Spinner /> : undefined} disabled={running || !phoneAccount} onPress={backUpNow} />}
           <Row label="Restore" detail="Open a saved copy in Contacts or Calendar" trailing={<Caret />} onPress={() => setRestore(true)} />
         </Group>
+        {denied && (
+          <Section note={`Nimbus needs permission to read your ${denied}. Allow it in Settings, then turn this on again.`}>
+            <View style={{ alignItems: "flex-start" }}>
+              <Button variant="outlined" label="Open settings" onPress={() => Linking.openSettings()} />
+            </View>
+          </Section>
+        )}
       </Section>
 
       {syncAvailable && (
@@ -209,7 +211,7 @@ export default function Backup() {
 
       {status.failed.length > 0 && (
         <Section
-          title={`Couldn't back up (${status.failed.length})`}
+          title={`Photos that couldn't back up (${status.failed.length})`}
           trailing={<Button variant="text" label="Retry all" onPress={() => { native?.retryBackup(); setTimeout(refresh, 300) }} />}
         >
           <Group>

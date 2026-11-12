@@ -60,15 +60,15 @@ export function describe(status: BackupStatus, now = Date.now()) {
   const last = status.lastAt ? `Last backed up ${ago(now - status.lastAt)}` : "Nothing backed up yet"
   switch (status.state) {
     case "off":
-      return { title: "Backup is off", detail: "Photos and videos on this phone aren't being copied to Nimbus." }
+      return { title: "Photo backup is off", detail: "Photos and videos on this phone aren't being copied to Nimbus." }
     case "running":
       return { title: `Backing up ${Math.min(status.total, status.done + 1)} of ${status.total}`, detail: last }
     case "waiting":
       return { title: status.reason ?? "Waiting", detail: last }
     case "paused":
-      return { title: "Backup is paused", detail: status.total ? `${status.done} of ${status.total} done · ${last}` : last }
+      return { title: "Photo backup is paused", detail: status.total ? `${status.done} of ${status.total} done · ${last}` : last }
     case "failing":
-      return { title: status.reason ?? "Backup has stopped", detail: last }
+      return { title: status.reason ?? "Photo backup has stopped", detail: last }
     default:
       return { title: "All backed up", detail: last }
   }

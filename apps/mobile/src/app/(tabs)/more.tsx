@@ -17,6 +17,7 @@ import { cacheSize, clearCache } from "@/lib/file-cache"
 import { backupAvailable, useBackup } from "@/lib/backup"
 import { syncAvailable } from "@/lib/folder-sync"
 import { describe } from "@/lib/backup-rules"
+import { readPhone } from "@/lib/phone-backup"
 import { useApi, useMe } from "@/lib/files"
 import { useOffline } from "@/lib/offline"
 import { useQueue } from "@/lib/offline-queue"
@@ -36,6 +37,9 @@ export default function More() {
   const { chooseFolder } = useTransfers()
   const [cached, setCached] = useState(0)
   const backup = useBackup()
+  // Photos, then contacts and calendar: the screen holds both.
+  const phone = readPhone()
+  const backupDetail = backup.settings.enabled ? describe(backup.status).title : phone.contacts || phone.calendar ? "Contacts and calendar" : "Off"
   const offline = useOffline(id)
   const queue = useQueue(id)
   const sent = useSent()
@@ -80,7 +84,7 @@ export default function More() {
         )
       )}
           <Group>
-            {backupAvailable && <Row label="Camera backup" detail={backup.settings.enabled ? describe(backup.status).title : "Off"} icon={<CloudArrowUp size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/backup")} />}
+            {backupAvailable && <Row label="Backup" detail={backupDetail} icon={<CloudArrowUp size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/backup")} />}
             {syncAvailable && <Row label="Folder backup & sync" icon={<FolderSync size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/folder-sync")} />}
             <Row label="Uploads" icon={<UploadSimple size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/uploads")} />
             <Row

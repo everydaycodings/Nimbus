@@ -251,7 +251,9 @@ export function ImageEditor({
   const [draft, setDraft] = useState<Op | null>(null)
   const [typing, setTyping] = useState<Pt | null>(null)
   const [stage, setStage] = useState({ w: 0, h: 0 })
-  const stageRef = useRef<HTMLDivElement>(null)
+  // State, not a ref: the dialog's portal attaches the stage after the first render, so a mount-only effect
+  // would miss it (only Strict Mode's second run in dev would see it).
+  const [stageEl, setStageEl] = useState<HTMLDivElement | null>(null)
   const base = useRef<HTMLCanvasElement>(null)
   const marks = useRef<HTMLCanvasElement>(null)
 
@@ -278,14 +280,14 @@ export function ImageEditor({
   useEffect(() => () => bm?.close(), [bm])
 
   useEffect(() => {
-    const el = stageRef.current
+    const el = stageEl
     if (!el) return
     const ro = new ResizeObserver(() =>
       setStage({ w: el.clientWidth, h: el.clientHeight })
     )
     ro.observe(el)
     return () => ro.disconnect()
-  }, [])
+  }, [stageEl])
 
   const dirty = ops.length > 0 || JSON.stringify(geo) !== JSON.stringify(START)
   const { inner } = bm ? frame(bm, geo) : { inner: { w: 1, h: 1 } }
@@ -563,7 +565,7 @@ export function ImageEditor({
           </header>
 
           <div
-            ref={stageRef}
+            ref={setStageEl}
             className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black/40"
           >
             {!bm && !error && (
