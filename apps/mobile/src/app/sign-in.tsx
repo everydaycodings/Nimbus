@@ -2,11 +2,12 @@ import { router, useLocalSearchParams } from "expo-router"
 import * as WebBrowser from "expo-web-browser"
 import { useEffect, useRef, useState } from "react"
 import { Pressable, View } from "react-native"
-import { GithubLogo, GoogleLogo, Key, QrCode } from "phosphor-react-native"
+import { Fingerprint, GithubLogo, GoogleLogo, Key, QrCode } from "phosphor-react-native"
 
 import { Button, ErrorText, Field, FormScreen, Spinner, Text, type InputRef } from "@/components/ui"
 import { whilePicking } from "@/lib/picking"
 import { useAccounts } from "@/lib/accounts"
+import { passkeysSupported, signInWithPasskey } from "@/lib/passkeys"
 import { ApiError, connect, cookiesFrom, errorText, json, send, type Instance } from "@/lib/api"
 import { offerLockIfNew } from "@/components/lock"
 import { ConfirmServer, InsecureWarning } from "@/components/server-confirm"
@@ -44,6 +45,19 @@ function SignIn() {
     await offerLockIfNew()
   }
 
+  async function withPasskey() {
+    setBusy("passkey")
+    setError(null)
+    try {
+      const token = await signInWithPasskey(server)
+      if (token) await finish(token)
+    } catch (e) {
+      setError(errorText(e))
+    } finally {
+      setBusy(null)
+    }
+  }
+
   async function withPassword() {
     setBusy("password")
     setError(null)
@@ -57,7 +71,7 @@ function SignIn() {
       if (body?.twoFactorRedirect) {
         router.push({
           pathname: "/two-factor",
-          params: { server, cookie: cookiesFrom(r.headers.get("set-cookie")) },
+          params: { server, cookie: cookiesFrom(r.headers.get("set-cookie")), passkeys: instance?.passkeys ? "1" : "" },
         })
         return
       }
@@ -96,6 +110,11 @@ function SignIn() {
       if (!code) throw new Error(url.searchParams.get("error")?.replaceAll("_", " ") ?? "That sign-in didn't finish. Try again.")
       // The deep link carries a one-time code, not the session: trade it with the server.
       const { token } = await json<{ token: string }>(server, "/api/auth/app-return/exchange", { method: "POST", body: JSON.stringify({ code }) })
+      // twofa: the account has two-factor, so the code holds the pending sign-in's cookie instead.
+      if (url.searchParams.get("twofa") === "1") {
+        router.push({ pathname: "/two-factor", params: { server, cookie: token, passkeys: instance?.passkeys ? "1" : "" } })
+        return
+      }
       await finish(token)
     } catch (e) {
       setError(errorText(e))
@@ -107,6 +126,7 @@ function SignIn() {
   if (!instance && !error) return <Spinner />
   const p = instance?.providers
   const httpOnly = server.startsWith("http://")
+  const usePasskey = Boolean(instance?.passkeys && passkeysSupported && !p?.only)
   return (
     <FormScreen>
       <View style={{ gap: 8 }}>
@@ -127,8 +147,9 @@ function SignIn() {
         </View>
       )}
       {error && <ErrorText>{error}</ErrorText>}
-      {(p?.google || p?.github || p?.oidc) && (
+      {p && (p.google || p.github || p.oidc || usePasskey) && (
         <View style={{ gap: 12 }}>
+          {usePasskey && <Button variant="outlined" label="Sign in with a passkey" icon={<Fingerprint size={20} color={c.foreground} />} busy={busy === "passkey"} onPress={withPasskey} />}
           {p.google && <Button variant="outlined" label="Continue with Google" icon={<GoogleLogo size={20} color={c.foreground} />} busy={busy === "google"} onPress={() => withProvider("google")} />}
           {p.github && <Button variant="outlined" label="Continue with GitHub" icon={<GithubLogo size={20} color={c.foreground} />} busy={busy === "github"} onPress={() => withProvider("github")} />}
           {p.oidc && <Button variant="outlined" label={`Continue with ${p.oidc.name}`} icon={<Key size={20} color={c.foreground} />} busy={busy === "oidc"} onPress={() => withProvider("oidc")} />}

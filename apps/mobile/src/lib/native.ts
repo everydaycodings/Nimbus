@@ -99,6 +99,9 @@ export type NimbusAndroid = {
   vaultBioEnable?(accountId: string, vaultId: string): Promise<"ok" | "cancel">
   vaultBioUnlock?(accountId: string, vaultId: string): Promise<"ok" | "cancel" | "invalidated" | "none">
   vaultBioDisable?(accountId: string, vaultId: string): void
+  // Credential Manager. Take the server's WebAuthn options JSON; resolve with the response JSON, or null when the person closes the sheet. Optional: older APKs lack them.
+  createPasskey?(requestJson: string): Promise<string | null>
+  getPasskey?(requestJson: string): Promise<string | null>
   vaultForget?(accountId: string, vaultId: string | null): void
   setSecure?(on: boolean): void
   // Phase 8, push (UnifiedPush). Optional: older APKs don't have them. Each account is one UnifiedPush instance, named by its id.

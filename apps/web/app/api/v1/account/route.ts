@@ -1,8 +1,9 @@
 import { desc, eq } from "drizzle-orm"
 
 import { withMember } from "@/lib/api"
+import { passkeyStatus } from "@/lib/auth"
 import { db } from "@/lib/db"
-import { account, appPasswords, user } from "@/lib/db/schema"
+import { account, appPasswords, passkey, user } from "@/lib/db/schema"
 import { appUrl } from "@/lib/email"
 import { channelPrefs } from "@/lib/notify"
 import { prefKinds } from "@/lib/services/account"
@@ -12,7 +13,7 @@ import { getSettings } from "@/lib/signup"
 // endpoints (see the README); `twoFactor` here says whether it's on.
 export const GET = () =>
   withMember(async (me) => {
-    const [linked, prefs, [row], apps, settings] = await Promise.all([
+    const [linked, prefs, [row], apps, settings, keys, keyStatus] = await Promise.all([
       db
         .select({ providerId: account.providerId })
         .from(account)
@@ -31,6 +32,12 @@ export const GET = () =>
         .where(eq(appPasswords.userId, me.id))
         .orderBy(desc(appPasswords.createdAt)),
       getSettings(),
+      db
+        .select({ id: passkey.id, name: passkey.name, at: passkey.createdAt })
+        .from(passkey)
+        .where(eq(passkey.userId, me.id))
+        .orderBy(passkey.createdAt),
+      passkeyStatus(),
     ])
     const kinds = new Set<string>(prefKinds(me))
     return Response.json({
@@ -59,5 +66,13 @@ export const GET = () =>
         lastUsedAt: a.lastUsedAt?.toISOString() ?? null,
         lastIp: a.lastIp,
       })),
+      passkeys: {
+        ...keyStatus,
+        items: keys.map((k) => ({
+          id: k.id,
+          name: k.name || "Passkey",
+          createdAt: (k.at ?? new Date(0)).toISOString(),
+        })),
+      },
     })
   })

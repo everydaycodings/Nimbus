@@ -1,3 +1,4 @@
+import { count, eq } from "drizzle-orm"
 import Link from "next/link"
 
 import {
@@ -10,7 +11,10 @@ import {
 import { CopyButton } from "@/components/copy-button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import { db } from "@/lib/db"
+import { passkey } from "@/lib/db/schema"
 import { appUrl } from "@/lib/email"
+import { passkeyHost } from "@/lib/passkey-rules"
 import { OIDC_ID, getOidcConfig, oidcReady, type OidcConfig } from "@/lib/oidc"
 import { POLICY_MAX, POLICY_MIN } from "@/lib/password-policy"
 import { hasPassword, requireAdmin } from "@/lib/session"
@@ -19,6 +23,8 @@ import { MAX_SESSIONS } from "@/lib/accounts"
 import {
   setDeviceLinks,
   setMultiAccount,
+  setOidcTrustMfa,
+  setPasskeys,
   setPasswordPolicy,
   setRequire2fa,
   setSavedLogins,
@@ -71,6 +77,14 @@ export default async function AuthenticationPage() {
   const blocked = needsOwn2fa && !s.require2fa
   const oidc = await getOidcConfig()
   const callback = appUrl(`/api/auth/callback/${OIDC_ID}`)
+  const host = passkeyHost(process.env.BETTER_AUTH_URL)
+  const [{ mine }] = await db
+    .select({ mine: count() })
+    .from(passkey)
+    .where(eq(passkey.userId, me.id))
+  // Mirrors setPasskeys: the rule needs the admin's own passkey, and a server that can use them.
+  const noPasskeys = !mine && !s.requirePasskey
+  const cantRequire = noPasskeys || (!host && !s.requirePasskey)
 
   return (
     <AdminPage
@@ -113,7 +127,7 @@ export default async function AuthenticationPage() {
           tip={{
             does: "Adds a one-time code from an authenticator app to every password sign-in.",
             affects:
-              "All members and admins who sign in with a password. Google and GitHub sign-ins use the provider's own two-factor.",
+              "All members and admins who sign in with a password. Google, GitHub and OIDC sign-ins ask for the code too, unless the OIDC switch below trusts the provider.",
             default: "Off",
           }}
           reset={reset("require2fa")}
@@ -124,6 +138,77 @@ export default async function AuthenticationPage() {
             name="require2fa"
             defaultChecked={s.require2fa}
             disabled={blocked}
+            className={`${CHECK} self-start sm:self-end`}
+          />
+        </SettingRow>
+      </SettingsForm>
+
+      <SettingsForm
+        action={setPasskeys}
+        title="Passkeys"
+        description="Sign in with a fingerprint, face or screen lock instead of a password. A passkey also stands in for the two-factor code."
+        note={
+          !host ? (
+            "Passkeys need HTTPS and a domain name."
+          ) : noPasskeys ? (
+            <>
+              Add a passkey to{" "}
+              <Link
+                href="/account#passkeys"
+                className="text-foreground underline underline-offset-4"
+              >
+                your own account
+              </Link>{" "}
+              before requiring them.
+            </>
+          ) : undefined
+        }
+        risks={[
+          {
+            name: "requirePasskey",
+            when: "checked",
+            message:
+              "Everyone without a passkey, admins included, is stopped the next time they open Nimbus until they add one.",
+          },
+        ]}
+      >
+        <SettingRow
+          id="passkeys"
+          label="Allow passkeys"
+          htmlFor="passkeysEnabled"
+          hint="Needs HTTPS and a domain name. Off hides them everywhere; passkeys people already added are kept."
+          tip={{
+            does: "Lets people add passkeys in Account and sign in with them, on the web and in the Android app.",
+            affects:
+              "Everyone on this Nimbus. A passkey sign-in skips the two-factor code.",
+            default: "On",
+          }}
+        >
+          <input
+            type="checkbox"
+            id="passkeysEnabled"
+            name="passkeysEnabled"
+            defaultChecked={s.passkeysEnabled}
+            className={`${CHECK} self-start sm:self-end`}
+          />
+        </SettingRow>
+        <SettingRow
+          id="require-passkey"
+          label="Require a passkey"
+          htmlFor="requirePasskey"
+          hint="Everyone must add one before they can use Nimbus. They can still sign in with their password."
+          tip={{
+            does: "Shows a “Set up a passkey” screen to anyone who has none, until they add one.",
+            affects: "All members and admins, at their next visit.",
+            default: "Off",
+          }}
+        >
+          <input
+            type="checkbox"
+            id="requirePasskey"
+            name="requirePasskey"
+            defaultChecked={s.requirePasskey}
+            disabled={cantRequire}
             className={`${CHECK} self-start sm:self-end`}
           />
         </SettingRow>
@@ -410,6 +495,35 @@ export default async function AuthenticationPage() {
           )}
         </div>
       </Section>
+      {oidcReady(oidc) && (
+        <SettingsForm
+          action={setOidcTrustMfa}
+          title="Two-factor with single sign-on"
+          description="Google, GitHub and OIDC sign-ins ask for a Nimbus two-factor code too, for accounts that have it on."
+        >
+          <SettingRow
+            id="oidc-trust-mfa"
+            label={`Trust ${oidc.name}'s own MFA`}
+            htmlFor="oidcTrustMfa"
+            hint="Sign-ins through your OIDC provider skip the Nimbus code. Use it when the provider already asks for a second step."
+            tip={{
+              does: "Treats an OIDC sign-in as already two-factor.",
+              affects:
+                "People who sign in through the OIDC provider. Google and GitHub still ask for the code.",
+              default: "Off",
+            }}
+          >
+            <input
+              type="checkbox"
+              id="oidcTrustMfa"
+              name="oidcTrustMfa"
+              defaultChecked={s.oidcTrustMfa}
+              className={`${CHECK} self-start sm:self-end`}
+            />
+          </SettingRow>
+        </SettingsForm>
+      )}
+
     </AdminPage>
   )
 }

@@ -5,7 +5,7 @@ import "server-only"
 import { and, eq, inArray, isNull, sql } from "drizzle-orm"
 
 import { folderOwner, ownerIfAll } from "@/lib/access"
-import { record, recordOne } from "@/lib/activity"
+import { record } from "@/lib/activity"
 import { db } from "@/lib/db"
 import { nodes } from "@/lib/db/schema"
 import { UUID } from "@/lib/files"
@@ -72,7 +72,7 @@ export async function renameAs(
   const owner = await ownerIfAll(userId, ids, "editor")
   if (!owner) return { error: NOT_ALLOWED }
   const [was] = await db
-    .select({ name: nodes.name })
+    .select({ name: nodes.name, parentId: nodes.parentId })
     .from(nodes)
     .where(and(owned(owner, ids), isNull(nodes.trashedAt)))
   try {
@@ -85,7 +85,16 @@ export async function renameAs(
     throw e
   }
   if (was && was.name !== clean.name)
-    await recordOne(ids[0], userId, "rename", `${was.name} → ${clean.name}`)
+    await record([
+      {
+        nodeId: ids[0],
+        actorId: userId,
+        type: "rename",
+        detail: `${was.name} → ${clean.name}`,
+        fromName: was.name,
+        fromParentId: was.parentId,
+      },
+    ])
   if (owner !== userId) await notifyEdit(userId, ids[0])
   return {}
 }
@@ -145,15 +154,26 @@ export async function moveAs(
       }
     throw e
   }
-  // A same-folder WebDAV MOVE is a rename.
+  // A same-folder WebDAV MOVE is a rename; a move that renames too is both. A move's fromName
+  // is the name it had, which also marks the row as one that Restore to a point in time can read.
   await record(
-    before.flatMap((b): Parameters<typeof record>[0] =>
-      b.parentId !== parentId
-        ? [{ nodeId: b.id, actorId: userId, type: "move" as const }]
-        : rename.name && rename.name !== b.name
-          ? [{ nodeId: b.id, actorId: userId, type: "rename" as const, detail: `${b.name} → ${rename.name}` }]
-          : []
-    )
+    before.flatMap((b): Parameters<typeof record>[0] => [
+      ...(b.parentId !== parentId
+        ? [{ nodeId: b.id, actorId: userId, type: "move" as const, fromName: b.name, fromParentId: b.parentId }]
+        : []),
+      ...(rename.name && rename.name !== b.name
+        ? [
+            {
+              nodeId: b.id,
+              actorId: userId,
+              type: "rename" as const,
+              detail: `${b.name} → ${rename.name}`,
+              fromName: b.name,
+              fromParentId: b.parentId,
+            },
+          ]
+        : []),
+    ])
   )
   if (owner !== userId && parentId) await notifyEdit(userId, parentId)
   return {}

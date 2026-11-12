@@ -10,14 +10,19 @@ import {
   type ActivityType,
 } from "@/lib/activity-rules"
 import { db } from "@/lib/db"
-import { activity, fileVersions, nodes, settings, user } from "@/lib/db/schema"
+import { activity, fileVersions, nodes, pointRestores, settings, user } from "@/lib/db/schema"
 import { UUID } from "@/lib/file-rules"
+import { undoable } from "@/lib/point-restore-rules"
 
 type Row = {
   nodeId: string
   actorId: string | null
   type: ActivityType
   detail?: string | null
+  // Renames and moves: what the name and folder were, for Restore to a point in time.
+  fromName?: string | null
+  fromParentId?: string | null
+  restoreId?: string | null
 }
 
 // Logs what someone did. A failure here never undoes the change itself.
@@ -61,6 +66,8 @@ export type ActivityEvent = {
   nodeId: string
   /** The item's name now; for a folder's feed this tells its children apart. */
   name: string
+  /** A "Restored to…" entry: the time it went back to, and the id to undo it with while that still works. */
+  restore: { at: string; undoId: string | null } | null
 }
 
 // Newest first. A folder's feed includes everything inside it (sharing covers the whole
@@ -103,15 +110,30 @@ export async function listActivity(
       actorName: user.name,
       nodeId: activity.nodeId,
       name: nodes.name,
+      pr: pointRestores,
     })
     .from(activity)
     .innerJoin(nodes, eq(nodes.id, activity.nodeId))
     .leftJoin(user, eq(user.id, activity.actorId))
+    .leftJoin(pointRestores, eq(pointRestores.id, activity.restoreId))
     .where(where)
     .orderBy(desc(activity.at), desc(activity.id))
     .offset(offset)
     .limit(limit)
-  return { events: rows.map((r) => ({ ...r, at: r.at.toISOString() })), total }
+  return {
+    events: rows.map(({ pr, ...r }) => ({
+      ...r,
+      at: r.at.toISOString(),
+      restore: pr
+        ? {
+            at: pr.at.toISOString(),
+            // Only the owner may undo.
+            undoId: a.role === "owner" && undoable(pr.createdAt.getTime(), pr.undoneAt) ? pr.id : null,
+          }
+        : null,
+    })),
+    total,
+  }
 }
 
 // Run with the hourly purge.

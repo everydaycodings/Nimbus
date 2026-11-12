@@ -1,6 +1,12 @@
-import { randomBytes } from "node:crypto"
+import { createHmac, randomBytes } from "node:crypto"
 
+import type { GenericEndpointContext } from "@better-auth/core"
 import { expo } from "@better-auth/expo"
+import { passkey } from "@better-auth/passkey"
+import {
+  generateAuthenticationOptions,
+  verifyAuthenticationResponse,
+} from "@simplewebauthn/server"
 import { betterAuth } from "better-auth"
 import * as z from "zod"
 import {
@@ -48,6 +54,7 @@ import {
   oidcReady,
   type OidcConfig,
 } from "./oidc"
+import { DEBUG_SHA256, apkOrigin, passkeyHost } from "./passkey-rules"
 import { POLICY_MAX, POLICY_MIN, passwordProblem } from "./password-policy"
 import {
   INVITE_COOKIE,
@@ -120,7 +127,281 @@ async function logEvent(
 
 // Sign-ins that ask "Save your login info?" afterwards: not switching or a saved login.
 const FRESH_SIGN_IN =
-  /^\/(sign-in\/email|sign-up\/email|two-factor\/verify-(totp|backup-code)|callback\/)/
+  /^\/(sign-in\/email|sign-up\/email|two-factor\/verify-(totp|backup-code|passkey)|passkey\/verify-authentication|callback\/)/
+
+// The two-factor step a sign-in waits at: a signed cookie naming a short-lived
+// verification row, which a code, a backup code or a passkey turns into a
+// session. Mirrors the two-factor plugin after a password sign-in. Returns the
+// cookie as "name=value", for the app, which carries it by hand.
+type SignedCookieCtx = Pick<GenericEndpointContext, "context" | "setSignedCookie">
+
+async function startTwoFactor(ctx: SignedCookieCtx, userId: string) {
+  const maxAge = 600
+  const cookie = ctx.context.createAuthCookie("two_factor", { maxAge })
+  const identifier = `2fa-${randomBytes(15).toString("hex")}`
+  const expiresAt = new Date(Date.now() + maxAge * 1000)
+  await ctx.context.internalAdapter.createVerificationValue({
+    value: userId,
+    identifier,
+    expiresAt,
+  })
+  await ctx.context.internalAdapter.createVerificationValue({
+    value: "0",
+    identifier: `2fa-attempts-${identifier}`,
+    expiresAt,
+  })
+  const set = await ctx.setSignedCookie(
+    cookie.name,
+    identifier,
+    ctx.context.secret,
+    cookie.attributes
+  )
+  return set.split(";")[0]
+}
+
+// "Don't ask again on this device": the two-factor plugin's trust_device cookie,
+// an HMAC over the user and a verification row the server can revoke.
+const TRUST_MAX_AGE = 30 * 24 * 60 * 60
+const trustToken = (secret: string, userId: string, id: string) =>
+  createHmac("sha256", secret).update(`${userId}!${id}`).digest("base64url")
+
+async function trustedDevice(ctx: GenericEndpointContext, userId: string) {
+  const cookie = ctx.context.createAuthCookie("trust_device")
+  const [token, id] = (
+    (await ctx.getSignedCookie(cookie.name, ctx.context.secret)) || ""
+  ).split("!")
+  if (!token || !id || token !== trustToken(ctx.context.secret, userId, id))
+    return false
+  const row = await ctx.context.internalAdapter.findVerificationValue(id)
+  return Boolean(row && row.value === userId && row.expiresAt > new Date())
+}
+
+async function trustDevice(ctx: GenericEndpointContext, userId: string) {
+  const cookie = ctx.context.createAuthCookie("trust_device", {
+    maxAge: TRUST_MAX_AGE,
+  })
+  const id = `trust-device-${randomBytes(24).toString("hex")}`
+  await ctx.context.internalAdapter.createVerificationValue({
+    value: userId,
+    identifier: id,
+    expiresAt: new Date(Date.now() + TRUST_MAX_AGE * 1000),
+  })
+  await ctx.setSignedCookie(
+    cookie.name,
+    `${trustToken(ctx.context.secret, userId, id)}!${id}`,
+    ctx.context.secret,
+    cookie.attributes
+  )
+}
+
+// Passkeys work on https with a domain name (or localhost), when the admin
+// leaves them on. The web origin and the Android app's signing certificates
+// (release from env, plus the debug one) may all sign in.
+const passkeyOrigins = () => [
+  new URL(process.env.BETTER_AUTH_URL ?? "http://localhost:3000").origin,
+  ...[process.env.ANDROID_RELEASE_SHA256, DEBUG_SHA256].flatMap(
+    (f) => apkOrigin(f) ?? []
+  ),
+]
+
+export async function passkeyStatus() {
+  const host = passkeyHost(process.env.BETTER_AUTH_URL)
+  const [row] = await db
+    .select({ on: schema.settings.passkeysEnabled })
+    .from(schema.settings)
+  const on = row?.on ?? true
+  return {
+    available: Boolean(host) && on,
+    reason: !host
+      ? "Passkeys need HTTPS and a domain name."
+      : on
+        ? null
+        : "Your admin turned passkeys off.",
+  }
+}
+
+// The user whose two-factor step this request is at, from the signed cookie.
+async function pendingTwoFactor(ctx: GenericEndpointContext) {
+  const cookie = ctx.context.createAuthCookie("two_factor")
+  const identifier = await ctx.getSignedCookie(
+    cookie.name,
+    ctx.context.secret
+  )
+  const row = identifier
+    ? await ctx.context.internalAdapter.findVerificationValue(identifier)
+    : null
+  if (!identifier || !row || row.expiresAt < new Date())
+    throw new APIError("UNAUTHORIZED", {
+      message: "This sign-in timed out. Sign in again.",
+      code: "INVALID_TWO_FACTOR_COOKIE",
+    })
+  return { identifier, userId: row.value, cookie }
+}
+
+// Provider sign-ins (Google, GitHub, OIDC) skip the two-factor plugin, whose
+// hook only matches password paths. This asks for the second step after them
+// too. It must sit right after twoFactor() in the plugin list: multiSession's
+// and the accounts hooks below then see no session for it and leave it alone.
+// OIDC can be exempt when the provider asks for its own MFA.
+const providerTwoFactor = {
+  id: "nimbus-provider-2fa",
+  hooks: {
+    after: [
+      {
+        matcher: (ctx) => ctx.path?.startsWith("/callback/") === true,
+        handler: createAuthMiddleware(async (ctx) => {
+          const s = ctx.context.newSession
+          if (!s?.user.twoFactorEnabled) return
+          if (
+            ctx.params?.id === OIDC_ID &&
+            (await getSettings()).oidcTrustMfa
+          )
+            return
+          if (await trustedDevice(ctx, s.user.id)) return
+          // The session the callback just made is not allowed yet.
+          await ctx.context.internalAdapter.deleteSession(s.session.token)
+          ctx.context.setNewSession(null)
+          const headers = ctx.context.responseHeaders
+          headers?.delete("set-cookie")
+          const pending = await startTwoFactor(ctx, s.user.id)
+          const location = headers?.get("location") ?? "/"
+          if (location.startsWith("nimbus://")) {
+            // The app trades this code for the cookie, then opens its code screen.
+            const url = new URL(location)
+            url.searchParams.delete("cookie")
+            url.searchParams.set("code", await stashSession(pending))
+            url.searchParams.set("twofa", "1")
+            ctx.setHeader("location", url.toString())
+            return
+          }
+          const base = new URL(ctx.context.baseURL)
+          const to = new URL(location, base)
+          const next = to.origin === base.origin ? to.pathname + to.search : "/"
+          ctx.setHeader("location", `/two-factor?next=${encodeURIComponent(next)}`)
+        }),
+      },
+    ],
+  },
+} satisfies BetterAuthPlugin
+
+// A passkey as the second step, for a sign-in waiting at /two-factor. Only
+// built with the passkey plugin, whose table it reads.
+const passkeyTwoFactor = (rpID: string, origins: string[]) =>
+  ({
+    id: "nimbus-passkey-2fa",
+    endpoints: {
+      passkeyTwoFactorOptions: createAuthEndpoint(
+        "/two-factor/passkey-options",
+        { method: "POST" },
+        async (ctx) => {
+          const { identifier, userId } = await pendingTwoFactor(ctx)
+          const keys = await ctx.context.adapter.findMany<{
+            credentialID: string
+            transports: string | null
+          }>({ model: "passkey", where: [{ field: "userId", value: userId }] })
+          if (!keys.length)
+            throw new APIError("BAD_REQUEST", {
+              message: "This account has no passkey.",
+              code: "NO_PASSKEY",
+            })
+          const options = await generateAuthenticationOptions({
+            rpID,
+            userVerification: "preferred",
+            allowCredentials: keys.map((k) => ({
+              id: k.credentialID,
+              transports: k.transports?.split(",").filter(Boolean) as
+                | undefined
+                | AuthenticatorTransport[],
+            })),
+          })
+          await ctx.context.internalAdapter.createVerificationValue({
+            identifier: `2fa-passkey-${identifier}`,
+            value: options.challenge,
+            expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+          })
+          return ctx.json(options)
+        }
+      ),
+      passkeyTwoFactorVerify: createAuthEndpoint(
+        "/two-factor/verify-passkey",
+        {
+          method: "POST",
+          body: z.object({
+            response: z.record(z.string(), z.any()),
+            trustDevice: z.boolean().optional(),
+          }),
+        },
+        async (ctx) => {
+          const { identifier, userId, cookie } = await pendingTwoFactor(ctx)
+          const bad = () =>
+            new APIError("UNAUTHORIZED", {
+              message: "That passkey didn't work. Try again.",
+              code: "INVALID_PASSKEY",
+            })
+          // One try per challenge.
+          const challenge =
+            await ctx.context.internalAdapter.consumeVerificationValue(
+              `2fa-passkey-${identifier}`
+            )
+          const resp = ctx.body.response
+          const key = await ctx.context.adapter.findOne<{
+            id: string
+            credentialID: string
+            publicKey: string
+            counter: number
+            transports: string | null
+          }>({
+            model: "passkey",
+            where: [
+              { field: "credentialID", value: String(resp.id) },
+              { field: "userId", value: userId },
+            ],
+          })
+          if (!challenge || !key) throw bad()
+          let counter: number
+          try {
+            const v = await verifyAuthenticationResponse({
+              response: resp as never,
+              expectedChallenge: challenge.value,
+              expectedOrigin: origins,
+              expectedRPID: rpID,
+              credential: {
+                id: key.credentialID,
+                publicKey: Buffer.from(key.publicKey, "base64"),
+                counter: key.counter,
+                transports: key.transports?.split(",").filter(Boolean) as
+                  | undefined
+                  | AuthenticatorTransport[],
+              },
+              requireUserVerification: false,
+            })
+            if (!v.verified) throw bad()
+            counter = v.authenticationInfo.newCounter
+          } catch {
+            throw bad()
+          }
+          await ctx.context.adapter.update({
+            model: "passkey",
+            where: [{ field: "id", value: key.id }],
+            update: { counter },
+          })
+          // Single use: the step is spent whatever happens next.
+          if (!(await ctx.context.internalAdapter.consumeVerificationValue(identifier)))
+            throw bad()
+          const user = await ctx.context.internalAdapter.findUserById(userId)
+          const session = await ctx.context.internalAdapter.createSession(userId)
+          if (!user || !session)
+            throw new APIError("INTERNAL_SERVER_ERROR", {
+              message: "Couldn't sign you in. Try again.",
+            })
+          await setSessionCookie(ctx, { session, user })
+          ctx.setCookie(cookie.name, "", { ...cookie.attributes, maxAge: 0 })
+          if (ctx.body.trustDevice) await trustDevice(ctx, userId)
+          return ctx.json({ token: session.token })
+        }
+      ),
+    },
+  }) satisfies BetterAuthPlugin
 
 const accountMemory = {
   id: "nimbus-accounts",
@@ -299,29 +580,7 @@ const accountMemory = {
         await logEvent(ctx.headers, saved.userId, "saved_login_used")
 
         if (saved.twoFactorEnabled) {
-          // Mirrors the two-factor plugin after a password sign-in: a signed
-          // cookie naming a short-lived verification row, which /two-factor
-          // turns into a session once the code checks out.
-          const maxAge = 600
-          const cookie = ctx.context.createAuthCookie("two_factor", { maxAge })
-          const identifier = `2fa-${randomBytes(15).toString("hex")}`
-          const expiresAt = new Date(Date.now() + maxAge * 1000)
-          await ctx.context.internalAdapter.createVerificationValue({
-            value: saved.userId,
-            identifier,
-            expiresAt,
-          })
-          await ctx.context.internalAdapter.createVerificationValue({
-            value: "0",
-            identifier: `2fa-attempts-${identifier}`,
-            expiresAt,
-          })
-          await ctx.setSignedCookie(
-            cookie.name,
-            identifier,
-            ctx.context.secret,
-            cookie.attributes
-          )
+          await startTwoFactor(ctx, saved.userId)
           return ctx.json({ twoFactorRedirect: true })
         }
 
@@ -625,6 +884,7 @@ const options = {
   },
   plugins: [
     twoFactor({ issuer: "Nimbus" }),
+    providerTwoFactor,
     // The admin's lower limit is checked before adding (app/(app)/actions.ts).
     multiSession({ maximumSessions: MAX_SESSIONS }),
     accountMemory,
@@ -641,8 +901,10 @@ const options = {
 // next request builds a fresh instance. It signs in through the core
 // /sign-in/social and /callback/oidc, like Google. It has no after-hooks, so
 // sitting behind nextCookies() is fine.
-const build = (oidc: OidcConfig | null) =>
-  betterAuth({
+const build = (oidc: OidcConfig | null, passkeys: boolean) => {
+  const rpID = passkeys ? passkeyHost(process.env.BETTER_AUTH_URL) : null
+  const origins = passkeyOrigins()
+  return betterAuth({
     ...options,
     plugins: [
       ...options.plugins,
@@ -661,8 +923,15 @@ const build = (oidc: OidcConfig | null) =>
             ]
           : [],
       }),
+      ...(rpID
+        ? [
+            passkey({ rpID, rpName: "Nimbus", origin: origins }),
+            passkeyTwoFactor(rpID, origins),
+          ]
+        : []),
     ],
   })
+}
 
 type Auth = ReturnType<typeof build>
 
@@ -674,8 +943,8 @@ let current: { gen: number; auth: Promise<Auth> } | undefined
 export function getAuth() {
   const gen = g.nimbusAuthGen ?? 0
   if (current?.gen !== gen) {
-    const auth = getOidcConfig()
-      .then((c) => build(oidcReady(c) ? c : null))
+    const auth = Promise.all([getOidcConfig(), passkeyStatus()])
+      .then(([c, p]) => build(oidcReady(c) ? c : null, p.available))
       .catch((e) => {
         current = undefined
         throw e

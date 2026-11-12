@@ -8,6 +8,7 @@ import { Button, ErrorText, Field, FormScreen, Spinner, Text } from "@/component
 import { useAccounts } from "@/lib/accounts"
 import { errorText, json, type Account, type Me } from "@/lib/api"
 import { useAuthCall } from "@/lib/files"
+import { addPasskey, passkeysSupported } from "@/lib/passkeys"
 import { c } from "@/lib/theme"
 
 const useMe = (a: Account | null) =>
@@ -95,12 +96,31 @@ function TwoFactorSetup({ refetch }: { refetch: () => void }) {
   )
 }
 
+// The same sheet as Account → Passkeys, for when the admin requires one.
+function PasskeySetup({ account, refetch }: { account: Account; refetch: () => void }) {
+  const [name, setName] = useState("This phone")
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  if (!passkeysSupported) return <ErrorText>This version of the app can&apos;t use passkeys. Update the app, or set one up in the browser.</ErrorText>
+  return (
+    <>
+      <Field label="Name" value={name} onChangeText={setName} error={error} />
+      <Button label="Add a passkey" busy={busy} disabled={!name.trim()} onPress={async () => {
+        setBusy(true); setError(null)
+        try { if (await addPasskey(account.server, account.token, name.trim())) refetch() }
+        catch (e) { setError(errorText(e)) } finally { setBusy(false) }
+      }} />
+    </>
+  )
+}
+
 const TITLE = {
   "temporary-password": "Choose your own password",
   "confirm-email": "Confirm your email",
   pending: "Waiting for approval",
   rejected: "Your request was declined",
   "two-factor": "Set up two-factor to continue",
+  passkey: "Set up a passkey to continue",
 }
 
 export default function Gate() {
@@ -121,6 +141,12 @@ export default function Gate() {
         <>
           <Text color={c.mutedForeground}>Your admin requires two-factor on this Nimbus. After your password, you'll also enter a code from an authenticator app.</Text>
           <TwoFactorSetup refetch={refetch} />
+        </>
+      )}
+      {gate === "passkey" && (
+        <>
+          <Text color={c.mutedForeground}>Your admin requires a passkey on this Nimbus. It lets you sign in with your fingerprint, face or screen lock, and works as your second step.</Text>
+          <PasskeySetup account={active} refetch={refetch} />
         </>
       )}
       {gate === "confirm-email" && (

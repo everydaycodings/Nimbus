@@ -251,6 +251,24 @@ export const ADMIN_SETTINGS: {
     keywords: "2fa mfa totp authenticator otp",
   },
   {
+    id: "passkeys",
+    label: "Passkeys",
+    href: "/admin/authentication",
+    keywords: "passkey webauthn fingerprint face biometric sign in",
+  },
+  {
+    id: "require-passkey",
+    label: "Require a passkey",
+    href: "/admin/authentication",
+    keywords: "passkey webauthn force everyone",
+  },
+  {
+    id: "oidc-trust-mfa",
+    label: "Trust the OIDC provider's own MFA",
+    href: "/admin/authentication",
+    keywords: "oidc sso mfa two-factor skip",
+  },
+  {
     id: "multi-account",
     label: "Several accounts per browser",
     href: "/admin/authentication",

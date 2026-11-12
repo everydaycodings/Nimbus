@@ -4,15 +4,16 @@ import { cookies, headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { cache } from "react"
 
-import { and, eq, inArray, isNull, sql } from "drizzle-orm"
+import { and, count, eq, inArray, isNull, sql } from "drizzle-orm"
 
 import { KNOWN_COOKIE, parseKnown } from "@/lib/accounts"
-import { auth } from "@/lib/auth"
+import { auth, passkeyStatus } from "@/lib/auth"
 import { db } from "@/lib/db"
 import {
   account,
   authEvents,
   notifications,
+  passkey,
   type AuthEventKind,
   type Role,
   type Status,
@@ -54,9 +55,16 @@ export async function gateOf(
     return "confirm-email" as const
   if (me.status === "pending") return "pending" as const
   if (me.status === "rejected") return "rejected" as const
-  const { require2fa } = await getSettings()
+  const { require2fa, requirePasskey } = await getSettings()
   if (require2fa && !me.twoFactorEnabled && (await hasPassword(me.id)))
     return "two-factor" as const
+  if (requirePasskey && (await passkeyStatus()).available) {
+    const [{ n }] = await db
+      .select({ n: count() })
+      .from(passkey)
+      .where(eq(passkey.userId, me.id))
+    if (!n) return "passkey" as const
+  }
   return null
 }
 

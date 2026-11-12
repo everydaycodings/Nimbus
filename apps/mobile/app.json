@@ -3,7 +3,7 @@
     "name": "Nimbus",
     "slug": "nimbus",
     "scheme": "nimbus",
-    "version": "0.2.7",
+    "version": "0.2.8",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -52,7 +52,7 @@
           ]
         }
       ],
-      "versionCode": 10
+      "versionCode": 11
     },
     "plugins": [
       "expo-router",

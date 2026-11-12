@@ -12,6 +12,7 @@ import { AvatarPicker } from "@/components/avatar-picker"
 import { DeviceAccounts } from "@/components/device-accounts"
 import { DeviceLink } from "@/components/device-link"
 import { PartnerSettings } from "@/components/partner-settings"
+import { AddPasskey, PasskeyList } from "@/components/passkeys"
 import { PasswordForm } from "@/components/password-form"
 import { SignInMethods } from "@/components/sign-in-methods"
 import { SubmitButton } from "@/components/submit-button"
@@ -26,9 +27,15 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { androidRelease } from "@/lib/android-release"
-import { enabledProviders } from "@/lib/auth"
+import { enabledProviders, passkeyStatus } from "@/lib/auth"
 import { db } from "@/lib/db"
-import { ADMIN_KINDS, account, appPasswords, user } from "@/lib/db/schema"
+import {
+  ADMIN_KINDS,
+  account,
+  appPasswords,
+  passkey,
+  user,
+} from "@/lib/db/schema"
 import { appUrl, emailEnabled } from "@/lib/email"
 import { channelPrefs } from "@/lib/notify"
 import { OIDC_ID, getOidcConfig } from "@/lib/oidc"
@@ -64,7 +71,7 @@ export default async function AccountPage() {
   const session = await getSession()
   if (!session) redirect("/sign-in")
   const me = session.user
-  const [linked, email, settings, prefs, [lock], apps, release] =
+  const [linked, email, settings, prefs, [lock], apps, release, keys, keyStatus] =
     await Promise.all([
       db
         .select({ id: account.id, providerId: account.providerId })
@@ -86,6 +93,12 @@ export default async function AccountPage() {
         .where(eq(appPasswords.userId, me.id))
         .orderBy(desc(appPasswords.createdAt)),
       androidRelease(),
+      db
+        .select({ id: passkey.id, name: passkey.name, at: passkey.createdAt })
+        .from(passkey)
+        .where(eq(passkey.userId, me.id))
+        .orderBy(passkey.createdAt),
+      passkeyStatus(),
     ])
   const partner = await getPartners(me)
   const { require2fa, multiAccount } = settings
@@ -241,6 +254,34 @@ export default async function AccountPage() {
                 <TwoFactorSetup />
               </>
             )}
+          </CardContent>
+        )}
+      </Card>
+
+      <Card id="passkeys" className="scroll-mt-20">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            Passkeys
+            {keys.length > 0 && <Badge variant="outline">{keys.length}</Badge>}
+          </CardTitle>
+          <CardDescription>
+            {keyStatus.available
+              ? "Sign in with your fingerprint, face or screen lock instead of a password. A passkey also stands in for the two-factor code."
+              : keyStatus.reason}
+          </CardDescription>
+        </CardHeader>
+        {keyStatus.available && (
+          <CardContent className="flex flex-col gap-4">
+            {keys.length > 0 && (
+              <PasskeyList
+                items={keys.map((k) => ({
+                  id: k.id,
+                  name: k.name || "Passkey",
+                  created: k.at ? day(k.at) : "earlier",
+                }))}
+              />
+            )}
+            <AddPasskey />
           </CardContent>
         )}
       </Card>

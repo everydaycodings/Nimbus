@@ -4,6 +4,7 @@ import {
   FolderIcon,
   ImageIcon,
   EnvelopeSimpleIcon,
+  FingerprintIcon,
   HourglassIcon,
   KeyIcon,
   LockIcon,
@@ -36,6 +37,7 @@ import { SidebarShell } from "@/components/sidebar-shell"
 import { SidebarTags } from "@/components/sidebar-tags"
 import { Toaster } from "@/components/toaster"
 import { TransferProvider } from "@/components/transfer-dialog"
+import { PasskeySetup } from "@/components/passkeys"
 import { TwoFactorSetup } from "@/components/two-factor"
 import { NewMenu, UploadProvider } from "@/components/upload-provider"
 import { VaultKeysProvider } from "@/components/vault-keys"
@@ -231,6 +233,23 @@ export default async function AppLayout({
         </p>
         <div className="pt-2 text-foreground">
           <TwoFactorSetup autoStart />
+        </div>
+      </StatusScreen>
+    )
+
+  if (gate === "passkey")
+    return (
+      <StatusScreen
+        icon={FingerprintIcon}
+        title="Set up a passkey to continue"
+        wide
+      >
+        <p>
+          Your admin requires a passkey on this Nimbus. It lets you sign in with
+          your fingerprint, face or screen lock, and works as your second step.
+        </p>
+        <div className="pt-2 text-foreground">
+          <PasskeySetup />
         </div>
       </StatusScreen>
     )

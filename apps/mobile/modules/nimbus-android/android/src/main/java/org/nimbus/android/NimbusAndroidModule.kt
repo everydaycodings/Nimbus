@@ -335,6 +335,8 @@ class NimbusAndroidModule : Module() {
     AsyncFunction("vaultBioEnable") { accountId: String, vaultId: String, promise: Promise -> VaultBio.enable(appContext.currentActivity, accountId, vaultId, promise) }
     AsyncFunction("vaultBioUnlock") { accountId: String, vaultId: String, promise: Promise -> VaultBio.unlock(appContext.currentActivity, accountId, vaultId, promise) }
     Function("vaultBioDisable") { accountId: String, vaultId: String -> VaultBio.disable(context, accountId, vaultId) }
+    AsyncFunction("createPasskey") { requestJson: String, promise: Promise -> Passkeys.create(appContext.currentActivity, requestJson, promise) }
+    AsyncFunction("getPasskey") { requestJson: String, promise: Promise -> Passkeys.get(appContext.currentActivity, requestJson, promise) }
     // Sign-out, or the vault is gone: close it, drop its fingerprint key and its queued uploads.
     Function("vaultForget") { accountId: String, vaultId: String? ->
       if (vaultId == null) {

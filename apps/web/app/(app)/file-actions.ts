@@ -4,11 +4,13 @@ import { refresh } from "next/cache"
 
 import { listActivity } from "@/lib/activity"
 import { type TagColor } from "@/lib/db/schema"
+import * as pr from "@/lib/services/point-restore"
 import * as svc from "@/lib/services/files"
 import { requireMember } from "@/lib/session"
 
 export type { ActivityEvent } from "@/lib/activity"
 export type { Details, TagSnapshot } from "@/lib/services/files"
+export type { Applied, RestoreItem, RestorePreview } from "@/lib/services/point-restore"
 type Result = svc.Result
 
 export async function createFolder(
@@ -151,6 +153,28 @@ export async function addShortcut(nodeId: string): Promise<Result> {
 
 export async function removeShortcut(nodeId: string): Promise<Result> {
   const r = await svc.removeShortcut(await requireMember(), nodeId)
+  refresh()
+  return r
+}
+
+// Restore to a point in time. A null folder is all of My files; `at` is an ISO time.
+export async function getRestoreWindow() {
+  await requireMember()
+  return pr.restoreWindow()
+}
+
+export async function previewRestore(folderId: string | null, at: string) {
+  return pr.previewRestore(await requireMember(), folderId, new Date(at))
+}
+
+export async function applyRestore(folderId: string | null, at: string) {
+  const r = await pr.applyRestore(await requireMember(), folderId, new Date(at))
+  refresh()
+  return r
+}
+
+export async function undoRestore(id: string) {
+  const r = await pr.undoRestore(await requireMember(), id)
   refresh()
   return r
 }

@@ -1,5 +1,5 @@
 import { router } from "expo-router"
-import { Bell, CheckCircle, DeviceMobile, Key, LockKey, PencilSimple, Password, ShieldCheck, UsersThree } from "phosphor-react-native"
+import { Bell, CheckCircle, DeviceMobile, Fingerprint, Key, LockKey, PencilSimple, Password, ShieldCheck, UsersThree } from "phosphor-react-native"
 import { useState } from "react"
 import { Pressable, View } from "react-native"
 
@@ -88,6 +88,13 @@ export default function Account() {
                 icon={icon(Password)}
                 trailing={<Caret />}
                 onPress={() => router.push("/account/password")}
+              />
+              <Row
+                label="Passkeys"
+                detail={a.passkeys.available ? (a.passkeys.items.length ? `${a.passkeys.items.length} added` : "Sign in with your fingerprint or screen lock") : a.passkeys.reason}
+                icon={icon(Fingerprint)}
+                trailing={a.passkeys.available ? <Caret /> : undefined}
+                onPress={a.passkeys.available ? () => router.push("/account/passkeys") : undefined}
               />
               <Row
                 label="Two-factor authentication"

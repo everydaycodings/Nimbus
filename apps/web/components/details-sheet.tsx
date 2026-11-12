@@ -5,11 +5,12 @@ import { Menu } from "@base-ui/react/menu"
 import { CaretLeftIcon, CaretRightIcon, PlusIcon, StarIcon, XIcon } from "@phosphor-icons/react"
 import { useEffect, useState } from "react"
 
-import { getActivity, getDetails, type ActivityEvent, type Details } from "@/app/(app)/file-actions"
+import { getActivity, getDetails, undoRestore, type ActivityEvent, type Details } from "@/app/(app)/file-actions"
 import type { Version } from "@/app/(app)/upload-actions"
 import { Comments } from "@/components/comments"
 import { MENU_ITEM, MENU_POPUP } from "@/components/overlay-styles"
 import { Thumb } from "@/components/thumb"
+import { useNotice } from "@/components/toaster"
 import { Button } from "@/components/ui/button"
 import {
   VersionList,
@@ -317,6 +318,33 @@ const SAID: Record<ActivityEvent["type"], string> = {
 
 const PAGE = 10
 
+// Undo on a "Restored to…" entry, good for 7 days.
+function UndoRestore({ id, onUndone }: { id: string; onUndone: () => void }) {
+  const setNotice = useNotice()
+  const [busy, setBusy] = useState(false)
+  return (
+    <Button
+      variant="outline"
+      size="xs"
+      className="mt-1 self-start"
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true)
+        const r = await undoRestore(id)
+        setBusy(false)
+        setNotice(
+          r.error
+            ? { text: r.error, error: true }
+            : { text: `Undid the restore${r.skipped ? `. ${r.skipped} change${r.skipped === 1 ? "" : "s"} couldn’t go back` : ""}.` }
+        )
+        onUndone()
+      }}
+    >
+      Undo
+    </Button>
+  )
+}
+
 // Who changed this, newest first, ten at a time; a folder's list covers what's inside it.
 function Activity({ item }: { item: Item }) {
   const [offset, setOffset] = useState(0)
@@ -324,7 +352,8 @@ function Activity({ item }: { item: Item }) {
     key: string
     page: { events: ActivityEvent[]; total: number } | null
   } | null>(null)
-  const key = `${item.id}:${item.updatedAt}:${offset}`
+  const [bump, setBump] = useState(0)
+  const key = `${item.id}:${item.updatedAt}:${offset}:${bump}`
   useEffect(() => {
     let live = true
     getActivity(item.id, offset, PAGE).then(
@@ -391,8 +420,11 @@ function Activity({ item }: { item: Item }) {
                 {item.kind === "folder" && e.nodeId !== item.id ? ` “${e.name}”` : " it"}
               </span>
               <span className="text-xs break-words text-muted-foreground">
-                {[full(e.at), e.detail].filter(Boolean).join(" · ")}
+                {[full(e.at), e.restore ? `Restored to ${full(e.restore.at)}` : e.detail].filter(Boolean).join(" · ")}
               </span>
+              {e.restore?.undoId && (
+                <UndoRestore id={e.restore.undoId} onUndone={() => setBump((b) => b + 1)} />
+              )}
             </li>
           ))}
         </ul>

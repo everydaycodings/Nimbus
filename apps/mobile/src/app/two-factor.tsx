@@ -1,20 +1,38 @@
 import { useLocalSearchParams } from "expo-router"
+import { Fingerprint } from "phosphor-react-native"
 import { useState } from "react"
 import { View } from "react-native"
 
 import { offerLockIfNew } from "@/components/lock"
 import { Button, Field, FormScreen, Text } from "@/components/ui"
 import { useAccounts } from "@/lib/accounts"
+import { passkeyTwoFactor, passkeysSupported } from "@/lib/passkeys"
 import { ApiError, errorText, send } from "@/lib/api"
 import { c } from "@/lib/theme"
 
 export default function TwoFactor() {
-  const { server, cookie } = useLocalSearchParams<{ server: string; cookie: string }>()
+  const { server, cookie, passkeys } = useLocalSearchParams<{ server: string; cookie: string; passkeys?: string }>()
   const { add } = useAccounts()
   const [code, setCode] = useState("")
   const [backup, setBackup] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [keyBusy, setKeyBusy] = useState(false)
+
+  async function withPasskey() {
+    setKeyBusy(true)
+    setError(null)
+    try {
+      const token = await passkeyTwoFactor(server, cookie)
+      if (!token) return
+      await add(server, token)
+      await offerLockIfNew()
+    } catch (e) {
+      setError(errorText(e))
+    } finally {
+      setKeyBusy(false)
+    }
+  }
 
   async function go() {
     setBusy(true)
@@ -59,6 +77,9 @@ export default function TwoFactor() {
         onSubmitEditing={go}
       />
       <Button label="Verify" onPress={go} busy={busy} disabled={backup ? !code.trim() : code.length !== 6} />
+      {passkeys === "1" && passkeysSupported && (
+        <Button variant="outlined" label="Use a passkey" icon={<Fingerprint size={20} color={c.foreground} />} busy={keyBusy} onPress={withPasskey} />
+      )}
       <Button variant="text" label={backup ? "Use my authenticator app" : "Use a backup code"} onPress={() => { setBackup(!backup); setCode(""); setError(null) }} />
     </FormScreen>
   )

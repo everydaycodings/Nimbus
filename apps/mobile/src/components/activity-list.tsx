@@ -1,13 +1,15 @@
 // The Activity section of Details: who changed this file, or what's inside this folder, newest first,
 // ten at a time.
-import type { ActivityEvent, ActivityResponse, ActivityType, Item } from "@nimbus/shared/api"
-import { keepPreviousData, useQuery } from "@tanstack/react-query"
+import type { ActivityEvent, ActivityResponse, ActivityType, Item, RestoreUndoResponse } from "@nimbus/shared/api"
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query"
 import { CaretLeft, CaretRight } from "phosphor-react-native"
 import { useState } from "react"
 import { ActivityIndicator, View } from "react-native"
 
-import { IconButton, Text } from "@/components/ui"
-import { useApi } from "@/lib/files"
+import { useSnack } from "@/components/snackbar"
+import { Button, IconButton, Text } from "@/components/ui"
+import { errorText } from "@/lib/api"
+import { useApi, useFileActions } from "@/lib/files"
 import { c } from "@/lib/theme"
 
 const SAID: Record<ActivityType, string> = {
@@ -25,6 +27,19 @@ const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyl
 
 export function ActivityList({ item }: { item: Item }) {
   const api = useApi()
+  const actions = useFileActions()
+  const snack = useSnack()
+  const client = useQueryClient()
+  const undo = async (restoreId: string) => {
+    try {
+      const r = await api.post<RestoreUndoResponse>(`/restore-points/${restoreId}/undo`)
+      actions.refresh()
+      client.invalidateQueries({ queryKey: [api.id, "activity", item.id] })
+      snack({ text: r.skipped ? `Undid the restore. ${r.skipped} change${r.skipped === 1 ? "" : "s"} couldn’t go back.` : "Undid the restore." })
+    } catch (e) {
+      snack({ text: errorText(e), error: true })
+    }
+  }
   const [offset, setOffset] = useState(0)
   const q = useQuery({
     queryKey: [api.id, "activity", item.id, item.updatedAt, offset],
@@ -71,8 +86,13 @@ export function ActivityList({ item }: { item: Item }) {
                 {item.kind === "folder" && e.nodeId !== item.id ? ` “${e.name}”` : " it"}
               </Text>
               <Text variant="caption" color={c.mutedForeground}>
-                {[when(e.at), e.detail].filter(Boolean).join(" · ")}
+                {[when(e.at), e.restore ? `Restored to ${when(e.restore.at)}` : e.detail].filter(Boolean).join(" · ")}
               </Text>
+              {e.restore?.undoId && (
+                <View style={{ alignSelf: "flex-start" }}>
+                  <Button variant="outlined" label="Undo" onPress={() => undo(e.restore!.undoId!)} />
+                </View>
+              )}
             </View>
           ))}
         </View>

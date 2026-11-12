@@ -20,6 +20,9 @@ dependencies {
   implementation "com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1"
   implementation "org.bouncycastle:bcprov-jdk18on:1.78.1"
   implementation "androidx.biometric:biometric:1.1.0"
+  // Passkeys: Credential Manager, with the Play services provider for phones before Android 14.
+  implementation "androidx.credentials:credentials:1.5.0"
+  implementation "androidx.credentials:credentials-play-services-auth:1.5.0"
   // Push (Maven Central). Version 3 delivers through a PushService, which is what Push.kt extends.
   implementation "org.unifiedpush.android:connector:3.3.5"
   testImplementation "junit:junit:4.13.2"

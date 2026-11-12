@@ -40,6 +40,8 @@ export type Gate =
   | "pending"
   | "rejected"
   | "two-factor"
+  /** The admin requires a passkey and this account has none. */
+  | "passkey"
 
 export type Tag = { id: string; name: string; color: TagColor }
 
@@ -60,6 +62,8 @@ export type Instance = {
   signupMode: "approval" | "invite" | "open" | "closed"
   /** Sign-in by QR or short code from the web's Account page. */
   deviceLinks: boolean
+  /** Passkeys can be used here (HTTPS with a domain, and the admin allows them). Older servers omit it. */
+  passkeys?: boolean
   /** Vault share links are on; older servers omit it (no links there). */
   vaultLinks?: boolean
   /** The Places map: off, or on with the MapLibre style URL. Older servers omit it (no map). */
@@ -287,9 +291,32 @@ export type ActivityEvent = {
   nodeId: string
   /** The item's name now; tells a folder's children apart. */
   name: string
+  /** A "Restored to…" entry: the time it went back to; `undoId` while the owner can still undo it (7 days). */
+  restore?: { at: string; undoId: string | null } | null
 }
 /** `?offset=` pages it (`limit` 1 to 50, default 50); `total` is every event there is. */
 export type ActivityResponse = { events: ActivityEvent[]; total?: number }
+
+// ---- Restore to a point in time ----
+
+export type RestoreItem = { id: string; name: string; kind: "file" | "folder"; detail: string | null }
+export type RestoreGroups = {
+  at: string
+  /** Back from the Trash. */
+  trash: RestoreItem[]
+  /** Files pointed back at an older version. */
+  versions: RestoreItem[]
+  renames: RestoreItem[]
+  moves: RestoreItem[]
+  /** Can't be put back; `detail` says why. */
+  blocked: RestoreItem[]
+}
+/** `untracked`: items whose renames or moves came before they were recorded, so they stay as they are. */
+export type RestorePreviewResponse = RestoreGroups & { untracked: number }
+/** `id` undoes it (absent when nothing changed). */
+export type RestoreApplyResponse = RestoreGroups & { id?: string }
+export type RestoreWindowResponse = { earliest: string | null }
+export type RestoreUndoResponse = { undone: number; skipped: number }
 
 // ---- Comments ----
 
@@ -593,6 +620,7 @@ export type AppPassword = {
   lastUsedAt: string | null
   lastIp: string | null
 }
+export type PasskeyItem = { id: string; name: string; createdAt: string }
 export type AccountResponse = {
   profile: {
     id: string
@@ -613,6 +641,8 @@ export type AccountResponse = {
   vaultLockMinutes: number
   appPasswordsEnabled: boolean
   appPasswords: AppPassword[]
+  /** Passkeys are managed on Better Auth's /passkey endpoints; `reason` says why they're off. */
+  passkeys: { available: boolean; reason: string | null; items: PasskeyItem[] }
 }
 export type ChangePasswordRequest = { current: string; next: string }
 export type OkResponse = { ok: true }

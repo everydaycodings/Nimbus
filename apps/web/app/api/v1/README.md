@@ -38,6 +38,8 @@ Send header `origin: nimbus://`. Bodies are Better Auth's.
 | POST | `/api/auth/two-factor/verify-totp` `{code}` | turns it on |
 | POST | `/api/auth/two-factor/disable` `{password}` | refused if the admin requires 2FA |
 | POST | `/api/auth/sign-in/email` then `/api/auth/two-factor/verify-totp` | sign-in with 2FA |
+| POST | `/api/auth/two-factor/passkey-options`, then `/api/auth/two-factor/verify-passkey` `{response}` | the 2FA step with a passkey; send the `two_factor` cookie from the sign-in. Passkeys: `GET /api/auth/passkey/generate-authenticate-options` then `POST /passkey/verify-authentication` signs in (no code); `generate-register-options?name=`, `verify-registration`, `update-passkey`, `delete-passkey` manage them; send the challenge cookie back. `GET /instance` `passkeys` and `GET /account` `passkeys` say if they work here |
+| GET | `/api/auth/callback/*` (Google, GitHub, OIDC) | with 2FA on, the `nimbus://` return carries `twofa=1`: trade `code` at `/api/auth/app-return/exchange` for the `two_factor` cookie, then finish as above |
 | GET | `/api/auth/list-sessions` | active sessions |
 | POST | `/api/auth/revoke-other-sessions` `{}` / `/revoke-sessions` `{}` | sign out everywhere (else / all) |
 
@@ -114,6 +116,11 @@ nothing to return answers `200 {}`.
 | DELETE | `/versions/{vid}` | not the current one | `{}` |
 | **Activity** | | | |
 | GET | `/files/{id}/activity` | a file, or a folder with everything inside it; newest first; `?offset=`, `?limit=` (1-50, 50) | `ActivityResponse` (`total`: every event; 404 if I can't open it) |
+| **Restore to a point in time** (owner only, not Vault; `{id}` is a folder id, or `root` for all of My files) | | | |
+| GET | `/folders/{id}/restore-point` | | `RestoreWindowResponse` (`earliest`: how far back the activity history goes; null: no limit) |
+| POST | `/folders/{id}/restore-point/preview` | `{ at }` (ISO time) | `RestorePreviewResponse` (changes nothing) |
+| POST | `/folders/{id}/restore-point/apply` | `{ at }` | `RestoreApplyResponse` (`id` undoes it) |
+| POST | `/restore-points/{id}/undo` | within 7 days, once | `RestoreUndoResponse` (`skipped`: changes that couldn't go back) |
 | **Comments** (files, not folders or Vault) | | | |
 | GET | `/files/{id}/comments` | | `CommentsResponse` (threads oldest first; 404 if I can't open it) |
 | POST | `/files/{id}/comments` | `NewComment` (`parentId` for a reply; `atSeconds`/`page` anchors on a new thread) | `{id}` |

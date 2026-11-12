@@ -491,6 +491,17 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
           }}
         />
       )}
+      {one?.kind === "folder" && mine && edit && (
+        <SheetRow
+          label="Restore to a point in time"
+          needsNet
+          icon={ic(ClockCounterClockwise)}
+          onPress={() => {
+            done()
+            router.push({ pathname: "/restore-point", params: { id: one.id, name: one.name } })
+          }}
+        />
+      )}
       {file && edit && onUseFrame && (
         <SheetRow
           label="Use this frame as thumbnail"

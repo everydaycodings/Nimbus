@@ -357,6 +357,12 @@ export const activity = pgTable(
     type: text("type").$type<ActivityType>().notNull(),
     // "old name" for a rename, "Ana as editor" for a share, and so on.
     detail: text("detail"),
+    // What a rename or move changed from, for Restore to a point in time. Null before phase 17.
+    fromName: text("from_name"),
+    fromParentId: uuid("from_parent_id"),
+    // A Restore to a point in time row: which one, for its Undo button. Points at point_restores,
+    // declared further down, so it's a plain column.
+    restoreId: uuid("restore_id"),
     at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -651,6 +657,10 @@ export const settings = pgTable(
     trustedDomains: text("trusted_domains").array().notNull().default([]),
     // Password accounts must turn on two-factor before they can use the app.
     require2fa: boolean("require_2fa").notNull().default(false),
+    // Passkeys (sign-in and two-factor). They also need HTTPS and a domain name.
+    passkeysEnabled: boolean("passkeys_enabled").notNull().default(true),
+    // Everyone must add a passkey before they can use the app.
+    requirePasskey: boolean("require_passkey").notNull().default(false),
     // Email, used when no EMAIL_TRANSPORT is set in env. Secrets are sealed by lib/crypto.
     emailTransport: text("email_transport")
       .$type<EmailTransport>()
@@ -738,6 +748,8 @@ export const settings = pgTable(
     oidcClientSecret: text("oidc_client_secret"),
     // Only OIDC sign-in, except the owner's password.
     oidcOnly: boolean("oidc_only").notNull().default(false),
+    // OIDC sign-in skips Nimbus two-factor: the provider asks for its own.
+    oidcTrustMfa: boolean("oidc_trust_mfa").notNull().default(false),
     // Health checks (Admin → Health). Null interval: no scheduled checks.
     healthIntervalMin: integer("health_interval_min").default(5),
     healthFailures: integer("health_failures").notNull().default(2),
@@ -1385,4 +1397,28 @@ export const playbackPositions = pgTable(
       .defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.nodeId] })]
+)
+
+// How to put back what one Restore to a point in time changed, for its Undo (7 days).
+export type PointRestoreUndo =
+  | { kind: "retrash"; nodeId: string }
+  | { kind: "name"; nodeId: string; name: string }
+  | { kind: "parent"; nodeId: string; parentId: string | null; name: string }
+  | { kind: "version"; nodeId: string; versionId: string }
+
+export const pointRestores = pgTable(
+  "point_restores",
+  {
+    id: id(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    // Null: all of My files.
+    folderId: uuid("folder_id").references(() => nodes.id, { onDelete: "cascade" }),
+    at: timestamp("at", { withTimezone: true }).notNull(),
+    undo: jsonb("undo").$type<PointRestoreUndo[]>().notNull(),
+    createdAt: createdAt(),
+    undoneAt: timestamp("undone_at", { withTimezone: true }),
+  },
+  (t) => [index("point_restores_owner_idx").on(t.ownerId, t.createdAt)]
 )

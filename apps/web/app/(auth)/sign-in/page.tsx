@@ -13,7 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { ADDING_COOKIE } from "@/lib/accounts"
-import { enabledProviders } from "@/lib/auth"
+import { enabledProviders, passkeyStatus } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { user } from "@/lib/db/schema"
 import { savedOnBrowser } from "@/lib/saved-logins"
@@ -67,6 +67,7 @@ export default async function SignInPage({
           initialError={error}
           initialEmail={email}
           allowSignUp={signupMode !== "closed"}
+          passkeys={(await passkeyStatus()).available}
         />
         {current && (
           <form action={cancelAddAccount} className="text-center">

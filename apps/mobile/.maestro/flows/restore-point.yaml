@@ -1,0 +1,27 @@
+appId: org.nimbus.drive
+name: restore-point
+# A new folder's ⋯ → Restore to a point in time: the chips, the server's preview (nothing changed yet), then trash the folder.
+# The restore itself is covered by the web e2e (restore-point.spec.ts): items made after the chosen time are kept as they are.
+---
+- runScript:
+    file: ../stamp.js
+- launchApp
+- extendedWaitUntil: { visible: "Search in Nimbus", timeout: 20000 }
+- tapOn: "New"
+- tapOn: "New folder"
+- tapOn: "Folder name"
+- inputText: "mae-rp-${output.stamp}"
+- pressKey: Enter
+- extendedWaitUntil: { visible: "Folder, mae-rp-${output.stamp}", timeout: 10000 }
+- tapOn: "More actions for mae-rp-${output.stamp}"
+- scrollUntilVisible: { element: "Restore to a point in time" }
+- tapOn: "Restore to a point in time"
+- extendedWaitUntil: { visible: "Go back to", timeout: 10000 }
+- tapOn: "1 hour ago"
+- extendedWaitUntil: { visible: "Nothing has changed since then.*", timeout: 15000 }
+- tapOn: "Back"
+- extendedWaitUntil: { visible: "Folder, mae-rp-${output.stamp}", timeout: 10000 }
+- tapOn: "More actions for mae-rp-${output.stamp}"
+- scrollUntilVisible: { element: "Move to trash" }
+- tapOn: "Move to trash"
+- assertNotVisible: "Folder, mae-rp-${output.stamp}"

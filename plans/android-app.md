@@ -37,7 +37,7 @@ API checks: `cd apps/web && node --env-file=.env.local scripts/api-check.ts` (ru
 | 14 | Comments on files (web + app) | Built 2026-11-12 on web + app. Web e2e (comments.spec.ts) passes. App: checked on the emulator in Expo Go (row badge, preview bar button, comments screen, @mention suggestions, a comment with a mention from the phone, reactions shown); release APK (x86_64, Cursor open, 7m 54s) with Maestro 16/16 including the new `comments` flow. Web e2e 9/9, including time and PDF-page chips. Not committed. See "Phase 14 status" |
 | 15 | Photos: On this day, places map, smart groups, shared albums, partner sharing, quick edits | Built 2026-11-12 on web + app. API check 231/231, web e2e 15/15 (new photos-phase15.spec.ts). App checked in Expo Go and the release APK (x86_64, 9m 10s): map, daily notice, Maestro 19/19, Kotlin 48/48. Not committed. See "Phase 15 status" |
 | 16 | Playback: cast to TV, sleep timer and speed, data-saver video quality | Built 2026-11-12 on web + app. API check 248/248 (17 new playback checks), web e2e 15/15, browser-checked and Impeccable-polished on the web. App 0.2.7: tsc and 92 unit tests pass; release APK (x86_64, Cursor open, 9m 24s), Maestro 19/19, emulator-checked. Cast on a real TV untested. Not committed. See "Phase 16 status" |
-| 17 | Passkeys, 2FA after provider sign-in, restore a folder to a point in time | Planned |
+| 17 | Passkeys, 2FA after provider sign-in, restore a folder to a point in time | Built 2026-11-12 on web + app (0.2.8). Web: tsc, lint, 66 unit tests, e2e passkeys 3/3 + restore-point 2/2, full suite green (vault-link flaky once). App: release APK (x86_64, Cursor open, low-memory recipe, 13m 49s), Maestro 20/20 with the new `restore-point` flow. Impeccable-polished. Android passkeys and real Google/GitHub untested. Not committed. See "Phase 17 status" |
 | 18 | PDF tools (markup, fill, sign), contacts and calendar backup | Planned |
 | 19 | Smart search: server OCR of images, scans and video frames, with where-it-matched results | Planned |
 | 20 | Optional AI service (admin): face grouping, speech search, search by what's in a photo | Planned |
@@ -718,6 +718,38 @@ Not done or to check:
 - **Restore to a point in time:** on a folder (or all of My files), choose a date and time, see a preview of what changes
   (restored from Trash, older versions, undone renames and moves), then restore. Built from versions, Trash and the Activity
   log, so how far back it reaches follows the activity retention setting. The restore itself can be undone.
+
+**Phase 17 status (2026-11-12)**
+- **Passkeys:** `@better-auth/passkey` 1.7.10 (peers pinned as direct deps; never `--legacy-peer-deps`, it strips React Native
+  packages from the lockfile). Plugin added only when `BETTER_AUTH_URL` is https + domain (or localhost) and Admin → Authentication
+  "Allow passkeys" is on. Passkey sign-in skips the code; `/two-factor/passkey-options` + `/two-factor/verify-passkey` let a
+  passkey answer the 2FA step (trust-device honoured). "Require a passkey" is a gate (`gate: "passkey"`), not a page, and can't be
+  turned on until the admin has one. `/.well-known/assetlinks.json` lists the release key (env `ANDROID_RELEASE_SHA256`) and the
+  debug key. App: Kotlin `Passkeys.kt` (Credential Manager 1.5.0), sign-in button, Account → Security → Passkeys, two-factor
+  "Use a passkey", forced setup in the gate.
+- **2FA after Google/GitHub/OIDC:** plugin `providerTwoFactor` right after `twoFactor()` (before multiSession's cookie). Web goes
+  to `/two-factor?next=…`; the app gets `nimbus://…?code=…&twofa=1` and opens its two-factor screen. Admin "Trust the OIDC
+  provider's own MFA" (off by default). Tested with a throwaway local OIDC provider, not real Google/GitHub.
+- **Restore to a point in time:** activity now stores `from_name`, `from_parent_id` (renames, moves) and `restore_id`
+  (migrations 0034–0036). Brings back trash, older versions, renames and moves; keeps newer files; owner only; no vault;
+  "(restored)" on clashes; undo from the toast or the Activity entry for 7 days (`point_restores`). My files root restores get the
+  toast Undo only; the app restores folders only (API supports `root`).
+
+Release APK 0.2.8 (x86_64, 2026-11-12; Cursor open with the low-memory recipe: `--no-daemon --max-workers=1`, parallel off,
+`-Xmx1536m`, Kotlin in-process, a MemAvailable watchdog; lowest free RAM 2.9 GB. A plain `--max-workers=2` build crashed Cursor):
+- Maestro 20/20, including the new `restore-point` flow. `browse` now scrolls to Projects and back up (leftover e2e folders push it
+  off-screen), and `photos` retries the slideshow pause (the controls auto-hide between check and tap on a busy emulator).
+- Emulator: Account → Security shows Passkeys; the Passkeys screen and the restore screen render and load from the server.
+- Polish: web sign-in, Account → Passkeys and the restore dialog checked at 1280 and 390 wide; the "not tracked yet" note
+  reworded on web and app (the app copy ships with the next APK).
+- Traps: the Playwright MCP browser writes its console log into the repo's `.playwright-mcp/`, which the dev server
+  watches, so a page open in it can reload in a loop and leave `next dev` reloading every page; close it and restart
+  `next dev`. A new route's first request in `next dev` can take longer than the app's 15 s timeout.
+
+Not done or to check:
+- Android passkeys need a real HTTPS domain with assetlinks (`ANDROID_RELEASE_SHA256` set); untested. Real Google/GitHub 2FA
+  untested. The admin Authentication page's new settings were not checked by eye (the test accounts aren't owners).
+- Dev DB test user `passkey-test@example.invalid` left by the e2e; 24 leftover e2e folders of `browser-test` were moved to Trash.
 
 **Phase 18, documents and phone**
 - **PDF tools:** highlight, underline, notes, free text, drawing, fill in form fields, and a saved signature you can place.

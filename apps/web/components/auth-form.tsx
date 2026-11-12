@@ -1,9 +1,14 @@
 "use client"
 
-import { GithubLogoIcon, GoogleLogoIcon, KeyIcon } from "@phosphor-icons/react"
+import {
+  FingerprintIcon,
+  GithubLogoIcon,
+  GoogleLogoIcon,
+  KeyIcon,
+} from "@phosphor-icons/react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 import {
   PasswordInput,
@@ -32,6 +37,8 @@ type Props = {
   // "Sign in again" on an account whose session ran out.
   initialEmail?: string
   allowSignUp?: boolean
+  // Passkeys work here: a button, plus the browser's autofill on the email field.
+  passkeys?: boolean
 }
 
 const OAUTH_ERROR =
@@ -43,6 +50,7 @@ export function AuthForm({
   initialError,
   initialEmail,
   allowSignUp = true,
+  passkeys = false,
 }: Props) {
   const router = useRouter()
   const [error, setError] = useState<string | null>(
@@ -56,7 +64,24 @@ export function AuthForm({
   const only = providers.only && !owner
   const google = providers.google && !providers.only
   const github = providers.github && !providers.only
-  const hasSocial = google || github || Boolean(providers.oidc)
+  const passkey = passkeys && !signUp && !only
+  const hasSocial = google || github || Boolean(providers.oidc) || passkey
+
+  async function withPasskey(autoFill: boolean) {
+    const { error } = await authClient.signIn.passkey({ autoFill })
+    // The person closing the prompt isn't an error.
+    if (!error) return reloadTo("/")
+    if (!autoFill && !("code" in error && error.code === "AUTH_CANCELLED"))
+      setError(error.message ?? "That passkey didn't work.")
+  }
+
+  // The browser offers saved passkeys in the email field's autofill list.
+  useEffect(() => {
+    if (!passkey) return
+    PublicKeyCredential?.isConditionalMediationAvailable?.().then((ok) => {
+      if (ok) void withPasskey(true)
+    })
+  }, [passkey])
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -97,6 +122,16 @@ export function AuthForm({
     <div className="flex flex-col gap-6">
       {hasSocial && (
         <div className="flex flex-col gap-2">
+          {passkey && (
+            <Button
+              variant="outline"
+              type="button"
+              onClick={() => withPasskey(false)}
+            >
+              <FingerprintIcon weight="bold" />
+              Sign in with a passkey
+            </Button>
+          )}
           {providers.oidc && (
             <Button
               variant="outline"
@@ -170,7 +205,7 @@ export function AuthForm({
             id="email"
             name="email"
             type="email"
-            autoComplete="email"
+            autoComplete={passkey ? "username webauthn" : "email"}
             defaultValue={initialEmail}
             required
           />

@@ -5,9 +5,11 @@ name: browse
 - extendedWaitUntil:
     visible: "Search in Nimbus"
     timeout: 20000
+- scrollUntilVisible: { element: "Folder, Projects", direction: DOWN, centerElement: true }
 - tapOn: "Folder, Projects"
 - assertVisible: "Projects"
 - back
+- scrollUntilVisible: { element: "Switch to list view", direction: UP }
 - tapOn: "Switch to list view"
 - assertVisible: "Switch to grid view"
 - tapOn: "Switch to grid view"

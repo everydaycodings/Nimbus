@@ -1,17 +1,19 @@
 "use server"
 
 import { randomBytes } from "node:crypto"
-import { and, eq, ilike, isNotNull, isNull, or, sql } from "drizzle-orm"
+import { and, count, eq, ilike, isNotNull, isNull, or, sql } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 
 import { MAX_SESSIONS } from "@/lib/accounts"
 import { ACTIVITY_RETENTION } from "@/lib/activity-rules"
 import { audit, saveSettings } from "@/lib/audit"
+import { reloadAuth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import {
   SIGNUP_MODES,
   TOAST_POSITIONS,
   invites,
+  passkey,
   settings,
   shares,
   transfers,
@@ -19,6 +21,7 @@ import {
   type SignupMode,
   type ToastPosition,
 } from "@/lib/db/schema"
+import { passkeyHost } from "@/lib/passkey-rules"
 import { POLICY_MAX, POLICY_MIN } from "@/lib/password-policy"
 import { turnCopiesOffAndDelete } from "@/lib/video-copies"
 import { scheduleBackups, scheduleHealth } from "@/lib/redis"
@@ -43,6 +46,39 @@ export async function setRequire2fa(form: FormData) {
   if (on && !actor.twoFactorEnabled && (await hasPassword(actor.id))) return
   await saveSettings({ require2fa: on, updatedAt: new Date() })
   revalidatePath("/", "layout")
+}
+
+// Passkeys on or off, and whether everyone must have one. Auth is rebuilt, since
+// the passkey plugin is only added while they're on. The admin turning the rule
+// on must already have a passkey, so they don't lock themselves behind the setup screen.
+export async function setPasskeys(form: FormData) {
+  const actor = await requireAdmin()
+  const enabled = form.get("passkeysEnabled") === "on"
+  const required = enabled && form.get("requirePasskey") === "on"
+  if (required) {
+    const [{ n }] = await db
+      .select({ n: count() })
+      .from(passkey)
+      .where(eq(passkey.userId, actor.id))
+    if (!n || !passkeyHost(process.env.BETTER_AUTH_URL)) return
+  }
+  await saveSettings({
+    passkeysEnabled: enabled,
+    requirePasskey: required,
+    updatedAt: new Date(),
+  })
+  reloadAuth()
+  revalidatePath("/", "layout")
+}
+
+// Whether OIDC sign-in skips Nimbus two-factor, because the provider asks for its own.
+export async function setOidcTrustMfa(form: FormData) {
+  await requireAdmin()
+  await saveSettings({
+    oidcTrustMfa: form.get("oidcTrustMfa") === "on",
+    updatedAt: new Date(),
+  })
+  revalidatePath("/admin", "layout")
 }
 
 // Several accounts on one browser (the account menu's switcher).

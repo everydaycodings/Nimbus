@@ -76,6 +76,7 @@ import { UserAvatar } from "@/components/user-avatar"
 import { Previewer, type Shown } from "@/components/previewer"
 import { Thumb } from "@/components/thumb"
 import { VersionsDialog } from "@/components/versions-dialog"
+import { RestoreDialog } from "@/components/restore-dialog"
 import { MoveDialog, type Place } from "@/components/move-dialog"
 import { MoveToVault } from "@/components/vault-list"
 import {
@@ -250,6 +251,9 @@ export function FileBrowser({
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [versionsId, setVersionsId] = useState<string | null>(null)
   const [versionsOpen, setVersionsOpen] = useState(false)
+  // Restore to a point in time: a folder, or null for all of My files.
+  const [restoring, setRestoring] = useState<{ id: string | null; name: string }>({ id: null, name: "My files" })
+  const [restoreOpen, setRestoreOpen] = useState(false)
   // The previewed file, and the older version shown instead, if any.
   const [preview, setPreview] = useState<{
     id: string
@@ -544,6 +548,11 @@ export function FileBrowser({
     setVersionsOpen(true)
   }
 
+  function restorePoint(id: string | null, name: string) {
+    setRestoring({ id, name })
+    setRestoreOpen(true)
+  }
+
   function showDetails(item: Item) {
     setDetailsId(item.id)
     setDetailsOpen(true)
@@ -799,6 +808,15 @@ export function FileBrowser({
           menuOnly: true,
           group: 2,
           run: () => showVersions(one),
+        },
+      one?.kind === "folder" &&
+        roleOf(one) === "owner" &&
+        !one.shortcut && {
+          label: "Restore to a point in time…",
+          icon: ClockCounterClockwiseIcon,
+          menuOnly: true,
+          group: 2,
+          run: () => restorePoint(one.id, one.name),
         },
       edit &&
         one?.kind === "file" && {
@@ -1557,6 +1575,28 @@ export function FileBrowser({
               <span className="max-sm:sr-only">New folder</span>
             </Button>
           )}
+          {view === "folder" && !shared && (
+            <Menu.Root>
+              <Menu.Trigger
+                render={<Button variant="ghost" size="icon" aria-label={`More for ${here[here.length - 1].name}`} />}
+              >
+                <DotsThreeIcon weight="bold" />
+              </Menu.Trigger>
+              <Menu.Portal>
+                <Menu.Positioner side="bottom" align="end" sideOffset={4}>
+                  <Menu.Popup className={`w-64 ${MENU_POPUP}`}>
+                    <Menu.Item
+                      className={MENU_ITEM}
+                      onClick={() => restorePoint(folderId ?? null, here[here.length - 1].name)}
+                    >
+                      <ClockCounterClockwiseIcon />
+                      Restore to a point in time…
+                    </Menu.Item>
+                  </Menu.Popup>
+                </Menu.Positioner>
+              </Menu.Portal>
+            </Menu.Root>
+          )}
           {view === "trash" && all.length > 0 && (
             <Button
               variant="outline"
@@ -1988,6 +2028,13 @@ export function FileBrowser({
           if (file && item)
             thumbTask(item, () => thumbFromImage(item, file), "Changed")
         }}
+      />
+
+      <RestoreDialog
+        open={restoreOpen}
+        folderId={restoring.id}
+        name={restoring.name}
+        onClose={() => setRestoreOpen(false)}
       />
 
       <VersionsDialog

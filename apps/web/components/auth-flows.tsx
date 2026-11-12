@@ -1,5 +1,7 @@
 "use client"
 
+import { FingerprintIcon } from "@phosphor-icons/react"
+import { startAuthentication } from "@simplewebauthn/browser"
 import Link from "next/link"
 import { useState } from "react"
 
@@ -139,10 +141,52 @@ export function ResetPasswordForm({ token }: { token: string }) {
 }
 
 // The second sign-in step for accounts with two-factor on.
-export function TwoFactorChallenge() {
+export function TwoFactorChallenge({
+  next = "/",
+  passkeys = false,
+}: {
+  next?: string
+  passkeys?: boolean
+}) {
   const [backup, setBackup] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  // A passkey instead of a code: the same step, answered on this device.
+  async function withPasskey(trustDevice: boolean) {
+    setError(null)
+    setBusy(true)
+    const post = (path: string, body?: object) =>
+      fetch(`/api/auth/two-factor/${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body ?? {}),
+      })
+    try {
+      const options = await post("passkey-options")
+      if (!options.ok) {
+        const e = await options.json().catch(() => null)
+        throw new Error(
+          e?.code === "INVALID_TWO_FACTOR_COOKIE"
+            ? "This sign-in timed out. Go back and sign in again."
+            : e?.code === "NO_PASSKEY"
+              ? "This account has no passkey yet. Use a code."
+              : ERROR
+        )
+      }
+      const response = await startAuthentication({
+        optionsJSON: await options.json(),
+      })
+      const done = await post("verify-passkey", { response, trustDevice })
+      if (!done.ok) throw new Error("That passkey didn't work. Try again.")
+      reloadTo(next)
+    } catch (e) {
+      setBusy(false)
+      // Closing the browser's prompt isn't an error.
+      if (e instanceof Error && !/not allowed|abort|cancel/i.test(`${e.name} ${e.message}`))
+        setError(e.message)
+    }
+  }
 
   return (
     <form
@@ -173,7 +217,7 @@ export function TwoFactorChallenge() {
                 : "That code didn't match. Try the newest code from your app."
           )
         }
-        reloadTo("/")
+        reloadTo(next)
       }}
     >
       <div className="flex flex-col gap-2">
@@ -216,6 +260,22 @@ export function TwoFactorChallenge() {
           ? "Use your authenticator app"
           : "Lost your phone? Use a backup code"}
       </Button>
+      {passkeys && (
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          disabled={busy}
+          onClick={(e) =>
+            withPasskey(
+              new FormData(e.currentTarget.form!).get("trust") === "on"
+            )
+          }
+        >
+          <FingerprintIcon weight="bold" />
+          Use a passkey
+        </Button>
+      )}
       <BackToSignIn label="Sign in as someone else" />
     </form>
   )

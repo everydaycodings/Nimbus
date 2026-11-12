@@ -23,12 +23,16 @@ name: photos
 - tapOn: "Slideshow"
 - extendedWaitUntil: { visible: "Close slideshow", timeout: 15000 }
 - tapOn: "5 seconds per photo"
-# Controls hide after 3 s while it plays; a tap brings them back.
-- runFlow:
-    when: { notVisible: "Pause slideshow" }
-    commands: [ tapOn: ".*Show controls" ]
-- tapOn: "Pause slideshow"
-- assertVisible: "Play slideshow"
+# Controls hide after 3 s while it plays; a tap brings them back. They can hide between the check
+# and the tap on a busy emulator, so try again.
+- retry:
+    maxRetries: 3
+    commands:
+      - runFlow:
+          when: { notVisible: "Pause slideshow" }
+          commands: [ tapOn: ".*Show controls" ]
+      - tapOn: "Pause slideshow"
+      - assertVisible: "Play slideshow"
 - tapOn: "Close slideshow"
 - assertVisible: "Slideshow"
 - tapOn: "Files"

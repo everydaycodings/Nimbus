@@ -239,6 +239,27 @@
       "when": 1794485607087,
       "tag": "0033_phase16_playback",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1794495626890,
+      "tag": "0034_phase17_signin_safety",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1794495659486,
+      "tag": "0035_phase17_activity_from",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1794500157570,
+      "tag": "0036_phase17_restore_id",
+      "breakpoints": true
     }
   ]
 }
