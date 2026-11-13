@@ -51,6 +51,14 @@ Clients then re-GET `/secrets`.
 -> `200 { "created": [], "updated": [], "deleted": [] }`. Needs a read-write machine token or a member who can edit. The shipped CLIs don't use it; it is for scripts.
 In a protected environment nothing is written: the answer is `202 { "pending": true, "request": "<change request id>" }` and the change waits for approval in the web app (S3).
 
+## SSH certificates (S4)
+`POST /ssh/cert` body `{ "project": "web", "principals": ["deploy"], "ttl": 1, "publicKey": "ssh-ed25519 AAAA..."? }`
+-> `200 { "certificate": "ssh-ed25519-cert-v01@openssh.com AAAA... a@b.c", "expiresAt": "2026-01-01T10:00:00.000Z", "serial": 7, "principals": ["deploy"], "keyId": "a@b.c", "privateKey": "-----BEGIN OPENSSH PRIVATE KEY-----..."|null, "publicKey": "..." }`
+- Member (user) tokens only; machine tokens get `403`. Needs a Developer or Admin role in the project (`403` for Viewer or environment-limited members) and a set-up SSH CA (`404`).
+- `ttl` is hours, 1 to 8. `principals` 1 to 10 names. The key id is the member's email.
+- Without `publicKey` Nimbus makes an ed25519 pair and returns the private key once; with it only the certificate is made.
+- CLI: `nimbus ssh cert --project P --principal deploy[,root] [--ttl H] [--key FILE.pub] [--out FILE]` writes `KEY-cert.pub` (and the key when it was generated, mode 600) and prints the `ssh -i … -o CertificateFile=…` line. The bash script does not implement it.
+
 ## Server notes (S2)
 - `slug` of a project is unique and lowercase; an `id` (UUID) is accepted wherever a project slug is.
 - `GET /projects` and `GET /projects/{p}/envs` also answer signed-in browsers (the web app reads the same URLs); the shapes above are the bearer-token view.

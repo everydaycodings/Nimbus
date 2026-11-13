@@ -23,6 +23,8 @@ const HELP = `nimbus <command>
   run [--env E] [--path /] -- <cmd...>
   export [--format dotenv|json|yaml]
   agent --out FILE [--on-change CMD] [--interval SECONDS] [--format F] [--once]
+  ssh cert --project P --principal deploy[,root] [--ttl HOURS] [--key PUBKEY_FILE] [--out FILE]
+                         ask the project's SSH CA for a 1-8 hour certificate (no --key: new key pair)
 Common: --project P --env E --path /   Env: NIMBUS_TOKEN NIMBUS_SERVER`
 
 // ---- config -----------------------------------------------------------------
@@ -256,6 +258,26 @@ async function agent(flags: Record<string, string>) {
   }
 }
 
+// Prints the ssh command to use. With --key the certificate is written next to that key
+// (KEY-cert.pub); otherwise Nimbus makes a key pair and both land under --out
+// (default ~/.ssh/nimbus_cert, the certificate as nimbus_cert-cert.pub).
+async function sshCert(flags: Record<string, string>) {
+  const principals = (flags.principal || "").split(",").map((p) => p.trim()).filter(Boolean)
+  if (!principals.length) throw new Fail("Pass --principal user[,user] (the accounts it may log in as).", 2)
+  const ttl = Number(flags.ttl || 1)
+  const body: Record<string, unknown> = { project: target(flags).project, principals, ttl }
+  if (!body.project) throw new Fail("Pass --project.", 2)
+  if (flags.key) body.publicKey = readFileSync(flags.key, "utf8").trim()
+  const r = (await (await call(ctx(flags), "POST", "/ssh/cert", { body })).json()) as { certificate: string; privateKey: string | null; expiresAt: string }
+  const keyFile = flags.key ? flags.key.replace(/\.pub$/, "") : flags.out || join(homedir(), ".ssh", "nimbus_cert")
+  const certFile = `${keyFile}-cert.pub`
+  mkdirSync(dirname(keyFile), { recursive: true })
+  if (r.privateKey) writeAtomic(keyFile, r.privateKey)
+  writeFileSync(certFile, r.certificate + "\n", { mode: 0o644 })
+  console.log(`Certificate valid until ${r.expiresAt}: ${certFile}`)
+  console.log(`ssh -i ${keyFile} -o CertificateFile=${certFile} ${principals[0]}@HOST`)
+}
+
 async function main() {
   const { flags, pos, rest } = parse(process.argv.slice(2))
   const cmd = pos[0]
@@ -268,6 +290,9 @@ async function main() {
     case "secrets": return secrets(flags)
     case "export": return exportCmd(flags)
     case "agent": return agent(flags)
+    case "ssh":
+      if (pos[1] !== "cert") throw new Fail(`Usage: nimbus ssh cert --project P --principal user\n${HELP}`, 2)
+      return sshCert(flags)
     case "run": process.exitCode = await run(flags, rest); return
     default: throw new Fail(`Unknown command "${cmd}"\n${HELP}`, 2)
   }

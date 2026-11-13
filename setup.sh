@@ -252,7 +252,7 @@ if confirm "Set up nginx and HTTPS for you?" y; then
 fi
 
 # --- Ports and old data -------------------------------------------------------
-ports=(3400 3401 3404 6340)
+ports=(3400 3401 3404 3406 6340)
 has_profile postgres && ports+=(54340)
 has_profile minio && ports+=(3402 3403)
 has_profile push && ports+=(3405)
@@ -324,7 +324,7 @@ chmod 600 .env
 
 # --- Start --------------------------------------------------------------------
 bold "Starting Nimbus (the first build takes a few minutes)"
-echo "Services: app, worker, webdav, tusd, redis${PROFILES:+, ${PROFILES//,/, }}"
+echo "Services: app, worker, webdav, ssh-terminal, tusd, redis${PROFILES:+, ${PROFILES//,/, }}"
 docker compose up -d --build --remove-orphans
 
 printf "Waiting for the app"

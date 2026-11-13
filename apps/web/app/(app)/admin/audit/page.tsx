@@ -107,10 +107,70 @@ function sentence(e: typeof auditEvents.$inferSelect, who: string) {
       return `Secrets server push: ${d}`
     case "secrets_push_remove":
       return "removed a Secrets server push"
+    case "secrets_ssh_key_add":
+      return `added the SSH key ${d}`
+    case "secrets_ssh_key_reveal":
+      return `revealed the SSH private key ${d}`
+    case "secrets_ssh_key_rename":
+      return `renamed the SSH key ${d}`
+    case "secrets_ssh_key_delete":
+      return `deleted the SSH key ${d}`
+    case "secrets_ssh_host_save":
+      return `SSH host: ${d}`
+    case "secrets_ssh_host_delete":
+      return `removed the SSH host ${d}`
+    case "secrets_ssh_ca_create":
+      return `created the SSH CA ${d}`
+    case "secrets_ssh_ca_rotate":
+      return `rotated the SSH CA to ${d}`
+    case "secrets_ssh_cert_issue":
+      return `issued an SSH certificate: ${d}`
+    case "secrets_ssh_session_start":
+    case "secrets_ssh_session_end":
+    case "secrets_ssh_session_refused":
+      return d
     case "secrets_webhook_add":
       return `added the Secrets webhook ${d}`
     case "secrets_webhook_remove":
       return "removed a Secrets webhook"
+    case "secrets_cert_upload":
+      return `uploaded the certificate ${d}`
+    case "secrets_cert_delete":
+      return `deleted the certificate ${d}`
+    case "secrets_cert_download":
+      return `downloaded a certificate: ${d}`
+    case "secrets_cert_revoke":
+      return `revoked the certificate ${d}`
+    case "secrets_cert_issue":
+      return `issued the certificate ${d}`
+    case "secrets_ca_create":
+      return `created the CA ${d}`
+    case "secrets_ca_delete":
+      return `deleted the CA ${d}`
+    case "secrets_ca_chain":
+      return `downloaded the chain of the CA ${d}`
+    case "secrets_acme_account":
+      return `added an ACME account: ${d}`
+    case "secrets_acme_order":
+      return `ordered a certificate: ${d}`
+    case "secrets_dns_cred":
+      return `saved the DNS credential ${d}`
+    case "secrets_watch_add":
+      return `started watching the certificate of ${d}`
+    case "secrets_item_create":
+      return `added the item ${d}`
+    case "secrets_item_edit":
+      return `edited the item ${d}`
+    case "secrets_item_delete":
+      return `deleted the item ${d}`
+    case "secrets_item_reveal":
+      return `opened the item ${d}`
+    case "secrets_item_copy":
+      return `copied from the item ${d}`
+    case "secrets_item_download":
+      return `downloaded the file item ${d}`
+    case "secrets_item_totp":
+      return `showed the one-time code of ${d}`
     default:
       return e.action
   }

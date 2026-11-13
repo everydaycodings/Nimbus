@@ -54,6 +54,8 @@ const help = `nimbus <command>
   run [--env E] [--path /] -- <cmd...>
   export [--format dotenv|json|yaml]
   agent --out FILE [--on-change CMD] [--interval SECONDS] [--format F] [--once]
+  ssh cert --project P --principal deploy[,root] [--ttl HOURS] [--key PUBKEY_FILE] [--out FILE]
+                         ask the project's SSH CA for a 1-8 hour certificate (no --key: new key pair)
 Common: --project P --env E --path /   Env: NIMBUS_TOKEN NIMBUS_SERVER`
 
 var boolFlags = map[string]bool{"plain": true, "once": true, "help": true}
@@ -510,6 +512,71 @@ func agent(flags map[string]string) error {
 	}
 }
 
+// sshCert asks the project's SSH CA for a certificate. With --key it is written next to
+// that key (KEY-cert.pub); otherwise Nimbus makes a key pair and both land under --out
+// (default ~/.ssh/nimbus_cert).
+func sshCert(flags map[string]string) error {
+	var principals []string
+	for _, p := range strings.Split(flags["principal"], ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			principals = append(principals, p)
+		}
+	}
+	if len(principals) == 0 {
+		return failf(2, "Pass --principal user[,user] (the accounts it may log in as).")
+	}
+	proj, _, _ := target(flags)
+	if proj == "" {
+		return failf(2, "Pass --project.")
+	}
+	ttl := 1.0
+	if v, err := strconv.ParseFloat(flags["ttl"], 64); err == nil {
+		ttl = v
+	}
+	body := map[string]any{"project": proj, "principals": principals, "ttl": ttl}
+	if k := flags["key"]; k != "" {
+		b, err := os.ReadFile(k)
+		if err != nil {
+			return failf(1, "%v", err)
+		}
+		body["publicKey"] = strings.TrimSpace(string(b))
+	}
+	c, err := getCtx(flags)
+	if err != nil {
+		return err
+	}
+	_, b, _, err := call(c, "POST", "/ssh/cert", body, true, nil)
+	if err != nil {
+		return err
+	}
+	var r struct {
+		Certificate string  `json:"certificate"`
+		PrivateKey  *string `json:"privateKey"`
+		ExpiresAt   string  `json:"expiresAt"`
+	}
+	if err := json.Unmarshal(b, &r); err != nil {
+		return failf(1, "bad response: %v", err)
+	}
+	home, _ := os.UserHomeDir()
+	keyFile := first(flags["out"], filepath.Join(home, ".ssh", "nimbus_cert"))
+	if k := flags["key"]; k != "" {
+		keyFile = strings.TrimSuffix(k, ".pub")
+	}
+	certFile := keyFile + "-cert.pub"
+	_ = os.MkdirAll(filepath.Dir(keyFile), 0o700)
+	if r.PrivateKey != nil {
+		if err := writeAtomic(keyFile, *r.PrivateKey); err != nil {
+			return err
+		}
+	}
+	if err := os.WriteFile(certFile, []byte(r.Certificate+"\n"), 0o644); err != nil {
+		return err
+	}
+	fmt.Printf("Certificate valid until %s: %s\n", r.ExpiresAt, certFile)
+	fmt.Printf("ssh -i %s -o CertificateFile=%s %s@HOST\n", keyFile, certFile, principals[0])
+	return nil
+}
+
 func main() {
 	flags, pos, rest := parse(os.Args[1:])
 	if len(pos) == 0 || flags["help"] != "" {
@@ -534,6 +601,12 @@ func main() {
 		err = exportCmd(flags)
 	case "agent":
 		err = agent(flags)
+	case "ssh":
+		if len(pos) < 2 || pos[1] != "cert" {
+			err = failf(2, "Usage: nimbus ssh cert --project P --principal user\n%s", help)
+		} else {
+			err = sshCert(flags)
+		}
 	case "run":
 		var code int
 		code, err = runCmd(flags, rest)

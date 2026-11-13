@@ -40,7 +40,11 @@ working() {
   done
   # Sites set up before WebDAV have no /dav block.
   curl -s -o /dev/null -D - -X OPTIONS --max-time 10 \
-    --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/dav/" | grep -qi '^dav:'
+    --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/dav/" | grep -qi '^dav:' || return 1
+  # ...and sites set up before the SSH terminal have no /ssh-ws block (the sidecar answers a plain GET with 426).
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+    --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/ssh-ws" || true)
+  [ "$code" = 426 ]
 }
 
 if command -v nginx >/dev/null && [ -f "$site" ] && working; then

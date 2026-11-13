@@ -3,6 +3,8 @@
 import {
   ArrowLeftIcon,
   ArrowDownIcon,
+  CertificateIcon,
+  IdentificationCardIcon,
   ArrowUpIcon,
   ClockCounterClockwiseIcon,
   DotsThreeIcon,
@@ -11,6 +13,7 @@ import {
   GitPullRequestIcon,
   HourglassMediumIcon,
   KeyIcon,
+  TerminalWindowIcon,
   LinkIcon,
   ScrollIcon,
   ShieldCheckIcon,
@@ -29,12 +32,15 @@ import { useEffect, useState } from "react"
 import { AccessRequestsView } from "@/components/secrets/access-requests-view"
 import { AccessView } from "@/components/secrets/access-view"
 import { AuditView } from "@/components/secrets/audit-view"
+import { CertsView } from "@/components/secrets/certs-view"
 import { api, errorText } from "@/components/secrets/client"
+import { ItemsView } from "@/components/secrets/items-view"
 import { OverviewMatrix } from "@/components/secrets/overview-matrix"
 import { PoliciesView } from "@/components/secrets/policies-view"
 import { RequestsView } from "@/components/secrets/requests-view"
 import { SecretsTable } from "@/components/secrets/secrets-table"
 import { SharesView } from "@/components/secrets/shares-view"
+import { SshView } from "@/components/secrets/ssh-view"
 import { SnapshotsView } from "@/components/secrets/snapshots-view"
 import { TrashView } from "@/components/secrets/trash-view"
 import { Confirm, MenuButton, Modal } from "@/components/secrets/ui"
@@ -74,7 +80,7 @@ export function ProjectView({
     initialView === "overview" ||
     initialView === "trash" ||
     (["access", "audit", "policies"].includes(initialView) && detail.role === "admin") ||
-    ["requests", "snapshots", "access-requests", "shares"].includes(initialView) ||
+    ["requests", "snapshots", "access-requests", "shares", "ssh", "certs", "items"].includes(initialView) ||
     slugs.includes(initialView)
       ? initialView
       : "overview"
@@ -83,6 +89,8 @@ export function ProjectView({
   const [q, setQ] = useState("")
   const [hits, setHits] = useState<Hit[] | null>(null)
   const [searchError, setSearchError] = useState<string | null>(null)
+  // Certificates and items that match by name.
+  const [named, setNamed] = useState<{ items: { id: string; name: string; kind: string }[]; certs: { id: string; name: string }[] } | null>(null)
   const [dialog, setDialog] = useState<"envs" | "rename" | "delete" | null>(null)
   // A key the Overview asked the table to start with (a missing value to add).
   const [addKey, setAddKey] = useState<string | null>(null)
@@ -95,6 +103,7 @@ export function ProjectView({
     setAddKey(key)
     setQ("")
     setHits(null)
+    setNamed(null)
   }
 
   // Governance views change counts in the sidebar (open requests, pending access).
@@ -121,6 +130,9 @@ export function ProjectView({
       api<{ results: Hit[] }>(`/projects/${detail.id}/search?q=${encodeURIComponent(term)}`)
         .then((r) => live && (setHits(r.results), setSearchError(null)))
         .catch((e) => live && setSearchError(errorText(e)))
+      api<NonNullable<typeof named>>(`/projects/${detail.id}/pki-search?q=${encodeURIComponent(term)}`)
+        .then((r) => live && setNamed(r))
+        .catch(() => {})
     }, 250)
     return () => {
       live = false
@@ -190,6 +202,22 @@ export function ProjectView({
               </button>
             )}
           </div>
+        </nav>
+        <nav aria-label="SSH" className="flex flex-col gap-1">
+          <button className={nav(view === "ssh")} aria-current={view === "ssh" ? "page" : undefined} onClick={() => go("ssh")}>
+            <TerminalWindowIcon className="size-4" />
+            SSH
+          </button>
+        </nav>
+        <nav aria-label="Certificates and items" className="flex flex-col gap-1">
+          <button className={nav(view === "certs")} aria-current={view === "certs" ? "page" : undefined} onClick={() => go("certs")}>
+            <CertificateIcon className="size-4" />
+            Certificates
+          </button>
+          <button className={nav(view === "items")} aria-current={view === "items" ? "page" : undefined} onClick={() => go("items")}>
+            <IdentificationCardIcon className="size-4" />
+            Items
+          </button>
         </nav>
         <nav aria-label="Governance" className="flex flex-col gap-1">
           <p className="flex h-8 items-center gap-2 px-2.5 text-xs font-medium text-muted-foreground">
@@ -278,6 +306,8 @@ export function ProjectView({
             hits={hits}
             error={searchError}
             term={q.trim()}
+            named={named}
+            openNamed={(v) => go(v)}
             open={(h) => {
               const slug = detail.envs.find((e) => e.id === h.envId)?.slug
               if (slug) go(slug, h.folder)
@@ -299,6 +329,12 @@ export function ProjectView({
           <SnapshotsView detail={detail} />
         ) : view === "access-requests" ? (
           <AccessRequestsView detail={detail} />
+        ) : view === "ssh" ? (
+          <SshView detail={detail} />
+        ) : view === "certs" ? (
+          <CertsView projectId={detail.id} role={detail.role} />
+        ) : view === "items" ? (
+          <ItemsView projectId={detail.id} role={detail.role} />
         ) : view === "shares" ? (
           <SharesView />
         ) : view === "audit" && admin ? (
@@ -346,11 +382,15 @@ function SearchResults({
   error,
   term,
   open,
+  named,
+  openNamed,
 }: {
   hits: Hit[] | null
   error: string | null
   term: string
   open: (h: Hit) => void
+  named: { items: { id: string; name: string; kind: string }[]; certs: { id: string; name: string }[] } | null
+  openNamed: (view: "certs" | "items") => void
 }) {
   if (error) return <p role="alert" className="text-sm text-destructive">{error}</p>
   if (!hits) return null
@@ -389,6 +429,31 @@ function SearchResults({
           </li>
         ))}
       </ul>
+      {named && (named.items.length > 0 || named.certs.length > 0) && (
+        <>
+          <p className="text-sm text-muted-foreground">Certificates and items, by name</p>
+          <ul className="flex flex-col divide-y rounded-xl border">
+            {named.certs.map((c) => (
+              <li key={c.id}>
+                <button onClick={() => openNamed("certs")} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm outline-none hover:bg-muted/40 focus-visible:bg-muted/40">
+                  <CertificateIcon className="size-4 text-muted-foreground" />
+                  {c.name}
+                  <span className="text-xs text-muted-foreground">Certificate</span>
+                </button>
+              </li>
+            ))}
+            {named.items.map((i) => (
+              <li key={i.id}>
+                <button onClick={() => openNamed("items")} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm outline-none hover:bg-muted/40 focus-visible:bg-muted/40">
+                  <IdentificationCardIcon className="size-4 text-muted-foreground" />
+                  {i.name}
+                  <span className="text-xs text-muted-foreground">Item</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </div>
   )
 }

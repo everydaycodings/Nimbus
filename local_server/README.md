@@ -129,6 +129,16 @@ curl -u you@example.com:APP-PASSWORD -X PROPFIND -H "Depth: 1" http://localhost:
 production nginx forwards `/dav` to the `webdav` compose service and the address is
 `https://<domain>/dav`.
 
+## SSH terminal
+
+Secrets → SSH → Hosts → Terminal needs `npm run ssh-terminal` (port 3406) beside the dev server:
+Next can't upgrade WebSockets, so this small process bridges the browser's xterm.js to ssh2. The
+app hands the browser a one-use, 60-second ticket (unlocked session and a Developer role are
+checked there) and the browser connects to `ws://<host>:3406/ssh` with it. Set
+`SSH_TERMINAL_URL` to override that address. In production nginx forwards `/ssh-ws` to the
+`ssh-terminal` compose service, so there's nothing to set. Session starts and ends, with the
+host and duration, show in the project's Audit tab; the first host key seen is pinned.
+
 ## Reset
 
 ```sh

@@ -77,3 +77,19 @@ export function download(name: string, text: string, type = "text/plain") {
   a.click()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
+
+// A POST whose answer is a file: saved through the browser. Errors come back as text.
+export async function downloadPost(path: string, body: unknown, fallback: string) {
+  const res = await fetch(`${BASE}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), cache: "no-store" })
+  if (!res.ok) {
+    if (res.status === 423) window.dispatchEvent(new Event("secrets-locked"))
+    throw new ApiError(((await res.json().catch(() => ({}))) as { message?: string }).message ?? "Something went wrong. Try again.", res.status)
+  }
+  const name = /filename="([^"]+)"/.exec(res.headers.get("content-disposition") ?? "")?.[1] ?? fallback
+  const url = URL.createObjectURL(await res.blob())
+  const a = document.createElement("a")
+  a.href = url
+  a.download = name
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}

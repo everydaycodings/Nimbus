@@ -120,6 +120,7 @@ Nimbus binds only to 127.0.0.1, on ports chosen to stay clear of other apps:
 | App | 3400 | always |
 | tusd | 3401 | always |
 | WebDAV proxy | 3404 | always |
+| SSH terminal (WebSocket) | 3406 | always |
 | Redis | 6340 | always |
 | Postgres | 54340 | `postgres` profile |
 | MinIO API / console | 3402 / 3403 | `minio` profile |
@@ -394,3 +395,15 @@ has the steps for each. nginx forwards `/dav` to the `webdav` service, so there'
 up. Turn it off for everyone in **Admin → System → WebDAV**, or for one member on their page.
 
 davfs2 can't list folders on Linux 7 kernels; use rclone there to mount it as a folder.
+
+### SSH keys, CA and browser terminal (Secrets → SSH)
+
+Each Secrets project can store SSH keys and hosts, run an SSH certificate authority and open a
+terminal to a saved host in the browser. The terminal needs the `ssh-terminal` service (it ships
+in `docker-compose.yml`, port 3406): Next can't upgrade WebSockets, so this small process bridges
+xterm.js to `ssh2`, and nginx forwards `/ssh-ws` to it. Sites set up before this feature need
+`production_script/setup-nginx.sh` run again to get the `/ssh-ws` block. A session needs an
+unlocked Secrets session and a Developer or Admin role; its start, end, host and duration are
+audited and the first host key seen is pinned (edit the host to trust a new one). Viewers, and
+members limited to some environments, see public keys only. To change the browser's WebSocket
+address, set `SSH_TERMINAL_URL`.

@@ -23,6 +23,7 @@ export const PUT = projectRoute<P>("admin", async (c, req, p) => {
       username: z.string().max(60),
       path: z.string().max(300),
       privateKey: z.string().max(20_000).optional(),
+      keyId: z.string().uuid().optional(),
       postCommand: z.string().max(500).default(""),
       auto: z.boolean().default(false),
       forgetHostKey: z.boolean().optional(),

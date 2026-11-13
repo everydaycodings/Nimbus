@@ -1924,7 +1924,7 @@ export const secretDeviceCodes = pgTable("secret_device_codes", {
   createdAt: createdAt(),
 })
 
-// Where an environment's .env is pushed over SSH. S4 can point keyEnc at a stored key.
+// Where an environment's .env is pushed over SSH. keyId (a stored SSH key) wins over keyEnc.
 export const secretPushTargets = pgTable("secret_push_targets", {
   envId: uuid("env_id")
     .primaryKey()
@@ -1933,7 +1933,8 @@ export const secretPushTargets = pgTable("secret_push_targets", {
   port: integer("port").notNull().default(22),
   username: text("username").notNull(),
   path: text("path").notNull(),
-  keyEnc: text("key_enc").notNull(),
+  keyEnc: text("key_enc"),
+  keyId: uuid("key_id").references((): AnyPgColumn => secretSshKeys.id, { onDelete: "set null" }),
   hostKey: text("host_key"),
   postCommand: text("post_command"),
   auto: boolean("auto").notNull().default(false),
@@ -2111,4 +2112,247 @@ export const secretRequiredKeys = pgTable(
     pattern: text("pattern"),
   },
   (t) => [primaryKey({ columns: [t.projectId, t.key] })]
+)
+
+// S4 SSH. Keys: private key (and passphrase) sealed with the project key.
+export const secretSshKeys = pgTable(
+  "secret_ssh_keys",
+  {
+    id: id(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => secretProjects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    kind: text("kind").notNull(),
+    publicKey: text("public_key").notNull(),
+    fingerprint: text("fingerprint").notNull(),
+    comment: text("comment"),
+    privateEnc: text("private_enc").notNull(),
+    passphraseEnc: text("passphrase_enc"),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("secret_ssh_keys_project_idx").on(t.projectId)]
+)
+
+// Host entries. useCa: sign in with a fresh certificate from the project's SSH CA.
+export const secretSshHosts = pgTable(
+  "secret_ssh_hosts",
+  {
+    id: id(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => secretProjects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    host: text("host").notNull(),
+    port: integer("port").notNull().default(22),
+    username: text("username").notNull(),
+    keyId: uuid("key_id").references(() => secretSshKeys.id, { onDelete: "set null" }),
+    useCa: boolean("use_ca").notNull().default(false),
+    jumpHostId: uuid("jump_host_id").references((): AnyPgColumn => secretSshHosts.id, { onDelete: "set null" }),
+    hostKey: text("host_key"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("secret_ssh_hosts_project_idx").on(t.projectId)]
+)
+
+// One CA per project (ed25519), private key sealed with the project key.
+export const secretSshCas = pgTable("secret_ssh_cas", {
+  projectId: uuid("project_id")
+    .primaryKey()
+    .references(() => secretProjects.id, { onDelete: "cascade" }),
+  publicKey: text("public_key").notNull(),
+  fingerprint: text("fingerprint").notNull(),
+  privateEnc: text("private_enc").notNull(),
+  nextSerial: integer("next_serial").notNull().default(1),
+  createdAt: createdAt(),
+  rotatedAt: timestamp("rotated_at", { withTimezone: true }),
+})
+
+export const secretSshCerts = pgTable(
+  "secret_ssh_certs",
+  {
+    id: id(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => secretProjects.id, { onDelete: "cascade" }),
+    serial: integer("serial").notNull(),
+    keyId: text("key_id").notNull(),
+    principals: text("principals").notNull(),
+    publicFingerprint: text("public_fingerprint").notNull(),
+    caFingerprint: text("ca_fingerprint").notNull(),
+    issuedBy: text("issued_by").references(() => user.id, { onDelete: "set null" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("secret_ssh_certs_project_idx").on(t.projectId, t.createdAt)]
+)
+
+// S5 PKI. Private keys are sealed with the project key; certificates themselves are public.
+export const secretCas = pgTable(
+  "secret_cas",
+  {
+    id: id(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => secretProjects.id, { onDelete: "cascade" }),
+    parentId: uuid("parent_id").references((): AnyPgColumn => secretCas.id, { onDelete: "restrict" }),
+    name: text("name").notNull(),
+    certPem: text("cert_pem").notNull(),
+    keyEnc: text("key_enc").notNull(),
+    subject: text("subject").notNull(),
+    notAfter: timestamp("not_after", { withTimezone: true }).notNull(),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("secret_cas_project_idx").on(t.projectId)]
+)
+
+export const secretCertTemplates = pgTable(
+  "secret_cert_templates",
+  {
+    id: id(),
+    caId: uuid("ca_id")
+      .notNull()
+      .references(() => secretCas.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    kind: text("kind").$type<"server" | "client">().notNull(),
+    sanPatterns: jsonb("san_patterns").$type<string[]>().notNull(),
+    maxTtlDays: integer("max_ttl_days").notNull(),
+  },
+  (t) => [index("secret_cert_templates_ca_idx").on(t.caId)]
+)
+
+// The certificate store: uploaded, issued by a private CA, or issued by ACME.
+// acme: how to renew it (account, challenge, DNS credential, auto-renew).
+export const secretCerts = pgTable(
+  "secret_certs",
+  {
+    id: id(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => secretProjects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    source: text("source").$type<"upload" | "ca" | "acme">().notNull(),
+    certPem: text("cert_pem").notNull(),
+    chainPem: text("chain_pem").notNull().default(""),
+    keyEnc: text("key_enc"),
+    subject: text("subject").notNull(),
+    issuer: text("issuer").notNull(),
+    serial: text("serial").notNull(),
+    sans: jsonb("sans").$type<string[]>().notNull(),
+    keyType: text("key_type").notNull(),
+    fingerprint: text("fingerprint").notNull(),
+    notBefore: timestamp("not_before", { withTimezone: true }).notNull(),
+    notAfter: timestamp("not_after", { withTimezone: true }).notNull(),
+    caId: uuid("ca_id").references(() => secretCas.id, { onDelete: "set null" }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    revokeReason: integer("revoke_reason"),
+    acme: jsonb("acme").$type<{ accountId: string; domains: string[]; challenge: "http-01" | "dns-01" | "manual"; credId: string | null; autoRenew: boolean; failedAt?: string }>(),
+    warnedDays: integer("warned_days"),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("secret_certs_project_idx").on(t.projectId), index("secret_certs_ca_idx").on(t.caId)]
+)
+
+export const secretAcmeAccounts = pgTable(
+  "secret_acme_accounts",
+  {
+    id: id(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => secretProjects.id, { onDelete: "cascade" }),
+    directory: text("directory").notNull(),
+    email: text("email").notNull(),
+    keyEnc: text("key_enc").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("secret_acme_accounts_dir_idx").on(t.projectId, t.directory)]
+)
+
+export const secretDnsCreds = pgTable(
+  "secret_dns_creds",
+  {
+    id: id(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => secretProjects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    provider: text("provider").$type<"cloudflare" | "route53" | "digitalocean">().notNull(),
+    credEnc: text("cred_enc").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("secret_dns_creds_project_idx").on(t.projectId)]
+)
+
+// One ACME order in flight. challenges holds what to publish (and the HTTP-01 tokens
+// the public route answers with); certId is set when it ends in a certificate.
+export const secretAcmeOrders = pgTable(
+  "secret_acme_orders",
+  {
+    id: id(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => secretProjects.id, { onDelete: "cascade" }),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => secretAcmeAccounts.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    domains: jsonb("domains").$type<string[]>().notNull(),
+    challenge: text("challenge").$type<"http-01" | "dns-01" | "manual">().notNull(),
+    credId: uuid("cred_id").references(() => secretDnsCreds.id, { onDelete: "set null" }),
+    autoRenew: boolean("auto_renew").notNull().default(true),
+    status: text("status").$type<"working" | "awaiting" | "issued" | "failed">().notNull(),
+    error: text("error"),
+    orderEnc: text("order_enc"),
+    keyEnc: text("key_enc"),
+    challenges: jsonb("challenges").$type<{ domain: string; type: string; token: string; keyAuth: string; record?: { name: string; value: string }; url: string }[]>().notNull().default([]),
+    renewCertId: uuid("renew_cert_id").references(() => secretCerts.id, { onDelete: "cascade" }),
+    certId: uuid("cert_id").references(() => secretCerts.id, { onDelete: "set null" }),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("secret_acme_orders_project_idx").on(t.projectId, t.createdAt)]
+)
+
+export const secretWatches = pgTable(
+  "secret_watches",
+  {
+    id: id(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => secretProjects.id, { onDelete: "cascade" }),
+    host: text("host").notNull(),
+    port: integer("port").notNull().default(443),
+    subject: text("subject"),
+    issuer: text("issuer"),
+    notAfter: timestamp("not_after", { withTimezone: true }),
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
+    error: text("error"),
+    warnedDays: integer("warned_days"),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("secret_watches_target_idx").on(t.projectId, t.host, t.port)]
+)
+
+// Typed items. Everything but the name, kind and expiry is in dataEnc (sealed JSON);
+// a small file lives there too (base64, 1 MB max), so it rides along with DB backups.
+export const secretItems = pgTable(
+  "secret_items",
+  {
+    id: id(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => secretProjects.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<"login" | "api_key" | "db" | "note" | "file">().notNull(),
+    name: text("name").notNull(),
+    dataEnc: text("data_enc").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    warnedDays: integer("warned_days"),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("secret_items_project_idx").on(t.projectId)]
 )

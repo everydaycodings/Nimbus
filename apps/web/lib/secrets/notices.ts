@@ -17,6 +17,7 @@ import {
   settings,
 } from "@/lib/db/schema"
 import { notify } from "@/lib/notify"
+import { pkiSweep } from "./pki-sweep"
 import type { Ctx } from "./service"
 
 const link = (projectId: string, view: string) => `/secrets/${projectId}?view=${view}`
@@ -110,7 +111,7 @@ export async function envChanged(c: Ctx, envIds: string[], keys: string[]) {
 
 export async function sweep() {
   const now = new Date()
-  const out = { access: 0, rotation: 0, tokens: 0, shares: 0, trash: 0 }
+  const out = { access: 0, rotation: 0, tokens: 0, shares: 0, trash: 0, pki: {} as Awaited<ReturnType<typeof pkiSweep>> }
 
   // Temporary access that ran out: mark it, tell the person.
   const ended = await db
@@ -184,5 +185,7 @@ export async function sweep() {
       .returning({ id: secrets.id })
     out.trash = gone.length
   }
+  // Certificates, API keys and watched domains: renewals and expiry warnings.
+  out.pki = await pkiSweep({ admins, tell })
   return out
 }

@@ -20,6 +20,7 @@
     "indexer": "npm run indexer -w web",
     "worker": "npm run worker -w web",
     "webdav": "npm run webdav -w web",
+    "ssh-terminal": "npm run ssh-terminal -w web",
     "worker:backup": "npm run worker:backup -w web",
     "backup:restore": "npm run backup:restore -w web",
     "backup:restore-files": "npm run backup:restore-files -w web"

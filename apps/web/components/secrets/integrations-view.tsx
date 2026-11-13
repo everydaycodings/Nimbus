@@ -41,6 +41,7 @@ export function IntegrationsView({ detail, kind }: { detail: Detail; kind: "push
 }
 
 type PushCfg = {
+  keyId: string | null
   host: string
   port: number
   username: string
@@ -56,6 +57,7 @@ type PushCfg = {
 function Push({ detail, envId }: { detail: Detail; envId: string }) {
   const base = `/projects/${detail.id}/envs/${envId}/push`
   const { data, error, reload } = useLoad<{ push: PushCfg | null }>(base)
+  const storedKeys = useLoad<{ keys: { id: string; name: string }[] }>(`/projects/${detail.id}/ssh/keys`)
   const [note, setNote] = useState<{ text: string; error?: boolean } | null>(null)
   const [busy, setBusy] = useState<"save" | "run" | null>(null)
   const [drop, setDrop] = useState(false)
@@ -78,6 +80,7 @@ function Push({ detail, envId }: { detail: Detail; envId: string }) {
               username: f.get("username"),
               path: f.get("path"),
               privateKey: String(f.get("privateKey") ?? "") || undefined,
+              keyId: String(f.get("keyId") ?? "") || undefined,
               postCommand: f.get("postCommand"),
               auto: f.get("auto") === "on",
               forgetHostKey: f.get("forget") === "on",
@@ -108,6 +111,17 @@ function Push({ detail, envId }: { detail: Detail; envId: string }) {
           <Label htmlFor="push-path">File on the server</Label>
           <Input id="push-path" name="path" defaultValue={p?.path} placeholder="/srv/app/.env" className="font-mono" required />
         </div>
+        {storedKeys.data && storedKeys.data.keys.length > 0 && (
+          <div className="grid gap-2">
+            <Label htmlFor="push-stored">Stored SSH key</Label>
+            <select id="push-stored" name="keyId" className={SELECT} defaultValue={p?.keyId ?? ""}>
+              <option value="">{p && !p.keyId ? "Use the key pasted below" : "None: paste a key below"}</option>
+              {storedKeys.data.keys.map((k) => (
+                <option key={k.id} value={k.id}>{k.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className="grid gap-2">
           <Label htmlFor="push-key">Private key</Label>
           <textarea

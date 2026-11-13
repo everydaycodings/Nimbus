@@ -1,6 +1,6 @@
 // Server push: writes an environment's .env to a host over SSH (a temp file, 0600, then
 // a rename, so a reader never sees half a file), then runs an optional command. The
-// private key is sealed with the project key. S4's stored SSH keys can replace keyEnc.
+// private key is sealed with the project key, or comes from a stored SSH key (keyId).
 import "server-only"
 
 import { createHash } from "node:crypto"
@@ -12,6 +12,7 @@ import { db } from "@/lib/db"
 import { secretEnvs, secretPushTargets } from "@/lib/db/schema"
 import { serialize } from "./format"
 import { openValue, sealValue } from "./kms"
+import { openKey } from "./ssh"
 import { SecretsError, exportPairs, systemCtx, type Ctx } from "./service"
 
 export type PushInput = {
@@ -20,6 +21,8 @@ export type PushInput = {
   username: string
   path: string
   privateKey?: string
+  // A key stored on the SSH tab; wins over privateKey.
+  keyId?: string
   postCommand: string
   auto: boolean
   // Accept whatever host key the server presents next time (after a re-install).
@@ -34,6 +37,7 @@ export async function getPush(envId: string) {
     port: t.port,
     username: t.username,
     path: t.path,
+    keyId: t.keyId,
     postCommand: t.postCommand ?? "",
     auto: t.auto,
     hostKey: t.hostKey,
@@ -51,14 +55,18 @@ export async function savePush(c: Ctx, envId: string, i: PushInput) {
   if (!path || path.length > 300 || /[\0\n]/.test(path)) throw new SecretsError(400, "Enter the file path on the server.")
   if (i.port < 1 || i.port > 65535) throw new SecretsError(400, "The port is 1 to 65535.")
   const [old] = await db.select().from(secretPushTargets).where(eq(secretPushTargets.envId, envId))
-  let keyEnc = old?.keyEnc
-  if (i.privateKey?.trim()) {
+  let keyEnc = old?.keyEnc ?? null
+  const keyId = i.keyId ? i.keyId : i.privateKey?.trim() ? null : (old?.keyId ?? null)
+  if (i.keyId) {
+    await openKey(c, i.keyId) // 404 if it isn't this project's
+    keyEnc = null
+  } else if (i.privateKey?.trim()) {
     const k = utils.parseKey(i.privateKey.trim())
     if (k instanceof Error)
       throw new SecretsError(400, /passphrase/i.test(k.message) ? "Keys with a passphrase aren't supported yet." : "That isn't a private key we can read.")
     keyEnc = sealValue(c.key, c.projectId, i.privateKey.trim() + "\n")
   }
-  if (!keyEnc) throw new SecretsError(400, "Paste the private key to log in with.")
+  if (!keyEnc && !keyId) throw new SecretsError(400, "Paste the private key to log in with.")
   const moved = old && (old.host !== host || old.port !== i.port)
   const v = {
     host,
@@ -66,6 +74,7 @@ export async function savePush(c: Ctx, envId: string, i: PushInput) {
     username: i.username.trim(),
     path,
     keyEnc,
+    keyId,
     postCommand: i.postCommand.trim().slice(0, 500) || null,
     auto: i.auto,
     hostKey: moved || i.forgetHostKey ? null : (old?.hostKey ?? null),
@@ -112,7 +121,10 @@ export async function runPush(envId: string): Promise<{ ok: boolean; message: st
   }
 
   const text = serialize(await exportPairs(c, { envId, folderId: null }, { expand: true, own: false }), "env")
-  const privateKey = openValue(c.key, c.projectId, t.keyEnc)
+  if (!t.keyId && !t.keyEnc) return record(false, "The stored SSH key was deleted. Edit the push and pick another key.")
+  const stored = t.keyId ? await openKey(c, t.keyId) : null
+  const privateKey = stored ? stored.privateKey : openValue(c.key, c.projectId, t.keyEnc!)
+  const passphrase = stored?.passphrase ?? undefined
   let seen: string | undefined
   let mismatch = false
   const conn = new Client()
@@ -124,6 +136,7 @@ export async function runPush(envId: string): Promise<{ ok: boolean; message: st
         port: t.port,
         username: t.username,
         privateKey,
+        passphrase,
         readyTimeout: 15_000,
         // First connection pins the host key; a different one later is refused.
         hostVerifier: (key: Buffer) => {

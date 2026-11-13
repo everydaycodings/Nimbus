@@ -323,6 +323,20 @@
       "when": 1795200000000,
       "tag": "0045_secrets_s3",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1795300000000,
+      "tag": "0046_secrets_s4_ssh",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1795400000000,
+      "tag": "0047_secrets_s5_pki",
+      "breakpoints": true
     }
   ]
 }
