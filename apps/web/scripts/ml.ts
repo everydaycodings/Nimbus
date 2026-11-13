@@ -19,8 +19,9 @@ import {
   vecLiteral,
   type MlFeature,
 } from "../lib/ml.ts"
+import { deriveQueue } from "../lib/redis.ts"
 import { presignGet } from "../lib/s3.ts"
-import { busy, sql } from "./indexer.ts"
+import { sql } from "./indexer.ts"
 import { sampleFrames } from "./video-ocr.ts"
 
 type Row = { id: string; v: string; name: string; mime: string | null; size: string; key: string; owner: string }
@@ -322,8 +323,9 @@ export async function mlSweep() {
     console.log(`ml: downloading the ${plan.pull.feature} model ${plan.pull.model}`)
     await api.pull(plan.pull.feature, plan.pull.model).catch((e: Error) => console.error(`ml pull: ${e.message}`))
   }
-  // Uploads and video copies come first.
-  if (await busy()) return
+  // New uploads (thumbnails) come first. Video copies don't block it: on a big library they
+  // run for hours, and both jobs are niced, so they share the CPU.
+  if ((await deriveQueue.getActiveCount()) > 0) return
   const feature = plan.ready.find((f) => mlStatus.features[f]!.backlog > 0)
   if (!feature) return
   try {
