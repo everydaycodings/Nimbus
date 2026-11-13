@@ -1022,10 +1022,11 @@ export const faces = pgTable(
     }),
     // People this face was said not to be.
     rejected: uuid("rejected").array().notNull().default(sql`'{}'::uuid[]`),
-    // [x, y, w, h] as 0-1 fractions of the image.
-    box: jsonb("box").$type<[number, number, number, number]>().notNull(),
+    // [x, y, w, h] as 0-1 fractions of the image. Null with vec: a photo tagged by hand
+    // ("Add to person") where no face was found.
+    box: jsonb("box").$type<[number, number, number, number]>(),
     score: doublePrecision("score").notNull(),
-    vec: vector("vec", { dimensions: 128 }).notNull(),
+    vec: vector("vec", { dimensions: 128 }),
   },
   (t) => [
     index("faces_node_idx").on(t.nodeId),

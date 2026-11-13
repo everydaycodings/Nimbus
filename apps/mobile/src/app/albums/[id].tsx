@@ -6,6 +6,7 @@ import { BackHandler, View } from "react-native"
 
 import { useAlbumRefresh } from "@/components/album-sheets"
 import { ConfirmDialog, PromptDialog } from "@/components/dialog"
+import { usePhotoSheet } from "@/components/photo-sheets"
 import { PhotoGrid } from "@/components/photo-grid"
 import { Sheet, SheetDivider, SheetRow } from "@/components/sheet"
 import { useSnack } from "@/components/snackbar"
@@ -33,6 +34,7 @@ export default function AlbumScreen() {
   const owner = album?.role === "owner"
   const selecting = chosen.size > 0
   const picked = items.filter((p) => chosen.has(p.id))
+  const sheets = usePhotoSheet()
   const clear = useCallback(() => setChosen(new Set()), [])
 
   // Back clears a selection before it leaves.
@@ -100,6 +102,7 @@ export default function AlbumScreen() {
         <Bar>
           <IconButton icon={X} label="Clear selection" onPress={clear} />
           <Text variant="title" style={{ flex: 1, fontVariant: ["tabular-nums"] }}>{chosen.size} selected</Text>
+          {chosen.size === 1 && <IconButton icon={DotsThreeVertical} label="More actions" onPress={() => sheets.show(picked[0].owner ? { ...picked[0], fromPartner: true } : picked[0])} />}
           {owner && chosen.size === 1 && (
             <IconButton
               icon={ImageIcon}
@@ -148,6 +151,7 @@ export default function AlbumScreen() {
         }
       />
 
+      {sheets.element}
       {menu && (
         <Sheet onClose={() => setMenu(false)} header={<Text variant="titleSmall" numberOfLines={1} style={{ paddingHorizontal: 20, paddingBottom: 8 }}>{album.name}</Text>}>
           <SheetRow label="Rename" icon={<PencilSimple size={24} color={c.mutedForeground} />} onPress={() => setDialog("rename")} />

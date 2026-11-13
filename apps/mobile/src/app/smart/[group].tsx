@@ -5,6 +5,7 @@ import { ArrowLeft } from "phosphor-react-native"
 import { View } from "react-native"
 
 import { SMART_LABEL } from "@/components/photo-chips"
+import { usePhotoSheet } from "@/components/photo-sheets"
 import { PhotoGrid } from "@/components/photo-grid"
 import { Bar, Button, IconButton, Spinner, Text } from "@/components/ui"
 import { useSmart } from "@/lib/photos"
@@ -24,6 +25,7 @@ export default function Smart() {
   const known = (SMART_GROUPS as readonly string[]).includes(group)
   const list = useSmart(known ? group : "screenshots")
   const label = known ? SMART_LABEL[group] : "Photos"
+  const sheets = usePhotoSheet()
   const { items, hasNextPage, fetchNextPage } = list
 
   const open = (index: number) =>
@@ -60,6 +62,7 @@ export default function Smart() {
         <PhotoGrid
           items={items}
           onOpen={open}
+          onLongPress={sheets.show}
           empty={
             <View style={{ alignItems: "center", paddingVertical: 64, paddingHorizontal: 24, gap: 8 }}>
               <Text variant="titleSmall" style={{ textAlign: "center" }}>Nothing here yet</Text>
@@ -68,6 +71,7 @@ export default function Smart() {
           }
         />
       )}
+      {sheets.element}
     </View>
   )
 }

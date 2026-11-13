@@ -266,6 +266,7 @@ export type FileSheet =
   | { kind: "move"; items: Item[] }
   | { kind: "vault"; items: Item[] }
   | { kind: "album"; items: Item[] }
+  | { kind: "person"; item: Item }
   | { kind: "new"; parentId: string | null }
   | { kind: "filter"; filter: "type" | "modified" | "size" | "tag" | "found" }
   | { kind: "sort" }

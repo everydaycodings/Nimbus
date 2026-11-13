@@ -33,12 +33,14 @@ import {
   Minus,
   PaperPlaneTilt,
   PencilSimple,
+  PencilSimpleLine,
   Plus,
   Scan,
   SelectionAll,
   ShareNetwork,
   SquaresFour,
   Star,
+  UserFocus,
   Tag as TagIcon,
   Trash,
   UploadSimple,
@@ -49,6 +51,7 @@ import {
 import { createElement, useState, type ReactNode } from "react"
 import { ActivityIndicator, Pressable, Switch, View } from "react-native"
 
+import { AddToPersonSheet } from "@/components/add-to-person"
 import { AlbumPickSheet } from "@/components/album-sheets"
 import { Avatar } from "@/components/avatar"
 import { ConfirmDialog, PromptDialog } from "@/components/dialog"
@@ -66,6 +69,7 @@ import { TextFound } from "@/components/text-found"
 import { Transcript } from "@/components/transcript"
 import { TagDialog } from "@/components/tag-dialog"
 import { VaultPickSheet, canVault } from "@/components/vault-sheets"
+import { canEditPhoto } from "@/lib/photo-edit-rules"
 import { useAi } from "@/lib/people"
 import { sendWithTransfer, useSent } from "@/lib/sent"
 import { useUploader } from "@/components/uploader"
@@ -209,6 +213,8 @@ function SheetFor(props: Props & { sheet: FileSheet; ask: (d: Dialog) => void })
       return <VaultPickSheet title={`Move ${plural(sheet.items.length, "item")} to a vault`} intake={{ items: sheet.items }} onClose={onClose} />
     case "album":
       return <AlbumPickSheet nodeIds={sheet.items.map((i) => i.id)} onClose={onClose} />
+    case "person":
+      return <AddToPersonSheet item={sheet.item} onClose={onClose} />
     case "new":
       return <NewSheet {...props} parentId={sheet.parentId} onClose={onClose} />
     case "filter":
@@ -289,6 +295,7 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
   const links = useLinks()
   const sent = useSent()
   const offline = useOfflineActions()
+  const ai = useAi()
   const one = items.length === 1 ? items[0] : null
   const file = one?.kind === "file" ? one : null
   const done = () => onDone?.()
@@ -452,7 +459,20 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
         />
       )}
       {edit && <SheetRow label="Move" icon={ic(ArrowBendUpRight)} onPress={() => onChange({ kind: "move", items })} />}
-      {mine && media && <SheetRow label="Add to album" icon={ic(SquaresFour)} onPress={() => onChange({ kind: "album", items })} />}
+      {mine && media && <SheetRow label="Add to album…" icon={ic(SquaresFour)} onPress={() => onChange({ kind: "album", items })} />}
+      {file && mine && !partnerPhoto && edit && canEditPhoto(file.mime) && (
+        <SheetRow
+          label="Edit photo"
+          icon={ic(PencilSimpleLine)}
+          onPress={() => {
+            onClose()
+            router.push({ pathname: "/photo-edit", params: { id: file.id } })
+          }}
+        />
+      )}
+      {file && mine && !partnerPhoto && ai.faces && ai.facesOn && typeKeyOf("file", file.mime, file.name) === "image" && (
+        <SheetRow label="Add to person…" icon={ic(UserFocus)} onPress={() => onChange({ kind: "person", item: file })} />
+      )}
       {partnerPhoto && (
         <SheetRow
           label="Save to my library"

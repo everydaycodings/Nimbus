@@ -32,6 +32,7 @@ import {
   renamePerson,
   setPersonCover,
   setPersonMemories,
+  tagPhoto,
 } from "@/app/(app)/people-actions"
 import { DIALOG_BACKDROP, DIALOG_POPUP, MENU_ITEM, MENU_POPUP } from "@/components/overlay-styles"
 import { useNotice } from "@/components/toaster"
@@ -815,5 +816,173 @@ function NameFace({
         )
       )}
     </div>
+  )
+}
+
+// ---- "Add to person…" from a photo's menu ----
+
+// Pick the face that is them (when Nimbus found faces), then the person; with no face found
+// (or "None of these") the whole photo is tagged with them.
+export function AddToPersonDialog({ item, onClose }: { item: { id: string; name: string } | null; onClose: () => void }) {
+  const router = useRouter()
+  const notice = useNotice()
+  const [faces, setFaces] = useState<FileFace[] | null>(null)
+  const [face, setFace] = useState<string | null | undefined>(undefined)
+  const [list, setList] = useState<PhotoPerson[] | null>(null)
+  const [q, setQ] = useState("")
+  const [busy, setBusy] = useState(false)
+  const detected = (faces ?? []).filter((f) => f.box)
+
+  useEffect(() => {
+    if (!item) return
+    let live = true
+    getFileFaces(item.id).then(
+      (r) => {
+        if (!live) return
+        setFaces(r)
+        if (!r.some((f) => f.box)) setFace(null)
+      },
+      () => live && (setFaces([]), setFace(null))
+    )
+    getPeople().then(
+      (r) => live && setList(r.people),
+      () => live && setList([])
+    )
+    return () => {
+      live = false
+    }
+  }, [item])
+
+  async function add(to: { personId: string } | { name: string }) {
+    if (!item || face === undefined) return
+    setBusy(true)
+    const r = face ? await assignFace(face, to) : await tagPhoto(item.id, to)
+    setBusy(false)
+    if ("error" in r && r.error) return notice({ text: r.error, error: true })
+    const name = "person" in r && r.person ? (r.person.name ?? "them") : "them"
+    refreshPeople()
+    router.refresh()
+    onClose()
+    notice({ text: `Added to ${name}.` })
+  }
+
+  const term = q.trim()
+  const shown = (list ?? []).filter((p) => p.name && (!term || p.name.toLowerCase().includes(term.toLowerCase())))
+  const choosingFace = face === undefined && detected.length > 0
+
+  return (
+    <Dialog.Root
+      open={item !== null}
+      onOpenChange={(o) => !o && onClose()}
+      onOpenChangeComplete={(o) => !o && (setFaces(null), setFace(undefined), setList(null), setQ(""))}
+    >
+      <Dialog.Portal>
+        <Dialog.Backdrop className={DIALOG_BACKDROP} />
+        <Dialog.Popup className={DIALOG_POPUP}>
+          <div className="grid gap-1.5">
+            <Dialog.Title className="text-base font-semibold">Add to person</Dialog.Title>
+            <Dialog.Description className="text-sm text-pretty text-muted-foreground">
+              {faces === null
+                ? "Looking for faces…"
+                : choosingFace
+                  ? "Which face is them?"
+                  : face
+                    ? "Who is this?"
+                    : detected.length
+                      ? `${item?.name} goes in their photos, without a face.`
+                      : `No face was found in ${item?.name}. It still goes in their photos.`}
+            </Dialog.Description>
+          </div>
+          {choosingFace ? (
+            <>
+              <ul className="-mx-1 grid max-h-72 grid-cols-[repeat(auto-fill,minmax(4.5rem,1fr))] gap-3 overflow-y-auto p-1">
+                {detected.map((f) => (
+                  <li key={f.id} className="flex flex-col items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setFace(f.id)}
+                      aria-label={f.personName ? `Face, now ${f.personName}` : "Unnamed face"}
+                      className="w-full rounded-full outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    >
+                      <Face src={`/api/v1/faces/${f.id}/crop`} className="aspect-square size-full" />
+                    </button>
+                    <span className={cn("max-w-full truncate text-xs leading-5", !f.personName && "text-muted-foreground italic")}>
+                      {f.personName ?? "Unnamed"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <button
+                type="button"
+                onClick={() => setFace(null)}
+                className="self-start rounded-md text-sm font-medium text-brand underline-offset-4 outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              >
+                None of these, add the whole photo
+              </button>
+            </>
+          ) : face !== undefined ? (
+            <>
+              <input
+                type="search"
+                autoFocus
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && term && !busy) void add(shown[0] ? { personId: shown[0].id } : { name: term })
+                }}
+                aria-label="Find or name a person"
+                placeholder="Find or name a person"
+                className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+              />
+              <ul className="-mx-2 flex max-h-72 flex-col overflow-y-auto">
+                {term && !shown.some((p) => p.name?.toLowerCase() === term.toLowerCase()) && (
+                  <li>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void add({ name: term })}
+                      className="flex h-12 w-full items-center gap-3 rounded-lg px-2 text-left text-sm font-medium outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-60"
+                    >
+                      <Face src={null} className="size-9" />
+                      New person “{term}”
+                    </button>
+                  </li>
+                )}
+                {shown.map((p) => (
+                  <li key={p.id}>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void add({ personId: p.id })}
+                      className="flex h-12 w-full items-center gap-3 rounded-lg px-2 text-left text-sm outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-60"
+                    >
+                      <Face src={personFace(p)} className="size-9" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium">{p.name}</span>
+                        <span className="block text-xs text-muted-foreground tabular-nums">{photosText(p.photos)}</span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+                {list === null && <li className="px-2 py-3 text-sm text-muted-foreground">Loading…</li>}
+                {list && !shown.length && !term && (
+                  <li className="px-2 py-3 text-sm text-muted-foreground">Nobody is named yet. Type a name to add one.</li>
+                )}
+              </ul>
+            </>
+          ) : null}
+          <div className="flex justify-between gap-2">
+            {face !== undefined && detected.length > 0 ? (
+              <Button variant="ghost" onClick={() => setFace(undefined)} disabled={busy}>
+                Back
+              </Button>
+            ) : (
+              <span />
+            )}
+            <Dialog.Close render={<Button variant="outline" />}>Cancel</Dialog.Close>
+          </div>
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
   )
 }

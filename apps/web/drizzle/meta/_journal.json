@@ -295,6 +295,13 @@
       "when": 1794800000000,
       "tag": "0041_phase20_ml",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1794900000000,
+      "tag": "0042_face_tags",
+      "breakpoints": true
     }
   ]
 }

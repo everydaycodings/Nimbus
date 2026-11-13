@@ -35,6 +35,7 @@ import {
   GridNineIcon,
   ListBulletsIcon,
   PencilSimpleIcon,
+  PencilSimpleLineIcon,
   PlusIcon,
   SquareIcon,
   SquaresFourIcon,
@@ -42,6 +43,7 @@ import {
   TagIcon,
   TrashIcon,
   UploadSimpleIcon,
+  UserPlusIcon,
   XIcon,
   type Icon,
   LockKeyIcon,
@@ -71,9 +73,11 @@ import { useAi } from "@/components/ai-context"
 import { DetailsSheet } from "@/components/details-sheet"
 import { useNotice, type Notice } from "@/components/toaster"
 import { AddToAlbumDialog } from "@/components/album-dialogs"
+import { AddToPersonDialog } from "@/components/people"
 import { ShareDialog } from "@/components/share-dialog"
 import { IMAGE, VIDEO } from "@/lib/file-rules"
 import { UserAvatar } from "@/components/user-avatar"
+import { canEditImage } from "@/components/image-editor"
 import { Previewer, type Shown } from "@/components/previewer"
 import { MatchTag, Places, startOf, type PlaceStart } from "@/components/text-places"
 import { Thumb } from "@/components/thumb"
@@ -270,7 +274,12 @@ export function FileBrowser({
     id: string
     version?: Shown["version"]
     start?: PlaceStart
+    // Opened from the menu's "Edit": straight into the photo editor.
+    edit?: boolean
   } | null>(null)
+  // The photo whose "Add to person" dialog is open.
+  const [personFor, setPersonFor] = useState<Item | null>(null)
+  const ai = useAi()
   const [previewOpen, setPreviewOpen] = useState(false)
   // The item whose Share dialog is open.
   const [sharing, setSharing] = useState<Item | null>(null)
@@ -784,6 +793,19 @@ export function FileBrowser({
         group: 1,
         run: () => move(t),
       },
+      one &&
+        one.kind === "file" &&
+        edit &&
+        canEditImage(one.mime ?? null) && {
+          label: "Edit",
+          icon: PencilSimpleLineIcon,
+          menuOnly: true,
+          group: 1,
+          run: () => {
+            setPreview({ id: one.id, edit: true })
+            setPreviewOpen(true)
+          },
+        },
       t.every(
         (i) =>
           i.kind === "file" &&
@@ -796,6 +818,19 @@ export function FileBrowser({
         group: 1,
         run: () => setAlbumIds(t.map((i) => i.id)),
       },
+      one &&
+        one.kind === "file" &&
+        roleOf(one) === "owner" &&
+        !one.shortcut &&
+        IMAGE.test(one.name) &&
+        ai.faces &&
+        ai.facesOn && {
+          label: "Add to person…",
+          icon: UserPlusIcon,
+          menuOnly: true,
+          group: 1,
+          run: () => setPersonFor(one),
+        },
       t.every((i) => roleOf(i) === "owner" && !i.shortcut) && {
         label: "Move to vault…",
         icon: LockKeyIcon,
@@ -2088,6 +2123,7 @@ export function FileBrowser({
       />
 
       <AddToAlbumDialog ids={albumIds} onClose={() => setAlbumIds(null)} />
+      <AddToPersonDialog item={personFor} onClose={() => setPersonFor(null)} />
 
       <ShareDialog
         item={sharing}
@@ -2164,6 +2200,7 @@ export function FileBrowser({
         commentsFirst={commentsFirst}
         queue={files}
         editable={previewItem ? editable([previewItem]) : false}
+        editOnOpen={preview?.edit}
         onPrev={previewAt(-1)}
         onNext={previewAt(1)}
         position={

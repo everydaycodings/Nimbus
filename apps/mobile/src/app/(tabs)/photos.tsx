@@ -10,6 +10,7 @@ import { MemoriesStrip, STRIP_H } from "@/components/memories-strip"
 import { PEOPLE_H, PeopleRow } from "@/components/people-ui"
 import { PhotoChips } from "@/components/photo-chips"
 import { PhotoSettings } from "@/components/photo-settings"
+import { usePhotoSheet } from "@/components/photo-sheets"
 import { GAP, PhotoTile } from "@/components/photo-grid"
 import { Bar, Button, IconButton, Spinner, Text } from "@/components/ui"
 import { useApi } from "@/lib/files"
@@ -83,6 +84,7 @@ export default function Photos() {
   const { account, id } = useApi()
   const [prefs, setPrefs] = usePrefs(id)
   const photos = usePhotos()
+  const sheets = usePhotoSheet()
   const [box, setBox] = useState({ w: 0, h: 0 })
   const [refreshing, setRefreshing] = useState(false)
   const list = useRef<FlatList<ListRow>>(null)
@@ -174,6 +176,7 @@ export default function Photos() {
       </Bar>
       <PhotoChips />
       {settings && <PhotoSettings onClose={() => setSettings(false)} />}
+      {sheets.element}
     </>
   )
 
@@ -238,7 +241,7 @@ export default function Photos() {
                 ) : (
                   <View style={{ flexDirection: "row", gap: GAP, marginBottom: GAP, height: size }}>
                     {r.items.map((p, i) => (
-                      <PhotoTile key={p.id} photo={p} size={size} account={account} onPress={() => open(r.start + i)} />
+                      <PhotoTile key={p.id} photo={p} size={size} account={account} onPress={() => open(r.start + i)} onLongPress={() => sheets.show(p)} />
                     ))}
                   </View>
                 )

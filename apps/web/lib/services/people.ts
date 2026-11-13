@@ -163,11 +163,16 @@ export async function moveFaces(me: Me, id: string, faceIds: unknown, toId: stri
 export async function notPerson(me: Me, id: string, faceIds: unknown) {
   if (!valid(faceIds)) return { error: "Pick some faces." }
   if (!(await mine(me, id))) return { error: "That person isn't available anymore." }
+  // A hand tag (no face found) just goes; a detected face remembers the "no".
+  const tags = await db.execute<{ id: string }>(sql`
+    delete from faces where owner_id = ${me.id} and person_id = ${id}::uuid and vec is null
+      and id in (${ids(faceIds)}) returning id`)
   const rows = await db.execute<{ id: string }>(sql`
     update faces set person_id = null, rejected = array_append(rejected, ${id}::uuid)
     where owner_id = ${me.id} and person_id = ${id}::uuid and id in (${ids(faceIds)}) returning id`)
   await recount(id)
-  return { removed: rows.length }
+  await tidy(me.id)
+  return { removed: rows.length + tags.length }
 }
 
 // Their faces, clearest first, to pick a picture from (GET /people/{id}/faces).
@@ -228,12 +233,38 @@ export async function assignFace(me: Me, faceId: string, input: { personId?: str
   return { person: (await one(me, target))! }
 }
 
+// "Add to person" on a photo where no face was found (or not theirs): a tag with no face box.
+// Only my own photos, and once per person per photo.
+export async function tagPhoto(me: Me, nodeId: string, input: { personId?: string; name?: string }) {
+  if (!UUID.test(nodeId)) return { error: "That photo isn't available anymore." }
+  const [n] = await db.execute<{ v: string }>(sql`
+    select n.current_version_id as v from nodes n
+    where n.id = ${nodeId}::uuid and n.owner_id = ${me.id} and n.kind = 'file'
+      and n.trashed_at is null and n.vault_id is null`)
+  if (!n) return { error: "That photo isn't available anymore." }
+  let target: string
+  if (input.personId) {
+    if (!(await mine(me, input.personId))) return { error: "That person isn't available anymore." }
+    target = input.personId
+  } else if (typeof input.name === "string" && input.name.trim()) {
+    const [p] = await db
+      .insert(people)
+      .values({ ownerId: me.id, name: input.name.trim().slice(0, 80) })
+      .returning({ id: people.id })
+    target = p.id
+  } else return { error: "Pick a person or give a name." }
+  const [has] = await db.execute(sql`select 1 from faces where node_id = ${nodeId}::uuid and person_id = ${target}::uuid`)
+  if (!has)
+    await db.insert(faces).values({ nodeId, versionId: n.v, ownerId: me.id, personId: target, score: 0 })
+  return { person: (await one(me, target))! }
+}
+
 // Faces on one of my photos, for Details. Empty on anyone else's.
 export async function fileFaces(me: Me, nodeId: string): Promise<FileFace[]> {
   if (!UUID.test(nodeId)) return []
   const rows = await db.execute<{
     id: string
-    box: Box
+    box: Box | null
     person_id: string | null
     person_name: string | null
     sug_id: string | null
@@ -246,7 +277,7 @@ export async function fileFaces(me: Me, nodeId: string): Promise<FileFace[]> {
     left join people s on s.id = f.suggest_person_id
     where f.node_id = ${nodeId}::uuid and f.owner_id = ${me.id} and n.owner_id = ${me.id}
       and n.trashed_at is null and n.vault_id is null
-    order by (f.box->>0)::float`)
+    order by f.box is null, (f.box->>0)::float`)
   return rows.map((r) => ({
     id: r.id,
     box: r.box,
@@ -264,7 +295,7 @@ const cropKey = (faceId: string) => `faces/${faceId}.webp`
 // Null: not mine, or the photo can't be read.
 export async function faceCrop(me: Me, faceId: string): Promise<Uint8Array | null> {
   if (!UUID.test(faceId)) return null
-  const [r] = await db.execute<{ box: Box; key: string; name: string }>(sql`
+  const [r] = await db.execute<{ box: Box | null; key: string; name: string }>(sql`
     select f.box, n.s3_key as key, n.name from faces f
     join nodes n on n.id = f.node_id
     where f.id = ${faceId}::uuid and f.owner_id = ${me.id} and n.owner_id = ${me.id} and n.vault_id is null`)
@@ -277,8 +308,9 @@ export async function faceCrop(me: Me, faceId: string): Promise<Uint8Array | nul
   if (!res.ok) return null
   const img = sharp(Buffer.from(await res.arrayBuffer()))
   const { width = 0, height = 0 } = await img.metadata()
-  const [x, y, w, h] = r.box
-  const side = Math.min(Math.max(w * width, h * height) * 1.7, width, height)
+  // A hand tag has no face box: the centre of the photo.
+  const [x, y, w, h] = r.box ?? [0.25, 0.25, 0.5, 0.5]
+  const side = r.box ? Math.min(Math.max(w * width, h * height) * 1.7, width, height) : Math.min(width, height)
   const left = Math.round(Math.min(Math.max(0, (x + w / 2) * width - side / 2), width - side))
   const top = Math.round(Math.min(Math.max(0, (y + h / 2) * height - side / 2), height - side))
   const webp = new Uint8Array(

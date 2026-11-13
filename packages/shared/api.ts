@@ -1194,13 +1194,15 @@ export type PersonNotResult = { removed: number }
 /** A face on a photo; `box` is x, y, w, h as 0-1 fractions. Crop: GET `/faces/{id}/crop` (webp). */
 export type FileFace = {
   id: string
-  box: [number, number, number, number]
+  /** null: tagged by hand ("Add to person"), no face was found there. */
+  box: [number, number, number, number] | null
   personId: string | null
   personName: string | null
   /** "Is this X?" */
   suggestion: { personId: string; name: string | null } | null
 }
-/** GET `/files/{id}/faces`: only on my own photos; empty on anyone else's. */
+/** GET `/files/{id}/faces`: only on my own photos; empty on anyone else's.
+ *  POST `{ personId }` or `{ name }`: tag the photo with that person (no face picked). PersonResult. */
 export type FileFacesResponse = { faces: FileFace[] }
 /** GET `/people/{id}/suggestions`: faces that look like them. */
 export type PersonSuggestion = { faceId: string; nodeId: string; box: [number, number, number, number] }

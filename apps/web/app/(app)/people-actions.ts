@@ -56,6 +56,10 @@ export async function assignFace(faceId: string, to: FaceAssign) {
   return people.assignFace(await requireMember(), faceId, to)
 }
 
+export async function tagPhoto(nodeId: string, to: { personId?: string; name?: string }) {
+  return people.tagPhoto(await requireMember(), nodeId, to)
+}
+
 export async function getFileFaces(nodeId: string) {
   return people.fileFaces(await requireMember(), nodeId)
 }

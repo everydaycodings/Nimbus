@@ -93,6 +93,7 @@ export function Previewer({
   queue,
   commentsFirst = false,
   editable = false,
+  editOnOpen = false,
   start,
 }: {
   shown: Shown | null
@@ -118,6 +119,8 @@ export function Previewer({
   commentsFirst?: boolean
   // The viewer can change this file (owner or editor): images get an Edit button.
   editable?: boolean
+  // Open straight in the photo editor (a menu's "Edit").
+  editOnOpen?: boolean
   // Where a search match is: a PDF opens at its page, a video just before its time, an image shows its box.
   start?: PlaceStart
 }) {
@@ -169,6 +172,17 @@ export function Previewer({
     if (url) setEditing({ id: item.id, url })
     else setEditFailed(true)
   }
+  // A menu's "Edit": open the editor once for the photo it was asked on.
+  const editedOn = useRef<string | null>(null)
+  useEffect(() => {
+    if (!open || !editOnOpen || !editImage || !item || editedOn.current === item.id) return
+    editedOn.current = item.id
+    void openEditor()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per photo
+  }, [open, editOnOpen, editImage, item?.id])
+  useEffect(() => {
+    if (!open) editedOn.current = null
+  }, [open])
   // A new version goes in the folder the file is in; a copy lands next to it.
   // `opened`: the version the PDF editor opened on; a different current one means someone saved meanwhile.
   async function saveEdited(file: File, as: "version" | "copy", opened?: { version: string | null; overwrite: boolean }) {

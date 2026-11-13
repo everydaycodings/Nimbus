@@ -240,7 +240,8 @@ async function faces(c: Cfg, api: ReturnType<typeof ml>) {
     const bytes = await jpeg(f)
     const found = bytes ? await api.faces(bytes).catch((e: Error) => { if (!refused(e)) throw e; return [] }) : []
     await sql.begin(async (tx) => {
-      await tx`delete from faces where node_id = ${f.id}`
+      // Hand tags (no face box) stay; only detected faces are found again.
+      await tx`delete from faces where node_id = ${f.id} and vec is not null`
       for (const d of found) {
         const vec = vecLiteral(d.vec)
         const [nearest] = await tx<{ id: string; d: number }[]>`

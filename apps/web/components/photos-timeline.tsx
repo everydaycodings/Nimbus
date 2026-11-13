@@ -19,7 +19,9 @@ import { moveFaces, notPerson, personFaceIds } from "@/app/(app)/people-actions"
 import { useAi } from "@/components/ai-context"
 import { DetailsSheet } from "@/components/details-sheet"
 import { MemoriesStrip } from "@/components/memories"
+import { AddToAlbumDialog } from "@/components/album-dialogs"
 import {
+  AddToPersonDialog,
   PeopleRow,
   PersonHeader,
   PersonPicker,
@@ -28,6 +30,7 @@ import {
   refreshPeople,
   usePeople,
 } from "@/components/people"
+import { PhotoMenu } from "@/components/photo-menu"
 import { canEditItem, Previewer } from "@/components/previewer"
 import { Slideshow } from "@/components/slideshow"
 import type { PlaceStart } from "@/components/text-places"
@@ -126,6 +129,10 @@ export function PhotosTimeline({
   const [start, setStart] = useState<PlaceStart | undefined>()
   const [details, setDetails] = useState<PhotoItem | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
+  // From a photo's ⋯: open it straight in the editor, add it to an album or a person.
+  const [editing, setEditing] = useState(false)
+  const [albumIds, setAlbumIds] = useState<string[] | null>(null)
+  const [personFor, setPersonFor] = useState<PhotoItem | null>(null)
   // A person's page: pick photos to take them off this person, or move them to another.
   const [picked, setPicked] = useState<Set<string> | null>(null)
   const [moving, setMoving] = useState(false)
@@ -290,7 +297,7 @@ export function PhotosTimeline({
                 style={{ gridTemplateColumns: `repeat(${ZOOMS[zoom]}, minmax(0, 1fr))` }}
               >
                 {g.items.map((p, i) => (
-                  <li key={p.id}>
+                  <li key={p.id} className="group relative">
                     <button
                       type="button"
                       onClick={() =>
@@ -336,6 +343,16 @@ export function PhotosTimeline({
                         </span>
                       )}
                     </button>
+                    {!picked && (
+                      <PhotoMenu
+                        item={p}
+                        onEdit={() => (setStart(undefined), setEditing(true), setOpen(before + i))}
+                        onAlbum={() => setAlbumIds([p.id])}
+                        onPerson={() => setPersonFor(p)}
+                        onDetails={() => (setDetails(p), setDetailsOpen(true))}
+                        className="absolute top-1 right-1 bg-black/45 text-white opacity-0 hover:bg-black/60 hover:text-white focus-visible:opacity-100 group-hover:opacity-100 data-popup-open:opacity-100 pointer-coarse:opacity-100"
+                      />
+                    )}
                   </li>
                 ))}
               </ul>
@@ -355,14 +372,27 @@ export function PhotosTimeline({
       <Previewer
         shown={shown ? { item: shown } : null}
         open={shown != null}
-        onClose={() => setOpen(null)}
+        onClose={() => (setOpen(null), setEditing(false))}
         onPrev={open ? step(-1) : undefined}
         onNext={open !== null && open < items.length - 1 ? step(1) : undefined}
         position={shown ? `${open! + 1} of ${total}` : undefined}
         start={start}
         onDetails={shown ? () => (setDetails(shown), setDetailsOpen(true)) : undefined}
         editable={canEditItem(shown)}
+        editOnOpen={editing}
+        menu={
+          shown && (
+            <PhotoMenu
+              item={shown}
+              onEdit={() => setEditing(true)}
+              onAlbum={() => setAlbumIds([shown.id])}
+              onPerson={() => setPersonFor(shown)}
+            />
+          )
+        }
       />
+      <AddToAlbumDialog ids={albumIds} onClose={() => setAlbumIds(null)} />
+      <AddToPersonDialog item={personFor} onClose={() => setPersonFor(null)} />
       <DetailsSheet
         item={details}
         open={detailsOpen}

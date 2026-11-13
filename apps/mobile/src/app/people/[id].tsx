@@ -6,6 +6,7 @@ import { BackHandler, Pressable, ScrollView, View } from "react-native"
 
 import { ConfirmDialog, PromptDialog } from "@/components/dialog"
 import { PersonFace, PersonPickSheet, FaceCrop, personName } from "@/components/people-ui"
+import { usePhotoSheet } from "@/components/photo-sheets"
 import { PhotoGrid } from "@/components/photo-grid"
 import { Sheet, SheetDivider, SheetRow } from "@/components/sheet"
 import { useSnack } from "@/components/snackbar"
@@ -93,6 +94,7 @@ export default function PersonScreen() {
     }
   }
 
+  const sheets = usePhotoSheet()
   const open = (index: number) => openPreview({ items, index, role: "owner" })
 
   const header = (back: boolean) => (
@@ -143,6 +145,7 @@ export default function PersonScreen() {
         <Bar>
           <IconButton icon={X} label="Clear selection" onPress={clear} />
           <Text variant="title" style={{ flex: 1, fontVariant: ["tabular-nums"] }}>{chosen.size ? `${chosen.size} selected` : "Select photos"}</Text>
+          {chosen.size === 1 && <IconButton icon={DotsThreeVertical} label="More actions" onPress={() => sheets.show(items.find((p) => chosen.has(p.id))!)} />}
           {chosen.size > 0 && <IconButton icon={UserMinus} label={`Not ${person.name ?? "this person"}`} onPress={() => setDialog("not")} />}
           {chosen.size > 0 && <IconButton icon={ArrowsLeftRight} label="Move to another person" onPress={() => setDialog("move")} />}
         </Bar>
@@ -175,6 +178,7 @@ export default function PersonScreen() {
         }
       />
 
+      {sheets.element}
       {menu && (
         <Sheet onClose={() => setMenu(false)} header={<Text variant="titleSmall" numberOfLines={1} style={{ paddingHorizontal: 20, paddingBottom: 8 }}>{title}</Text>}>
           <SheetRow label={person.name ? "Rename" : "Add a name"} icon={<PencilSimple size={24} color={c.mutedForeground} />} onPress={() => setDialog("rename")} />
