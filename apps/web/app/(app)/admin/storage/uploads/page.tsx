@@ -60,6 +60,7 @@ export default async function UploadsPage() {
               placeholder="No limit"
             />
             <select
+              key={size.unit}
               aria-label="Unit"
               name="unit"
               defaultValue={size.unit}

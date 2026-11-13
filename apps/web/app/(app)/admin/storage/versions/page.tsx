@@ -102,6 +102,7 @@ export default async function VersionsPage() {
           reset={reset("activityRetentionDays")}
         >
           <select
+            key={String(s.activityRetentionDays ?? 0)}
             id="retention"
             name="retention"
             defaultValue={String(s.activityRetentionDays ?? 0)}

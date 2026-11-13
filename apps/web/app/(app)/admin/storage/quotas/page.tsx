@@ -62,6 +62,7 @@ export default async function QuotasPage() {
               placeholder="No limit"
             />
             <select
+              key={quota.unit}
               aria-label="Unit"
               name="unit"
               defaultValue={quota.unit}

@@ -51,6 +51,7 @@ export function SpeedInput({ value, unit }: { value: string; unit: string }) {
         placeholder="No cap"
       />
       <select
+        key={unit}
         aria-label="Unit"
         name="unit"
         defaultValue={unit}

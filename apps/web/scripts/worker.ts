@@ -91,10 +91,16 @@ transcodes.on("failed", (job, e) =>
 
 // A sweep longer than a minute meets the next one; that one waits on the first.
 let sweeping: Promise<unknown> | undefined
+// The AI sweep has its own lane, so a long video being read for text doesn't hold it up.
+let mlSweeping: Promise<unknown> | undefined
 async function index() {
+  mlSweeping ??= mlSweep()
+    .catch((e: Error) => console.error(`ml sweep: ${e.message}`))
+    .then(() => redis.set(ML_KEY, JSON.stringify({ at: Date.now(), ...mlStatus }), "PX", 3 * 60_000))
+    .catch(() => {})
+    .finally(() => (mlSweeping = undefined))
   await (sweeping ??= (async () => {
     await sweep()
-    await mlSweep()
     await deriveMisses()
     await exifMisses()
     await hashMisses()
@@ -105,7 +111,6 @@ async function index() {
   })().finally(() => (sweeping = undefined)))
   // Admin → Health shows the indexer as running while this key lives.
   await redis.set(INDEXER_KEY, JSON.stringify({ at: Date.now(), ...status }), "PX", 3 * 60_000)
-  await redis.set(ML_KEY, JSON.stringify({ at: Date.now(), ...mlStatus }), "PX", 3 * 60_000)
 }
 
 // Admin → Text in images: fetch each saved language and record ready or why not.

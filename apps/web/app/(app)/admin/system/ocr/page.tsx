@@ -49,7 +49,7 @@ export default async function OcrPage() {
           }}
           reset={reset("ocrMode")}
         >
-          <select id="ocrMode" name="ocrMode" defaultValue={s.ocrMode} className={SELECT}>
+          <select key={s.ocrMode} id="ocrMode" name="ocrMode" defaultValue={s.ocrMode} className={SELECT}>
             <option value="off">Off</option>
             <option value="images">Images only</option>
             <option value="images_pdfs">Images and PDFs</option>
@@ -181,6 +181,7 @@ export default async function OcrPage() {
               defaultValue={max.value}
             />
             <select
+              key={max.unit}
               aria-label="Unit"
               name="unit"
               defaultValue={max.unit}
@@ -233,7 +234,7 @@ export default async function OcrPage() {
         >
           <div className="grid grid-cols-[1fr_5rem] gap-2">
             <Input id="cap" name="cap" type="number" min={1} step="any" defaultValue={cap.value} />
-            <select aria-label="Unit" name="unit" defaultValue={cap.unit} className={SELECT}>
+            <select key={cap.unit} aria-label="Unit" name="unit" defaultValue={cap.unit} className={SELECT}>
               <option value="MB">MB</option>
               <option value="GB">GB</option>
             </select>

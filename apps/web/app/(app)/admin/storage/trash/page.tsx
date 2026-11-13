@@ -44,6 +44,7 @@ export default async function TrashPage() {
           reset={reset("trashRetentionDays")}
         >
           <select
+            key={String(s.trashRetentionDays ?? 0)}
             id="retention"
             name="retention"
             defaultValue={String(s.trashRetentionDays ?? 0)}

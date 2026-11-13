@@ -72,6 +72,7 @@ export default async function OfficePage() {
               defaultValue={pdf.value}
             />
             <select
+              key={pdf.unit}
               aria-label="Unit"
               name="unit"
               defaultValue={pdf.unit}

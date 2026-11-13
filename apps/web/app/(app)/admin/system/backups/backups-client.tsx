@@ -318,6 +318,7 @@ export function StorageForm({
           <div className="grid content-start gap-2">
             <Label htmlFor="provider">Provider</Label>
             <select
+              key={values.provider}
               id="provider"
               name="provider"
               defaultValue={values.provider}

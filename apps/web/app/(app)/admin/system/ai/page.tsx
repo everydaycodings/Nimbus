@@ -120,7 +120,7 @@ export default async function AiPage() {
           }}
           reset={reset("aiAccess")}
         >
-          <select id="aiAccess" name="aiAccess" defaultValue={s.aiAccess} className={SELECT}>
+          <select key={s.aiAccess} id="aiAccess" name="aiAccess" defaultValue={s.aiAccess} className={SELECT}>
             <option value="everyone">Everyone</option>
             <option value="chosen">Only chosen members</option>
           </select>
@@ -149,7 +149,7 @@ export default async function AiPage() {
           tip={{ does: "The Whisper size: tiny, base, small or medium.", affects: "Every file is transcribed again with it.", default: "Base" }}
           reset={reset("whisperModel")}
         >
-          <select id="whisperModel" name="whisperModel" defaultValue={s.whisperModel} className={SELECT}>
+          <select key={s.whisperModel} id="whisperModel" name="whisperModel" defaultValue={s.whisperModel} className={SELECT}>
             <option value="tiny">Tiny (fastest)</option>
             <option value="base">Base</option>
             <option value="small">Small</option>
@@ -186,7 +186,7 @@ export default async function AiPage() {
           tip={{ does: "English is more accurate for English words; multilingual understands many languages.", affects: "Every picture is indexed again with it.", default: "English" }}
           reset={reset("clipModel")}
         >
-          <select id="clipModel" name="clipModel" defaultValue={s.clipModel} className={SELECT}>
+          <select key={s.clipModel} id="clipModel" name="clipModel" defaultValue={s.clipModel} className={SELECT}>
             <option value="vitb32">English (ViT-B/32)</option>
             <option value="multilingual">Multilingual</option>
           </select>
@@ -221,7 +221,7 @@ export default async function AiPage() {
           tip={{ does: "The starting choice for each member's face grouping.", affects: "Members who haven't picked one.", default: "Opt-in" }}
           reset={reset("facesDefault")}
         >
-          <select id="facesDefault" name="facesDefault" defaultValue={s.facesDefault ? "on" : "off"} className={SELECT}>
+          <select key={s.facesDefault ? "on" : "off"} id="facesDefault" name="facesDefault" defaultValue={s.facesDefault ? "on" : "off"} className={SELECT}>
             <option value="off">Opt-in (off until they turn it on)</option>
             <option value="on">Opt-out (on until they turn it off)</option>
           </select>
