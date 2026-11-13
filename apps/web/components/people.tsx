@@ -11,6 +11,7 @@ import {
   GitMergeIcon,
   PencilSimpleIcon,
   SparkleIcon,
+  UserCircleIcon,
   UserIcon,
   XIcon,
 } from "@phosphor-icons/react"
@@ -23,11 +24,13 @@ import {
   answerSuggestion,
   assignFace,
   getFileFaces,
+  getPersonFaces,
   getPeople,
   getSuggestions,
   hidePerson,
   mergePerson,
   renamePerson,
+  setPersonCover,
   setPersonMemories,
 } from "@/app/(app)/people-actions"
 import { DIALOG_BACKDROP, DIALOG_POPUP, MENU_ITEM, MENU_POPUP } from "@/components/overlay-styles"
@@ -35,7 +38,7 @@ import { useNotice } from "@/components/toaster"
 import { Button } from "@/components/ui/button"
 import { makeStore, useStore } from "@/lib/media-extras"
 import { cn } from "@/lib/utils"
-import type { FileFace, PersonSuggestion, PhotoPerson } from "@nimbus/shared/api"
+import type { FileFace, PersonFace, PersonSuggestion, PhotoPerson } from "@nimbus/shared/api"
 
 // ---- Who's in my photos, shared by the chips, the avatar row and the pickers ----
 
@@ -98,7 +101,8 @@ export function Face({
   )
 }
 
-export const personFace = (p: PhotoPerson) => (p.coverFaceId ? `/api/v1/people/${p.id}/cover` : null)
+// `v` makes the picture reload when their face changes (a new picture, a merge).
+export const personFace = (p: PhotoPerson) => (p.coverFaceId ? `/api/v1/people/${p.id}/cover?v=${p.coverFaceId}` : null)
 
 const photosText = (n: number) => `${n.toLocaleString()} ${n === 1 ? "photo" : "photos"}`
 
@@ -313,6 +317,86 @@ export function PersonPicker({
   )
 }
 
+// ---- A person's picture: pick one of their faces ----
+
+function CoverPicker({ person, open, onClose }: { person: PhotoPerson; open: boolean; onClose: () => void }) {
+  const router = useRouter()
+  const notice = useNotice()
+  const [list, setList] = useState<PersonFace[] | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  useEffect(() => {
+    if (!open) return
+    let live = true
+    getPersonFaces(person.id).then(
+      (r) => live && setList(r ?? []),
+      () => live && setList([])
+    )
+    return () => {
+      live = false
+    }
+  }, [open, person.id])
+
+  async function pick(faceId: string) {
+    if (faceId === person.coverFaceId) return onClose()
+    setBusy(faceId)
+    const r = await setPersonCover(person.id, faceId)
+    setBusy(null)
+    if (r.error) return notice({ text: r.error, error: true })
+    refreshPeople()
+    router.refresh()
+    onClose()
+    notice({ text: "Picture changed." })
+  }
+
+  return (
+    <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()} onOpenChangeComplete={(o) => !o && setList(null)}>
+      <Dialog.Portal>
+        <Dialog.Backdrop className={DIALOG_BACKDROP} />
+        <Dialog.Popup className={cn(DIALOG_POPUP, "sm:max-w-lg")}>
+          <div className="grid gap-1.5">
+            <Dialog.Title className="text-base font-semibold">Choose a picture</Dialog.Title>
+            <Dialog.Description className="text-sm text-pretty text-muted-foreground">
+              Pick the face to show for {person.name ?? "this person"} in People, search and memories.
+            </Dialog.Description>
+          </div>
+          <ul className="-mx-1 grid max-h-80 grid-cols-[repeat(auto-fill,minmax(4.5rem,1fr))] gap-2 overflow-y-auto p-1">
+            {(list ?? []).map((f) => {
+              const current = f.id === person.coverFaceId
+              return (
+                <li key={f.id}>
+                  <button
+                    type="button"
+                    disabled={busy !== null}
+                    onClick={() => void pick(f.id)}
+                    aria-label={current ? "Current picture" : "Use this face"}
+                    aria-pressed={current}
+                    className={cn(
+                      "relative block w-full rounded-full outline-none transition-opacity focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-60",
+                      current && "ring-2 ring-brand ring-offset-2 ring-offset-popover"
+                    )}
+                  >
+                    <Face src={`/api/v1/faces/${f.id}/crop`} className="aspect-square size-full" />
+                    {current && (
+                      <span className="absolute right-0 bottom-0 grid size-5 place-items-center rounded-full bg-brand text-neutral-950">
+                        <CheckIcon weight="bold" className="size-3" />
+                      </span>
+                    )}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+          {list === null && <p className="text-sm text-muted-foreground">Loading…</p>}
+          {list && !list.length && <p className="text-sm text-muted-foreground">No faces of them to choose from.</p>}
+          <div className="flex justify-end">
+            <Dialog.Close render={<Button variant="outline" />}>Cancel</Dialog.Close>
+          </div>
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
+  )
+}
+
 // ---- A person's page: the name, hide and merge ----
 
 export function PersonHeader({ person, shown }: { person: PhotoPerson; shown: number }) {
@@ -321,6 +405,7 @@ export function PersonHeader({ person, shown }: { person: PhotoPerson; shown: nu
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(person.name ?? "")
   const [merging, setMerging] = useState(false)
+  const [picking, setPicking] = useState(false)
   const [busy, setBusy] = useState(false)
 
   async function save() {
@@ -371,7 +456,15 @@ export function PersonHeader({ person, shown }: { person: PhotoPerson; shown: nu
       >
         <ArrowLeftIcon />
       </Link>
-      <Face src={personFace(person)} className="size-12" />
+      <button
+        type="button"
+        onClick={() => setPicking(true)}
+        aria-label="Change their picture"
+        title="Change picture"
+        className="shrink-0 rounded-full outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      >
+        <Face src={personFace(person)} className="size-12" />
+      </button>
       <div className="min-w-0 flex-auto">
         {editing ? (
           <form
@@ -437,6 +530,10 @@ export function PersonHeader({ person, shown }: { person: PhotoPerson; shown: nu
                 <GitMergeIcon />
                 Merge into…
               </Menu.Item>
+              <Menu.Item className={MENU_ITEM} onClick={() => setPicking(true)}>
+                <UserCircleIcon />
+                Change picture
+              </Menu.Item>
               <Menu.Item className={MENU_ITEM} onClick={() => void hide(!person.hidden)}>
                 {person.hidden ? <EyeIcon /> : <EyeSlashIcon />}
                 {person.hidden ? "Show in People" : "Hide from People"}
@@ -451,6 +548,7 @@ export function PersonHeader({ person, shown }: { person: PhotoPerson; shown: nu
           </Menu.Positioner>
         </Menu.Portal>
       </Menu.Root>
+      <CoverPicker person={person} open={picking} onClose={() => setPicking(false)} />
       <PersonPicker
         open={merging}
         onClose={() => setMerging(false)}

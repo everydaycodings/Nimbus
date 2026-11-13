@@ -22,7 +22,7 @@ import { deleteAlbum, removeFromAlbum, updateAlbum } from "@/app/(app)/photo-act
 import { DeleteDialog, NameDialog, PickPhotosDialog } from "@/components/album-dialogs"
 import { AlbumShareDialog } from "@/components/album-share-dialog"
 import { MENU_ITEM, MENU_POPUP } from "@/components/overlay-styles"
-import { Previewer } from "@/components/previewer"
+import { canEditItem, Previewer } from "@/components/previewer"
 import { Slideshow } from "@/components/slideshow"
 import { Thumb } from "@/components/thumb"
 import { useNotice } from "@/components/toaster"
@@ -216,6 +216,7 @@ export function AlbumDetail({ data }: { data: AlbumResponse }) {
         onPrev={open ? step(-1) : undefined}
         onNext={open !== null && open < items.length - 1 ? step(1) : undefined}
         position={shown ? `${open! + 1} of ${items.length}` : undefined}
+        editable={canEditItem(shown)}
       />
       {dialog === "slides" && (
         <Slideshow slides={stills.map((p) => ({ id: p.id, item: p }))} onClose={() => setDialog(null)} />

@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react"
 
 import { getPlaceItems, getPlaces } from "@/app/(app)/photo-actions"
 import { PhotoChips } from "@/components/photos-timeline"
-import { Previewer } from "@/components/previewer"
+import { canEditItem, Previewer } from "@/components/previewer"
 import { Thumb } from "@/components/thumb"
 import { Button } from "@/components/ui/button"
 import type { PhotoItem, PlacePoint } from "@nimbus/shared/api"
@@ -236,6 +236,7 @@ export function PlacesMap({ styleUrl }: { styleUrl: string }) {
         onPrev={open ? step(-1) : undefined}
         onNext={sheet && open !== null && open < sheet.items.length - 1 ? step(1) : undefined}
         position={shown && sheet ? `${open! + 1} of ${sheet.items.length}` : undefined}
+        editable={canEditItem(shown)}
       />
     </div>
   )

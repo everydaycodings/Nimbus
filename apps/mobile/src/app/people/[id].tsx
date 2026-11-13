@@ -1,8 +1,8 @@
 import type { FileFacesResponse, PersonResult, PersonSuggestion } from "@nimbus/shared/api"
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router"
-import { ArrowLeft, ArrowsLeftRight, DotsThreeVertical, Eye, EyeSlash, GitMerge, PencilSimple, Sparkle, UserMinus, X } from "phosphor-react-native"
+import { ArrowLeft, ArrowsLeftRight, DotsThreeVertical, Eye, EyeSlash, GitMerge, PencilSimple, Sparkle, UserCircle, UserMinus, X } from "phosphor-react-native"
 import { useCallback, useState } from "react"
-import { BackHandler, Pressable, View } from "react-native"
+import { BackHandler, Pressable, ScrollView, View } from "react-native"
 
 import { ConfirmDialog, PromptDialog } from "@/components/dialog"
 import { PersonFace, PersonPickSheet, FaceCrop, personName } from "@/components/people-ui"
@@ -12,11 +12,11 @@ import { useSnack } from "@/components/snackbar"
 import { Bar, Button, IconButton, Spinner, Text } from "@/components/ui"
 import { errorText } from "@/lib/api"
 import { useApi } from "@/lib/files"
-import { photosText, usePeopleRefresh, usePerson, useSuggestions } from "@/lib/people"
+import { photosText, usePeopleRefresh, usePerson, usePersonFaces, useSuggestions } from "@/lib/people"
 import { openPreview } from "@/lib/preview-session"
 import { c, radius } from "@/lib/theme"
 
-type Dialog = "rename" | "merge" | "not" | "move" | "review" | null
+type Dialog = "rename" | "merge" | "not" | "move" | "review" | "cover" | null
 
 // One person's photos, with rename, hide, merge, "Is this them?" review and fixes for photos they aren't in.
 export default function PersonScreen() {
@@ -149,7 +149,9 @@ export default function PersonScreen() {
       ) : (
         <Bar>
           <IconButton icon={ArrowLeft} label="Back" onPress={() => router.back()} />
-          <PersonFace person={person} size={40} />
+          <Pressable onPress={() => setDialog("cover")} accessibilityRole="button" accessibilityLabel="Change their picture" hitSlop={4} style={{ borderRadius: 999 }}>
+            <PersonFace person={person} size={40} />
+          </Pressable>
           <View style={{ flex: 1, paddingLeft: 8 }}>
             <Text variant="title" numberOfLines={1} accessibilityRole="header" color={person.name ? c.foreground : c.mutedForeground}>{title}</Text>
             <Text variant="caption" color={c.mutedForeground} numberOfLines={1}>{photosText(person.photos)}{person.hidden ? " · Hidden" : ""}{person.name && !person.memories ? " · Not in memories" : ""}</Text>
@@ -176,6 +178,7 @@ export default function PersonScreen() {
       {menu && (
         <Sheet onClose={() => setMenu(false)} header={<Text variant="titleSmall" numberOfLines={1} style={{ paddingHorizontal: 20, paddingBottom: 8 }}>{title}</Text>}>
           <SheetRow label={person.name ? "Rename" : "Add a name"} icon={<PencilSimple size={24} color={c.mutedForeground} />} onPress={() => setDialog("rename")} />
+          <SheetRow label="Change picture" detail="Pick which face to show" icon={<UserCircle size={24} color={c.mutedForeground} />} onPress={() => setDialog("cover")} />
           <SheetRow label="Merge into another person" detail="They are the same person" icon={<GitMerge size={24} color={c.mutedForeground} />} onPress={() => setDialog("merge")} />
           <SheetRow
             label={person.hidden ? "Show in People" : "Hide from People"}
@@ -260,6 +263,17 @@ export default function PersonScreen() {
           }}
         />
       )}
+      {dialog === "cover" && (
+        <CoverSheet
+          personId={id}
+          current={person.coverFaceId}
+          who={who}
+          onClose={() => setDialog(null)}
+          onPick={(faceId) =>
+            run(() => api.patch(`/people/${id}`, { coverFaceId: faceId }), "Picture changed.").then((ok) => ok && setDialog(null))
+          }
+        />
+      )}
       {dialog === "review" && (
         <Review personId={id} who={who} suggestions={suggestions.data} loading={suggestions.isPending} error={suggestions.isError ? suggestions.error.message : null} retry={() => suggestions.refetch()} onClose={() => { setDialog(null); void refresh() }} />
       )}
@@ -321,4 +335,49 @@ function Review({ personId, who, suggestions, loading, error, retry, onClose }: 
 
 function ReviewFace({ suggestion }: { suggestion: PersonSuggestion }) {
   return <FaceCrop faceId={suggestion.faceId} size={160} />
+}
+
+// Their picture: a grid of their faces; the current one is ringed.
+function CoverSheet({ personId, current, who, onClose, onPick }: { personId: string; current: string | null; who: string; onClose: () => void; onPick: (faceId: string) => void }) {
+  const faces = usePersonFaces(personId, true)
+  return (
+    <Sheet
+      onClose={onClose}
+      header={
+        <View style={{ paddingHorizontal: 20, paddingBottom: 8, gap: 2 }}>
+          <Text variant="titleSmall">Choose a picture</Text>
+          <Text variant="bodySmall" color={c.mutedForeground}>The face to show for {who} in People, search and memories.</Text>
+        </View>
+      }
+    >
+      {faces.isPending ? (
+        <View style={{ padding: 24, alignItems: "center" }}><Spinner /></View>
+      ) : faces.isError ? (
+        <View style={{ padding: 20, gap: 12 }}>
+          <Text variant="bodySmall" color={c.mutedForeground}>{faces.error.message}</Text>
+          <Button label="Try again" variant="outlined" onPress={() => faces.refetch()} />
+        </View>
+      ) : !faces.data.length ? (
+        <Text variant="bodySmall" color={c.mutedForeground} style={{ padding: 20 }}>No faces of them to choose from.</Text>
+      ) : (
+        <ScrollView style={{ maxHeight: 360 }} contentContainerStyle={{ flexDirection: "row", flexWrap: "wrap", gap: 12, paddingHorizontal: 20, paddingVertical: 8 }}>
+          {faces.data.map((f) => {
+            const on = f.id === current
+            return (
+              <Pressable
+                key={f.id}
+                onPress={() => onPick(f.id)}
+                accessibilityRole="button"
+                accessibilityLabel={on ? "Current picture" : "Use this face"}
+                accessibilityState={{ selected: on }}
+                style={{ borderRadius: 999, borderWidth: 3, borderColor: on ? c.brand : "transparent", padding: 2 }}
+              >
+                <FaceCrop faceId={f.id} size={64} />
+              </Pressable>
+            )
+          })}
+        </ScrollView>
+      )}
+    </Sheet>
+  )
 }

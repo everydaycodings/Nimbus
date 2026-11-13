@@ -36,6 +36,14 @@ export async function notPerson(id: string, faceIds: string[]) {
   return people.notPerson(await requireMember(), id, faceIds)
 }
 
+export async function getPersonFaces(id: string) {
+  return people.personFaces(await requireMember(), id)
+}
+
+export async function setPersonCover(id: string, coverFaceId: string) {
+  return people.updatePerson(await requireMember(), id, { coverFaceId })
+}
+
 export async function getSuggestions(id: string) {
   return people.suggestions(await requireMember(), id)
 }

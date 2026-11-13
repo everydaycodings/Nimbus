@@ -19,7 +19,7 @@ import {
   vecLiteral,
   type MlFeature,
 } from "../lib/ml.ts"
-import { deriveQueue } from "../lib/redis.ts"
+import { deriveQueue, redis } from "../lib/redis.ts"
 import { presignGet } from "../lib/s3.ts"
 import { sql } from "./indexer.ts"
 import { sampleFrames } from "./video-ocr.ts"
@@ -129,8 +129,17 @@ async function speech(f: Row, c: Cfg, api: ReturnType<typeof ml>) {
   try {
     t = await api.transcribe(await presignGet(f.key, f.name, { expiresIn: 12 * 3600 }), c.videoMin * 60, c.whisper)
   } catch (e) {
-    if (!refused(e as Error)) throw e
-    t = { lang: null, segments: [], failed: (e as Error).message.slice(0, 200) }
+    const err = e as Error
+    // Couldn't reach the service (down, or it ran out of memory on this file): try again on a
+    // later sweep, but after 3 tries save it as failed so one file can't stall the rest.
+    if (!refused(err)) {
+      const key = `ml:tries:speech:${f.v}`
+      const tries = await redis.incr(key)
+      await redis.expire(key, 7 * 86_400)
+      if (tries < 3) throw err
+      await redis.del(key)
+    }
+    t = { lang: null, segments: [], failed: err.message.slice(0, 200) }
   }
   const lines = segLines(t.segments)
   await sql.begin(async (tx) => {

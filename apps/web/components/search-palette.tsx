@@ -24,7 +24,7 @@ import { Fragment, useEffect, useRef, useState } from "react"
 
 import { quickSearch } from "@/app/(app)/search-actions"
 import { DIALOG_BACKDROP } from "@/components/overlay-styles"
-import { Previewer } from "@/components/previewer"
+import { canEditItem, Previewer } from "@/components/previewer"
 import { MatchTag, Snippet, placeLabel, startOf, type PlaceStart } from "@/components/text-places"
 import { startNewFolder, usePick } from "@/components/upload-provider"
 import { fileType } from "@/lib/file-types"
@@ -455,6 +455,7 @@ export function SearchPalette({ admin }: { admin: boolean }) {
         start={previewing?.start}
         open={Boolean(previewing)}
         onClose={() => setPreviewing(null)}
+        editable={canEditItem(previewing?.hit)}
       />
     </>
   )

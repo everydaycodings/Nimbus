@@ -2,6 +2,9 @@
 // it. No `@/` imports and no server-only, so the app, scripts/ml.ts (worker) and
 // lib/ml.test.ts (node --test) share it.
 
+import { request as httpRequest } from "node:http"
+import { request as httpsRequest } from "node:https"
+
 export const ML_FEATURES = ["speech", "clip", "faces"] as const
 export type MlFeature = (typeof ML_FEATURES)[number]
 
@@ -31,6 +34,46 @@ async function call<T>(base: string, path: string, init: RequestInit = {}, ms = 
   if (!res.ok) throw new Error(`The AI service answered ${res.status}: ${(await res.text()).slice(0, 200)}`)
   return (await res.json()) as T
 }
+// A POST that may take hours (a long transcription). fetch can't do it: Node's fetch drops any
+// request without an answer after 5 minutes, whatever its signal says.
+function postLong<T>(base: string, path: string, body: object, ms: number): Promise<T> {
+  if (!base) return Promise.reject(new Error("The AI service isn't set up."))
+  const url = new URL(base + path)
+  const data = JSON.stringify(body)
+  return new Promise((resolve, reject) => {
+    const req = (url.protocol === "https:" ? httpsRequest : httpRequest)(
+      url,
+      {
+        method: "POST",
+        timeout: ms,
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(data),
+          ...(process.env.ML_TOKEN && { Authorization: `Bearer ${process.env.ML_TOKEN}` }),
+        },
+      },
+      (res) => {
+        let text = ""
+        res.setEncoding("utf8")
+        res.on("data", (chunk: string) => (text += chunk))
+        res.on("error", reject)
+        res.on("end", () => {
+          if ((res.statusCode ?? 500) >= 300)
+            return reject(new Error(`The AI service answered ${res.statusCode}: ${text.slice(0, 200)}`))
+          try {
+            resolve(JSON.parse(text) as T)
+          } catch (e) {
+            reject(e as Error)
+          }
+        })
+      }
+    )
+    req.on("timeout", () => req.destroy(new Error("The AI service took too long.")))
+    req.on("error", reject)
+    req.end(data)
+  })
+}
+
 const json = (body: object): RequestInit => ({
   method: "POST",
   headers: { "Content-Type": "application/json" },
@@ -53,7 +96,7 @@ export const ml = (base: string) => ({
     call<unknown>(base, "/models/pull", json({ feature, model }), 15_000),
   // `url`: a presigned URL the service reads the audio from.
   transcribe: (url: string, maxSec: number, model: string) =>
-    call<Transcript>(base, "/transcribe", json({ url, maxSec, model }), 3 * 3600_000),
+    postLong<Transcript>(base, "/transcribe", { url, maxSec, model }, 3 * 3600_000),
   async clipImages(files: Uint8Array[], model: string) {
     const form = new FormData()
     for (const [i, f] of files.entries()) form.append("files", new Blob([f as BlobPart], { type: "image/jpeg" }), `${i}.jpg`)

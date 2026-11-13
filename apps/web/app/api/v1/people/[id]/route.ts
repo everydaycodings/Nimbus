@@ -8,7 +8,7 @@ const q = z.object({
   limit: z.coerce.number().int().min(1).max(1000).default(500),
   cursor: z.string().max(100).optional(),
 })
-const patch = z.object({ name: z.string().max(80).nullable().optional(), hidden: z.boolean().optional(), memories: z.boolean().optional() })
+const patch = z.object({ name: z.string().max(80).nullable().optional(), hidden: z.boolean().optional(), memories: z.boolean().optional(), coverFaceId: z.string().uuid().optional() })
 
 // Their photos, like GET /photos, plus `person` (PersonResponse).
 export const GET = (req: Request, { params }: Ctx) =>
@@ -19,7 +19,7 @@ export const GET = (req: Request, { params }: Ctx) =>
     return r ? Response.json(r) : notFound("That person")
   })
 
-// Rename (an empty name clears it), hide, or turn their memory cards off. Returns { person }.
+// Rename (an empty name clears it), hide, turn their memory cards off, or pick their picture. Returns { person }.
 export const PATCH = (req: Request, { params }: Ctx) =>
   withMember(async (me) => {
     const b = await json(req, patch)

@@ -1,5 +1,5 @@
 // Face grouping (Phase 20): who is in my photos. Everything here needs the admin's switch and my own.
-import type { AiFlags, FileFacesResponse, PeopleResponse, PersonResponse, PersonSuggestionsResponse, TranscriptResponse } from "@nimbus/shared/api"
+import type { AiFlags, FileFacesResponse, PeopleResponse, PersonResponse, PersonFacesResponse, PersonSuggestionsResponse, TranscriptResponse } from "@nimbus/shared/api"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useCallback } from "react"
 
@@ -28,6 +28,16 @@ export function usePeople(hidden: boolean, enabled = true) {
 export function usePerson(id: string) {
   const q = useAllPages(["people", id], `/people/${id}`)
   return { ...q, person: (q.data?.pages[0] as PersonResponse | undefined)?.person }
+}
+
+// Their faces, clearest first, to pick a picture from.
+export function usePersonFaces(id: string, enabled: boolean) {
+  const api = useApi()
+  return useQuery({
+    enabled,
+    queryKey: [api.id, "people-faces", id],
+    queryFn: () => api.get<PersonFacesResponse>(`/people/${id}/faces`).then((r) => r.faces),
+  })
 }
 
 export function useSuggestions(id: string, enabled: boolean) {
@@ -63,7 +73,7 @@ export function usePeopleRefresh() {
   const client = useQueryClient()
   return useCallback(
     () =>
-      Promise.all(["people", "people-list", "people-suggest", "faces", "memories", "photos"].map((k) => client.invalidateQueries({ queryKey: [api.id, k] }))),
+      Promise.all(["people", "people-list", "people-suggest", "people-faces", "faces", "memories", "photos"].map((k) => client.invalidateQueries({ queryKey: [api.id, k] }))),
     [api.id, client]
   )
 }

@@ -63,6 +63,10 @@ export type Shown = {
   version?: { id: string; number: number; size: number; mime: string | null }
 }
 
+// Can the viewer change this file: not view-only (a partner's or shared photo) and not a shortcut.
+// The server checks again on save.
+export const canEditItem = (i: Item | null | undefined) => !!i && i.role !== "viewer" && !i.shortcut
+
 // pdf.js and the editor load only when someone edits a PDF.
 const PdfEditor = dynamic(() => import("@/components/pdf-editor").then((m) => m.PdfEditor), { ssr: false })
 // The admin's largest editable PDF, asked once per page load.

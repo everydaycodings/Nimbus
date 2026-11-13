@@ -1181,7 +1181,12 @@ export type PeopleResponse = { people: PhotoPerson[]; hiddenCount: number }
 /** GET `/people/{id}?limit=&cursor=`: their photos, like GET /photos. */
 export type PersonResponse = PhotosResponse & { person: PhotoPerson }
 /** PATCH `/people/{id}` body. */
-export type PersonUpdate = { name?: string | null; hidden?: boolean; memories?: boolean }
+/** PATCH `/people/{id}`. `coverFaceId`: one of their faces (GET `/people/{id}/faces`) as their picture. */
+export type PersonUpdate = { name?: string | null; hidden?: boolean; memories?: boolean; coverFaceId?: string }
+/** One of a person's faces; its picture is GET `/faces/{id}/crop`. */
+export type PersonFace = { id: string; nodeId: string }
+/** GET `/people/{id}/faces`: their faces, clearest first (up to 200). */
+export type PersonFacesResponse = { faces: PersonFace[] }
 /** POST `/people/{id}/merge` `{ intoId }`, `/split` `{ faceIds }` (new person), `/move` `{ faceIds, toId }`: the person that results. */
 export type PersonResult = { person: PhotoPerson }
 /** POST `/people/{id}/not` `{ faceIds }`: "not this person"; the faces never join them again. */

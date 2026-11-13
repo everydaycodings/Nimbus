@@ -18,6 +18,7 @@ import type {
   PeopleResponse,
   PhotoPerson,
   PersonMemory,
+  PersonFace,
   PersonSuggestion,
 } from "@nimbus/shared/api"
 
@@ -58,7 +59,9 @@ const toPerson = (r: Row): PhotoPerson => ({
 
 const select = (owner: string, where: ReturnType<typeof sql>) => sql`
   select p.id, p.name, p.hidden, p.memories,
-    coalesce(p.cover_face_id, (select f.id from faces f where f.person_id = p.id and ${liveFace} order by f.score desc limit 1)) as cover,
+    coalesce(
+      (select f.id from faces f where f.id = p.cover_face_id and f.person_id = p.id and ${liveFace}),
+      (select f.id from faces f where f.person_id = p.id and ${liveFace} order by f.score desc limit 1)) as cover,
     (select count(distinct f.node_id) from faces f where f.person_id = p.id and ${liveFace}) as photos,
     (select count(*) from faces f where f.suggest_person_id = p.id and ${liveFace}) as suggestions
   from people p where p.owner_id = ${owner} and ${where}`
@@ -95,8 +98,20 @@ export async function personPhotos(me: Me, id: string, limit: number, cursor?: s
   return { ...r, person }
 }
 
-export async function updatePerson(me: Me, id: string, input: { name?: string | null; hidden?: boolean; memories?: boolean }) {
+export async function updatePerson(
+  me: Me,
+  id: string,
+  input: { name?: string | null; hidden?: boolean; memories?: boolean; coverFaceId?: string }
+) {
   if (!(await mine(me, id))) return { error: "That person isn't available anymore." }
+  // The picture: one of their own faces.
+  if (input.coverFaceId !== undefined) {
+    const ok =
+      UUID.test(input.coverFaceId) &&
+      (await db.execute(sql`select 1 from faces f where f.id = ${input.coverFaceId}::uuid
+        and f.person_id = ${id}::uuid and f.owner_id = ${me.id} and ${liveFace}`)).length > 0
+    if (!ok) return { error: "That face isn't one of theirs anymore." }
+  }
   const name = input.name === undefined ? undefined : (input.name ?? "").trim().slice(0, 80) || null
   await db
     .update(people)
@@ -104,6 +119,7 @@ export async function updatePerson(me: Me, id: string, input: { name?: string | 
       ...(name !== undefined && { name }),
       ...(input.hidden !== undefined && { hidden: input.hidden }),
       ...(input.memories !== undefined && { memories: input.memories }),
+      ...(input.coverFaceId !== undefined && { coverFaceId: input.coverFaceId }),
     })
     .where(eq(people.id, id))
   return { person: (await one(me, id))! }
@@ -152,6 +168,15 @@ export async function notPerson(me: Me, id: string, faceIds: unknown) {
     where owner_id = ${me.id} and person_id = ${id}::uuid and id in (${ids(faceIds)}) returning id`)
   await recount(id)
   return { removed: rows.length }
+}
+
+// Their faces, clearest first, to pick a picture from (GET /people/{id}/faces).
+export async function personFaces(me: Me, id: string): Promise<PersonFace[] | null> {
+  if (!(await mine(me, id))) return null
+  const rows = await db.execute<{ id: string; node_id: string }>(sql`
+    select f.id, f.node_id from faces f
+    where f.owner_id = ${me.id} and f.person_id = ${id}::uuid and ${liveFace} order by f.score desc limit 200`)
+  return rows.map((r) => ({ id: r.id, nodeId: r.node_id }))
 }
 
 export async function suggestions(me: Me, id: string): Promise<PersonSuggestion[] | null> {

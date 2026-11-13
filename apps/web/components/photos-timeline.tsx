@@ -28,7 +28,7 @@ import {
   refreshPeople,
   usePeople,
 } from "@/components/people"
-import { Previewer } from "@/components/previewer"
+import { canEditItem, Previewer } from "@/components/previewer"
 import { Slideshow } from "@/components/slideshow"
 import type { PlaceStart } from "@/components/text-places"
 import { Thumb } from "@/components/thumb"
@@ -361,6 +361,7 @@ export function PhotosTimeline({
         position={shown ? `${open! + 1} of ${total}` : undefined}
         start={start}
         onDetails={shown ? () => (setDetails(shown), setDetailsOpen(true)) : undefined}
+        editable={canEditItem(shown)}
       />
       <DetailsSheet
         item={details}
