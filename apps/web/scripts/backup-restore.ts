@@ -15,6 +15,7 @@ import postgres from "postgres"
 
 import { restoreErrors } from "../lib/backup-rules.ts"
 import { decryptFile, requireKey } from "../lib/backup/file-crypto.ts"
+import { image } from "../lib/backup/pg.ts"
 
 const [file, target, out] = process.argv.slice(2)
 if (!file || !target || (target === "--out" && !out)) {
@@ -50,7 +51,7 @@ try {
       "docker",
       [
         "run", "--rm", "--network", "host", "-v", `${dir}:/backup:ro`, "-e", "NB_DB_URL",
-        `postgres:${major}-alpine`, "sh", "-c",
+        image(major), "sh", "-c",
         'exec pg_restore --no-owner --no-privileges --dbname="$NB_DB_URL" /backup/backup.dump',
       ],
       { env: { ...process.env, NB_DB_URL: target }, stdio: ["ignore", "inherit", "pipe"] }

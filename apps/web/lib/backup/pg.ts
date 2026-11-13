@@ -16,7 +16,10 @@ import { scrub, type Fingerprint } from "../backup-rules.ts"
 
 export const SCHEMAS = ["public", "drizzle"]
 const SCRATCH = "nimbus-backup-scratch-"
-const image = (major: number) => `postgres:${major}-alpine`
+// The live server's own image: pgvector included, and the same minor version,
+// so the dump's column options (pg_attver on 17.12) restore cleanly.
+// ponytail: assumes pgvector/pgvector; a server on another image needs its tag here.
+export const image = (major: number) => `pgvector/pgvector:pg${major}`
 
 const OBJECTS_SQL = `
 select n.nspname || '.' || k.kind as key, k.n::int as n from (
