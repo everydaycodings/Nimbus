@@ -109,7 +109,7 @@ async function jpeg(f: Row) {
     console.log(`ml: skipped ${f.name} (can't be read as a picture)`)
     return null
   }
-  const res = await fetch(url)
+  const res = await fetch(url, { signal: AbortSignal.timeout(60_000) })
   if (!res.ok) throw new Error(`reading the preview of ${f.name} failed: HTTP ${res.status}`)
   return new Uint8Array(await res.arrayBuffer())
 }
