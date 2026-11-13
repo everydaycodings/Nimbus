@@ -100,11 +100,17 @@ const count = async (feature: MlFeature, c: Cfg) =>
   (await sql<{ n: number }[]>`select count(*)::int as n ${pending(feature, c)}`)[0].n
 
 // A preview-sized JPEG of a photo, or null when it can't be read.
+// Storage or network trouble throws, so the sweep logs it and tries again later; only a
+// photo that can't be turned into a JPEG (too big, not decodable) gives null and is skipped.
 async function jpeg(f: Row) {
-  const url = await previewImageUrl({ key: f.key, name: f.name }, 600).catch(() => null)
-  if (!url) return null
+  const url = await previewImageUrl({ key: f.key, name: f.name }, 600)
+  if (!url) {
+    console.log(`ml: skipped ${f.name} (can't be read as a picture)`)
+    return null
+  }
   const res = await fetch(url)
-  return res.ok ? new Uint8Array(await res.arrayBuffer()) : null
+  if (!res.ok) throw new Error(`reading the preview of ${f.name} failed: HTTP ${res.status}`)
+  return new Uint8Array(await res.arrayBuffer())
 }
 
 const markDone = (versionId: string, prefix: string, mark: string) =>
