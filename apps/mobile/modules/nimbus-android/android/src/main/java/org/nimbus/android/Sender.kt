@@ -60,9 +60,11 @@ class Sender(context: Context, private val stopped: () -> Boolean) {
   private fun replan(account: Accounts.Account, first: Store.Row): String {
     checkBase(account, first)
     val row = store.get(first.id) ?: first
-    val plan = Net.api(account, "POST", "/api/v1/uploads/plan", JSONObject()
+    val body = JSONObject()
       .put("parentId", row.parentId ?: JSONObject.NULL)
-      .put("entries", JSONArray().put(JSONObject().put("path", row.path).put("size", row.size))))
+      .put("entries", JSONArray().put(JSONObject().put("path", row.path).put("size", row.size)))
+    if (row.source == "backup") body.put("purpose", "camera") // Same as the first plan, so a re-plan tags the Camera folder too.
+    val plan = Net.api(account, "POST", "/api/v1/uploads/plan", body)
     plan.optString("error").takeIf { it.isNotEmpty() }?.let { throw Refused(400, it) }
     plan.optJSONArray("rejected")?.optJSONObject(0)?.let { throw Refused(400, it.optString("reason")) }
     return plan.getString("token").also { store.set(row.id, "plan_token" to it, "planned" to System.currentTimeMillis()) }

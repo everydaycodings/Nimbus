@@ -1,0 +1,20 @@
+appId: org.nimbus.drive
+name: phone-backup
+# Phase 18: turn on contacts backup (permission granted up front by adb) and back up now.
+---
+- launchApp
+- extendedWaitUntil: { visible: "Search in Nimbus", timeout: 20000 }
+- tapOn: "More"
+- scrollUntilVisible: { element: "Backup" }
+- tapOn: "Backup"
+- scrollUntilVisible: { element: "Back up contacts" }
+- runFlow:
+    when: { notVisible: "Back up now" }
+    commands:
+      - tapOn: "Back up contacts"
+- scrollUntilVisible: { element: "Back up now" }
+- tapOn: "Back up now"
+- extendedWaitUntil: { notVisible: "Nothing backed up yet", timeout: 60000 }
+- assertVisible: "Last backup .*"
+- back
+- back

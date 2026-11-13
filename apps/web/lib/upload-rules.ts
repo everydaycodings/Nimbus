@@ -88,6 +88,8 @@ export type UploadToken = {
   i?: string
   v?: string
   x?: string
+  // Photo backup: the top "Camera" folder this upload makes is a system folder.
+  k?: "camera"
   exp: number
 }
 
@@ -95,7 +97,7 @@ export function signUploadToken(
   ownerId: string,
   parentId: string | null,
   now = Date.now(),
-  by: Pick<UploadToken, "b" | "s" | "l" | "i" | "v" | "x"> = {}
+  by: Pick<UploadToken, "b" | "s" | "l" | "i" | "v" | "x" | "k"> = {}
 ) {
   return signToken("upload-token", { u: ownerId, p: parentId, ...by }, DAY, now)
 }

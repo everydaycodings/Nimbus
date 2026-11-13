@@ -1,4 +1,7 @@
+import type { SystemKind } from "@nimbus/shared/api"
 import {
+  CameraIcon,
+  DeviceMobileIcon,
   FileAudioIcon,
   FileCodeIcon,
   FileDocIcon,
@@ -8,6 +11,7 @@ import {
   FileVideoIcon,
   FileZipIcon,
   FolderIcon,
+  UsersThreeIcon,
 } from "@phosphor-icons/react"
 
 import { typeKeyOf } from "@/lib/file-rules"
@@ -96,4 +100,59 @@ export const TAG_DOT = {
   indigo: "bg-tag-indigo",
   brown: "bg-tag-brown",
   gray: "bg-tag-gray",
+}
+
+// Folders the app makes itself: their own icon and label, and what to warn before a change.
+export const SYSTEM: Record<
+  SystemKind,
+  {
+    icon: typeof FolderIcon
+    label: string
+    // Fits "…puts new photos in Camera. If you <change>, …".
+    warn: string
+    effect: { rename: string; move: string; delete: string }
+  }
+> = {
+  camera: {
+    icon: CameraIcon,
+    label: "Auto · Photo backup",
+    warn: "Photo backup puts new photos in Camera.",
+    effect: {
+      rename: "the next backup makes a new Camera folder",
+      move: "the next backup makes a new Camera folder",
+      delete: "the next backup makes a new Camera folder and uploads your photos again",
+    },
+  },
+  phone_backup: {
+    icon: DeviceMobileIcon,
+    label: "Auto · Contacts and calendar",
+    warn: "Phone backup saves your contacts and calendar in Phone backup.",
+    effect: {
+      rename: "the next backup makes a new Phone backup folder",
+      move: "the next backup makes a new Phone backup folder",
+      delete: "the next backup makes a new Phone backup folder and the saved copies are gone",
+    },
+  },
+  partner: {
+    icon: UsersThreeIcon,
+    label: "Auto · Partner photos",
+    warn: "Saved partner photos go in this folder.",
+    effect: {
+      rename: "saving partner photos again makes a new folder",
+      move: "saving partner photos again makes a new folder",
+      delete: "the saved copies are gone, and saving again makes a new folder",
+    },
+  },
+}
+
+const VERB = { rename: "rename it", move: "move it", delete: "delete it" }
+
+// The confirm text for changing a system folder; several kinds join into one message.
+export function systemWarning(
+  kinds: SystemKind[],
+  action: "rename" | "move" | "delete"
+) {
+  return [...new Set(kinds)]
+    .map((k) => `${SYSTEM[k].warn} If you ${VERB[action]}, ${SYSTEM[k].effect[action]}.`)
+    .join(" ")
 }

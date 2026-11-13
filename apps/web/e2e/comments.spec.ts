@@ -58,7 +58,7 @@ test("comment with a mention, reply live, react, resolve, find it in search", as
   // Search finds the comment text.
   await page.keyboard.press("Escape")
   await page.getByRole("button", { name: /Search/ }).first().click()
-  await page.keyboard.type(word)
+  await page.getByRole("combobox", { name: "Search" }).fill(word)
   await expect(page.getByText(/In a comment:/).first()).toBeVisible()
   await page.keyboard.press("Escape")
 

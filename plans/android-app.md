@@ -38,7 +38,7 @@ API checks: `cd apps/web && node --env-file=.env.local scripts/api-check.ts` (ru
 | 15 | Photos: On this day, places map, smart groups, shared albums, partner sharing, quick edits | Built 2026-11-12 on web + app. API check 231/231, web e2e 15/15 (new photos-phase15.spec.ts). App checked in Expo Go and the release APK (x86_64, 9m 10s): map, daily notice, Maestro 19/19, Kotlin 48/48. Not committed. See "Phase 15 status" |
 | 16 | Playback: cast to TV, sleep timer and speed, data-saver video quality | Built 2026-11-12 on web + app. API check 248/248 (17 new playback checks), web e2e 15/15, browser-checked and Impeccable-polished on the web. App 0.2.7: tsc and 92 unit tests pass; release APK (x86_64, Cursor open, 9m 24s), Maestro 19/19, emulator-checked. Cast on a real TV untested. Not committed. See "Phase 16 status" |
 | 17 | Passkeys, 2FA after provider sign-in, restore a folder to a point in time | Built 2026-11-12 on web + app (0.2.8). Web: tsc, lint, 66 unit tests, e2e passkeys 3/3 + restore-point 2/2, full suite green (vault-link flaky once). App: release APK (x86_64, Cursor open, low-memory recipe, 13m 49s), Maestro 20/20 with the new `restore-point` flow. Impeccable-polished. Android passkeys and real Google/GitHub untested. Not committed. See "Phase 17 status" |
-| 18 | PDF tools (markup, fill, sign), contacts and calendar backup | Planned |
+| 18 | PDF tools (markup, fill, sign), contacts and calendar backup, system folders | Built on web + app; 0.2.9/0.2.10 released. System folders built 2026-11-13 (uncommitted): web prod build + e2e, release APK (Cursor open, low-memory recipe, 11m 34s), Maestro 23/23 incl. new `pdf-edit`, `phone-backup`, `system-folders` |
 | 19 | Smart search: server OCR of images, scans and video frames, with where-it-matched results | Planned |
 | 20 | Optional AI service (admin): face grouping, speech search, search by what's in a photo | Planned |
 
@@ -782,6 +782,40 @@ Not done or to check:
   background run, Wi-Fi/charging gates and real permission flow in the APK are untested. Free text is Helvetica only (no
   non-Latin) and doesn't wrap. Repeating events lose weekdays (Android gives only frequency/interval). `pdf-saves` files
   aren't swept. The admin cap row and the web signature Type/Upload tabs were not checked by eye.
+
+**System folders (built 2026-11-13, uncommitted; was planned the same day)**
+Status: built by two agents (web+server, Android) to the spec below. Migration `0039_system_folders` (applied to dev; tagged
+1 Phone backup + 2 Camera). Camera tag rides the upload token (`k: "camera"`) from plan `purpose: "camera"` to `mkdirp` at tus
+finish. `system` is also on `PathStep`, `FolderResponse.folder` and `PickerResponse.folders`. Delete forever in Trash doesn't
+warn again (Move to trash already did). Checked: web prod build, e2e all green across runs (new `system-folders.spec.ts`;
+sign-in rate limit trips full serial runs, so failures there were re-run alone; comments/passkeys specs made prod-safe);
+release APK x86_64: Maestro 20/20 plus new `pdf-edit`, `phone-backup`, `system-folders` flows; on the APK a real photo backup
+created `Camera` tagged `camera`, contacts .vcf uploaded, the pen stroke saved as a real `/Ink` annotation. Not checked: partner
+folder tagging live, warnings on Move to vault (none by design). App warning copy says "keeps" where web says "saves".
+
+Folders the app makes by itself should look different from the user's own, on the web and in the app (parity).
+- **Which:** `Camera` (photo backup), `Phone backup` (contacts and calendar), and `Photos/From <partner>` (saved partner
+  photos). Folder-sync targets are picked by the user, so they stay normal.
+- **Look:** each kind gets its own icon in place of the folder (camera, phone, people) in the brand tint, plus a small label
+  under the name: "Auto · Photo backup", "Auto · Contacts and calendar", "Auto · Partner photos". This applies to list and
+  grid, the folder header, breadcrumbs and pickers.
+- **Order:** system folders come first in My files, then the user's folders in the chosen sort.
+- **Protection:** rename, move and delete still work but warn first, for example "Photo backup puts new photos in Camera. If
+  you rename it, the next backup makes a new Camera folder." A system folder stays special after a rename or move.
+- **Detection:** the server tags a folder when it creates one (new column `nodes.system_kind` set to
+  `camera | phone_backup | partner`, null for everything else), so a user's own folder called "Camera" isn't affected.
+  - **Phone backup:** tag the `Phone backup` root in `registerPhone` (`lib/services/phone-backup.ts`).
+  - **Partner photos:** tag the `From <name>` leaf that `mkdirp(..., ["Photos", from])` makes in
+    `lib/services/partners.ts`. The root `Photos` folder may be the user's own, so leave it untagged.
+  - **Camera:** Kotlin's `/api/v1/uploads/plan` call (`Backup.kt`) sends `purpose: "camera"`, and the plan tags the root
+    folder `mkdirp` makes for `Camera/...`. This is a native change, so it ships in the next APK.
+  - **Migration (once):** tag the `Phone backup` roots that hold a `phone_backups.folder_id`, the `Photos/From …` folders
+    holding partner copies, and root `Camera` folders whose children are year folders (`2019`…), which is the layout
+    camera backup makes.
+- **API:** `Item` gains `system?: "camera" | "phone_backup" | "partner"` (`packages/shared/api.ts`), set in the list,
+  details and search responses, and over WebDAV it's ignored. The web and the app pick the icon and label from it.
+- **Check:** a production build plus the e2e suite on the web (look, order, the three warnings); Android in the APK (the
+  Camera tag needs the new native plan flag), the More screen and the pickers.
 
 **Phase 19, smart search (OCR)**
 - OCR moves from the browser to the worker (tesseract, already a dependency), so it runs for every upload, including from the

@@ -1,4 +1,4 @@
-import type { Hit, Item, Tag } from "@nimbus/shared/api"
+import type { Hit, Item, SystemKind, Tag } from "@nimbus/shared/api"
 import { formatBytes } from "@nimbus/shared/file-rules"
 import { Image } from "expo-image"
 import { ArrowCircleDown, ChatCircle, CheckCircle, Clock, DotsThreeVertical, Link, Star, UsersThree } from "phosphor-react-native"
@@ -9,6 +9,7 @@ import { useReducedMotion } from "react-native-reanimated"
 import { FileIcon } from "@/components/file-icon"
 import { Text } from "@/components/ui"
 import { useApi } from "@/lib/files"
+import { systemLabel } from "@/lib/system-folders"
 import { c, radius } from "@/lib/theme"
 
 export type TileProps = {
@@ -157,6 +158,7 @@ function FolderTileImpl(p: TileProps) {
           <Text variant="label" numberOfLines={PixelRatio.getFontScale() > 1.15 && /\s/.test(item.name) ? 2 : 1}>
             {item.name}
           </Text>
+          {item.system && <SystemTag kind={item.system} />}
           {item.owner ? (
             <Meta item={item} tags={tags} text={item.owner} pinned={pinned} pending={pending} />
           ) : (
@@ -178,6 +180,14 @@ function FolderTileImpl(p: TileProps) {
   )
 }
 export const FolderTile = memo(FolderTileImpl)
+
+function SystemTag({ kind }: { kind: SystemKind }) {
+  return (
+    <Text variant="caption" color={c.brand} numberOfLines={1} style={SIZE_FONT}>
+      {systemLabel(kind)}
+    </Text>
+  )
+}
 
 function Meta({ item, tags, text, pinned, pending }: { item: Item; tags: Map<string, Tag>; text: string; pinned?: boolean; pending?: boolean }) {
   return (
@@ -252,6 +262,7 @@ function ListRowImpl(p: TileProps) {
             <Text variant="label" numberOfLines={1} ellipsizeMode="middle">
               {item.name}
             </Text>
+            {item.system && <SystemTag kind={item.system} />}
             <Meta item={item} tags={tags} text={dim ? "Not available offline" : metaText(item)} pinned={pinned} pending={pending} />
             {snippet ? <Snippet text={snippet} inComment={inComment} /> : null}
           </View>

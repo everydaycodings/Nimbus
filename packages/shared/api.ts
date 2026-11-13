@@ -150,7 +150,11 @@ export type Item = {
   indexed?: boolean
   /** Open comment threads on a file. Missing on older servers. */
   comments?: number
+  /** A folder Nimbus made by itself (photo backup, phone backup, partner photos). Missing for everything else. */
+  system?: SystemKind
 }
+
+export type SystemKind = "camera" | "phone_backup" | "partner"
 
 export type TypeKey =
   | "folder"
@@ -189,10 +193,10 @@ export type ListResponse<T extends Item = Item> = {
   tags: Tag[]
 }
 
-export type PathStep = { id: string; name: string }
+export type PathStep = { id: string; name: string; system?: SystemKind }
 
 export type FolderResponse = ListResponse & {
-  folder: { id: string; name: string; role: Role; ownerId: string }
+  folder: { id: string; name: string; role: Role; ownerId: string; system?: SystemKind }
   /** Root first, as far as I may see; ends with the folder itself. */
   path: PathStep[]
 }
@@ -241,7 +245,7 @@ export type RenameRequest = { name: string }
 export type MoveRequest = { ids: string[]; parentId: string | null }
 export type StarRequest = { ids: string[]; starred: boolean }
 export type IdsRequest = { ids: string[] }
-export type PickerResponse = { folders: { id: string; name: string }[] }
+export type PickerResponse = { folders: { id: string; name: string; system?: SystemKind }[] }
 export type ShortcutRequest = { nodeId: string }
 
 // ---- Signatures (PDF editor) ----

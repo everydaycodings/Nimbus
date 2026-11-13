@@ -1,5 +1,7 @@
 import type { Item } from "@nimbus/shared/api"
 
+import { systemFirst } from "./system-folders.ts"
+
 export type Tiles = "small" | "medium" | "large"
 export type Layout = "grid" | "list"
 
@@ -26,8 +28,9 @@ function chunk(type: "folders" | "files", items: Item[], columns: number): Row[]
 
 // The list's rows. A grid splits into titled Folders and Files sections, chunked
 // to the column count, with folders first whatever the sort. A list stays in the
-// server's order.
-export function toRows(items: Item[], columns: number, layout: Layout): Row[] {
+// server's order. `pinSystem` (My files) puts system folders ahead of the rest in both.
+export function toRows(items: Item[], columns: number, layout: Layout, pinSystem = false): Row[] {
+  if (pinSystem) items = systemFirst(items)
   if (layout === "list") return items.map((item) => ({ key: item.id, type: "item", item }))
   const folders = items.filter((i) => i.kind === "folder")
   const files = items.filter((i) => i.kind === "file")

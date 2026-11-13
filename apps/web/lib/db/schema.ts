@@ -96,6 +96,8 @@ export const nodes = pgTable(
     // Off: people it's shared with as editors can't share it (or anything inside) further.
     allowReshare: boolean("allow_reshare").notNull().default(true),
     trashedAt: timestamp("trashed_at", { withTimezone: true }),
+    // Folders the app makes itself: "camera" | "phone_backup" | "partner". Null for the rest.
+    systemKind: text("system_kind"),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()

@@ -30,3 +30,11 @@ test("tile sizes give 3, 2 and 1 columns on a phone, and more on a tablet", () =
   assert.deepEqual([columnsFor(360, "small"), columnsFor(360, "medium"), columnsFor(360, "large")], [3, 2, 1])
   assert.ok(columnsFor(800, "medium") >= 4)
 })
+
+test("pinSystem puts system folders first in both layouts", () => {
+  const sys = { id: "s1", kind: "folder", system: "camera" } as Item
+  const all = [item("d1", "folder"), item("f1", "file"), sys]
+  assert.deepEqual(toRows(all, 2, "list", true).map((r) => r.key), ["s1", "d1", "f1"])
+  assert.deepEqual(toRows(all, 2, "grid", true).slice(0, 2).map((r) => r.key), ["h-folders", "folders-s1"])
+  assert.deepEqual(toRows(all, 2, "list").map((r) => r.key), ["d1", "f1", "s1"])
+})

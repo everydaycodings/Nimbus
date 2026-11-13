@@ -1,3 +1,4 @@
+import type { SystemKind } from "@nimbus/shared/api"
 import { ArrowsClockwise, CaretRight, CheckCircle, FolderSimple, Plus, Warning } from "phosphor-react-native"
 import { useState } from "react"
 import { ActivityIndicator, View } from "react-native"
@@ -11,6 +12,7 @@ import { Button, IconButton, Text } from "@/components/ui"
 import { useAccounts } from "@/lib/accounts"
 import { errorText } from "@/lib/api"
 import { useFolders } from "@/lib/files"
+import { systemLabel } from "@/lib/system-folders"
 import { pickPhoneFolder, syncAvailable, useFolderSync } from "@/lib/folder-sync"
 import { describePair, type SyncPair } from "@/lib/folder-sync-rules"
 import { c } from "@/lib/theme"
@@ -153,7 +155,7 @@ function SheetHeader({ title, caption }: { title: string; caption?: string }) {
   )
 }
 
-type Place = { id: string | null; name: string }
+type Place = { id: string | null; name: string; system?: SystemKind }
 
 function AddSheet({ folder, accountLabel, onClose, onAdd }: { folder: { name: string }; accountLabel: string; onClose: () => void; onAdd: (remote: { id: string | null; path: string }, twoWay: boolean) => void }) {
   const [stack, setStack] = useState<Place[]>([{ id: null, name: "My files" }])
@@ -207,7 +209,7 @@ function FolderChooser({ stack, setStack, onClose }: { stack: Place[]; setStack:
         <Text color={c.mutedForeground} style={{ padding: 20 }}>No folders here</Text>
       ) : (
         q.data.folders.map((f) => (
-          <SheetRow key={f.id} stay label={f.name} icon={<FileIcon item={{ kind: "folder", mime: null, name: f.name }} />} trailing={<CaretRight size={20} color={c.mutedForeground} />} onPress={() => setStack([...stack, f])} />
+          <SheetRow key={f.id} stay label={f.name} detail={f.system ? systemLabel(f.system) : undefined} icon={<FileIcon item={{ kind: "folder", mime: null, name: f.name, system: f.system }} />} trailing={<CaretRight size={20} color={c.mutedForeground} />} onPress={() => setStack([...stack, f])} />
         ))
       )}
     </Sheet>

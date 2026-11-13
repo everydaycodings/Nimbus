@@ -1,6 +1,8 @@
-import type { Item } from "@nimbus/shared/api"
+import type { Item, SystemKind } from "@nimbus/shared/api"
 import { typeKeyOf, type TypeKey } from "@nimbus/shared/file-rules"
 import {
+  Camera,
+  DeviceMobile,
   File,
   FileAudio,
   FileCode,
@@ -13,9 +15,13 @@ import {
   FileVideo,
   FileZip,
   Folder,
+  UsersThree,
 } from "phosphor-react-native"
 
 import { c } from "@/lib/theme"
+import type { WithSystem } from "@/lib/system-folders"
+
+const SYSTEM_ICON: Record<SystemKind, typeof File> = { camera: Camera, phone_backup: DeviceMobile, partner: UsersThree }
 
 // The web's fileType(): same icons and hues, so a file looks the same on both.
 export const FILE_TYPES: Record<TypeKey, { label: string; icon: typeof File; color: string }> = {
@@ -34,9 +40,13 @@ export function FileIcon({
   item,
   size = 24,
 }: {
-  item: Pick<Item, "kind" | "mime" | "name">
+  item: Pick<Item, "kind" | "mime" | "name"> & WithSystem
   size?: number
 }) {
+  if (item.system) {
+    const Sys = SYSTEM_ICON[item.system]
+    return <Sys size={size} color={c.brand} weight="fill" />
+  }
   const key = typeKeyOf(item.kind, item.mime, item.name)
   const t = FILE_TYPES[key]
   const ext = item.name.split(".").pop()?.toLowerCase() ?? ""

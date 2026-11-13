@@ -38,6 +38,7 @@ import { offlineChildren } from "./offline"
 import { applyOp, enqueue, queueState, showOptimistically } from "./offline-queue"
 import { newTempId, type Op } from "./offline-rules"
 import { linkUrl, pickLink } from "./share"
+import type { WithSystem } from "./system-folders"
 import { firstFrameToWebp } from "./thumbs"
 
 // ---- Calling the API as the active account ----
@@ -139,6 +140,9 @@ export function useDetails(id: string, enabled = true) {
   })
 }
 
+// `system` rides along when the server sends it for picker folders.
+export type PickerFolder = PickerResponse["folders"][number] & WithSystem
+
 export function useFolders(parent: string | null) {
   const api = useApi()
   const client = useQueryClient()
@@ -146,7 +150,7 @@ export function useFolders(parent: string | null) {
     queryKey: [api.id, "picker", parent],
     queryFn: async () => {
       try {
-        return await api.get<PickerResponse>(`/picker${qs({ parent: parent ?? undefined })}`)
+        return await api.get<{ folders: PickerFolder[] }>(`/picker${qs({ parent: parent ?? undefined })}`)
       } catch (e) {
         if (!(e instanceof ApiError && e.status === 0)) throw e
         return { folders: foldersOnPhone(client, api.id, parent) }
@@ -165,7 +169,7 @@ function foldersOnPhone(client: ReturnType<typeof useQueryClient>, account: stri
       for (const i of page.items) seen.set(i.id, i)
   if (parent) for (const i of offlineChildren(account, parent)) if (!seen.has(i.id)) seen.set(i.id, i)
   const items = queueState(account).ops.reduce((all, op) => applyOp(all, path, true, op), [...seen.values()])
-  return items.filter((i) => i.kind === "folder").map((i) => ({ id: i.id, name: i.name })).sort((a, b) => a.name.localeCompare(b.name))
+  return items.filter((i) => i.kind === "folder").map((i) => ({ id: i.id, name: i.name, system: i.system })).sort((a, b) => a.name.localeCompare(b.name))
 }
 
 export function useTags() {

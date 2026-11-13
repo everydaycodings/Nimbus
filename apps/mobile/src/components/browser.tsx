@@ -1,4 +1,4 @@
-import type { Item, Tag } from "@nimbus/shared/api"
+import type { Item, SystemKind, Tag } from "@nimbus/shared/api"
 import { typeKeyOf } from "@nimbus/shared/file-rules"
 import * as Haptics from "expo-haptics"
 import { router, useFocusEffect } from "expo-router"
@@ -46,6 +46,7 @@ import { AccountSheet } from "@/components/account-sheet"
 import { Avatar, serverName } from "@/components/avatar"
 import { BackupRing, useBackupLabel } from "@/components/backup-ring"
 import { ConfirmDialog } from "@/components/dialog"
+import { FileIcon } from "@/components/file-icon"
 import { FILTER_LABELS, FileSheets } from "@/components/file-sheets"
 import { isWide } from "@/components/nav"
 import { CapDialog } from "@/components/offline-ui"
@@ -78,6 +79,7 @@ import { isTemp } from "@/lib/offline-rules"
 import { usePrefs } from "@/lib/prefs"
 import { openPreview } from "@/lib/preview-session"
 import { columnsFor, toRows, type Row } from "@/lib/rows"
+import { systemIn, systemWarning, type WithSystem } from "@/lib/system-folders"
 import { folderHref, homeHref, useTab, type TabGroup } from "@/lib/tab"
 import { c, radius, type } from "@/lib/theme"
 
@@ -198,7 +200,7 @@ export function Browser({
   const [filters, setFilters] = useState<Filters>({})
   const [sheet, setSheet] = useState<FileSheet | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [confirm, setConfirm] = useState<"empty" | "delete" | null>(null)
+  const [confirm, setConfirm] = useState<"empty" | "delete" | "system" | null>(null)
   const [account, setAccount] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [onlyOffline, setOnlyOffline] = useState(false)
@@ -316,7 +318,7 @@ export function Browser({
   const width = screen - (isWide(screen) ? 80 : 0)
   // Past 1.3× text, tiles count as narrower so long names get a whole row instead of breaking mid-word.
   const columns = asList ? 1 : columnsFor(width / Math.max(1, fontScale / 1.3), prefs.tiles, gap)
-  const rows = useMemo(() => toRows(items, columns, asList ? "list" : "grid"), [items, columns, asList])
+  const rows = useMemo(() => toRows(items, columns, asList ? "list" : "grid", source.kind === "files" || source.kind === "folder"), [items, columns, asList, source.kind])
 
   const tile = (item: Item): TileProps => ({
     item,
@@ -480,6 +482,8 @@ export function Browser({
 
   // ---- Top area ----
   const folderName = first?.folder?.name ?? name ?? "Folder"
+  // The server may tag the folder and its path steps (see SystemKind); older answers carry no tag.
+  const headerSystem = (first?.folder as WithSystem | undefined)?.system
   const ownTab: TabGroup = role === "owner" ? "(files)" : "(shared)"
   const ancestors = (first?.path ?? []).slice(0, -1)
   const goRoot = () => (tab === ownTab ? router.dismissAll() : router.navigate(homeHref(ownTab)))
@@ -552,6 +556,7 @@ export function Browser({
                   label="Move to trash"
                   color={c.destructive}
                   onPress={() => {
+                    if (systemIn(selected)) return setConfirm("system")
                     actions.trash(selected)
                     clearSelection()
                   }}
@@ -570,6 +575,7 @@ export function Browser({
       <>
         <Bar>
           <IconButton icon={ArrowLeft} label="Back" onPress={() => router.back()} />
+          {headerSystem && <FileIcon item={{ kind: "folder", mime: null, name: folderName, system: headerSystem }} />}
           <Text style={[type.title, { flex: 1 }]} numberOfLines={1}>
             {folderName}
           </Text>
@@ -582,7 +588,7 @@ export function Browser({
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 8, alignItems: "center" }} style={{ flexGrow: 0, flexShrink: 0 }}>
             <Crumb first label={role === "owner" ? "My files" : "Shared with me"} onPress={goRoot} />
             {ancestors.map((p) => (
-              <Crumb key={p.id} label={p.name} onPress={() => router.dismissTo(folderHref(tab, p.id))} />
+              <Crumb key={p.id} label={p.name} system={(p as WithSystem).system} onPress={() => router.dismissTo(folderHref(tab, p.id))} />
             ))}
           </ScrollView>
         )}
@@ -756,6 +762,18 @@ export function Browser({
           onClose={() => setConfirm(null)}
         />
       )}
+      {confirm === "system" && systemIn(selected) && (
+        <ConfirmDialog
+          title="Automatic folder"
+          body={systemWarning(systemIn(selected)!, "delete")}
+          confirm="Move to trash"
+          onConfirm={() => {
+            actions.trash(selected)
+            clearSelection()
+          }}
+          onClose={() => setConfirm(null)}
+        />
+      )}
       {confirm === "delete" && (
         <ConfirmDialog
           title="Delete forever?"
@@ -772,7 +790,7 @@ export function Browser({
   )
 }
 
-function Crumb({ label, first, onPress }: { label: string; first?: boolean; onPress: () => void }) {
+function Crumb({ label, first, system, onPress }: { label: string; first?: boolean; system?: SystemKind; onPress: () => void }) {
   return (
     <View style={{ flexDirection: "row", alignItems: "center" }}>
       {!first && <CaretRight size={14} color={c.mutedForeground} />}
@@ -783,9 +801,12 @@ function Crumb({ label, first, onPress }: { label: string; first?: boolean; onPr
         accessibilityLabel={`Go to ${label}`}
         style={{ minHeight: 48, paddingHorizontal: 8, justifyContent: "center", borderRadius: radius.control }}
       >
-        <Text variant="bodySmall" color={c.mutedForeground}>
-          {label}
-        </Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+          {system && <FileIcon item={{ kind: "folder", mime: null, name: label, system }} size={16} />}
+          <Text variant="bodySmall" color={c.mutedForeground}>
+            {label}
+          </Text>
+        </View>
       </Pressable>
     </View>
   )

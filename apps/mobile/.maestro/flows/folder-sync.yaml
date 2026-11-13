@@ -25,9 +25,9 @@ name: folder-sync
     commands: [ back, waitForAnimationToEnd ]
 - assertVisible: "Folder backup & sync"
 - back
-# And from Camera backup.
-- scrollUntilVisible: { element: "Camera backup" }
-- tapOn: "Camera backup"
+# And from Backup.
+- scrollUntilVisible: { element: "Backup" }
+- tapOn: "Backup"
 - scrollUntilVisible: { element: "Folder backup & sync" }
 - tapOn: "Folder backup & sync"
 - extendedWaitUntil: { visible: "Add a folder", timeout: 10000 }

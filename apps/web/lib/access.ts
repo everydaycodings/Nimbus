@@ -6,6 +6,8 @@ import "server-only"
 
 import { sql } from "drizzle-orm"
 
+import type { SystemKind } from "@nimbus/shared/api"
+
 import { db } from "@/lib/db"
 import { MEDIA_MIME_RE, MEDIA_NAME_RE, NOT_MEDIA_NAME_RE, UUID } from "@/lib/file-rules"
 
@@ -140,22 +142,27 @@ export async function visiblePath(userId: string, id: string) {
     id: string
     name: string
     owner_id: string
+    system_kind: SystemKind | null
     shared: boolean
   }>(sql`
     with recursive up as (
-      select id, name, parent_id, owner_id, 0 as depth from nodes where id = ${id}
+      select id, name, parent_id, owner_id, system_kind, 0 as depth from nodes where id = ${id}
       union all
-      select n.id, n.name, n.parent_id, n.owner_id, up.depth + 1
+      select n.id, n.name, n.parent_id, n.owner_id, n.system_kind, up.depth + 1
       from nodes n join up on n.id = up.parent_id
     )
-    select id, name, owner_id, exists (
+    select id, name, owner_id, system_kind, exists (
       select 1 from shares s where s.node_id = up.id and s.grantee_id = ${userId}
     ) as shared
     from up order by depth desc`)
-  if (!rows.length || rows[0].owner_id === userId)
-    return rows.map(({ id, name }) => ({ id, name }))
+  const crumb = ({ id, name, system_kind }: (typeof rows)[number]) => ({
+    id,
+    name,
+    ...(system_kind ? { system: system_kind } : {}),
+  })
+  if (!rows.length || rows[0].owner_id === userId) return rows.map(crumb)
   const top = rows.findIndex((r) => r.shared)
-  return top < 0 ? [] : rows.slice(top).map(({ id, name }) => ({ id, name }))
+  return top < 0 ? [] : rows.slice(top).map(crumb)
 }
 
 // The ids the user can see (untrashed), for downloads. Member viewers can

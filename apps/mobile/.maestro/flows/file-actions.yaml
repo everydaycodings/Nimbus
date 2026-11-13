@@ -11,18 +11,19 @@ name: file-actions
 - tapOn: "Folder name"
 - inputText: "mae-${output.stamp}"
 - pressKey: Enter
-- extendedWaitUntil: { visible: "Folder, mae-${output.stamp}", timeout: 10000 }
+- scrollUntilVisible: { element: "Folder, mae-${output.stamp}", timeout: 20000 }
 - tapOn: "More actions for mae-${output.stamp}"
+- scrollUntilVisible: { element: "Rename" }
 - tapOn: "Rename"
 - eraseText: 40
 - inputText: "mae-${output.stamp}-r"
 - pressKey: Enter
-- extendedWaitUntil: { visible: "Folder, mae-${output.stamp}-r", timeout: 10000 }
+- scrollUntilVisible: { element: "Folder, mae-${output.stamp}-r", timeout: 20000 }
 - tapOn: "More actions for mae-${output.stamp}-r"
 - scrollUntilVisible: { element: "Move to trash" }
 - tapOn: "Move to trash"
 - tapOn: "Undo"
-- extendedWaitUntil: { visible: "Folder, mae-${output.stamp}-r", timeout: 10000 }
+- scrollUntilVisible: { element: "Folder, mae-${output.stamp}-r", timeout: 20000 }
 - tapOn: "More actions for mae-${output.stamp}-r"
 - scrollUntilVisible: { element: "Move to trash" }
 - tapOn: "Move to trash"

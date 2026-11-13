@@ -61,7 +61,12 @@ test("add, rename and remove a passkey, then sign in with it", async ({ page }) 
   // A passkey sign-in skips the code and the password.
   await page.context().clearCookies()
   await page.goto("/sign-in")
-  await page.getByRole("button", { name: "Sign in with a passkey" }).click()
+  // The email field's passkey autofill can sign in before the button is clicked (the virtual
+  // authenticator answers at once); either way it's a passkey sign-in.
+  await page
+    .getByRole("button", { name: "Sign in with a passkey" })
+    .click({ timeout: 5_000 })
+    .catch(() => {})
   await expect(page).not.toHaveURL(/sign-in/)
   await page.context().clearCookies({ name: "nimbus_offer_save" })
 

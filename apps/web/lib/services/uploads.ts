@@ -69,7 +69,8 @@ const parentOwner = async (userId: string, parentId: string | null) => {
 export async function planUpload(
   me: Me,
   parentId: string | null,
-  entries: UploadEntry[]
+  entries: UploadEntry[],
+  purpose?: "camera"
 ): Promise<Plan> {
   const plan: Plan = { conflicts: [], rejected: [] }
   if (!Array.isArray(entries) || entries.length > MAX_ENTRIES)
@@ -224,7 +225,7 @@ export async function planUpload(
       owner,
       parentId,
       Date.now(),
-      owner === me.id ? {} : { b: me.id }
+      { ...(owner === me.id ? {} : { b: me.id }), ...(purpose ? { k: purpose } : {}) }
     ),
   }
 }

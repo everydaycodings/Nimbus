@@ -351,7 +351,7 @@ class BackupWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         }
         if (send.isNotEmpty()) {
           val entries = JSONArray().apply { send.forEach { put(JSONObject().put("path", it.third).put("size", it.first.size)) } }
-          val plan = Net.api(account, "POST", "/api/v1/uploads/plan", JSONObject().put("parentId", JSONObject.NULL).put("entries", entries))
+          val plan = Net.api(account, "POST", "/api/v1/uploads/plan", JSONObject().put("parentId", JSONObject.NULL).put("purpose", "camera").put("entries", entries))
           plan.optString("error").takeIf { it.isNotEmpty() }?.let { return if (it.contains("space", true)) stop(it, "Backup stopped: storage is full") else stop(it, "Backup stopped") }
           val rejected = plan.optJSONArray("rejected")?.let { r -> (0 until r.length()).associate { r.getJSONObject(it).getString("path") to r.getJSONObject(it).getString("reason") } } ?: emptyMap()
           for ((item, sha, path) in send) {

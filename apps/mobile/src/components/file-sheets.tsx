@@ -1,4 +1,4 @@
-import type { Item, PhotoItem, Role, Tag, Version } from "@nimbus/shared/api"
+import type { Item, PhotoItem, Role, SystemKind, Tag, Version } from "@nimbus/shared/api"
 import { OFFICE_EXT, TYPE_KEYS, formatBytes, previewKind, typeKeyOf } from "@nimbus/shared/file-rules"
 import { useQuery } from "@tanstack/react-query"
 import { router } from "expo-router"
@@ -52,6 +52,7 @@ import { ActivityIndicator, Pressable, Switch, View } from "react-native"
 import { AlbumPickSheet } from "@/components/album-sheets"
 import { Avatar } from "@/components/avatar"
 import { ConfirmDialog, PromptDialog } from "@/components/dialog"
+import { systemIn, systemLabel, systemWarning, type SystemAction } from "@/lib/system-folders"
 import { FILE_TYPES, FileIcon } from "@/components/file-icon"
 import { useOffice } from "@/components/preview-pages"
 import { CapDialog } from "@/components/offline-ui"
@@ -95,6 +96,7 @@ const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { dateS
 type Dialog =
   | { kind: "rename"; item: Item }
   | { kind: "forever"; items: Item[] }
+  | { kind: "system"; system: SystemKind; action: SystemAction; go: () => void }
   | { kind: "folder"; parentId: string | null }
   | { kind: "tag"; items: Item[] }
   | { kind: "cap"; ask: CapAsk }
@@ -147,6 +149,16 @@ export function FileSheets(props: Props) {
             if (!problem) onDone?.()
             return problem
           }}
+        />
+      )}
+      {dialog?.kind === "system" && (
+        <ConfirmDialog
+          title="Automatic folder"
+          body={systemWarning(dialog.system, dialog.action)}
+          confirm={{ rename: "Rename anyway", move: "Move anyway", delete: "Move to trash" }[dialog.action]}
+          danger={dialog.action === "delete"}
+          onClose={close}
+          onConfirm={dialog.go}
         />
       )}
       {dialog?.kind === "forever" && (
@@ -418,7 +430,11 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
         />
       )}
       {file && OFFICE_EXT.test(file.name) && <CollaboraRow item={file} onClose={onClose} icon={ic(FileText)} />}
-      {one && edit && <SheetRow label="Rename" icon={ic(PencilSimple)} onPress={() => ask({ kind: "rename", item: one })} />}
+      {one && edit && <SheetRow label="Rename" icon={ic(PencilSimple)} onPress={() => {
+        const go = () => ask({ kind: "rename", item: one })
+        if (one.system) ask({ kind: "system", system: one.system, action: "rename", go })
+        else go()
+      }} />}
       {sent.data?.options.enabled !== false && !items.some((i) => i.shortcut) && (
         <SheetRow
           label="Send with Transfer"
@@ -554,9 +570,14 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
             icon={<Trash size={ICON} color={c.destructive} />}
             danger
             onPress={() => {
-              actions.trash(items)
-              done()
-              onTrashed?.(items)
+              const go = () => {
+                actions.trash(items)
+                done()
+                onTrashed?.(items)
+              }
+              const system = systemIn(items)
+              if (system) ask({ kind: "system", system, action: "delete", go })
+              else go()
             }}
           />
         </>
@@ -812,10 +833,10 @@ function TagsSheet({ items, tags, onClose, ask }: Props & { items: Item[]; onClo
 
 // ---- Move ----
 
-type Place = { id: string | null; name: string }
+type Place = { id: string | null; name: string; system?: SystemKind }
 const ROOT: Place = { id: null, name: "My files" }
 
-function MoveSheet({ items, onClose, onDone }: Props & { items: Item[]; onClose: () => void }) {
+function MoveSheet({ items, onClose, onDone, ask }: Props & { items: Item[]; onClose: () => void; ask: (d: Dialog) => void }) {
   const actions = useFileActions()
   const [stack, setStack] = useState<Place[]>([ROOT])
   const here = stack[stack.length - 1]
@@ -845,7 +866,16 @@ function MoveSheet({ items, onClose, onDone }: Props & { items: Item[]; onClose:
           }
         />
       }
-      footer={<MoveFooter onMove={() => { actions.move(items, here.id, here.name); onDone?.() }} />}
+      footer={
+        <MoveFooter
+          onMove={() => {
+            const go = () => { actions.move(items, here.id, here.name); onDone?.() }
+            const system = systemIn(items)
+            if (system) ask({ kind: "system", system, action: "move", go })
+            else go()
+          }}
+        />
+      }
     >
       {q.isPending ? (
         <ActivityIndicator color={mute} accessibilityLabel="Loading" style={{ margin: 24 }} />
@@ -862,7 +892,8 @@ function MoveSheet({ items, onClose, onDone }: Props & { items: Item[]; onClose:
               <SheetRow
                 stay
                 label={f.name}
-                icon={<FileIcon item={{ kind: "folder", mime: null, name: f.name }} />}
+                detail={f.system ? systemLabel(f.system) : undefined}
+                icon={<FileIcon item={{ kind: "folder", mime: null, name: f.name, system: f.system }} />}
                 trailing={<CaretRight size={20} color={mute} />}
                 onPress={() => setStack((s) => [...s, f])}
               />

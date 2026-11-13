@@ -28,6 +28,7 @@ import {
   ownerIfAll,
   visiblePath,
 } from "@/lib/access"
+import type { SystemKind } from "@nimbus/shared/api"
 import { recordOne } from "@/lib/activity"
 import { getFolder, getPath, markOpened, UUID } from "@/lib/files"
 import { checkStorage } from "@/lib/quota"
@@ -138,7 +139,7 @@ export async function listFolders(me: Me, parentId: string | null) {
   const owner = parentId ? (await getFolder(me.id, parentId))?.ownerId : me.id
   if (!owner) return []
   return db
-    .select({ id: nodes.id, name: nodes.name })
+    .select({ id: nodes.id, name: nodes.name, system: nodes.systemKind })
     .from(nodes)
     .where(
       and(
@@ -149,7 +150,10 @@ export async function listFolders(me: Me, parentId: string | null) {
         parentId ? eq(nodes.parentId, parentId) : isNull(nodes.parentId)
       )
     )
-    .orderBy(sql`lower(${nodes.name})`)
+    .orderBy(sql`(${nodes.systemKind} is null)`, sql`lower(${nodes.name})`)
+    .then((rows) =>
+      rows.map(({ system, ...r }) => (system ? { ...r, system: system as SystemKind } : r))
+    )
 }
 
 // For the details panel. Owners see everything; people it's shared with see the

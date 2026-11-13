@@ -5,6 +5,7 @@ import * as svc from "@/lib/services/uploads"
 
 const Body = z.object({
   parentId: uuid.nullable(),
+  purpose: z.literal("camera").optional(),
   entries: z
     .array(
       z.object({
@@ -23,5 +24,5 @@ export const POST = (req: Request) =>
   withMember(async (me) => {
     const b = await json(req, Body)
     if (b instanceof Response) return b
-    return Response.json(await svc.planUpload(me, b.parentId, b.entries))
+    return Response.json(await svc.planUpload(me, b.parentId, b.entries, b.purpose))
   })

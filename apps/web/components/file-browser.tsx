@@ -77,7 +77,7 @@ import { Previewer, type Shown } from "@/components/previewer"
 import { Thumb } from "@/components/thumb"
 import { VersionsDialog } from "@/components/versions-dialog"
 import { RestoreDialog } from "@/components/restore-dialog"
-import { MoveDialog, type Place } from "@/components/move-dialog"
+import { MoveDialog, SystemMark, type Place } from "@/components/move-dialog"
 import { MoveToVault } from "@/components/vault-list"
 import {
   DENSITY_COOKIE,
@@ -103,7 +103,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import type { Access } from "@/lib/access"
 import type { TagColor } from "@/lib/db/schema"
-import { TAG_DOT, fileType, formatBytes } from "@/lib/file-types"
+import { SYSTEM, TAG_DOT, fileType, formatBytes, systemWarning } from "@/lib/file-types"
+import type { SystemKind } from "@nimbus/shared/api"
 import type { Item, Tag } from "@/lib/files"
 import { ensureIndexed } from "@/lib/index-content"
 import { resetThumb, thumbFromFrame, thumbFromImage } from "@/lib/thumbs"
@@ -208,7 +209,7 @@ export function FileBrowser({
   // Links under the title that switch between related lists.
   tabs?: React.ReactNode
   // Folder view: the folders above this one and this one, root excluded.
-  path?: { id: string; name: string }[]
+  path?: { id: string; name: string; system?: SystemKind }[]
   folderId?: string | null
   // The viewer's access to this folder: someone else's when not "owner".
   role?: Access
@@ -244,6 +245,9 @@ export function FileBrowser({
     label: string
   } | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  // Warning before changing a folder the app made; `go` runs once confirmed.
+  const [warning, setWarning] = useState<{ text: string; verb: string; go: () => void } | null>(null)
+  const [warningOpen, setWarningOpen] = useState(false)
   const [dropId, setDropId] = useState<string | null>(null)
   // OS files dragged over the page (folder view), for the drop overlay.
   const [osDrag, setOsDrag] = useState(false)
@@ -316,6 +320,8 @@ export function FileBrowser({
     )
     .sort((a, b) => {
       if (sort.key === "rank") return 0
+      // Folders the app made come first in My files, then the chosen sort.
+      if (view === "folder" && !shared && !a.system !== !b.system) return a.system ? -1 : 1
       if (a.kind !== b.kind) return a.kind === "folder" ? -1 : 1
       const d =
         sort.key === "name"
@@ -431,10 +437,24 @@ export function FileBrowser({
     setNameOpen(true)
   }
 
+  // Runs `go`, after a confirm when any of `list` is a folder the app made.
+  function guard(list: Item[], action: "rename" | "move" | "delete", go: () => void) {
+    const kinds = list.flatMap((i) => (i.system ? [i.system] : []))
+    if (!kinds.length) return go()
+    setWarning({
+      text: systemWarning(kinds, action),
+      verb: action === "delete" ? "Delete" : action === "move" ? "Move" : "Rename",
+      go,
+    })
+    setWarningOpen(true)
+  }
+
   function rename(item: Item) {
-    setNaming({ item })
-    setNameError(null)
-    setNameOpen(true)
+    guard([item], "rename", () => {
+      setNaming({ item })
+      setNameError(null)
+      setNameOpen(true)
+    })
   }
 
   function submitName(value: string) {
@@ -454,12 +474,14 @@ export function FileBrowser({
   }
 
   function trash(list: Item[]) {
-    const ids = list.map((i) => i.id)
-    clear()
-    run(() => trashItems(ids), {
-      text: `Moved ${label(list)} to the trash.`,
-      undo: () =>
-        run(() => restoreItems(ids), { text: `Restored ${label(list)}.` }),
+    guard(list, "delete", () => {
+      const ids = list.map((i) => i.id)
+      clear()
+      run(() => trashItems(ids), {
+        text: `Moved ${label(list)} to the trash.`,
+        undo: () =>
+          run(() => restoreItems(ids), { text: `Restored ${label(list)}.` }),
+      })
     })
   }
 
@@ -486,6 +508,7 @@ export function FileBrowser({
     })
   }
 
+  // Delete forever only happens in Trash, and Move to trash already warned about system folders.
   function askDelete(ids: string[], what: string) {
     setConfirm({ ids, label: what })
     setConfirmOpen(true)
@@ -514,8 +537,10 @@ export function FileBrowser({
   }
 
   function move(list: Item[]) {
-    setMoving(list)
-    setMoveOpen(true)
+    guard(list, "move", () => {
+      setMoving(list)
+      setMoveOpen(true)
+    })
   }
 
   function moveTo(ids: string[], to: Place, what: string) {
@@ -1142,7 +1167,8 @@ export function FileBrowser({
         }
         const ids: string[] = JSON.parse(e.dataTransfer.getData(DRAG) || "[]")
         if (!ids.length || (to.id && ids.includes(to.id))) return
-        moveTo(ids, to, label(items.filter((i) => ids.includes(i.id))))
+        const dragged = items.filter((i) => ids.includes(i.id))
+        guard(dragged, "move", () => moveTo(ids, to, label(dragged)))
       },
     }
   }
@@ -1172,13 +1198,14 @@ export function FileBrowser({
   // The leading icon turns into a checkbox on hover and while anything is selected.
   function lead(item: Item, size: string) {
     const t = fileType(item.kind, item.mime, item.name)
+    const Icon = item.system ? SYSTEM[item.system].icon : t.icon
     return (
       <span className={cn("relative grid shrink-0 place-items-center", size)}>
-        <t.icon
+        <Icon
           weight={item.kind === "folder" ? "fill" : "regular"}
           className={cn(
             "size-full",
-            t.color,
+            item.system ? "text-brand" : t.color,
             canEdit &&
               "group-hover:invisible group-data-[selecting=true]/browser:invisible"
           )}
@@ -1203,12 +1230,18 @@ export function FileBrowser({
     )
   }
 
-  function name(item: Item) {
+  // `inline`: a list row has no room under the name, so the system label goes beside it.
+  function name(item: Item, inline = false) {
     return (
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
         <span className="truncate text-sm font-medium" title={item.name}>
           {item.name}
         </span>
+        {inline && item.system && (
+          <span className="shrink-0 rounded-full bg-brand/12 px-1.5 py-px text-[11px] font-medium text-foreground/70 max-sm:hidden">
+            {SYSTEM[item.system].label}
+          </span>
+        )}
         {item.starred && view !== "starred" && (
           <StarIcon
             weight="fill"
@@ -1345,6 +1378,9 @@ export function FileBrowser({
                 {lead(f, "size-5")}
                 <span className="flex min-w-0 flex-1 flex-col">
                   {name(f)}
+                  {f.system && (
+                    <span className="truncate text-xs text-brand" title={SYSTEM[f.system].label}>{SYSTEM[f.system].label}</span>
+                  )}
                   {meta(f)}
                 </span>
                 {itemMenu(f)}
@@ -1465,7 +1501,7 @@ export function FileBrowser({
           >
             <span className="flex min-w-0 items-center gap-3">
               {lead(i, "size-5")}
-              {name(i)}
+              {name(i, true)}
             </span>
             <span
               suppressHydrationWarning
@@ -1538,8 +1574,14 @@ export function FileBrowser({
                     …<CaretRightIcon className="size-4" />
                   </span>
                 ) : i === crumbs.length - 1 ? (
-                  <h1 key={c.id ?? "root"} className="truncate">
-                    {c.name}
+                  <h1 key={c.id ?? "root"} className="flex min-w-0 items-center gap-2 truncate">
+                    {c.system && <SystemMark kind={c.system} className="size-6" />}
+                    <span className="truncate">{c.name}</span>
+                    {c.system && (
+                      <span className="shrink-0 rounded-full bg-brand/12 px-2 py-0.5 text-xs font-medium text-foreground/70 max-sm:hidden">
+                        {SYSTEM[c.system].label}
+                      </span>
+                    )}
                   </h1>
                 ) : (
                   <span
@@ -1553,6 +1595,7 @@ export function FileBrowser({
                       {...dropTarget(c)}
                       className="-mx-1 truncate rounded-md px-1 text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 data-drop:bg-brand/15 data-drop:text-foreground"
                     >
+                      {c.system && <SystemMark kind={c.system} className="mr-1 inline size-5 align-text-bottom" />}
                       {c.name}
                     </Link>
                     <CaretRightIcon className="size-4 shrink-0 text-muted-foreground" />
@@ -2094,6 +2137,36 @@ export function FileBrowser({
         onSubmit={submitName}
         onClose={() => setNameOpen(false)}
       />
+
+      <Dialog.Root open={warningOpen} onOpenChange={setWarningOpen}>
+        <Dialog.Portal>
+          <Dialog.Backdrop className={DIALOG_BACKDROP} />
+          <Dialog.Popup className={DIALOG_POPUP}>
+            <div className="grid gap-1.5">
+              <Dialog.Title className="text-base font-semibold text-balance">
+                This folder is made by Nimbus
+              </Dialog.Title>
+              <Dialog.Description className="text-sm text-muted-foreground">
+                {warning?.text}
+              </Dialog.Description>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Dialog.Close render={<Button variant="outline" />}>
+                Cancel
+              </Dialog.Close>
+              <Button
+                variant={warning?.verb === "Delete" ? "destructive" : "default"}
+                onClick={() => {
+                  setWarningOpen(false)
+                  warning?.go()
+                }}
+              >
+                {warning?.verb} anyway
+              </Button>
+            </div>
+          </Dialog.Popup>
+        </Dialog.Portal>
+      </Dialog.Root>
 
       <Dialog.Root
         open={confirmOpen}

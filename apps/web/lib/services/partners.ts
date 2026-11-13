@@ -3,7 +3,7 @@
 // and can save copies into their own files.
 import "server-only"
 
-import { and, eq, inArray, isNotNull, sql } from "drizzle-orm"
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm"
 import type {
   PartnerInvite,
   PartnerPatch,
@@ -196,6 +196,7 @@ export async function saveCopy(
         const dir = await mkdirp(tx, me.id, null, ["Photos", from], cache)
         if ("error" in dir) throw new Error(dir.error)
         folderId = dir.id!
+        await tx.update(nodes).set({ systemKind: "partner" }).where(and(eq(nodes.id, folderId), isNull(nodes.systemKind)))
         const r = await saveUploaded(tx, {
           ownerId: me.id,
           parentId: dir.id,

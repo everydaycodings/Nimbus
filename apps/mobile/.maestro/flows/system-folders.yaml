@@ -1,0 +1,13 @@
+appId: org.nimbus.drive
+name: system-folders
+# System folders: Phone backup is pinned first with its label, and Rename warns before it opens.
+---
+- launchApp
+- extendedWaitUntil: { visible: "Search in Nimbus", timeout: 20000 }
+- assertVisible: "Auto · Contacts and calendar"
+- tapOn: "More actions for Phone backup"
+- scrollUntilVisible: { element: "Rename" }
+- tapOn: "Rename"
+- extendedWaitUntil: { visible: ".*next backup makes a new Phone backup folder.*", timeout: 5000 }
+- tapOn: "Cancel"
+- assertVisible: "Search in Nimbus"

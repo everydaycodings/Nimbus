@@ -48,6 +48,7 @@ import {
 } from "@/lib/file-rules"
 import { parsePhotoCursor, photoCursor } from "@nimbus/shared/photos"
 import { decodeMentions, mentionIds } from "@nimbus/shared/comments"
+import type { SystemKind } from "@nimbus/shared/api"
 import { purgeSavedLogins } from "@/lib/saved-logins"
 import { getSession } from "@/lib/session"
 import { deleteNodes } from "@/lib/uploads"
@@ -83,6 +84,8 @@ export type Item = {
   indexed?: boolean
   // Open comment threads.
   comments?: number
+  // A folder the app made itself; missing for everything else.
+  system?: SystemKind
 }
 
 export type Tag = { id: string; name: string; color: TagColor }
@@ -135,6 +138,7 @@ const cols = (viewer: string) => ({
   tags: sql<string[]>`array(
     select nt.tag_id from node_tags nt join tags t on t.id = nt.tag_id
     where nt.node_id = "nodes".id and t.owner_id = ${viewer})`,
+  system: nodes.systemKind,
   version: nodes.currentVersionId,
   thumb: sql<string | null>`(
     select thumb from file_versions where id = "nodes".current_version_id)`,
@@ -149,13 +153,15 @@ const cols = (viewer: string) => ({
     where node_id = "nodes".id and parent_id is null and resolved_at is null)`,
 })
 
-type Row = Omit<Item, "updatedAt" | "trashedAt"> & {
+type Row = Omit<Item, "updatedAt" | "trashedAt" | "system"> & {
+  system: string | null
   updatedAt: Date
   trashedAt: Date | null
 }
 
-const toItem = (r: Row): Item => ({
+const toItem = ({ system, ...r }: Row): Item => ({
   ...r,
+  ...(system ? { system: system as SystemKind } : {}),
   updatedAt: r.updatedAt.toISOString(),
   trashedAt: r.trashedAt?.toISOString() ?? null,
 })
@@ -224,10 +230,17 @@ export async function getFolder(viewer: string, id: string) {
   const a = await accessOne(viewer, id)
   if (!a || a.kind !== "folder" || a.trashed) return null
   const [row] = await db
-    .select({ id: nodes.id, name: nodes.name })
+    .select({ id: nodes.id, name: nodes.name, system: nodes.systemKind })
     .from(nodes)
     .where(eq(nodes.id, id))
-  return row ? { ...row, role: a.role, ownerId: a.ownerId } : null
+  if (!row) return null
+  const { system, ...rest } = row
+  return {
+    ...rest,
+    ...(system ? { system: system as SystemKind } : {}),
+    role: a.role,
+    ownerId: a.ownerId,
+  }
 }
 
 // The folder and everything above it, root first.

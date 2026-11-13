@@ -148,25 +148,32 @@ export async function mkdirp(
   ownerId: string,
   parentId: string | null,
   names: string[],
-  cache = new Map<string, string>()
+  cache = new Map<string, string>(),
+  // Tags the first folder (only when it's a root folder) as a system folder.
+  systemKind?: string
 ): Promise<{ id: string | null } | { error: string }> {
   let id = parentId
   let path = ""
-  for (const name of names) {
+  for (const [i, name] of names.entries()) {
     path += "/" + name.toLowerCase()
     const hit = cache.get(path)
-    if (hit) {
-      id = hit
-      continue
+    if (hit) id = hit
+    else {
+      await tx
+        .insert(nodes)
+        .values({ ownerId, parentId: id, kind: "folder", name })
+        .onConflictDoNothing()
+      const row = await child(tx, ownerId, id, name)
+      if (row?.kind !== "folder")
+        return { error: `A file named “${name}” is in the way of a folder.` }
+      id = row.id
     }
-    await tx
-      .insert(nodes)
-      .values({ ownerId, parentId: id, kind: "folder", name })
-      .onConflictDoNothing()
-    const row = await child(tx, ownerId, id, name)
-    if (row?.kind !== "folder")
-      return { error: `A file named “${name}” is in the way of a folder.` }
-    id = row.id
+    if (systemKind && i === 0 && !parentId)
+      await tx
+        .update(nodes)
+        .set({ systemKind })
+        .where(and(eq(nodes.id, id!), isNull(nodes.systemKind)))
+    if (hit) continue
     cache.set(path, id)
   }
   return { id }
@@ -474,7 +481,8 @@ export async function finishTusUpload(
   let result: Finished
   try {
     result = await db.transaction(async (tx) => {
-      const dir = await mkdirp(tx, token.u, token.p, names)
+      const camera = token.k === "camera" && names[0]?.toLowerCase() === "camera"
+      const dir = await mkdirp(tx, token.u, token.p, names, undefined, camera ? "camera" : undefined)
       if ("error" in dir) return dir
       return saveUploaded(tx, {
         ownerId: token.u,

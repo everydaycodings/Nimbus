@@ -16,7 +16,7 @@ export const GET = (req: Request, { params }: Ctx) =>
       visiblePath(me.id, id),
     ])
     return listResponse(me, req, items, {}, {
-      folder: { id, name: folder.name, role: folder.role, ownerId: folder.ownerId },
+      folder: { id, name: folder.name, role: folder.role, ownerId: folder.ownerId, ...(folder.system ? { system: folder.system } : {}) },
       path,
     })
   })

@@ -1,3 +1,4 @@
+import type { SystemKind } from "@nimbus/shared/api"
 import { formatBytes } from "@nimbus/shared/file-rules"
 import { router } from "expo-router"
 import { ArrowLeft, CaretRight, FolderPlus, Lock, X } from "phosphor-react-native"
@@ -15,6 +16,7 @@ import { VaultPickSheet, canVault } from "@/components/vault-sheets"
 import { useAccounts } from "@/lib/accounts"
 import { errorText } from "@/lib/api"
 import { useApi, useFolders } from "@/lib/files"
+import { systemLabel } from "@/lib/system-folders"
 import { usePrefs } from "@/lib/prefs"
 import { sendWithTransfer, useSent } from "@/lib/sent"
 import { canEditPhoto } from "@/lib/photo-edit-rules"
@@ -22,7 +24,7 @@ import { editShot } from "@/lib/photo-edit-session"
 import { exitAfterSave, replaceShared, sharedFiles, shareTarget } from "@/lib/share-in"
 import { c, radius } from "@/lib/theme"
 
-type Place = { id: string | null; name: string }
+type Place = { id: string | null; name: string; system?: SystemKind }
 const ROOT: Place = { id: null, name: "My files" }
 
 // Share into Nimbus: pick an account and a folder, save, and go back to the app that shared.
@@ -176,8 +178,11 @@ function Chooser() {
             onPress={() => setStack((s) => [...s, f])}
             style={{ minHeight: 56, flexDirection: "row", alignItems: "center", gap: 16, paddingHorizontal: 20 }}
           >
-            <FileIcon item={{ kind: "folder", mime: null, name: f.name }} />
-            <Text numberOfLines={1} style={{ flex: 1 }}>{f.name}</Text>
+            <FileIcon item={{ kind: "folder", mime: null, name: f.name, system: f.system }} />
+            <View style={{ flex: 1 }}>
+              <Text numberOfLines={1}>{f.name}</Text>
+              {f.system && <Text variant="caption" color={c.brand} numberOfLines={1}>{systemLabel(f.system)}</Text>}
+            </View>
             <CaretRight size={20} color={c.mutedForeground} />
           </Pressable>
         )}

@@ -54,6 +54,7 @@ export async function registerPhone(
 ): Promise<{ error?: string; id?: string; folderId?: string }> {
   const root = await folder(me.id, null, PHONE_FOLDER)
   if (!root.id) return { error: root.error }
+  await db.update(nodes).set({ systemKind: "phone_backup" }).where(and(eq(nodes.id, root.id), isNull(nodes.systemKind)))
   const mine = await folder(me.id, root.id, b.deviceName)
   if (!mine.id) return { error: mine.error }
   const [row] = await db

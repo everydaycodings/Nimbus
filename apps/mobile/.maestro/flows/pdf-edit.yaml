@@ -1,0 +1,22 @@
+appId: org.nimbus.drive
+name: pdf-edit
+# Phase 18: open a PDF, draw with the pen, the unsaved-changes prompt, then Save as a new version.
+---
+- launchApp
+- extendedWaitUntil: { visible: "Search in Nimbus", timeout: 20000 }
+- scrollUntilVisible: { element: "Folder, Preview test", timeout: 20000 }
+- tapOn: "Folder, Preview test"
+- scrollUntilVisible: { element: "File, phase18-prod.pdf.*", timeout: 90000, visibilityPercentage: 50 }
+- tapOn: "File, phase18-prod.pdf.*"
+- extendedWaitUntil: { visible: "Edit PDF", timeout: 15000 }
+- tapOn: "Edit PDF"
+- extendedWaitUntil: { visible: "Pen", timeout: 20000 }
+- tapOn: "Pen"
+- swipe: { start: "30%, 35%", end: "70%, 45%", duration: 800 }
+- tapOn: "Close editor"
+- extendedWaitUntil: { visible: "Discard", timeout: 5000 }
+- tapOn: "Keep editing"
+- tapOn: "Save"
+- extendedWaitUntil: { visible: "Edit PDF", timeout: 30000 }
+- back
+- back

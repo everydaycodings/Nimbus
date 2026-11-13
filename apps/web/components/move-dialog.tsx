@@ -1,14 +1,28 @@
 "use client"
 
 import { Dialog } from "@base-ui/react/dialog"
+import type { SystemKind } from "@nimbus/shared/api"
 import { CaretRightIcon, FolderIcon } from "@phosphor-icons/react"
 import { useEffect, useState } from "react"
 
 import { listFolders } from "@/app/(app)/file-actions"
 import { DIALOG_BACKDROP, DIALOG_POPUP } from "@/components/overlay-styles"
 import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
+import { SYSTEM } from "@/lib/file-types"
 
-export type Place = { id: string | null; name: string }
+// A folder icon, or the system folder's own in the brand tint.
+export function SystemMark({ kind, className }: { kind?: SystemKind; className?: string }) {
+  const Icon = kind ? SYSTEM[kind].icon : FolderIcon
+  return (
+    <Icon
+      weight="fill"
+      className={cn("shrink-0", kind ? "text-brand" : "text-file-folder", className)}
+    />
+  )
+}
+
+export type Place = { id: string | null; name: string; system?: SystemKind }
 
 // Folder picker. Starts at `start` (root first) and walks down one level at a time.
 export function MoveDialog({
@@ -31,7 +45,7 @@ export function MoveDialog({
   // Folders of the place they were loaded for; stale while the next place loads.
   const [loaded, setLoaded] = useState<{
     at: string | null
-    folders: { id: string; name: string }[]
+    folders: { id: string; name: string; system?: SystemKind }[]
   } | null>(null)
   const folders = loaded?.at === here.id ? loaded.folders : null
 
@@ -125,11 +139,13 @@ export function MoveDialog({
                         onClick={() => setPath([...path, f])}
                         className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50 disabled:hover:bg-transparent"
                       >
-                        <FolderIcon
-                          weight="fill"
-                          className="size-4 shrink-0 text-file-folder"
-                        />
+                        <SystemMark kind={f.system} className="size-4" />
                         <span className="flex-1 truncate">{f.name}</span>
+                        {f.system && (
+                          <span className="shrink-0 text-xs text-muted-foreground">
+                            {SYSTEM[f.system].label}
+                          </span>
+                        )}
                         <CaretRightIcon className="size-3.5 shrink-0 text-muted-foreground" />
                       </button>
                     </li>
