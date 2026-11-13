@@ -1,6 +1,6 @@
 "use client"
 
-import { CheckIcon, FolderSimpleIcon, MinusIcon, PlusIcon } from "@phosphor-icons/react"
+import { CheckIcon, FolderSimpleIcon, MinusIcon, PlusIcon, WarningIcon } from "@phosphor-icons/react"
 import { useEffect, useState } from "react"
 
 import { api, errorText } from "@/components/secrets/client"
@@ -11,7 +11,11 @@ import { cn } from "@/lib/utils"
 type Matrix = {
   envs: { id: string; name: string; slug: string }[]
   folders: string[]
-  rows: { key: string; cells: Record<string, { id: string; empty: boolean }> }[]
+  rows: {
+    key: string
+    cells: Record<string, { id: string; empty: boolean; invalid?: string }>
+    required: { kind: string; pattern: string | null } | null
+  }[]
 }
 
 // Keys down the side, environments across the top. A key an environment lacks
@@ -46,6 +50,7 @@ export function OverviewMatrix({
   if (!m) return <p className="text-sm text-muted-foreground">Loading…</p>
 
   const missing = m.rows.reduce((n, r) => n + m.envs.filter((e) => !r.cells[e.id]).length, 0)
+  const invalid = m.rows.reduce((n, r) => n + m.envs.filter((e) => r.cells[e.id]?.invalid).length, 0)
 
   return (
     <div className="flex flex-col gap-4">
@@ -79,6 +84,7 @@ export function OverviewMatrix({
             {missing
               ? `${missing} value${missing === 1 ? " is" : "s are"} missing in some environments.`
               : "Every key exists in every environment."}
+            {invalid > 0 && ` ${invalid} ${invalid === 1 ? "doesn't" : "don't"} fit the required format.`}
           </p>
           <div className="overflow-x-auto rounded-xl border">
             <table className="w-full min-w-max border-collapse text-sm">
@@ -97,30 +103,42 @@ export function OverviewMatrix({
                   <tr key={r.key} className="border-b last:border-0">
                     <th scope="row" className="sticky left-0 z-10 bg-card px-4 py-2 text-left font-mono text-sm font-normal">
                       {r.key}
+                      {r.required && (
+                        <span className="ml-2 rounded bg-muted px-1.5 py-0.5 font-sans text-xs text-muted-foreground" title="Required in every environment">
+                          required
+                        </span>
+                      )}
                     </th>
                     {m.envs.map((e) => {
                       const c = r.cells[e.id]
                       return (
-                        <td key={e.id} className={cn("p-1 text-center", !c && "bg-destructive/10")}>
+                        <td key={e.id} className={cn("p-1 text-center", (!c || c.invalid) && "bg-destructive/10")}>
                           <button
                             onClick={() => onOpen(e.slug, c ? null : r.key)}
                             disabled={!c && !canWrite}
+                            title={c?.invalid}
                             aria-label={
                               c
-                                ? `${r.key} in ${e.name}: ${c.empty ? "empty" : "set"}. Open`
+                                ? `${r.key} in ${e.name}: ${c.invalid ? `invalid, ${c.invalid}` : c.empty ? "empty" : "set"}. Open`
                                 : `${r.key} is missing in ${e.name}. ${canWrite ? "Add it" : ""}`
                             }
                             className={cn(
                               "mx-auto flex h-8 min-w-16 items-center justify-center gap-1 rounded-md px-2 text-xs outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50",
                               c
-                                ? c.empty
-                                  ? "text-warning hover:bg-warning/10"
-                                  : "text-muted-foreground hover:bg-muted"
+                                ? c.invalid
+                                  ? "font-medium text-destructive hover:bg-destructive/15"
+                                  : c.empty
+                                    ? "text-warning hover:bg-warning/10"
+                                    : "text-muted-foreground hover:bg-muted"
                                 : "font-medium text-destructive hover:bg-destructive/15"
                             )}
                           >
                             {c ? (
-                              c.empty ? (
+                              c.invalid ? (
+                                <>
+                                  <WarningIcon /> Invalid
+                                </>
+                              ) : c.empty ? (
                                 <>
                                   <MinusIcon /> Empty
                                 </>

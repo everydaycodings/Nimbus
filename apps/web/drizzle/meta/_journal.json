@@ -316,6 +316,13 @@
       "when": 1795100000000,
       "tag": "0044_secrets_s2",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1795200000000,
+      "tag": "0045_secrets_s3",
+      "breakpoints": true
     }
   ]
 }

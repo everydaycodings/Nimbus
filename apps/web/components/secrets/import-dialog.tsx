@@ -222,12 +222,12 @@ export function ImportDialog({
               disabled={!live.length}
               onClick={() =>
                 run(async () => {
-                  const r = await api<{ created: string[]; updated: string[] }>(
+                  const r = await api<{ created: string[]; updated: string[]; request?: { id: string } }>(
                     `/projects/${detail.id}/secrets/import`,
                     "POST",
                     { mode: "apply", envId, folderId, items: live.map((x) => ({ key: x.key, value: x.value })) }
                   )
-                  notify({ text: `Imported: ${r.created.length} new, ${r.updated.length} changed.` })
+                  notify({ text: r.request ? "Sent for review. It goes live once approved and merged." : `Imported: ${r.created.length} new, ${r.updated.length} changed.` })
                   onDone()
                 })
               }

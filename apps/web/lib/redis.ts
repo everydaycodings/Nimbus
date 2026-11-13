@@ -78,7 +78,7 @@ export async function scheduleHealth(minutes: number | null) {
 }
 
 export type JobName =
-  "email" | "secrets-push" | "secrets-webhook" | "delete-keys" | "tus-finish" | "backup-alert" | "orphan-sweep" | "push" | "ocr-langs"
+  "email" | "secrets-sweep" | "secrets-push" | "secrets-webhook" | "delete-keys" | "tus-finish" | "backup-alert" | "orphan-sweep" | "push" | "ocr-langs"
 
 // Work the request shouldn't wait for, retried by `npm run worker` until it lands.
 // Failed jobs stay a week for a look; done ones go, since emails carry file names.
@@ -143,6 +143,11 @@ export async function scheduleJobs() {
     "phone-backup-stale",
     { every: 24 * 3600_000 },
     { name: "phone-backup-stale", opts }
+  )
+  await jobsQueue.upsertJobScheduler(
+    "secrets-sweep",
+    { every: 3600_000 },
+    { name: "secrets-sweep", opts }
   )
   await jobsQueue.upsertJobScheduler(
     "face-cluster",

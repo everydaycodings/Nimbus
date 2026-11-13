@@ -9,9 +9,12 @@ import {
   DownloadSimpleIcon,
   EyeIcon,
   EyeSlashIcon,
+  ClockCounterClockwiseIcon,
   FolderPlusIcon,
   FolderSimpleIcon,
   PencilSimpleIcon,
+  ShareNetworkIcon,
+  ShieldCheckIcon,
   PlusIcon,
   TagIcon,
   TrashIcon,
@@ -31,6 +34,8 @@ import {
   type CharSet,
 } from "@/components/secrets/client"
 import { FolderBar } from "@/components/secrets/folder-bar"
+import { HistoryDialog } from "@/components/secrets/history-dialog"
+import { ShareDialog } from "@/components/secrets/share-dialog"
 import { ImportDialog } from "@/components/secrets/import-dialog"
 import type { Detail } from "@/components/secrets/project-view"
 import { CHECKBOX, Confirm, MenuButton, Modal, SELECT } from "@/components/secrets/ui"
@@ -79,6 +84,7 @@ export function SecretsTable({
   canWrite,
   onFolder,
   addKey,
+  onOpenRequests,
   onChanged,
 }: {
   detail: Detail
@@ -87,6 +93,7 @@ export function SecretsTable({
   canWrite: boolean
   onFolder: (p: string) => void
   addKey: string | null
+  onOpenRequests: () => void
   onChanged: () => void
 }) {
   const notify = useNotice()
@@ -116,6 +123,8 @@ export function SecretsTable({
     | { kind: "move" }
     | { kind: "copy" }
     | { kind: "tag" }
+    | { kind: "history"; id: string; key: string }
+    | { kind: "share"; id: string; key: string }
     | null
   >(null)
   const nextId = useRef(1)
@@ -235,8 +244,8 @@ export function SecretsTable({
     setSaveError(null)
     setErrors({})
     try {
-      await api(`${base}/secrets`, "POST", { envId: env.id, folderId, ops, deletes: [...removed] })
-      notify({ text: "Saved." })
+      const r = await api<{ request?: { id: string } }>(`${base}/secrets`, "POST", { envId: env.id, folderId, ops, deletes: [...removed] })
+      notify({ text: r.request ? "Sent for review. It goes live once approved and merged." : "Saved." })
       await load()
       onChanged()
     } catch (e) {
@@ -254,7 +263,7 @@ export function SecretsTable({
   async function bulk(body: object, done: (r: Record<string, number>) => string) {
     try {
       const r = await api<Record<string, number>>(`${base}/secrets/bulk`, "POST", body)
-      notify({ text: done(r) })
+      notify({ text: r.requests ? "Sent for review. It goes live once approved and merged." : done(r) })
       await load()
       onChanged()
     } catch (e) {
@@ -346,6 +355,16 @@ export function SecretsTable({
           }))}
         />
       </div>
+
+      {env.protected && (
+        <p className="flex flex-wrap items-center gap-x-2 rounded-lg border bg-muted/30 px-3 py-2 text-sm">
+          <ShieldCheckIcon className="size-4 shrink-0 text-brand" weight="fill" />
+          <span>{env.name} is protected: edits go to review first.</span>
+          <button className="underline underline-offset-2 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50" onClick={onOpenRequests}>
+            Change requests
+          </button>
+        </p>
+      )}
 
       {sel.size > 0 && (
         <div
@@ -483,6 +502,8 @@ export function SecretsTable({
                   return true
                 }}
                 onOverride={async () => {}}
+                onHistory={() => {}}
+                onShare={() => {}}
               />
             ))}
             {visible.map((r) => {
@@ -530,6 +551,8 @@ export function SecretsTable({
                     })
                   }
                   onKeyPaste={() => false}
+                  onHistory={() => setDialog({ kind: "history", id: r.id, key: r.key })}
+                  onShare={() => setDialog({ kind: "share", id: r.id, key: r.key })}
                   onOverride={async (value) => {
                     try {
                       await api(`${base}/secrets/override`, "PUT", { id: r.id, value })
@@ -579,6 +602,23 @@ export function SecretsTable({
             onChanged()
           }}
         />
+      )}
+      {dialog?.kind === "history" && (
+        <HistoryDialog
+          projectId={detail.id}
+          secretId={dialog.id}
+          keyName={dialog.key}
+          canWrite={canWrite}
+          admin={detail.role === "admin"}
+          onClose={() => setDialog(null)}
+          onChanged={() => {
+            load()
+            onChanged()
+          }}
+        />
+      )}
+      {dialog?.kind === "share" && (
+        <ShareDialog from={{ projectId: detail.id, secretId: dialog.id, key: dialog.key }} onClose={() => setDialog(null)} />
       )}
       {dialog?.kind === "folder" && (
         <NameDialog
@@ -814,6 +854,8 @@ type LineProps = {
   onUndo: () => void
   onKeyPaste: (text: string) => boolean
   onOverride: (value: string | null) => Promise<void>
+  onHistory: () => void
+  onShare: () => void
 }
 
 // One secret: key, value (masked until clicked), and a panel for the rest.
@@ -983,7 +1025,7 @@ function Line(p: LineProps) {
           <div className="grid gap-2">
             <Label htmlFor={`r-${p.id}`}>Rotation reminder</Label>
             <Input id={`r-${p.id}`} type="date" value={d.rotationAt} readOnly={!editable} onChange={(e) => p.onPatch({ rotationAt: e.target.value })} />
-            <p className="text-xs text-muted-foreground">Shown here for now; reminders by email come later.</p>
+            <p className="text-xs text-muted-foreground">On that day the project&apos;s admins get a reminder.</p>
           </div>
           <div className="grid gap-2 sm:col-span-2">
             <Label htmlFor={`g-${p.id}`}>Tags</Label>
@@ -1063,10 +1105,22 @@ function Line(p: LineProps) {
             </div>
           )}
           {base && (
-            <p className="text-xs text-muted-foreground sm:col-span-2">
-              Version {base.version}, changed {day.format(new Date(base.updatedAt))}
-              {base.updatedBy && ` by ${base.updatedBy}`}.
-            </p>
+            <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
+              <p className="mr-auto text-xs text-muted-foreground">
+                Version {base.version}, changed {day.format(new Date(base.updatedAt))}
+                {base.updatedBy && ` by ${base.updatedBy}`}.
+              </p>
+              <Button variant="outline" size="sm" onClick={p.onHistory}>
+                <ClockCounterClockwiseIcon />
+                History
+                <span className="rounded bg-muted px-1.5 text-xs tabular-nums" aria-label={`${base.version} versions`}>{base.version}</span>
+                {base.comments > 0 && <span className="text-xs text-muted-foreground">{base.comments} comment{base.comments === 1 ? "" : "s"}</span>}
+              </Button>
+              <Button variant="outline" size="sm" onClick={p.onShare}>
+                <ShareNetworkIcon />
+                Share once
+              </Button>
+            </div>
           )}
         </div>
       )}

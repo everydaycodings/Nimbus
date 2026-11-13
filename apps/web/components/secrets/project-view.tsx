@@ -4,10 +4,16 @@ import {
   ArrowLeftIcon,
   ArrowDownIcon,
   ArrowUpIcon,
+  ClockCounterClockwiseIcon,
   DotsThreeIcon,
   FolderSimpleIcon,
   GearSixIcon,
+  GitPullRequestIcon,
+  HourglassMediumIcon,
   KeyIcon,
+  LinkIcon,
+  ScrollIcon,
+  ShieldCheckIcon,
   UsersThreeIcon,
   MagnifyingGlassIcon,
   PencilSimpleIcon,
@@ -20,10 +26,16 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 
+import { AccessRequestsView } from "@/components/secrets/access-requests-view"
 import { AccessView } from "@/components/secrets/access-view"
+import { AuditView } from "@/components/secrets/audit-view"
 import { api, errorText } from "@/components/secrets/client"
 import { OverviewMatrix } from "@/components/secrets/overview-matrix"
+import { PoliciesView } from "@/components/secrets/policies-view"
+import { RequestsView } from "@/components/secrets/requests-view"
 import { SecretsTable } from "@/components/secrets/secrets-table"
+import { SharesView } from "@/components/secrets/shares-view"
+import { SnapshotsView } from "@/components/secrets/snapshots-view"
 import { TrashView } from "@/components/secrets/trash-view"
 import { Confirm, MenuButton, Modal } from "@/components/secrets/ui"
 import { SubmitButton } from "@/components/submit-button"
@@ -49,17 +61,20 @@ export function ProjectView({
   detail,
   initialView,
   initialFolder,
+  initialRequest,
 }: {
   detail: Detail
   initialView: string
   initialFolder: string
+  initialRequest?: string | null
 }) {
   const router = useRouter()
   const slugs = detail.envs.map((e) => e.slug)
   const startView =
     initialView === "overview" ||
     initialView === "trash" ||
-    (initialView === "access" && detail.role === "admin") ||
+    (["access", "audit", "policies"].includes(initialView) && detail.role === "admin") ||
+    ["requests", "snapshots", "access-requests", "shares"].includes(initialView) ||
     slugs.includes(initialView)
       ? initialView
       : "overview"
@@ -72,7 +87,7 @@ export function ProjectView({
   // A key the Overview asked the table to start with (a missing value to add).
   const [addKey, setAddKey] = useState<string | null>(null)
   const admin = detail.role === "admin"
-  const canWrite = detail.role !== "viewer"
+  const canWrite = detail.writableEnvs.length > 0
 
   function go(next: string, path = "", key: string | null = null) {
     setView(next)
@@ -81,6 +96,13 @@ export function ProjectView({
     setQ("")
     setHits(null)
   }
+
+  // Governance views change counts in the sidebar (open requests, pending access).
+  useEffect(() => {
+    const again = () => router.refresh()
+    window.addEventListener("secrets-changed", again)
+    return () => window.removeEventListener("secrets-changed", again)
+  }, [router])
 
   useEffect(() => {
     const u = new URL(window.location.href)
@@ -145,6 +167,7 @@ export function ProjectView({
                   <span className="size-1.5 rounded-full bg-current opacity-60" />
                 </span>
                 {e.name}
+                {e.protected && <ShieldCheckIcon className="ml-auto size-3.5 opacity-70" weight="fill" aria-label="Protected" />}
               </button>
             ))}
             <button className={nav(view === "trash")} aria-current={view === "trash" ? "page" : undefined} onClick={() => go("trash")}>
@@ -166,6 +189,36 @@ export function ProjectView({
                 Access
               </button>
             )}
+          </div>
+        </nav>
+        <nav aria-label="Governance" className="flex flex-col gap-1">
+          <p className="flex h-8 items-center gap-2 px-2.5 text-xs font-medium text-muted-foreground">
+            <ShieldCheckIcon className="size-3.5" />
+            Governance
+          </p>
+          <div className="-mx-4 flex gap-1 overflow-x-auto px-4 pb-1 lg:mx-0 lg:flex-col lg:overflow-visible lg:px-0 lg:pb-0">
+            {(
+              [
+                ["requests", "Change requests", GitPullRequestIcon, detail.openRequests, true],
+                ["snapshots", "Snapshots", ClockCounterClockwiseIcon, 0, true],
+                ["access-requests", "Access requests", HourglassMediumIcon, detail.pendingAccess, true],
+                ["shares", "Share links", LinkIcon, 0, true],
+                ["audit", "Audit", ScrollIcon, 0, admin],
+                ["policies", "Policies", ShieldCheckIcon, 0, admin],
+              ] as const
+            )
+              .filter((g) => g[4])
+              .map(([id, label, Icon, n]) => (
+                <button key={id} className={nav(view === id)} aria-current={view === id ? "page" : undefined} onClick={() => go(id)}>
+                  <Icon className="size-4" />
+                  {label}
+                  {n > 0 && (
+                    <span aria-label={`${n} waiting`} className="ml-auto rounded-full bg-foreground px-1.5 text-xs text-background tabular-nums">
+                      {n}
+                    </span>
+                  )}
+                </button>
+              ))}
           </div>
         </nav>
       </aside>
@@ -210,6 +263,16 @@ export function ProjectView({
           )}
         </div>
 
+        {detail.grants.length > 0 && (
+          <p role="status" className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-sm">
+            <HourglassMediumIcon className="size-4 shrink-0" />
+            Temporary access:{" "}
+            {detail.grants
+              .map((g) => `${detail.envs.find((e) => e.id === g.envId)?.name ?? "an environment"} until ${new Intl.DateTimeFormat("en", { timeStyle: "short", dateStyle: "medium" }).format(new Date(g.expiresAt))}`)
+              .join("; ")}
+          </p>
+        )}
+
         {q.trim() && (hits || searchError) ? (
           <SearchResults
             hits={hits}
@@ -230,6 +293,18 @@ export function ProjectView({
           />
         ) : view === "access" && admin ? (
           <AccessView detail={detail} />
+        ) : view === "requests" ? (
+          <RequestsView detail={detail} initial={initialRequest ?? null} />
+        ) : view === "snapshots" ? (
+          <SnapshotsView detail={detail} />
+        ) : view === "access-requests" ? (
+          <AccessRequestsView detail={detail} />
+        ) : view === "shares" ? (
+          <SharesView />
+        ) : view === "audit" && admin ? (
+          <AuditView detail={detail} />
+        ) : view === "policies" && admin ? (
+          <PoliciesView detail={detail} onChanged={() => router.refresh()} />
         ) : view === "trash" ? (
           <TrashView detail={detail} canWrite={canWrite} onChanged={() => router.refresh()} />
         ) : env ? (
@@ -238,9 +313,10 @@ export function ProjectView({
             detail={detail}
             env={env}
             folder={folder}
-            canWrite={canWrite}
+            canWrite={detail.writableEnvs.includes(env.id)}
             onFolder={setFolder}
             addKey={addKey}
+            onOpenRequests={() => go("requests")}
             onChanged={() => router.refresh()}
           />
         ) : null}

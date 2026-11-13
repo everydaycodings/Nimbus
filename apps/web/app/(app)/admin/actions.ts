@@ -531,7 +531,15 @@ export async function setSecretsPolicy(form: FormData) {
   await requireAdmin()
   const projects = limit(form, "maxProjects")
   const perProject = limit(form, "maxSecrets")
+  const idle = limit(form, "maxIdle")
+  const hours = limit(form, "unlockHours")
+  const trash = limit(form, "trashDays")
   await saveSettings({
+    secretSharesEnabled: form.get("shares") === "on",
+    secretRequire2fa: form.get("require2fa") === "on",
+    secretMaxIdleMinutes: idle && Math.min(Math.ceil(idle), 1440),
+    secretUnlockMaxHours: hours && Math.min(Math.ceil(hours), 720),
+    secretTrashDays: trash && Math.min(Math.ceil(trash), 3650),
     secretsEnabled: form.get("enabled") === "on",
     secretTokensEnabled: form.get("tokens") === "on",
     secretCliEnabled: form.get("cli") === "on",

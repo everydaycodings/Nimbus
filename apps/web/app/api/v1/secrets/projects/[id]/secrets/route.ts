@@ -61,6 +61,6 @@ export const POST = projectRoute("developer", async (c, req) => {
     r.updated.length && `changed ${names(r.updated)}`,
     r.deleted.length && `deleted ${names(r.deleted)}`,
   ].filter(Boolean)
-  if (parts.length) await audit("secrets_write", { detail: `${r.env}: ${parts.join("; ")}` })
+  if (parts.length) await audit("secrets_write", { detail: `${r.env}: ${parts.join("; ")}`, env: r.env })
   return Response.json(r)
 })

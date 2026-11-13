@@ -1,18 +1,35 @@
 import "server-only"
 
 import { eq } from "drizzle-orm"
+import { headers } from "next/headers"
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core"
 
 import { db } from "@/lib/db"
 import { auditEvents, settings, user } from "@/lib/db/schema"
 import { getSession } from "@/lib/session"
+import { auditScope } from "@/lib/secrets/audit-ctx"
 
 type Settings = typeof settings.$inferSelect
 
-// One audit row, with the signed-in admin as the actor.
+// Where the request came from, for the Secrets audit tab. Empty outside a request.
+export async function origin() {
+  try {
+    const h = await headers()
+    const ip = h.get("x-forwarded-for")?.split(",")[0].trim() || h.get("x-real-ip") || null
+    const ua = h.get("user-agent") ?? ""
+    const browser = /Edg\//.test(ua) ? "Edge" : /Chrome\//.test(ua) ? "Chrome" : /Firefox\//.test(ua) ? "Firefox" : /Safari\//.test(ua) ? "Safari" : /curl|node|undici|python|go-http/i.test(ua) ? ua.split(/[ /]/)[0] : ua ? "Other" : ""
+    const os = /Android/.test(ua) ? "Android" : /iPhone|iPad/.test(ua) ? "iOS" : /Windows/.test(ua) ? "Windows" : /Mac OS X/.test(ua) ? "macOS" : /Linux/.test(ua) ? "Linux" : ""
+    return { ip, device: [browser, os].filter(Boolean).join(" on ") || null }
+  } catch {
+    return { ip: null, device: null }
+  }
+}
+
+// One audit row, with the signed-in admin as the actor. Inside a Secrets project
+// request it also records the project, environment, IP and device.
 export async function audit(
   action: string,
-  { targetId, detail }: { targetId?: string; detail?: string } = {}
+  { targetId, detail, env }: { targetId?: string; detail?: string; env?: string } = {}
 ) {
   const me = (await getSession())?.user
   if (!me) return
@@ -29,7 +46,14 @@ export async function audit(
     targetId: targetId ?? null,
     targetName: target ? target.name || target.email : null,
     detail: detail ?? null,
+    ...(await scoped(action, env)),
   })
+}
+
+async function scoped(action: string, env?: string) {
+  const scope = auditScope.getStore()
+  if (!scope && !action.startsWith("secrets_")) return {}
+  return { projectId: scope?.projectId ?? null, env: env ?? scope?.env ?? null, ...(await origin()) }
 }
 
 const SECRET = /password|secret|apikey/i
@@ -74,12 +98,17 @@ export async function saveSettings(values: PgUpdateSetSource<typeof settings>) {
 export async function auditAs(
   actor: { id: string | null; name: string },
   action: string,
-  detail?: string
+  detail?: string,
+  extra?: { projectId?: string; env?: string; ip?: string | null }
 ) {
   await db.insert(auditEvents).values({
     actorId: actor.id,
     actorName: actor.name,
     action,
     detail: detail ?? null,
+    projectId: extra?.projectId ?? null,
+    env: extra?.env ?? null,
+    ip: extra?.ip ?? null,
+    device: extra?.ip ? "CLI or token" : null,
   })
 }

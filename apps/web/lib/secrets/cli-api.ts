@@ -73,7 +73,7 @@ export async function principalCtx(p: Principal, ref: string | null): Promise<Ct
       throw new TokenError(403, "forbidden", "This token belongs to a different project.")
     const c = await systemCtx(p.projectId)
     if (!c) throw new TokenError(404, "not_found", "That project is gone.")
-    return { ...c, role: p.access === "rw" ? "developer" : "viewer", envs: p.envIds }
+    return { ...c, role: p.access === "rw" ? "developer" : "viewer", envs: p.envIds, actor: { id: null, name: `token: ${p.name}` } }
   }
   if (!ref) throw new TokenError(400, "bad_request", "Say which project (project=…).")
   const id = await memberProjectId(p.userId, ref)
@@ -110,7 +110,15 @@ export async function principalTarget(
 export const actorOf = (p: Principal) =>
   p.type === "machine" ? { id: null, name: `token: ${p.name}` } : { id: p.userId, name: p.name || p.email }
 
-export const auditToken = (p: Principal, action: string, detail: string) =>
-  auditAs(actorOf(p), action, `${detail} (${p.type === "machine" ? "machine token" : "CLI"}, ${p.ip ?? "?"})`)
+export const auditToken = (
+  p: Principal,
+  action: string,
+  detail: string,
+  at?: { projectId: string; env: string }
+) =>
+  auditAs(actorOf(p), action, `${detail} (${p.type === "machine" ? "machine token" : "CLI"}, ${p.ip ?? "?"})`, {
+    ...at,
+    ip: p.ip ?? "?",
+  })
 
 export { tokenPolicy }

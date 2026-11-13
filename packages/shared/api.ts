@@ -628,6 +628,7 @@ export type NotificationKind =
   | "album"
   | "partner"
   | "phone_backup"
+  | "secrets"
 export type Notification = {
   id: string
   kind: NotificationKind

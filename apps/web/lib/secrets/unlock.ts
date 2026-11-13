@@ -17,12 +17,12 @@ import { headers } from "next/headers"
 import { auth, passkeyOrigins, passkeyStatus } from "@/lib/auth"
 import { checkTotp } from "@/lib/backup/reauth"
 import { db } from "@/lib/db"
-import { passkey, secretSettings, secretUnlocks } from "@/lib/db/schema"
+import { passkey, secretSettings, secretUnlocks, settings } from "@/lib/db/schema"
 import { passkeyHost } from "@/lib/passkey-rules"
 import { getSession, hasPassword } from "@/lib/session"
 
 export const LOCK_CHOICES = [5, 15, 30, 60] as const
-const MAX_AGE_MS = 12 * 3600_000
+const MAX_AGE_HOURS = 12
 const MAX_FAILS = 5
 const LOCKOUT_MS = 5 * 60_000
 const scryptAsync = promisify(scrypt) as (
@@ -32,6 +32,14 @@ const scryptAsync = promisify(scrypt) as (
 ) => Promise<Buffer>
 
 export type Method = "password" | "passkey" | "totp" | "pin"
+
+// Admin → Secrets: the longest idle time a member may pick, and how long one unlock lives.
+export async function unlockPolicy() {
+  const [row] = await db
+    .select({ idle: settings.secretMaxIdleMinutes, hours: settings.secretUnlockMaxHours })
+    .from(settings)
+  return { maxIdle: row?.idle ?? null, maxAgeMs: (row?.hours ?? MAX_AGE_HOURS) * 3600_000 }
+}
 
 async function prefs(userId: string) {
   await db.insert(secretSettings).values({ userId }).onConflictDoNothing()
@@ -59,7 +67,12 @@ export async function methodsFor(user: {
   }
   if (user.twoFactorEnabled) methods.push("totp")
   if (p.pinHash) methods.push("pin")
-  return { methods, lockMinutes: p.lockMinutes, hasPin: Boolean(p.pinHash) }
+  const { maxIdle } = await unlockPolicy()
+  return {
+    methods,
+    lockMinutes: maxIdle ? Math.min(p.lockMinutes, maxIdle) : p.lockMinutes,
+    hasPin: Boolean(p.pinHash),
+  }
 }
 
 // The state for the signed-in session, and slides the idle clock when `touch`.
@@ -67,6 +80,8 @@ export async function unlockState(touch = true) {
   const s = await getSession()
   if (!s) return null
   const p = await prefs(s.user.id)
+  const { maxIdle, maxAgeMs } = await unlockPolicy()
+  const lockMinutes = maxIdle ? Math.min(p.lockMinutes, maxIdle) : p.lockMinutes
   const [row] = await db
     .select()
     .from(secretUnlocks)
@@ -76,8 +91,8 @@ export async function unlockState(touch = true) {
     row?.unlockedAt &&
     row.lastActiveAt &&
     row.userId === s.user.id &&
-    now - row.unlockedAt.getTime() < MAX_AGE_MS &&
-    now - row.lastActiveAt.getTime() < p.lockMinutes * 60_000
+    now - row.unlockedAt.getTime() < maxAgeMs &&
+    now - row.lastActiveAt.getTime() < lockMinutes * 60_000
   if (live && touch)
     await db
       .update(secretUnlocks)
@@ -87,7 +102,7 @@ export async function unlockState(touch = true) {
     sessionId: s.session.id,
     userId: s.user.id,
     unlocked: Boolean(live),
-    lockMinutes: p.lockMinutes,
+    lockMinutes,
   }
 }
 
@@ -291,6 +306,8 @@ export async function setPin(pin: string | null) {
 export async function setLockMinutes(minutes: number) {
   const s = await getSession()
   if (!s || !(LOCK_CHOICES as readonly number[]).includes(minutes)) return
+  const { maxIdle } = await unlockPolicy()
+  if (maxIdle && minutes > maxIdle) return
   await prefs(s.user.id)
   await db
     .update(secretSettings)

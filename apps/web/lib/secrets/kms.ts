@@ -59,3 +59,7 @@ export const sealValue = (key: Buffer, projectId: string, plain: string) =>
 
 export const openValue = (key: Buffer, projectId: string, sealed: string) =>
   open(key, sealed, `value:${projectId}`).toString("utf8")
+
+// Share links aren't tied to a project, so their text is sealed with the root key itself.
+export const sealServer = (plain: string) => seal(rootKey(), Buffer.from(plain, "utf8"), "share")
+export const openServer = (sealed: string) => open(rootKey(), sealed, "share").toString("utf8")

@@ -8,6 +8,7 @@ import { sendNow, type Message } from "@/lib/email"
 import { purgeExpiredTrash } from "@/lib/files"
 import { sweepOrphans } from "@/lib/orphan-sweep"
 import { sendPush } from "@/lib/push"
+import { sweep as secretsSweep } from "@/lib/secrets/notices"
 import { runPush } from "@/lib/secrets/push"
 import { deliver } from "@/lib/secrets/webhooks"
 import { recheckWarned } from "@/lib/quota"
@@ -30,6 +31,7 @@ const jobs: Record<string, (data: never) => Promise<unknown>> = {
   email: (m: Message) => sendNow(m),
   "delete-keys": ({ keys }: { keys: string[] }) => removeObjects(keys),
   "backup-alert": backupAlert,
+  "secrets-sweep": secretsSweep,
   "secrets-push": ({ envId }: { envId: string }) => runPush(envId),
   "secrets-webhook": ({ id }: { id: string }) => deliver(id),
   push: ({ userId, id }: { userId: string; id: string }) => sendPush(userId, id),

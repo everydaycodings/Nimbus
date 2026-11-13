@@ -14,7 +14,18 @@ export const dynamic = "force-dynamic"
 // lib/secrets/page.ts), since layouts and pages render separately.
 export default async function SecretsLayout({ children }: { children: React.ReactNode }) {
   const me = await requireMember()
-  if (!(await policy()).enabled) notFound()
+  const pol = await policy()
+  if (!pol.enabled) notFound()
+  if (pol.require2fa && !me.twoFactorEnabled)
+    return (
+      <div className="mx-auto max-w-md py-16 text-center">
+        <h1 className="text-2xl font-semibold tracking-tight">Turn on two-factor first</h1>
+        <p className="mt-2 text-sm text-pretty text-muted-foreground">
+          This server requires two-factor sign-in for Secrets. Turn it on under{" "}
+          <a href="/account" className="underline underline-offset-2">Account</a>, then come back.
+        </p>
+      </div>
+    )
   if (!kmsConfigured())
     return (
       <div className="mx-auto max-w-md py-16 text-center">

@@ -7,12 +7,12 @@ export default async function ProjectPage({
   searchParams,
 }: {
   params: Promise<{ projectId: string }>
-  searchParams: Promise<{ view?: string; folder?: string }>
+  searchParams: Promise<{ view?: string; folder?: string; request?: string }>
 }) {
   const { projectId } = await params
-  const { view, folder } = await searchParams
+  const { view, folder, request } = await searchParams
   const p = await pageProject(projectId)
   if (!p) return null
   const detail = await projectDetail(p.c)
-  return <ProjectView detail={detail} initialView={view ?? "overview"} initialFolder={folder ?? ""} />
+  return <ProjectView detail={detail} initialView={view ?? "overview"} initialFolder={folder ?? ""} initialRequest={request ?? null} />
 }

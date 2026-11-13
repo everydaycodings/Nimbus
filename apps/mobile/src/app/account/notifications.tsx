@@ -30,6 +30,7 @@ const KIND_LABEL: Record<NotificationKind, string> = {
   app_password: "A new app password is made for my account",
   storage_low: "My storage is nearly full (90%)",
   phone_backup: "My phone hasn't backed up contacts or calendar for 7 days",
+  secrets: "Secrets: change and access requests, rotation reminders, expiring tokens, project invites",
 }
 
 const NTFY = "https://f-droid.org/packages/io.heckel.ntfy/"

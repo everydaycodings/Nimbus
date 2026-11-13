@@ -49,6 +49,7 @@ Clients then re-GET `/secrets`.
 ## Writes (optional for clients)
 `POST /secrets` body `{ "project": "web", "env": "dev", "path": "/", "set": { "KEY": "value" }, "delete": ["OLD_KEY"] }`
 -> `200 { "created": [], "updated": [], "deleted": [] }`. Needs a read-write machine token or a member who can edit. The shipped CLIs don't use it; it is for scripts.
+In a protected environment nothing is written: the answer is `202 { "pending": true, "request": "<change request id>" }` and the change waits for approval in the web app (S3).
 
 ## Server notes (S2)
 - `slug` of a project is unique and lowercase; an `id` (UUID) is accepted wherever a project slug is.

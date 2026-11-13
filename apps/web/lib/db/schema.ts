@@ -445,10 +445,16 @@ export const auditEvents = pgTable(
     }),
     targetName: text("target_name"),
     detail: text("detail"),
+    // Secrets events: the project and environment name, and where the request came from.
+    projectId: uuid("project_id"),
+    env: text("env"),
+    ip: text("ip"),
+    device: text("device"),
     at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index("audit_events_at_idx").on(t.at),
+    index("audit_events_project_at_idx").on(t.projectId, t.at),
     index("audit_events_target_at_idx").on(t.targetId, t.at),
   ]
 )
@@ -584,6 +590,8 @@ export const NOTIFICATION_KINDS = [
   "storage_low",
   // A phone has had no new contacts or calendar copy for 7 days.
   "phone_backup",
+  // Secrets: change requests, access requests, rotation and token expiry, being added to a project.
+  "secrets",
 ] as const
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number]
 // Only admins get these, so only admins see their settings.
@@ -749,6 +757,12 @@ export const settings = pgTable(
     // Machine tokens (nms_) and the CLI (nmu_ sign-in, downloads). Off refuses them; nothing is deleted.
     secretTokensEnabled: boolean("secret_tokens_enabled").notNull().default(true),
     secretCliEnabled: boolean("secret_cli_enabled").notNull().default(true),
+    // Secrets governance (S3). Null limits: none.
+    secretSharesEnabled: boolean("secret_shares_enabled").notNull().default(true),
+    secretRequire2fa: boolean("secret_require_2fa").notNull().default(false),
+    secretMaxIdleMinutes: integer("secret_max_idle_minutes"),
+    secretUnlockMaxHours: integer("secret_unlock_max_hours"),
+    secretTrashDays: integer("secret_trash_days"),
     // Where action messages (toasts) appear for everyone.
     toastPosition: text("toast_position")
       .$type<ToastPosition>()
@@ -1710,6 +1724,12 @@ export const secretEnvs = pgTable(
     position: integer("position").notNull().default(0),
     // Bumped on every write here (the API's ETag and watch).
     version: integer("version").notNull().default(1),
+    // Protected: edits become change requests that `approvalsRequired` approvers
+    // (approverIds, or the project's admins when null) must approve first.
+    protected: boolean("protected").notNull().default(false),
+    approvalsRequired: integer("approvals_required").notNull().default(1),
+    approverIds: text("approver_ids").array(),
+    adminBypass: boolean("admin_bypass").notNull().default(false),
   },
   (t) => [uniqueIndex("secret_envs_slug_idx").on(t.projectId, t.slug)]
 )
@@ -1751,6 +1771,8 @@ export const secrets = pgTable(
     comment: text("comment"),
     type: text("type"),
     rotationAt: timestamp("rotation_at", { withTimezone: true }),
+    // The rotation_at the reminder went out for, so it fires once per date.
+    rotationNotifiedFor: timestamp("rotation_notified_for", { withTimezone: true }),
     version: integer("version").notNull().default(1),
     createdBy: text("created_by").references(() => user.id, {
       onDelete: "set null",
@@ -1791,6 +1813,9 @@ export const secretVersions = pgTable(
     comment: text("comment"),
     type: text("type"),
     action: text("action").notNull(),
+    // The key and folder at that moment (null on rows from before S3).
+    key: text("key"),
+    folderId: uuid("folder_id"),
     changedBy: text("changed_by").references(() => user.id, {
       onDelete: "set null",
     }),
@@ -1862,6 +1887,8 @@ export const secretTokens = pgTable(
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     lastIp: text("last_ip"),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    // 7 or 1: the last "expires soon" notice sent.
+    warnedDays: integer("warned_days"),
   },
   (t) => [index("secret_tokens_project_idx").on(t.projectId)]
 )
@@ -1947,4 +1974,141 @@ export const secretWebhookDeliveries = pgTable(
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
   },
   (t) => [index("secret_webhook_deliveries_hook_idx").on(t.webhookId, t.createdAt)]
+)
+
+// ---- Secrets S3: governance ----
+
+export type CrChange = {
+  // The secret's id when it exists; the key and folder path name it otherwise.
+  id?: string
+  folder: string
+  key: string
+  action: "set" | "delete"
+  // The secret's version when the request was made (0 = didn't exist): a merge refuses when it moved.
+  base: number
+  valueEnc?: string
+  comment?: string | null
+  type?: string | null
+  rotationAt?: string | null
+  tags?: string[]
+}
+
+// An edit to a protected environment, held until enough approvers say yes.
+export const secretChangeRequests = pgTable(
+  "secret_change_requests",
+  {
+    id: id(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => secretProjects.id, { onDelete: "cascade" }),
+    envId: uuid("env_id")
+      .notNull()
+      .references(() => secretEnvs.id, { onDelete: "cascade" }),
+    authorId: text("author_id").references(() => user.id, { onDelete: "set null" }),
+    authorName: text("author_name").notNull(),
+    source: text("source").notNull(),
+    note: text("note"),
+    changes: jsonb("changes").$type<CrChange[]>().notNull(),
+    status: text("status").$type<"open" | "merged" | "rejected" | "closed">().notNull().default("open"),
+    createdAt: createdAt(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolvedBy: text("resolved_by").references(() => user.id, { onDelete: "set null" }),
+  },
+  (t) => [index("secret_cr_project_idx").on(t.projectId, t.status)]
+)
+
+export const secretReviews = pgTable(
+  "secret_reviews",
+  {
+    requestId: uuid("request_id")
+      .notNull()
+      .references(() => secretChangeRequests.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    decision: text("decision").$type<"approve" | "reject">().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.requestId, t.userId] })]
+)
+
+// A flat thread on a secret or on a change request (Phase 14's comments hang off files).
+export const secretComments = pgTable(
+  "secret_comments",
+  {
+    id: id(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => secretProjects.id, { onDelete: "cascade" }),
+    secretId: uuid("secret_id").references(() => secrets.id, { onDelete: "cascade" }),
+    requestId: uuid("request_id").references(() => secretChangeRequests.id, { onDelete: "cascade" }),
+    authorId: text("author_id").references(() => user.id, { onDelete: "set null" }),
+    body: text("body").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("secret_comments_secret_idx").on(t.secretId), index("secret_comments_request_idx").on(t.requestId)]
+)
+
+// Temporary access to an environment: approved until expires_at, then gone.
+export const secretAccessRequests = pgTable(
+  "secret_access_requests",
+  {
+    id: id(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => secretProjects.id, { onDelete: "cascade" }),
+    envId: uuid("env_id")
+      .notNull()
+      .references(() => secretEnvs.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    role: text("role").$type<"developer" | "viewer">().notNull(),
+    minutes: integer("minutes").notNull(),
+    reason: text("reason").notNull(),
+    status: text("status").$type<"pending" | "approved" | "denied" | "revoked">().notNull().default("pending"),
+    decidedBy: text("decided_by").references(() => user.id, { onDelete: "set null" }),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    expiredNotified: boolean("expired_notified").notNull().default(false),
+    createdAt: createdAt(),
+  },
+  (t) => [index("secret_access_project_idx").on(t.projectId, t.status), index("secret_access_user_idx").on(t.userId, t.status)]
+)
+
+// One-time share links: the text sealed with the server key, only the token's hash kept.
+export const secretShares = pgTable(
+  "secret_shares",
+  {
+    id: id(),
+    tokenHash: text("token_hash").notNull().unique(),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    label: text("label"),
+    valueEnc: text("value_enc"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    maxViews: integer("max_views").notNull().default(1),
+    views: integer("views").notNull().default(0),
+    passwordHash: text("password_hash"),
+    fails: integer("fails").notNull().default(0),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    firstViewedAt: timestamp("first_viewed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("secret_shares_user_idx").on(t.createdBy, t.createdAt)]
+)
+
+// Keys every environment must have, with an optional shape for the value.
+export const secretRequiredKeys = pgTable(
+  "secret_required_keys",
+  {
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => secretProjects.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    kind: text("kind").$type<"any" | "url" | "int" | "regex">().notNull().default("any"),
+    pattern: text("pattern"),
+  },
+  (t) => [primaryKey({ columns: [t.projectId, t.key] })]
 )

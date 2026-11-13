@@ -6,6 +6,7 @@ import "server-only"
 import { fail, withMember } from "@/lib/api"
 import type { Me } from "@/lib/session"
 import { kmsConfigured } from "./kms"
+import { auditScope } from "./audit-ctx"
 import { policy, projectCtx, SecretsError, type Ctx, type Role } from "./service"
 import { unlockState } from "./unlock"
 
@@ -29,8 +30,10 @@ async function run(fn: () => Promise<Response>) {
 export const withSecrets = (fn: (me: Me) => Promise<Response>, o: Opts = {}) =>
   withMember((me) =>
     run(async () => {
-      if (!(await policy()).enabled)
-        return fail(404, "disabled", "An admin turned Secrets off on this server.")
+      const pol = await policy()
+      if (!pol.enabled) return fail(404, "disabled", "An admin turned Secrets off on this server.")
+      if (pol.require2fa && !me.twoFactorEnabled)
+        return fail(403, "needs-2fa", "This server requires two-factor sign-in for Secrets. Turn it on under Account.")
       if (!kmsConfigured())
         return fail(503, "no-root-key", "SECRETS_ROOT_KEY isn't set on this server.")
       if (!o.open) {
@@ -50,9 +53,12 @@ export const withProject = (
   withSecrets(async (me) => {
     const c = await projectCtx(me.id, projectId)
     if (!c) return fail(404, "not-found", "That project isn't here, or you can't open it.")
-    if (RANK[c.role] < RANK[need])
+    // A temporary developer grant on some environment opens the writing routes; the
+    // service then checks the environment each write touches.
+    const granted = need === "developer" && Boolean(c.writeEnvs?.length)
+    if (RANK[c.role] < RANK[need] && !granted)
       return fail(403, "forbidden", "Your role in this project can't do that.")
-    return fn(c, me)
+    return auditScope.run({ projectId }, () => fn(c, me))
   })
 
 // A route handler for /projects/[id]/…: `p` holds the path params.

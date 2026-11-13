@@ -111,6 +111,91 @@ export default async function SecretsPage() {
           />
         </SettingRow>
         <SettingRow
+          id="allow-secret-shares"
+          label="Allow one-time share links"
+          htmlFor="secret-shares"
+          hint="Off: new links can't be made and existing ones stop opening."
+          tip={{
+            does: "Lets members send a text or a secret as a link that opens once, for people without accounts.",
+            affects: "Members sharing, and anyone holding a link.",
+            default: "On",
+          }}
+          reset={reset("secretSharesEnabled")}
+        >
+          <input
+            type="checkbox"
+            id="secret-shares"
+            name="shares"
+            defaultChecked={s.secretSharesEnabled}
+            className="size-4 shrink-0 self-start accent-primary sm:self-end"
+          />
+        </SettingRow>
+        <SettingRow
+          id="secrets-require-2fa"
+          label="Require two-factor for Secrets"
+          htmlFor="secret-2fa"
+          hint="On: members without two-factor sign-in can't open Secrets until they turn it on."
+          tip={{
+            does: "Keeps Secrets closed to accounts that sign in with a password alone.",
+            affects: "Members without two-factor.",
+            default: "Off",
+          }}
+          reset={reset("secretRequire2fa")}
+        >
+          <input
+            type="checkbox"
+            id="secret-2fa"
+            name="require2fa"
+            defaultChecked={s.secretRequire2fa}
+            className="size-4 shrink-0 self-start accent-primary sm:self-end"
+          />
+        </SettingRow>
+        <SettingRow
+          id="secrets-max-idle"
+          label="Longest idle time before auto-lock"
+          htmlFor="maxIdle"
+          hint="Minutes. Members can pick a shorter lock, never a longer one. Blank leaves it to them."
+          tip={{
+            does: "Caps how long Secrets stay unlocked with no activity.",
+            affects: "Everyone using Secrets.",
+            default: "No cap (members pick 5, 15, 30 or 60)",
+            example: "15",
+          }}
+          reset={reset("secretMaxIdleMinutes")}
+        >
+          <Input id="maxIdle" name="maxIdle" type="number" min={1} max={1440} step={1} defaultValue={s.secretMaxIdleMinutes ?? ""} placeholder="No cap" />
+        </SettingRow>
+        <SettingRow
+          id="secrets-unlock-hours"
+          label="Ask for a fresh unlock after"
+          htmlFor="unlockHours"
+          hint="Hours. However active, an unlock ends this long after it was opened. Blank is 12 hours."
+          tip={{
+            does: "Forces everyone to prove themselves again, even while they keep working.",
+            affects: "Everyone using Secrets.",
+            default: "12 hours",
+            example: "4",
+          }}
+          reset={reset("secretUnlockMaxHours")}
+        >
+          <Input id="unlockHours" name="unlockHours" type="number" min={1} max={720} step={1} defaultValue={s.secretUnlockMaxHours ?? ""} placeholder="12" />
+        </SettingRow>
+        <SettingRow
+          id="secrets-trash-days"
+          label="Empty a project's trash after"
+          htmlFor="trashDays"
+          hint="Days. Deleted secrets older than this are removed for good, history included. Blank keeps them until someone empties the trash."
+          tip={{
+            does: "Purges trashed secrets (hourly, by the worker).",
+            affects: "Deleted secrets in every project.",
+            default: "Never",
+            example: "30",
+          }}
+          reset={reset("secretTrashDays")}
+        >
+          <Input id="trashDays" name="trashDays" type="number" min={1} max={3650} step={1} defaultValue={s.secretTrashDays ?? ""} placeholder="Never" />
+        </SettingRow>
+        <SettingRow
           id="secret-projects-per-member"
           label="Projects per member"
           htmlFor="maxProjects"

@@ -212,6 +212,7 @@ async function describe(userId: string, ids?: string[]) {
           : `${who} wants to share their photos with you`,
       storage_low: `${r.actor ? `${who} reminded you: your` : "Your"} storage is ${d.percent ?? 90}% full. See what's using it.`,
       phone_backup: `${d.device ?? "Your phone"} hasn't backed up contacts or calendar for 7 days`,
+      secrets: d.text ?? "Something needs a look in Secrets",
     }[r.kind]
     const seen = r.nodeId ? access.get(r.nodeId) : undefined
     // Opens the file with its comments: in its folder when they can see that, else from Shared.
@@ -219,6 +220,8 @@ async function describe(userId: string, ids?: string[]) {
     const href =
       r.kind === "comment" && seen
         ? `${parentSeen ? `/folders/${r.parentId}` : seen.role === "owner" ? "/" : "/shared"}?open=${r.nodeId}&comments=1`
+        : r.kind === "secrets"
+        ? (d.href ?? "/secrets")
         : r.kind === "album"
         ? `/photos/albums/${d.album}`
         : r.kind === "partner"

@@ -66,6 +66,7 @@ const KIND_LABEL = {
   app_password: "A new app password is made for my account",
   storage_low: "My storage is nearly full (90%)",
   phone_backup: "My phone hasn't backed up contacts or calendar for 7 days",
+  secrets: "Secrets: change and access requests, rotation reminders, expiring tokens, project invites",
 } as const
 
 const PROVIDER = { google: "Google", github: "GitHub" } as Record<

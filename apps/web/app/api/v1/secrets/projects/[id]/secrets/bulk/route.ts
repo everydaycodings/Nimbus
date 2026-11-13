@@ -32,9 +32,9 @@ export const POST = projectRoute("developer", async (c, req) => {
   if (b instanceof Response) return b
   switch (b.action) {
     case "delete": {
-      const keys = await trashIds(c, b.ids)
-      await audit("secrets_write", { detail: `deleted ${names(keys)}` })
-      return Response.json({ count: keys.length })
+      const r = await trashIds(c, b.ids)
+      if (r.keys.length) await audit("secrets_write", { detail: `deleted ${names(r.keys)}` })
+      return Response.json({ count: r.keys.length, requests: r.requests.length })
     }
     case "move": {
       const keys = await moveIds(c, b.ids, b.folderId)
@@ -43,8 +43,8 @@ export const POST = projectRoute("developer", async (c, req) => {
     }
     case "copy": {
       const r = await copyIds(c, b.ids, b.toEnvId, b.overwrite)
-      await audit("secrets_write", { detail: `copied ${r.copied} to another environment` })
-      return Response.json(r)
+      if (r.copied) await audit("secrets_write", { detail: `copied ${r.copied} to another environment` })
+      return Response.json({ copied: r.copied, skipped: r.skipped, requests: r.request ? 1 : 0 })
     }
     case "tag": {
       const keys = await tagIdsBulk(c, b.ids, b.add, b.remove)
@@ -54,7 +54,7 @@ export const POST = projectRoute("developer", async (c, req) => {
       const r = await copyKeys(c, b.fromEnvId, b.envId, b.folderId, b.withValues)
       if (r.created.length)
         await audit("secrets_write", { detail: `copied keys ${names(r.created)}` })
-      return Response.json({ count: r.created.length })
+      return Response.json({ count: r.created.length, requests: "request" in r && r.request ? 1 : 0 })
     }
   }
 })

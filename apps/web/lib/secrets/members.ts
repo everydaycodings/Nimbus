@@ -6,6 +6,7 @@ import { and, asc, eq } from "drizzle-orm"
 
 import { db } from "@/lib/db"
 import { secretEnvs, secretMembers, user } from "@/lib/db/schema"
+import { memberAdded } from "./notices"
 import { SecretsError, type Ctx, type Role } from "./service"
 
 const ROLES: Role[] = ["admin", "developer", "viewer"]
@@ -48,6 +49,7 @@ export async function addMember(c: Ctx, email: string, role: string, envIds: str
     .where(and(eq(secretMembers.projectId, c.projectId), eq(secretMembers.userId, u.id)))
   if (had) throw new SecretsError(409, `${u.name} is already in this project.`)
   await db.insert(secretMembers).values({ projectId: c.projectId, userId: u.id, role: r, envIds: envs })
+  await memberAdded(c.projectId, u.id, c.userId, r)
   return u
 }
 

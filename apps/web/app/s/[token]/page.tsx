@@ -12,6 +12,8 @@ import { getItem, listFolder } from "@/lib/files"
 import type { Item } from "@/lib/files"
 import { findLink, linkNode, logLinkEvent, unlocked } from "@/lib/links"
 import { visiblePath } from "@/lib/access"
+import { SharePage } from "@/components/secrets/share-page"
+import { SHARE_PREFIX, shareMeta } from "@/lib/secrets/shares"
 
 type Props = {
   params: Promise<{ token: string }>
@@ -35,6 +37,8 @@ const bare = (i: Item): Item => ({
 export default async function LinkPage({ params, searchParams }: Props) {
   const { token } = await params
   const { f } = await searchParams
+  // One-time secret links (Secrets) share this path; their tokens start with ns_.
+  if (token.startsWith(SHARE_PREFIX)) return <SharePage token={token} meta={await shareMeta(token)} />
   const link = await findLink(token)
 
   if (!link)

@@ -29,9 +29,11 @@ export const POST = projectRoute("developer", async (c, req) => {
     const here = await existingValues(c, b.envId, b.folderId)
     return Response.json({ rows: planImport(parsed.pairs, here), errors: parsed.errors })
   }
-  const r = await applyOps(c, b.envId, b.folderId, b.items, [], "merge")
-  await audit("secrets_import", {
-    detail: `${r.env}: ${r.created.length} new, ${r.updated.length} changed (${names([...r.created, ...r.updated])})`,
-  })
+  const r = await applyOps(c, b.envId, b.folderId, b.items, [], "merge", { via: "import" })
+  if (!r.request)
+    await audit("secrets_import", {
+      detail: `${r.env}: ${r.created.length} new, ${r.updated.length} changed (${names([...r.created, ...r.updated])})`,
+      env: r.env,
+    })
   return Response.json(r)
 })

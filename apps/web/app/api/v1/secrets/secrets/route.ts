@@ -18,7 +18,7 @@ export const GET = (req: Request) =>
     if (req.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers })
     const expand = q.u.get("expand") === "true"
     const rows = await apiSecrets(t.c, t.envId, t.folderId, { expand, own: p.type === "user" })
-    await auditToken(p, "secrets_read", `${t.envSlug}${t.path ? `/${t.path}` : ""}: ${rows.length} secrets`)
+    await auditToken(p, "secrets_read", `${t.envSlug}${t.path ? `/${t.path}` : ""}: ${rows.length} secrets`, { projectId: t.c.projectId, env: t.envSlug })
     return Response.json(rows, { headers })
   })
 
@@ -39,6 +39,8 @@ export const POST = (req: Request) =>
     const names = new Set(b.delete ?? [])
     const deletes = (await listSecrets(t.c, t.envId, t.folderId)).filter((s) => names.has(s.key)).map((s) => s.id)
     const r = await applyOps(t.c, t.envId, t.folderId, ops, deletes, "merge")
-    await auditToken(p, "secrets_write", `${r.env}: ${r.created.length} new, ${r.updated.length} changed, ${r.deleted.length} deleted`)
+    await auditToken(p, "secrets_write", `${r.env}: ${r.created.length} new, ${r.updated.length} changed, ${r.deleted.length} deleted${r.request ? " (sent for review)" : ""}`, { projectId: t.c.projectId, env: t.envSlug })
+    // A protected environment answers 202: the change waits for approval.
+    if (r.request) return Response.json({ pending: true, request: r.request.id }, { status: 202 })
     return Response.json({ created: r.created, updated: r.updated, deleted: r.deleted })
   })
