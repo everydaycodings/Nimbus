@@ -742,6 +742,10 @@ export const settings = pgTable(
     // Vaults. Off stops new vaults; existing ones keep working. Null cap: no limit.
     vaultsEnabled: boolean("vaults_enabled").notNull().default(true),
     maxVaultsPerMember: integer("max_vaults_per_member"),
+    // Secrets (env keys and values). Null caps: no limit.
+    secretsEnabled: boolean("secrets_enabled").notNull().default(true),
+    maxSecretProjectsPerMember: integer("max_secret_projects_per_member"),
+    maxSecretsPerProject: integer("max_secrets_per_project"),
     // Where action messages (toasts) appear for everyone.
     toastPosition: text("toast_position")
       .$type<ToastPosition>()
@@ -1622,4 +1626,206 @@ export const phoneBackups = pgTable(
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("phone_backups_user_device_idx").on(t.userId, t.deviceName)]
+)
+
+// ---- Secrets -----------------------------------------------------------------
+// Values are sealed with the project's data key, which SECRETS_ROOT_KEY wraps
+// (lib/secrets/kms.ts). Key names, comments and tags stay readable so they can
+// be searched; values never are.
+
+// Per-member Secrets preferences: idle auto-lock, optional PIN, failed-unlock lockout.
+export const secretSettings = pgTable("secret_settings", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => user.id, { onDelete: "cascade" }),
+  lockMinutes: integer("lock_minutes").notNull().default(15),
+  pinHash: text("pin_hash"),
+  fails: integer("fails").notNull().default(0),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
+})
+
+// The server-enforced unlock: one row per signed-in session, slid forward by
+// every Secrets request and dead after lock_minutes of nothing.
+export const secretUnlocks = pgTable("secret_unlocks", {
+  sessionId: text("session_id")
+    .primaryKey()
+    .references(() => session.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  unlockedAt: timestamp("unlocked_at", { withTimezone: true }),
+  lastActiveAt: timestamp("last_active_at", { withTimezone: true }),
+  challenge: text("challenge"),
+  challengeExpiresAt: timestamp("challenge_expires_at", { withTimezone: true }),
+})
+
+export const secretProjects = pgTable("secret_projects", {
+  id: id(),
+  name: text("name").notNull(),
+  description: text("description"),
+  // The project data key, wrapped by SECRETS_ROOT_KEY. Rotating the root key re-wraps this.
+  wrappedKey: text("wrapped_key").notNull(),
+  createdBy: text("created_by").references(() => user.id, {
+    onDelete: "set null",
+  }),
+  createdAt: createdAt(),
+})
+
+// role is admin | developer | viewer; S1 only creates admins (the creator).
+export const secretMembers = pgTable(
+  "secret_members",
+  {
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => secretProjects.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    role: text("role").$type<"admin" | "developer" | "viewer">().notNull().default("admin"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.projectId, t.userId] }),
+    index("secret_members_user_idx").on(t.userId),
+  ]
+)
+
+export const secretEnvs = pgTable(
+  "secret_envs",
+  {
+    id: id(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => secretProjects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    // Lowercase, used in ${env.KEY} references and the API.
+    slug: text("slug").notNull(),
+    position: integer("position").notNull().default(0),
+  },
+  (t) => [uniqueIndex("secret_envs_slug_idx").on(t.projectId, t.slug)]
+)
+
+export const secretFolders = pgTable(
+  "secret_folders",
+  {
+    id: id(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => secretProjects.id, { onDelete: "cascade" }),
+    envId: uuid("env_id")
+      .notNull()
+      .references(() => secretEnvs.id, { onDelete: "cascade" }),
+    parentId: uuid("parent_id").references((): AnyPgColumn => secretFolders.id, {
+      onDelete: "cascade",
+    }),
+    name: text("name").notNull(),
+  },
+  (t) => [index("secret_folders_env_idx").on(t.envId)]
+)
+
+// deleted_at set = in the project's trash. Key names are unique per folder among live secrets.
+export const secrets = pgTable(
+  "secrets",
+  {
+    id: id(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => secretProjects.id, { onDelete: "cascade" }),
+    envId: uuid("env_id")
+      .notNull()
+      .references(() => secretEnvs.id, { onDelete: "cascade" }),
+    folderId: uuid("folder_id").references(() => secretFolders.id, {
+      onDelete: "set null",
+    }),
+    key: text("key").notNull(),
+    valueEnc: text("value_enc").notNull(),
+    comment: text("comment"),
+    type: text("type"),
+    rotationAt: timestamp("rotation_at", { withTimezone: true }),
+    version: integer("version").notNull().default(1),
+    createdBy: text("created_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    updatedBy: text("updated_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    deletedBy: text("deleted_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+  },
+  (t) => [
+    uniqueIndex("secrets_root_key_idx")
+      .on(t.envId, t.key)
+      .where(sql`${t.folderId} is null and ${t.deletedAt} is null`),
+    uniqueIndex("secrets_folder_key_idx")
+      .on(t.envId, t.folderId, t.key)
+      .where(sql`${t.folderId} is not null and ${t.deletedAt} is null`),
+    index("secrets_project_idx").on(t.projectId),
+  ]
+)
+
+// One row per change (create, update, delete, restore, import), for the history UI in S3.
+export const secretVersions = pgTable(
+  "secret_versions",
+  {
+    id: id(),
+    secretId: uuid("secret_id")
+      .notNull()
+      .references(() => secrets.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    valueEnc: text("value_enc").notNull(),
+    comment: text("comment"),
+    type: text("type"),
+    action: text("action").notNull(),
+    changedBy: text("changed_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("secret_versions_secret_idx").on(t.secretId, t.version)]
+)
+
+// A member's own value for a key, used only for them (not in exports or other members' views).
+export const secretOverrides = pgTable(
+  "secret_overrides",
+  {
+    secretId: uuid("secret_id")
+      .notNull()
+      .references(() => secrets.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    valueEnc: text("value_enc").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.secretId, t.userId] })]
+)
+
+export const secretTags = pgTable(
+  "secret_tags",
+  {
+    id: id(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => secretProjects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+  },
+  (t) => [uniqueIndex("secret_tags_name_idx").on(t.projectId, t.name)]
+)
+
+export const secretTagLinks = pgTable(
+  "secret_tag_links",
+  {
+    secretId: uuid("secret_id")
+      .notNull()
+      .references(() => secrets.id, { onDelete: "cascade" }),
+    tagId: uuid("tag_id")
+      .notNull()
+      .references(() => secretTags.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.secretId, t.tagId] })]
 )

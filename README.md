@@ -258,7 +258,7 @@ Everything secret lives in `.env` at the repo root:
   `.dockerignore` keep it out of git and out of the image. Containers get the values at start.
 - `setup.sh` generates the secrets Nimbus makes for itself: the Postgres and MinIO passwords,
   `TUS_HOOK_SECRET` (only tusd may call the upload hooks), `BETTER_AUTH_SECRET` (signs sessions
-  and seals secrets saved through the admin panel) and `BACKUP_ENCRYPTION_KEY`. It hides what
+  and seals secrets saved through the admin panel) `BACKUP_ENCRYPTION_KEY` and `SECRETS_ROOT_KEY`. It hides what
   you type for passwords and keys.
 - **Your own storage:** give Nimbus an access key limited to its one bucket, with read, write,
   list and delete, not an account-wide key. On AWS that's an IAM user with a policy on
@@ -273,6 +273,8 @@ Everything secret lives in `.env` at the repo root:
   old data.
 - **Back up `BACKUP_ENCRYPTION_KEY` somewhere off the server.** Without it, no backup can be
   restored.
+- **Back up `SECRETS_ROOT_KEY` too.** It wraps the keys that seal every value in Secrets; if it
+  is lost or changed, every stored secret is unreadable, and backups don't contain it.
 - Rotating a storage key: create the new key, put it in `.env`, run `docker compose up -d`,
   then delete the old key.
 
@@ -283,7 +285,7 @@ Everything secret lives in `.env` at the repo root:
    ```bash
    cp production_script/.env.example .env && chmod 600 .env
    openssl rand -hex 24      # POSTGRES_PASSWORD, S3_SECRET_KEY, TUS_HOOK_SECRET (one each)
-   openssl rand -base64 32   # BETTER_AUTH_SECRET, BACKUP_ENCRYPTION_KEY (one each)
+   openssl rand -base64 32   # BETTER_AUTH_SECRET, BACKUP_ENCRYPTION_KEY, SECRETS_ROOT_KEY (one each)
    ```
 
    With bundled Postgres, put `POSTGRES_PASSWORD` into both database URLs. With bundled MinIO,

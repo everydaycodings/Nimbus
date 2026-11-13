@@ -1,0 +1,15 @@
+{
+  "name": "@nimbus/cli",
+  "version": "0.1.0",
+  "description": "Command-line client for Nimbus Secrets",
+  "type": "module",
+  "bin": { "nimbus": "dist/cli.js" },
+  "files": ["dist", "nimbus.sh", "CONTRACT.md"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc -p .",
+    "typecheck": "tsc -p . --noEmit",
+    "test": "node --test test/*.test.ts"
+  },
+  "devDependencies": { "@types/node": "^20", "typescript": "^5.9.3" }
+}

@@ -526,6 +526,20 @@ export async function setVaultPolicy(form: FormData) {
   revalidatePath("/", "layout")
 }
 
+// Off hides Secrets from everyone and refuses its API; nothing is deleted.
+export async function setSecretsPolicy(form: FormData) {
+  await requireAdmin()
+  const projects = limit(form, "maxProjects")
+  const perProject = limit(form, "maxSecrets")
+  await saveSettings({
+    secretsEnabled: form.get("enabled") === "on",
+    maxSecretProjectsPerMember: projects && Math.min(Math.ceil(projects), 1000),
+    maxSecretsPerProject: perProject && Math.min(Math.ceil(perProject), 100000),
+    updatedAt: new Date(),
+  })
+  revalidatePath("/", "layout")
+}
+
 // Off: null, the industry-standard defaults. Applies to passwords chosen from now on.
 export async function setPasswordPolicy(form: FormData) {
   await requireAdmin()
@@ -615,6 +629,9 @@ const RESETTABLE: SettingKey[] = [
   "vaultsEnabled",
   "vaultLinksEnabled",
   "maxVaultsPerMember",
+  "secretsEnabled",
+  "maxSecretProjectsPerMember",
+  "maxSecretsPerProject",
   "officeUrl",
   "webdav",
   "ocrLangs",

@@ -197,7 +197,7 @@ async function trustDevice(ctx: GenericEndpointContext, userId: string) {
 // Passkeys work on https with a domain name (or localhost), when the admin
 // leaves them on. The web origin and the Android app's signing certificates
 // (release from env, plus the debug one) may all sign in.
-const passkeyOrigins = () => [
+export const passkeyOrigins = () => [
   new URL(process.env.BETTER_AUTH_URL ?? "http://localhost:3000").origin,
   ...[process.env.ANDROID_RELEASE_SHA256, DEBUG_SHA256].flatMap(
     (f) => apkOrigin(f) ?? []

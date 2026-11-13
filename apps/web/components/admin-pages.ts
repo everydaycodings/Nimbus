@@ -8,6 +8,7 @@ import {
   GaugeIcon,
   HardDriveIcon,
   HeartbeatIcon,
+  KeyIcon,
   HardDrivesIcon,
   LinkSimpleIcon,
   ListChecksIcon,
@@ -88,6 +89,7 @@ export const ADMIN_GROUPS: { title: string; pages: AdminPage[] }[] = [
         icon: PaperPlaneTiltIcon,
       },
       { href: "/admin/sharing/vaults", label: "Vaults", icon: LockIcon },
+      { href: "/admin/sharing/secrets", label: "Secrets", icon: KeyIcon },
     ],
   },
   {
@@ -401,6 +403,24 @@ export const ADMIN_SETTINGS: {
     label: "Vaults per member",
     href: "/admin/sharing/vaults",
     keywords: "vault limit",
+  },
+  {
+    id: "allow-secrets",
+    label: "Allow Secrets",
+    href: "/admin/sharing/secrets",
+    keywords: "secrets env keys values kms root key",
+  },
+  {
+    id: "secret-projects-per-member",
+    label: "Secret projects per member",
+    href: "/admin/sharing/secrets",
+    keywords: "secrets project limit",
+  },
+  {
+    id: "secrets-per-project",
+    label: "Secrets per project",
+    href: "/admin/sharing/secrets",
+    keywords: "secrets limit",
   },
   {
     id: "email-delivery",

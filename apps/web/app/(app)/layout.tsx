@@ -335,6 +335,9 @@ export default async function AppLayout({
           {(settings.vaultsEnabled || vaultPrefs.vaults > 0) && (
             <NavLink href="/vault" icon={<LockIcon />} label="Vault" />
           )}
+          {settings.secretsEnabled && (
+            <NavLink href="/secrets" icon={<KeyIcon />} label="Secrets" />
+          )}
           <NavLink href="/trash" icon={<TrashIcon />} label="Trash" />
         </div>
         <SidebarTags tags={await listTags(me.id)} fade={label} />

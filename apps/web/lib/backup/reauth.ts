@@ -105,7 +105,7 @@ export async function sendCode() {
   return null
 }
 
-async function checkTotp(userId: string, code: string) {
+export async function checkTotp(userId: string, code: string) {
   const [row] = await db
     .select({ secret: twoFactor.secret })
     .from(twoFactor)

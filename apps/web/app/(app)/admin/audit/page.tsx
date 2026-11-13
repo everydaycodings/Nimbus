@@ -55,6 +55,36 @@ function sentence(e: typeof auditEvents.$inferSelect, who: string) {
       return "downloaded a database backup"
     case "settings":
       return "changed settings"
+    case "secrets_unlock":
+      return `unlocked Secrets (${d})`
+    case "secrets_unlock_failed":
+      return `failed to unlock Secrets (${d})`
+    case "secrets_reveal":
+      return `revealed secrets: ${d}`
+    case "secrets_copy":
+      return `copied secrets: ${d}`
+    case "secrets_read":
+      return `read secrets, ${d}`
+    case "secrets_write":
+      return `Secrets: ${d}`
+    case "secrets_import":
+      return `imported secrets, ${d}`
+    case "secrets_export":
+      return `exported secrets, ${d}`
+    case "secrets_project_create":
+      return `created the Secrets project “${d}”`
+    case "secrets_project_delete":
+      return `deleted the Secrets project “${d}”`
+    case "secrets_env_add":
+      return `added the environment “${d}” to a Secrets project`
+    case "secrets_env_delete":
+      return "deleted an environment from a Secrets project"
+    case "secrets_folder_delete":
+      return `deleted the Secrets folder ${d}`
+    case "secrets_pin_set":
+      return "set a Secrets PIN"
+    case "secrets_pin_removed":
+      return "removed their Secrets PIN"
     default:
       return e.action
   }

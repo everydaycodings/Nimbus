@@ -287,6 +287,7 @@ if [ "$write_env" = y ]; then
   set_env TUS_HOOK_SECRET "$(openssl rand -hex 24)"
   set_env BETTER_AUTH_SECRET "$(openssl rand -base64 32)"
   set_env BACKUP_ENCRYPTION_KEY "$(openssl rand -base64 32)"
+  set_env SECRETS_ROOT_KEY "$(openssl rand -base64 32)"
   set_env ML_TOKEN "$(openssl rand -hex 24)"
   set_env POSTGRES_PASSWORD "${POSTGRES_PASSWORD:-}"
   set_env DATABASE_URL "$(quoted "$DATABASE_URL")"
