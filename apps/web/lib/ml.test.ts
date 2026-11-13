@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 
-import { buildSrt, buildTxt, buildVtt, clusterFaces, faceVerdict, mixHits, segLines } from "./ml.ts"
+import { buildSrt, buildTxt, buildVtt, clusterFaces, faceVerdict, mixHits, modelPlan, segLines, type MlHealth } from "./ml.ts"
 
 const lines = segLines([
   { start: 0.5, end: 2.25, text: " Hello there " },
@@ -51,4 +51,17 @@ test("face verdict thresholds", () => {
   assert.equal(faceVerdict(0.5), "suggest")
   assert.equal(faceVerdict(0.9), "none")
   assert.equal(faceVerdict(null), "none")
+})
+
+test("a missing chosen model is downloaded, one at a time, and its feature waits", () => {
+  const chosen = { speech: "base", clip: "vitb32", faces: "default" }
+  const h = (models: MlHealth["models"], ready: MlHealth["ready"]): MlHealth => ({ version: "1", loaded: [], rssMb: 1, models, ready })
+  const idle = h({}, { speech: ["base"], clip: ["vitb32"], faces: [] })
+  assert.deepEqual(modelPlan(idle, ["speech", "clip", "faces"], chosen), {
+    ready: ["speech", "clip"],
+    pull: { feature: "faces", model: "default" },
+  })
+  const busy = h({ clip: { model: "multilingual", state: "downloading" } }, { speech: ["base"], clip: ["vitb32"], faces: [] })
+  assert.equal(modelPlan(busy, ["faces"], chosen).pull, null)
+  assert.deepEqual(modelPlan(h({}, undefined), ["faces"], chosen), { ready: ["faces"], pull: null })
 })

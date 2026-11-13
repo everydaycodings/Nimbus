@@ -14,6 +14,7 @@ import {
   faceVerdict,
   ml,
   mlBase,
+  modelPlan,
   segLines,
   vecLiteral,
   type MlFeature,
@@ -299,17 +300,25 @@ export async function mlSweep() {
       perMin: rate(f),
     }
   const api = ml(mlBase(c.url))
+  let health
   try {
-    await api.health()
+    health = await api.health()
     mlStatus.up = true
   } catch (e) {
     mlStatus.up = false
     mlStatus.lastError = (e as Error).message
     return
   }
+  // A chosen model that isn't on disk (its download was refused or failed): fetch it, and
+  // leave that feature alone until it's ready.
+  const plan = modelPlan(health, on, { speech: c.whisper, clip: c.clipModel, faces: "default" })
+  if (plan.pull) {
+    console.log(`ml: downloading the ${plan.pull.feature} model ${plan.pull.model}`)
+    await api.pull(plan.pull.feature, plan.pull.model).catch((e: Error) => console.error(`ml pull: ${e.message}`))
+  }
   // Uploads and video copies come first.
   if (await busy()) return
-  const feature = on.find((f) => mlStatus.features[f]!.backlog > 0)
+  const feature = plan.ready.find((f) => mlStatus.features[f]!.backlog > 0)
   if (!feature) return
   try {
     let n = 0

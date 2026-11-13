@@ -37,6 +37,16 @@ const json = (body: object): RequestInit => ({
   body: JSON.stringify(body),
 })
 
+// Which enabled features have their chosen model on disk, and which model to download next:
+// the first one missing, unless a download is already running (the service takes one at a time).
+// A service without `ready` (older) is trusted to have them.
+export function modelPlan(h: MlHealth, on: MlFeature[], chosen: Record<MlFeature, string>) {
+  const has = (f: MlFeature) => !h.ready || Boolean(h.ready[f]?.includes(chosen[f]))
+  const busy = Object.values(h.models).some((m) => m?.state === "downloading")
+  const missing = on.find((f) => !has(f))
+  return { ready: on.filter(has), pull: busy || !missing ? null : { feature: missing, model: chosen[missing] } }
+}
+
 export const ml = (base: string) => ({
   health: () => call<MlHealth>(base, "/health", {}, 8_000),
   pull: (feature: MlFeature, model: string) =>
