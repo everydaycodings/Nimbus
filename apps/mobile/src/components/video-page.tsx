@@ -1,5 +1,6 @@
 // The previewer's video page: our own controls over expo-video, with gestures, rotation,
 // tracks, resume and next/previous. app/preview.tsx holds the pager and the top bar.
+import type { SubtitleTrack, SubtitlesResponse } from "@nimbus/shared/api"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Image } from "expo-image"
 import { VideoView, useVideoPlayer, type VideoContentFit, type VideoPlayer, type VideoThumbnail } from "expo-video"
@@ -35,6 +36,7 @@ import { Sheet, SheetDivider, SheetRow } from "@/components/sheet"
 import { CustomSleep, SleepRows, sleepDetail } from "@/components/sleep-menu"
 import { useSnack } from "@/components/snackbar"
 import { IconButton, Text } from "@/components/ui"
+import { cueAt, parseVtt } from "@/lib/captions"
 import { registerAnchor } from "@/lib/comment-anchor"
 import { useApi } from "@/lib/files"
 import { onMobileData } from "@/lib/connectivity"
@@ -168,6 +170,8 @@ function Player({ start, item, version, url, top, bottom, onBars, onZoom, onFull
   const [upNext, setUpNext] = useState<number | null>(null)
   const [menu, setMenu] = useState<Menu | null>(null)
   const [pip, setPip] = useState(false)
+  // Subtitle files beside the video and the auto transcript. expo-video only plays the tracks inside the file, so these are drawn here.
+  const [ext, setExt] = useState<SubtitleTrack | null>(null)
 
   const landscape = width > height
   // Sideways is fullscreen; a tall video asks for it in portrait with the button.
@@ -198,6 +202,23 @@ function Player({ start, item, version, url, top, bottom, onBars, onZoom, onFull
       player.currentTime = at
     },
   })
+  const outside = useQuery({
+    queryKey: [api.id, "subtitles", item.id],
+    enabled: !version && !vault,
+    staleTime: 60_000,
+    queryFn: () => api.get<SubtitlesResponse>(`/files/${item.id}/subtitles`).then((r) => r.tracks.filter((t) => t.source !== "embedded")),
+  })
+  const captions = useQuery({
+    queryKey: [api.id, "captions", ext?.id],
+    enabled: !!ext,
+    staleTime: 10 * 60_000,
+    queryFn: async () => {
+      const r = await fetch(ext!.url)
+      if (!r.ok) throw new Error("Couldn't load the subtitles.")
+      return parseVtt(await r.text())
+    },
+  })
+  const cue = ext && captions.data ? cueAt(captions.data, time) : null
   const castingRef = useRef(false)
   castingRef.current = cast.casting
 
@@ -563,6 +584,14 @@ function Player({ start, item, version, url, top, bottom, onBars, onZoom, onFull
         </View>
       )}
 
+      {cue && !pip && !cast.casting && (
+        <View pointerEvents="none" style={{ position: "absolute", left: sideGutter + 16, right: sideGutter + 16, bottom: bottom + (shown && showControls ? 120 : 32), alignItems: "center" }}>
+          <Text variant="body" color="#fff" accessibilityLiveRegion="none" style={{ textAlign: "center", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, backgroundColor: "rgba(0,0,0,0.7)", overflow: "hidden" }}>
+            {cue.text}
+          </Text>
+        </View>
+      )}
+
       {tapSeek && (
         <View pointerEvents="none" style={{ position: "absolute", top: 0, bottom: 0, [tapSeek.side < 0 ? "left" : "right"]: 0, width: "35%", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 999 }}>
           {tapSeek.side < 0 ? <Rewind size={32} weight="fill" color="#fff" /> : <FastForward size={32} weight="fill" color="#fff" />}
@@ -677,6 +706,13 @@ function Player({ start, item, version, url, top, bottom, onBars, onZoom, onFull
           sleep={sleep}
           onSleep={setSleep}
           onCustomSleep={() => setCustomSleep(true)}
+          external={outside.data ?? []}
+          externalOn={ext}
+          externalFailed={captions.isError}
+          onExternal={(t) => {
+            if (t) player.subtitleTrack = null
+            setExt(t)
+          }}
           quality={quality}
           copies={copies}
           onQuality={(q) => onQuality(q, player.currentTime)}
@@ -771,6 +807,11 @@ type SettingsProps = {
   sleep: Sleep
   onSleep: (s: Sleep) => void
   onCustomSleep: () => void
+  // Subtitle files drawn by the page, not by the player.
+  external: SubtitleTrack[]
+  externalOn: SubtitleTrack | null
+  externalFailed: boolean
+  onExternal: (t: SubtitleTrack | null) => void
   quality: Quality
   copies: number[]
   onQuality: (q: Quality) => void
@@ -779,7 +820,7 @@ type SettingsProps = {
   onMakeCopy: () => void
 }
 
-function SettingsSheet({ menu, onMenu, player, rate, onRate, fit, onFit, loop, onLoop, sleep, onSleep, onCustomSleep, quality, copies, onQuality, copyState, onMakeCopy }: SettingsProps) {
+function SettingsSheet({ menu, onMenu, player, rate, onRate, fit, onFit, loop, onLoop, sleep, onSleep, onCustomSleep, external, externalOn, externalFailed, onExternal, quality, copies, onQuality, copyState, onMakeCopy }: SettingsProps) {
   const subs = player.availableSubtitleTracks
   const audio = player.availableAudioTracks
   const trackName = (t: { label?: string; language?: string; name?: string }, i: number) => t.label || t.name || t.language || `Track ${i + 1}`
@@ -791,7 +832,7 @@ function SettingsSheet({ menu, onMenu, player, rate, onRate, fit, onFit, loop, o
       {menu === "main" && (
         <>
           <SheetRow label="Playback speed" detail={fmtRate(rate)} stay onPress={() => onMenu("speed")} />
-          {subs.length > 0 && <SheetRow label="Subtitles" detail={player.subtitleTrack ? trackName(player.subtitleTrack, subs.findIndex((s) => s.id === player.subtitleTrack?.id)) : "Off"} stay onPress={() => onMenu("subs")} />}
+          {(subs.length > 0 || external.length > 0) && <SheetRow label="Subtitles" detail={externalOn ? externalOn.label : player.subtitleTrack ? trackName(player.subtitleTrack, subs.findIndex((s) => s.id === player.subtitleTrack?.id)) : "Off"} stay onPress={() => onMenu("subs")} />}
           {audio.length > 1 && <SheetRow label="Audio track" detail={player.audioTrack ? trackName(player.audioTrack, audio.findIndex((a) => a.id === player.audioTrack?.id)) : "Default"} stay onPress={() => onMenu("audio")} />}
           <SheetRow label="Picture" detail={FITS.find((f) => f.fit === fit)?.label} stay onPress={() => onMenu("fit")} />
           <SheetRow label="Loop" detail={loop ? "On" : "Off"} selected={loop} trailing={tick(loop)} stay onPress={() => onLoop(!loop)} />
@@ -811,8 +852,11 @@ function SettingsSheet({ menu, onMenu, player, rate, onRate, fit, onFit, loop, o
         <>
           {back}
           <SheetDivider />
-          <SheetRow label="Off" selected={!player.subtitleTrack} trailing={tick(!player.subtitleTrack)} onPress={() => (player.subtitleTrack = null)} />
-          {subs.map((t, i) => <SheetRow key={t.id ?? i} label={trackName(t, i)} detail={t.language} selected={player.subtitleTrack?.id === t.id} trailing={tick(player.subtitleTrack?.id === t.id)} onPress={() => (player.subtitleTrack = t)} />)}
+          <SheetRow label="Off" selected={!player.subtitleTrack && !externalOn} trailing={tick(!player.subtitleTrack && !externalOn)} onPress={() => { player.subtitleTrack = null; onExternal(null) }} />
+          {subs.map((t, i) => <SheetRow key={t.id ?? i} label={trackName(t, i)} detail={t.language} selected={!externalOn && player.subtitleTrack?.id === t.id} trailing={tick(!externalOn && player.subtitleTrack?.id === t.id)} onPress={() => { onExternal(null); player.subtitleTrack = t }} />)}
+          {external.map((t) => (
+            <SheetRow key={t.id} label={t.label} detail={externalOn?.id === t.id && externalFailed ? "Couldn't load" : t.source === "speech" ? "Made by Nimbus" : "Subtitle file"} selected={externalOn?.id === t.id} trailing={tick(externalOn?.id === t.id)} onPress={() => onExternal(t)} />
+          ))}
         </>
       )}
       {menu === "audio" && (

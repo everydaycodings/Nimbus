@@ -33,6 +33,7 @@ export async function GET() {
       maxUploadBytes: limits.maxUploadBytes,
       blockedExtensions: limits.blockedExtensions,
       maxPdfEditBytes: settings.maxPdfEditBytes,
+      ai: { speech: settings.mlSpeech, picture: settings.mlClip, faces: settings.mlFaces },
     },
     { headers: { "Cache-Control": "no-store" } }
   )

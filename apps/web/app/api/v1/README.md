@@ -171,6 +171,22 @@ nothing to return answers `200 {}`.
 | GET | `/files/{id}/cast` | `?duration=` seconds, `?v=` | `CastUrlResponse` (valid duration + 1 h; call again to refresh); 409 `CastNoCopy` |
 | GET | `/files/{id}/subtitles` | `?v=` | `SubtitlesResponse` |
 | GET | `/files/{id}/subtitles/{track}` | signed in, or `?t=` from the track's `url` | `text/vtt` |
+| GET | `/files/{id}/transcript` | `?format=json` (default), `srt`, `txt` or `vtt` | `TranscriptResponse`, or the file as a download (404 if no transcript) |
+| POST | `/files/{id}/transcript` | owner only | 204; transcribes again |
+| GET | `/files/{id}/faces` | | `FileFacesResponse` (my own photos only) |
+| GET | `/people` | `?hidden=1` for the hidden ones | `PeopleResponse` |
+| GET | `/people/{id}` | `?limit=&cursor=` | `PersonResponse` (photos like `/photos`, plus `person`) |
+| PATCH | `/people/{id}` | `PersonUpdate` | `{ person }` |
+| GET | `/people/{id}/cover` | | webp |
+| GET | `/people/{id}/suggestions` | | `PersonSuggestionsResponse` |
+| POST | `/people/{id}/merge` | `{ intoId }` | `{ person }` |
+| POST | `/people/{id}/split` | `{ faceIds }` | `{ person }` (the new one) |
+| POST | `/people/{id}/move` | `{ faceIds, toId }` | `{ person }` |
+| POST | `/people/{id}/not` | `{ faceIds }` | `{ removed }` |
+| GET | `/faces/{id}/crop` | | webp |
+| POST | `/faces/{id}/assign` | `{ personId }` or `{ name }` | `{ person }` |
+| POST | `/faces/{id}/suggestion` | `{ accept }` | `{ person }` |
+| PUT | `/account/faces` | `{ on }` | `{ on }`; off deletes my faces and people |
 | GET | `/files/{id}/position` | none | `PositionResponse` |
 | PUT | `/files/{id}/position` | `PositionPut` | `PositionPutResponse` |
 | GET | `/api/files/{id}/thumb` | `?v=<version>` | `image/webp` |

@@ -34,6 +34,8 @@ export const workerConnection = () =>
 export const HEALTH_QUEUE = "health"
 export const HEARTBEAT_KEY = "health:heartbeat"
 export const INDEXER_KEY = "health:indexer"
+// The AI service sweep's per-feature backlog, failures and rate (scripts/ml.ts), for Health and Admin → AI features.
+export const ML_KEY = "health:ml"
 export const JOBS_QUEUE = "jobs"
 export const BACKUPS_QUEUE = "backups"
 // The last orphan sweep's {at, count, bytes}, for Admin → Health.
@@ -92,12 +94,14 @@ export async function enqueue(name: JobName, data: object) {
 // A thumbnail and search text for a version no browser uploaded (WebDAV, the
 // API), made by the worker (scripts/derive.ts). The version id as job id: a
 // double finish queues it once. The delay lets a browser that's looking get there first.
-export async function enqueueDerive(versionId: string) {
+// `camera`: a phone's camera backup goes ahead of the rest (BullMQ: lower number first).
+export async function enqueueDerive(versionId: string, camera = false) {
   await deriveQueue.add(
     "derive",
     { versionId },
     {
       jobId: versionId,
+      ...(camera && { priority: 1 }),
       delay: 2 * 60_000,
       attempts: 3,
       backoff: { type: "exponential", delay: 60_000 },
@@ -139,6 +143,11 @@ export async function scheduleJobs() {
     "phone-backup-stale",
     { every: 24 * 3600_000 },
     { name: "phone-backup-stale", opts }
+  )
+  await jobsQueue.upsertJobScheduler(
+    "face-cluster",
+    { every: 24 * 3600_000 },
+    { name: "face-cluster", opts }
   )
   await jobsQueue.upsertJobScheduler(
     "index",

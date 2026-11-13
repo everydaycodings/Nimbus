@@ -1,0 +1,25 @@
+appId: org.nimbus.drive
+name: ai
+# Phase 20 (needs speech and faces on for the account with face grouping on for it (or the opt-out
+# default), a named person "Zara Test" and a transcribed video
+# that says "induction"): People from the Photos chip, a person's page, and speech search.
+---
+- launchApp
+- extendedWaitUntil: { visible: "Search in Nimbus", timeout: 20000 }
+- tapOn: { text: "Photos", below: "New" }
+- extendedWaitUntil: { visible: "Slideshow", timeout: 20000 }
+- scrollUntilVisible: { element: { text: "People" }, direction: RIGHT }
+- tapOn: { text: "People", index: 0 }
+- extendedWaitUntil: { visible: "Zara Test", timeout: 20000 }
+- tapOn: "Zara Test"
+- extendedWaitUntil: { visible: "(Photo|Video), .*", timeout: 20000 }
+- back
+- back
+- tapOn: { text: "Files", below: "Slideshow" }  # the tab
+- extendedWaitUntil: { visible: "Search in Nimbus", timeout: 20000 }
+- tapOn: "Search in Nimbus"
+- inputText: "induction"
+- pressKey: Enter
+- extendedWaitUntil: { visible: ".*Said at 0:32.*", timeout: 20000 }
+- back
+- assertVisible: "Search in Nimbus"

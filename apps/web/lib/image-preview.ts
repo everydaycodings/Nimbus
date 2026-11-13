@@ -1,13 +1,11 @@
 // The ~1920 px JPEG Cast shows for a photo. Made on the first cast and kept in S3
 // (previews/<key>.1920.jpg, cleaned up like thumbnails). HEIC goes through heic-decode and
-// camera RAW through the JPEG every RAW file embeds, so both end up as plain JPEGs.
-import "server-only"
-
+// camera RAW through the JPEG every RAW file embeds, so both end up as plain JPEGs. No `@/` imports: the worker (scripts/ml.ts) reads these too.
 import decode from "heic-decode"
 import sharp from "sharp"
 
-import { PREVIEW_PX, RAW_EXT, embeddedJpeg, previewKey } from "@/lib/playback-rules"
-import { getStream, headSize, presignGet, putObject } from "@/lib/s3"
+import { PREVIEW_PX, RAW_EXT, embeddedJpeg, previewKey } from "./playback-rules.ts"
+import { getStream, headSize, presignGet, putObject } from "./s3.ts"
 
 const MAX = 150 * 1024 ** 2
 

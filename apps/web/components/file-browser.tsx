@@ -67,6 +67,7 @@ import {
 } from "@/app/(app)/file-actions"
 import type { Version } from "@/app/(app)/upload-actions"
 import { CommentCount } from "@/components/comments"
+import { useAi } from "@/components/ai-context"
 import { DetailsSheet } from "@/components/details-sheet"
 import { useNotice, type Notice } from "@/components/toaster"
 import { AddToAlbumDialog } from "@/components/album-dialogs"
@@ -74,7 +75,7 @@ import { ShareDialog } from "@/components/share-dialog"
 import { IMAGE, VIDEO } from "@/lib/file-rules"
 import { UserAvatar } from "@/components/user-avatar"
 import { Previewer, type Shown } from "@/components/previewer"
-import { Places, startOf, type PlaceStart } from "@/components/text-places"
+import { MatchTag, Places, startOf, type PlaceStart } from "@/components/text-places"
 import { Thumb } from "@/components/thumb"
 import { VersionsDialog } from "@/components/versions-dialog"
 import { RestoreDialog } from "@/components/restore-dialog"
@@ -1288,18 +1289,28 @@ export function FileBrowser({
 
   // Where a search matched inside a file; clicking one opens the previewer there.
   function places(item: Item, tile = false) {
-    const h = item as Item & { places?: TextPlace[]; moreCount?: number }
-    if (view !== "search" || !h.places?.length) return null
+    const h = item as Item & { places?: TextPlace[]; moreCount?: number; match?: "picture" | "person" }
+    if (view !== "search" || (!h.places?.length && !h.match)) return null
+    const pad = tile ? "px-1.5 pb-1.5" : "pr-3 pb-1.5 pl-11"
     return (
-      <Places
-        id={item.id}
-        q={query}
-        places={h.places}
-        more={h.moreCount ?? 0}
-        stop={tile}
-        onOpen={(p) => showPreview(item.id, undefined, startOf(p))}
-        className={tile ? "px-1.5 pb-1.5" : "pr-3 pb-1.5 pl-11"}
-      />
+      <>
+        {h.match && (
+          <div className={cn("flex", pad)}>
+            <MatchTag match={h.match} />
+          </div>
+        )}
+        {h.places?.length ? (
+          <Places
+            id={item.id}
+            q={query}
+            places={h.places}
+            more={h.moreCount ?? 0}
+            stop={tile}
+            onOpen={(p) => showPreview(item.id, undefined, startOf(p))}
+            className={pad}
+          />
+        ) : null}
+      </>
     )
   }
 
@@ -2106,6 +2117,11 @@ export function FileBrowser({
           )
         }
         onNewTag={() => detailsItem && newTag([detailsItem.id])}
+        onSeek={(at) => {
+          if (!detailsItem) return
+          setDetailsOpen(false)
+          showPreview(detailsItem.id, undefined, at)
+        }}
       />
 
       <input
@@ -2422,14 +2438,18 @@ function Pick({
   )
 }
 
-const FOUND = [
+const ALL_FOUND = [
   ["name", "File names"],
   ["text", "Text in files"],
+  ["speech", "Spoken"],
+  ["picture", "Picture"],
   ["comments", "Comments"],
 ] as const
 
 // Search's "Found in": any mix of names, text and comments; none ticked means all.
 function FoundIn({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  const ai = useAi()
+  const FOUND = ALL_FOUND.filter(([k]) => (k === "speech" ? ai.speech : k === "picture" ? ai.picture : true))
   const active = value.length > 0
   return (
     <Menu.Root>

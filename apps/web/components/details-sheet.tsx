@@ -9,7 +9,10 @@ import { getActivity, getDetails, undoRestore, type ActivityEvent, type Details 
 import type { Version } from "@/app/(app)/upload-actions"
 import { Comments } from "@/components/comments"
 import { MENU_ITEM, MENU_POPUP } from "@/components/overlay-styles"
+import { FilePeople } from "@/components/people"
 import { TextFound } from "@/components/text-found"
+import type { PlaceStart } from "@/components/text-places"
+import { Transcript } from "@/components/transcript"
 import { Thumb } from "@/components/thumb"
 import { useNotice } from "@/components/toaster"
 import { Button } from "@/components/ui/button"
@@ -41,6 +44,7 @@ export function DetailsSheet({
   editable = false,
   onAllVersions,
   onPreviewVersion,
+  onSeek,
 }: {
   item: Item | null
   open: boolean
@@ -50,6 +54,8 @@ export function DetailsSheet({
   // Opens the full Versions dialog.
   onAllVersions?: () => void
   onPreviewVersion?: (v: Version) => void
+  // A transcript line was clicked: open the file in the previewer at that time.
+  onSeek?: (start: PlaceStart) => void
   // The viewer's tags, or null where tags can't be edited (the trash).
   tags: Tag[] | null
   onTag: (tagId: string, on: boolean) => void
@@ -248,6 +254,12 @@ export function DetailsSheet({
             )}
             {open && item.kind === "file" && details !== null && !item.trashedAt && ["image", "pdf", "video"].includes(previewKind(item.mime, item.name) ?? "") && (
               <TextFound id={item.id} />
+            )}
+            {open && item.kind === "file" && details !== null && !item.trashedAt && ["video", "audio"].includes(previewKind(item.mime, item.name) ?? "") && (
+              <Transcript id={item.id} onSeek={onSeek && ((tMs) => onSeek({ tMs }))} />
+            )}
+            {open && item.kind === "file" && details !== null && !item.trashedAt && previewKind(item.mime, item.name) === "image" && (
+              <FilePeople id={item.id} />
             )}
             {open && details !== null && <Activity item={item} />}
             {open && item.kind === "file" && details !== null && tags && (

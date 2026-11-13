@@ -34,28 +34,34 @@ export function mergeFrames(frames: { tMs: number; body: string }[]): Part[] {
   return out
 }
 
+// Frames of a video into `dir`: one every 5 s plus scene changes, 1280 wide, for
+// the first `maxMin` minutes (and at most `max` frames). Shared with scripts/ml.ts.
+export async function sampleFrames(url: string, maxMin: number, dir: string, max = 100_000) {
+  const { stderr } = await run(
+    "nice",
+    [
+      "-n", "19", "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "info", "-y",
+      "-t", String(maxMin * 60), "-i", url, "-an", "-sn", "-dn",
+      "-vf", "select='isnan(prev_selected_t)+gte(t-prev_selected_t\\,5)+gt(scene\\,0.3)',scale=1280:-2,showinfo",
+      "-vsync", "vfr", "-frames:v", String(max), "-q:v", "4", join(dir, "frame_%05d.jpg"),
+    ],
+    { timeout: 6 * 3600_000, maxBuffer: 256 * 1024 * 1024 }
+  )
+  // showinfo prints one line per kept frame, in order.
+  const times = [...stderr.matchAll(/pts_time:([\d.]+)/g)].map((m) => Math.round(Number(m[1]) * 1000))
+  const files = (await readdir(dir)).filter((n) => n.endsWith(".jpg")).sort()
+  return files.map((name, i) => ({ path: join(dir, name), tMs: times[i] ?? 0 }))
+}
+
 // `url`: the video (a presigned URL works). Reads the first `maxMin` minutes.
 export async function videoParts(url: string, langs: string, maxMin: number) {
   const dir = await mkdtemp(join(tmpdir(), "nimbus-ocr-"))
   try {
-    const { stderr } = await run(
-      "nice",
-      [
-        "-n", "19", "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "info", "-y",
-        "-t", String(maxMin * 60), "-i", url, "-an", "-sn", "-dn",
-        "-vf", "select='isnan(prev_selected_t)+gte(t-prev_selected_t\\,5)+gt(scene\\,0.3)',scale=1280:-2,showinfo",
-        "-vsync", "vfr", "-q:v", "4", join(dir, "frame_%05d.jpg"),
-      ],
-      { timeout: 6 * 3600_000, maxBuffer: 256 * 1024 * 1024 }
-    )
-    // showinfo prints one line per kept frame, in order.
-    const times = [...stderr.matchAll(/pts_time:([\d.]+)/g)].map((m) => Math.round(Number(m[1]) * 1000))
-    const files = (await readdir(dir)).filter((n) => n.endsWith(".jpg")).sort()
     const frames: { tMs: number; body: string }[] = []
-    for (const [i, name] of files.entries()) {
-      const lines = await ocrLines(await readFile(join(dir, name)), langs)
+    for (const f of await sampleFrames(url, maxMin, dir)) {
+      const lines = await ocrLines(await readFile(f.path), langs)
       const body = lines.map((l) => l.body).join("\n")
-      if (body) frames.push({ tMs: times[i] ?? 0, body })
+      if (body) frames.push({ tMs: f.tMs, body })
     }
     return mergeFrames(frames)
   } finally {

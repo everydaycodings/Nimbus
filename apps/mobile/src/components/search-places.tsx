@@ -33,11 +33,21 @@ export function Snippet({ text, prefix, lines = 2 }: { text: string; prefix?: st
 
 const plain = (s: string) => s.replace(/[\u0001\u0002]/g, "")
 
+// Spoken words and look-alike frames say how they were found; on-screen text is just the time.
 export const placeLabel = (p: TextPlace) =>
-  p.kind === "page" ? `p. ${p.page ?? 1}` : p.kind === "time" ? clock((p.tMs ?? 0) / 1000) : "In image"
+  p.kind === "page" ? `p. ${p.page ?? 1}` : p.kind === "time" ? `${p.source === "speech" ? "Said at " : p.source === "picture" ? "Seen at " : ""}${clock((p.tMs ?? 0) / 1000)}` : "In image"
 
 const placeSpeech = (p: TextPlace) =>
-  p.kind === "page" ? `Page ${p.page ?? 1}` : p.kind === "time" ? `At ${clock((p.tMs ?? 0) / 1000)}` : "In the image"
+  p.kind === "page" ? `Page ${p.page ?? 1}` : p.kind === "time" ? `${p.source === "speech" ? "Said at" : p.source === "picture" ? "Seen at" : "At"} ${clock((p.tMs ?? 0) / 1000)}` : "In the image"
+
+// "Looks like": the search words match what is in the picture, or a person's name matched.
+export function MatchTag({ match }: { match: "picture" | "person" }) {
+  return (
+    <View style={{ alignSelf: "flex-start", height: 22, paddingHorizontal: 8, borderRadius: radius.pill, justifyContent: "center", backgroundColor: c.brandWash, borderWidth: 1, borderColor: c.border }}>
+      <Text variant="caption" color={c.brand}>{match === "picture" ? "Looks like" : "Person"}</Text>
+    </View>
+  )
+}
 
 function PlaceRow({ place, onPress }: { place: TextPlace; onPress: () => void }) {
   return (
@@ -45,7 +55,7 @@ function PlaceRow({ place, onPress }: { place: TextPlace; onPress: () => void })
       onPress={onPress}
       android_ripple={{ color: c.ripple }}
       accessibilityRole="button"
-      accessibilityLabel={`${placeSpeech(place)}: ${plain(place.snippet)}. Open there`}
+      accessibilityLabel={`${placeSpeech(place)}${place.snippet ? `: ${plain(place.snippet)}` : place.source === "picture" ? ": looks like your search" : ""}. Open there`}
       style={{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 6 }}
     >
       <View style={{ minWidth: 48, height: 24, paddingHorizontal: 8, borderRadius: radius.pill, alignItems: "center", justifyContent: "center", backgroundColor: c.brandWash, borderWidth: 1, borderColor: c.border }}>
@@ -54,7 +64,7 @@ function PlaceRow({ place, onPress }: { place: TextPlace; onPress: () => void })
         </Text>
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Snippet text={place.snippet} />
+        {place.snippet ? <Snippet text={place.snippet} /> : place.source === "picture" ? <Text variant="caption" color={c.mutedForeground}>Looks like your search</Text> : null}
       </View>
     </Pressable>
   )

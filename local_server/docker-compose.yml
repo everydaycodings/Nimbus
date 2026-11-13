@@ -2,7 +2,7 @@ name: nimbus-dev
 
 services:
   postgres:
-    image: postgres:17-alpine
+    image: pgvector/pgvector:pg17
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-nimbus}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nimbus}
@@ -87,7 +87,20 @@ services:
     cap_add: [MKNOD]
     ports: ["${COLLABORA_PORT:-9980}:9980"]
 
+  # Optional AI service: docker compose --profile ml up -d, then set
+  # http://localhost:8100 (and ML_TOKEN) in apps/web/.env.local. Needs up to 3 GB RAM.
+  ml:
+    build: ../services/ml
+    image: nimbus-ml:latest
+    profiles: [ml]
+    mem_limit: ${NIMBUS_ML_MEMORY:-3g}
+    environment:
+      ML_TOKEN: ${ML_TOKEN:-}
+    ports: ["127.0.0.1:${ML_PORT:-8100}:8000"]
+    volumes: [ml-models:/models]
+
 volumes:
   postgres:
   minio:
   redis:
+  ml-models:

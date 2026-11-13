@@ -28,6 +28,7 @@ import {
   ResumePrompt,
   SleepMenu,
   SpeedMenu,
+  SubtitlesMenu,
 } from "@/components/player-controls"
 import { audioPause } from "@/lib/audio-store"
 import {
@@ -51,7 +52,7 @@ import {
 } from "@/lib/media-extras"
 import { clock, defaultQuality, usableQuality } from "@/lib/player-rules"
 import { cn } from "@/lib/utils"
-import type { PlaybackInfo } from "@nimbus/shared/api"
+import type { PlaybackInfo, SubtitleTrack, SubtitlesResponse } from "@nimbus/shared/api"
 
 const VOLUME_KEY = "nimbus_volume"
 const HIDE_AFTER = 2500
@@ -67,6 +68,21 @@ function savedVolume() {
   } catch {
     return 1
   }
+}
+
+const SUBS_KEY = "nimbus_subtitles"
+// Per session: "off", or the label of the track picked last ("English", "Auto (Hindi)").
+const savedSubs = () => {
+  try {
+    return sessionStorage.getItem(SUBS_KEY) ?? "off"
+  } catch {
+    return "off"
+  }
+}
+// The track URLs are absolute; a relative one stays on this origin for the CORS-mode video.
+const local = (url: string) => {
+  const u = new URL(url, location.href)
+  return u.pathname + u.search
 }
 
 const BTN =
@@ -127,6 +143,9 @@ export function VideoPlayer({
   const [linkSizes, setLinkSizes] = useState<number[] | null>(null)
   const [copyMsg, setCopyMsg] = useState<string | null>(null)
   const [remote, setRemote] = useState(false)
+  const [tracks, setTracks] = useState<SubtitleTrack[]>([])
+  const [subs, setSubs] = useState("off")
+  const [caption, setCaption] = useState("")
   const back = useRef<{ t: number; play: boolean } | null>(null)
   const cs = useStore(castStore)
   const castable = useCastButton() && Boolean(id)
@@ -220,6 +239,52 @@ export function VideoPlayer({
     return () => m.removeEventListener("loadedmetadata", go)
   }, [startAt])
   useEffect(() => () => sleep.cancel(), [sleep])
+
+  // Subtitle tracks of my own file; the choice made last in this session is picked again by its label.
+  useEffect(() => {
+    if (!id) return
+    let live = true
+    fetch(`/api/v1/files/${id}/subtitles${version ? `?v=${version}` : ""}`)
+      .then((r) => (r.ok ? (r.json() as Promise<SubtitlesResponse>) : null))
+      .catch(() => null)
+      .then((r) => {
+        if (!live || !r?.tracks.length) return
+        setTracks(r.tracks)
+        const last = savedSubs()
+        setSubs(r.tracks.find((t) => t.label === last)?.id ?? "off")
+      })
+    return () => {
+      live = false
+    }
+  }, [id, version])
+  // The chosen track is loaded but not drawn by the browser: the line is drawn here, above the controls.
+  useEffect(() => {
+    const m = video.current
+    if (!m) return
+    let off: (() => void) | undefined
+    for (const tt of Array.from(m.textTracks)) {
+      if (tt.id !== subs) {
+        tt.mode = "disabled"
+        continue
+      }
+      tt.mode = "hidden"
+      const show = () =>
+        setCaption(Array.from(tt.activeCues ?? [], (c) => (c as VTTCue).text.replace(/<[^>]+>/g, "")).join("\n"))
+      tt.addEventListener("cuechange", show)
+      show()
+      off = () => tt.removeEventListener("cuechange", show)
+    }
+    return () => {
+      off?.()
+      setCaption("")
+    }
+  }, [tracks, subs])
+  function pickSubs(next: string) {
+    setSubs(next)
+    try {
+      sessionStorage.setItem(SUBS_KEY, tracks.find((t) => t.id === next)?.label ?? "off")
+    } catch {}
+  }
 
   // Where Cast isn't there (Edge, Safari), the browser's own Remote Playback API.
   useEffect(() => {
@@ -412,7 +477,24 @@ export function VideoPlayer({
         onRateChange={(e) => setSpeed(e.currentTarget.playbackRate)}
         onError={onError}
         className="size-full object-contain"
-      />
+      >
+        {tracks.map((t) => (
+          <track key={t.id} id={t.id} kind="subtitles" label={t.label} src={local(t.url)} />
+        ))}
+      </video>
+      {caption && (
+        <p
+          aria-live="off"
+          className={cn(
+            "pointer-events-none absolute inset-x-4 z-[5] text-center transition-[bottom] duration-200 motion-reduce:transition-none sm:inset-x-[10%]",
+            shown ? "bottom-20" : "bottom-6"
+          )}
+        >
+          <span className="inline-block rounded-md bg-black/75 px-2.5 py-1 text-base leading-snug whitespace-pre-line text-white sm:text-lg">
+            {caption}
+          </span>
+        </p>
+      )}
 
       {resume && (
         <ResumePrompt resume={resume} className="absolute top-4 left-1/2 z-10 -translate-x-1/2" />
@@ -548,6 +630,15 @@ export function VideoPlayer({
               saveSpeed("video", s)
             }}
           />
+          {tracks.length > 0 && (
+            <SubtitlesMenu
+              tracks={tracks}
+              value={subs}
+              onChange={pickSubs}
+              container={box}
+              className={cn(BTN, "w-auto px-2")}
+            />
+          )}
           <SleepMenu
             timer={sleep}
             container={box}

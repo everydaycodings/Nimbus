@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache"
 
 import { MAX_SESSIONS } from "@/lib/accounts"
 import { ACTIVITY_RETENTION } from "@/lib/activity-rules"
+import { mlApi } from "@/lib/ai"
 import { audit, saveSettings } from "@/lib/audit"
 import { reloadAuth } from "@/lib/auth"
 import { db } from "@/lib/db"
@@ -366,6 +367,99 @@ export async function rereadAll() {
   revalidatePath("/admin", "layout")
 }
 
+// ---- AI features (Phase 20): the nimbus-ml service ----
+
+const WHISPER_MODELS = ["tiny", "base", "small", "medium"]
+const CLIP_MODELS = ["vitb32", "multilingual"]
+
+// Tells the service to download the model; it reports progress on /health.
+async function pullModel(feature: "speech" | "clip" | "faces", model: string) {
+  await mlApi(await getSettings())
+    .pull(feature, model)
+    .catch(() => {})
+}
+
+// Blank uses the ML_URL the server was started with (http://ml:8000 in the compose file).
+export async function setMlConnection(form: FormData) {
+  await requireAdmin()
+  const raw = String(form.get("mlUrl") ?? "").trim().replace(/\/+$/, "")
+  let url = ""
+  if (raw) {
+    try {
+      const u = new URL(raw)
+      if (u.protocol !== "http:" && u.protocol !== "https:") return
+      url = u.origin + u.pathname.replace(/\/+$/, "")
+    } catch {
+      return
+    }
+  }
+  await saveSettings({ mlUrl: url, updatedAt: new Date() })
+  revalidatePath("/admin", "layout")
+}
+
+export async function setAiAccess(form: FormData) {
+  await requireAdmin()
+  const access = form.get("aiAccess") === "chosen" ? "chosen" : "everyone"
+  await saveSettings({ aiAccess: access, updatedAt: new Date() })
+  revalidatePath("/", "layout")
+}
+
+export async function setMlSpeech(form: FormData) {
+  await requireAdmin()
+  const model = WHISPER_MODELS.find((m) => m === form.get("whisperModel"))
+  if (!model) return
+  const enabled = form.get("enabled") === "on"
+  await saveSettings({ mlSpeech: enabled, whisperModel: model, updatedAt: new Date() })
+  if (enabled) await pullModel("speech", model)
+  revalidatePath("/", "layout")
+}
+
+export async function setMlClip(form: FormData) {
+  await requireAdmin()
+  const model = CLIP_MODELS.find((m) => m === form.get("clipModel"))
+  if (!model) return
+  const enabled = form.get("enabled") === "on"
+  await saveSettings({ mlClip: enabled, clipModel: model, updatedAt: new Date() })
+  if (enabled) await pullModel("clip", model)
+  revalidatePath("/", "layout")
+}
+
+// `facesDefault` "on": members get face grouping until they turn it off; "off": they opt in.
+export async function setMlFaces(form: FormData) {
+  await requireAdmin()
+  const enabled = form.get("enabled") === "on"
+  await saveSettings({ mlFaces: enabled, facesDefault: form.get("facesDefault") === "on", updatedAt: new Date() })
+  if (enabled) await pullModel("faces", "default")
+  revalidatePath("/", "layout")
+}
+
+// Forgets what a feature found; the worker does it all again, a few files a minute.
+export async function reindexSpeech() {
+  await requireAdmin()
+  await db.execute(sql`delete from node_text_parts where source = 'speech'`)
+  await db.execute(sql`delete from node_speech`)
+  await audit("settings", { detail: "ai: transcribe all files again" })
+  revalidatePath("/admin", "layout")
+}
+
+export async function reindexClip() {
+  await requireAdmin()
+  await db.execute(sql`delete from node_embeddings`)
+  await db.execute(sql`update file_versions set ml_done = array(select x from unnest(ml_done) x where x not like 'clip:%')`)
+  await audit("settings", { detail: "ai: look at all pictures again" })
+  revalidatePath("/admin", "layout")
+}
+
+// Names people gave are lost too: everyone's faces and groups start over.
+export async function reindexFaces() {
+  await requireAdmin()
+  await db.execute(sql`delete from faces`)
+  await db.execute(sql`delete from people`)
+  await db.execute(sql`update file_versions set ml_done = array_remove(ml_done, 'faces')`)
+  await audit("settings", { detail: "ai: find faces again" })
+  revalidatePath("/admin", "layout")
+}
+
 // Off hides the Places map on the web and in the app. The style URL is a MapLibre style JSON.
 export async function setMap(form: FormData) {
   await requireAdmin()
@@ -526,6 +620,14 @@ const RESETTABLE: SettingKey[] = [
   "ocrLangs",
   "ocrMode",
   "ocrVideoMaxMin",
+  "mlUrl",
+  "mlSpeech",
+  "mlClip",
+  "mlFaces",
+  "whisperModel",
+  "clipModel",
+  "facesDefault",
+  "aiAccess",
   "mapEnabled",
   "mapStyleUrl",
   "deriveConcurrency",

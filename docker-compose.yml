@@ -9,6 +9,7 @@ name: nimbus
 #   minio     run MinIO here as file storage (otherwise S3_* point at yours)
 #   backup    run the backup worker
 #   push      run ntfy, a push server for the Android app (README, "Android app")
+#   ml        run nimbus-ml, the optional AI service (speech, photo and face search)
 
 x-nimbus: &nimbus
   image: nimbus-app:latest
@@ -20,6 +21,8 @@ x-nimbus: &nimbus
     CACHE_URL: redis://redis:6379/1
     BETTER_AUTH_URL: https://${DOMAIN}
     TUS_URL: https://${DOMAIN}/files/
+    ML_URL: http://ml:8000
+    ML_TOKEN: ${ML_TOKEN:-}
   # Reach the public names through this host's nginx, not a hairpin through the
   # router; host.docker.internal is this host, for a Postgres running on it.
   extra_hosts: &hosts
@@ -29,7 +32,7 @@ x-nimbus: &nimbus
 
 services:
   postgres:
-    image: postgres:17-alpine
+    image: pgvector/pgvector:pg17
     profiles: [postgres]
     restart: unless-stopped
     environment:
@@ -143,6 +146,22 @@ services:
     ports: ["127.0.0.1:3405:80"]
     volumes: [ntfy:/var/cache/ntfy]
 
+  # Optional AI service (profile "ml"): speech search, photo search, face grouping.
+  # CPU only. Turn the features on in Admin → System → AI; models download from there.
+  ml:
+    build: ./services/ml
+    image: nimbus-ml:latest
+    profiles: [ml]
+    restart: unless-stopped
+    mem_limit: ${NIMBUS_ML_MEMORY:-3g}
+    environment:
+      ML_TOKEN: ${ML_TOKEN:-}
+    volumes: [ml-models:/models]
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8000/health"]
+      interval: 30s
+      retries: 3
+
   # WebDAV at /dav (nginx forwards it here). Next can't route WebDAV's methods,
   # so this hands each request to the app as a signed POST.
   webdav:
@@ -181,3 +200,4 @@ volumes:
   minio:
   redis:
   ntfy:
+  ml-models:

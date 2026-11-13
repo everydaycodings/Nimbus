@@ -25,7 +25,7 @@ import { Fragment, useEffect, useRef, useState } from "react"
 import { quickSearch } from "@/app/(app)/search-actions"
 import { DIALOG_BACKDROP } from "@/components/overlay-styles"
 import { Previewer } from "@/components/previewer"
-import { Snippet, placeLabel, startOf, type PlaceStart } from "@/components/text-places"
+import { MatchTag, Snippet, placeLabel, startOf, type PlaceStart } from "@/components/text-places"
 import { startNewFolder, usePick } from "@/components/upload-provider"
 import { fileType } from "@/lib/file-types"
 import type { Hit } from "@/lib/files"
@@ -229,10 +229,16 @@ export function SearchPalette({ admin }: { admin: boolean }) {
       iconClass: t.color,
       detail: place ? (
         <>
+          {h.match && <MatchTag match={h.match} className="mr-1.5" />}
           <span className="mr-1.5 rounded bg-muted px-1.5 py-px font-medium text-foreground tabular-nums">
             {placeLabel(place)}
           </span>
           <Snippet text={place.snippet} />
+        </>
+      ) : h.match ? (
+        <>
+          <MatchTag match={h.match} className="mr-1.5" />
+          {h.where}
         </>
       ) : h.snippet ? (
         <>

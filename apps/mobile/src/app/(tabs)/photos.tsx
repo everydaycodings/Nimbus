@@ -7,6 +7,7 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler"
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated"
 
 import { MemoriesStrip, STRIP_H } from "@/components/memories-strip"
+import { PEOPLE_H, PeopleRow } from "@/components/people-ui"
 import { PhotoChips } from "@/components/photo-chips"
 import { PhotoSettings } from "@/components/photo-settings"
 import { GAP, PhotoTile } from "@/components/photo-grid"
@@ -14,6 +15,7 @@ import { Bar, Button, IconButton, Spinner, Text } from "@/components/ui"
 import { useApi } from "@/lib/files"
 import { photoRows, type PhotoRow } from "@/lib/photo-rows"
 import { localDate, useMemories, usePhotos } from "@/lib/photos"
+import { useAi, usePeople } from "@/lib/people"
 import { openPreview } from "@/lib/preview-session"
 import { usePrefs } from "@/lib/prefs"
 import { c, radius } from "@/lib/theme"
@@ -93,19 +95,25 @@ export default function Photos() {
   const date = useMemo(() => localDate(), [])
   const memories = useMemories(date)
   const years = memories.data?.years.filter((y) => y.items.length) ?? []
-  // The On this day strip is the list's first row, so the fast scroller's offsets still add up.
+  const withPeople = memories.data?.people?.filter((m) => m.items.length) ?? []
+  const ai = useAi()
+  const people = usePeople(false, ai.faces && ai.facesOn)
+  const named = people.data?.people.filter((p) => p.name) ?? []
+  const cards = years.length > 0 || withPeople.length > 0
+  const leadH = (cards ? STRIP_H : 0) + (named.length ? PEOPLE_H : 0)
+  // The On this day strip and the People row are the list's first row, so the fast scroller's offsets still add up.
   const rows = useMemo<ListRow[]>(() => {
     const body = photoRows(photos.items, perRow)
-    return years.length ? [{ type: "lead", key: "lead", month: "" }, ...body] : body
-  }, [photos.items, perRow, years.length])
+    return leadH ? [{ type: "lead", key: "lead", month: "" }, ...body] : body
+  }, [photos.items, perRow, leadH])
   const layout = useMemo(
     () =>
       rows.reduce<{ length: number; offset: number }[]>((all, r) => {
         const last = all[all.length - 1]
-        all.push({ length: r.type === "lead" ? STRIP_H : r.type === "month" ? MONTH_H : size + GAP, offset: last ? last.offset + last.length : 0 })
+        all.push({ length: r.type === "lead" ? leadH : r.type === "month" ? MONTH_H : size + GAP, offset: last ? last.offset + last.length : 0 })
         return all
       }, []),
-    [rows, size]
+    [rows, size, leadH]
   )
   const total = layout.length ? layout[layout.length - 1].offset + layout[layout.length - 1].length : 0
 
@@ -219,7 +227,10 @@ export default function Photos() {
               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} colors={[c.foreground]} progressBackgroundColor={c.muted} />}
               renderItem={({ item: r }) =>
                 r.type === "lead" ? (
-                  <MemoriesStrip date={date} years={years} />
+                  <View>
+                    {cards && <MemoriesStrip date={date} years={years} people={withPeople} />}
+                    {named.length > 0 && <PeopleRow people={named} />}
+                  </View>
                 ) : r.type === "month" ? (
                   <View style={{ height: MONTH_H, justifyContent: "flex-end", paddingHorizontal: 16, paddingBottom: 8 }}>
                     <Text variant="titleSmall" accessibilityRole="header">{r.title}</Text>

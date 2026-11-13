@@ -9,9 +9,11 @@ import { and, eq, isNull, sql } from "drizzle-orm"
 
 import { accessOne } from "@/lib/access"
 import { db } from "@/lib/db"
-import { nodes } from "@/lib/db/schema"
+import { nodes, nodeSpeech } from "@/lib/db/schema"
 import { UUID, previewKind } from "@/lib/file-rules"
 import { openableFile } from "@/lib/files"
+import { buildVtt } from "@/lib/ml"
+import { langName, speechLines } from "@/lib/services/transcripts"
 import { TEXT_SUBS, sidecarLabel, srtToVtt } from "@/lib/playback-rules"
 import { appUrl } from "@/lib/email"
 import { redis } from "@/lib/redis"
@@ -26,7 +28,7 @@ export type SubtitleTrack = {
   /** `s:<file id>` for a sidecar file, `e:<n>` for the n-th subtitle stream inside the video. */
   id: string
   label: string
-  source: "sidecar" | "embedded"
+  source: "sidecar" | "embedded" | "speech"
   /** Absolute, signed for the viewer for 12 hours: a TV can fetch it without signing in. Ask again to refresh. */
   url: string
 }
@@ -81,12 +83,23 @@ async function embedded(userId: string, id: string, url: string) {
   }
 }
 
+// The auto transcript, when the worker made one with something in it.
+async function speechTrack(userId: string, id: string, versionId: string | null): Promise<SubtitleTrack[]> {
+  if (!versionId) return []
+  const [r] = await db
+    .select({ lang: nodeSpeech.lang })
+    .from(nodeSpeech)
+    .where(and(eq(nodeSpeech.nodeId, id), eq(nodeSpeech.versionId, versionId), eq(nodeSpeech.noSpeech, false), isNull(nodeSpeech.failed)))
+  const name = langName(r?.lang ?? null)
+  return r ? [{ id: "t:speech", label: name ? `Auto (${name})` : "Auto", source: "speech", url: trackUrl(userId, id, "t:speech") }] : []
+}
+
 // null: not a video or audio file I can open.
 export async function subtitleTracks(me: Me, id: string, v?: string | null) {
   const file = await openableFile(me.id, id, v)
   if (!file || previewKind(file.mime, file.name) !== "video") return null
   const url = await presignGet(file.key, file.name, { expiresIn: 600 })
-  return [...(await sidecars(me, id, file.name)), ...(await embedded(me.id, id, url))]
+  return [...(await sidecars(me, id, file.name)), ...(await embedded(me.id, id, url)), ...(await speechTrack(me.id, id, file.versionId))]
 }
 
 // The track as WebVTT text, or null. Embedded tracks are cached for a day, since
@@ -95,6 +108,10 @@ export async function subtitleVtt(userId: string, id: string, track: string, v?:
   const file = await openableFile(userId, id, v)
   if (!file) return null
   const [kind, ref] = track.split(":")
+  if (kind === "t" && ref === "speech") {
+    const lines = file.versionId ? await speechLines(id, file.versionId) : []
+    return lines.length ? buildVtt(lines) : null
+  }
   if (kind === "s" && UUID.test(ref ?? "")) {
     if (!(await accessOne(userId, ref))) return null
     const [s] = await db

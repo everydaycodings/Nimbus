@@ -1,11 +1,12 @@
 import { DateTimePickerAndroid } from "@react-native-community/datetimepicker"
 import { useQueryClient } from "@tanstack/react-query"
 import { router } from "expo-router"
-import { Bell, Clock, EyeSlash, UsersThree } from "phosphor-react-native"
+import { Bell, Clock, EyeSlash, UserFocus, UsersThree } from "phosphor-react-native"
 import { useState } from "react"
 import { View } from "react-native"
 
 import { Caret, Row, SwitchRow } from "@/components/page"
+import { FaceGroupingRow } from "@/components/people-ui"
 import { Sheet } from "@/components/sheet"
 import { useSnack } from "@/components/snackbar"
 import { Text } from "@/components/ui"
@@ -72,6 +73,7 @@ export function PhotoSettings({ onClose }: { onClose: () => void }) {
             {notice.enabled && <Row label="Notice time" detail={timeLabel(notice.hour, notice.minute)} icon={icon(Clock)} trailing={<Caret />} onPress={pickTime} />}
           </>
         )}
+        <FaceGroupingRow icon={icon(UserFocus)} />
         <Row
           label="Hidden from memories"
           icon={icon(EyeSlash)}

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { UserAvatar } from "@/components/user-avatar"
+import { aiAdmin } from "@/lib/ai"
 import { db } from "@/lib/db"
 import { user } from "@/lib/db/schema"
 import { requireAdmin } from "@/lib/session"
@@ -180,6 +181,11 @@ export default async function MembersPage({
                   <Badge variant="outline">
                     {ROLE_LABEL[p.role as keyof typeof ROLE_LABEL]}
                   </Badge>
+                  {settings.aiAccess === "chosen" && (p.aiAllowed || aiAdmin(p.role)) && (
+                    <Badge variant="outline" title="Allowed to use AI features">
+                      AI
+                    </Badge>
+                  )}
                   {p.twoFactorEnabled && (
                     <Badge variant="outline" title="Two-factor is on">
                       <ShieldCheckIcon weight="fill" className="text-brand" />

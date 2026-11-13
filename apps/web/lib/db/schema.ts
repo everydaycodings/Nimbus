@@ -15,6 +15,7 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  vector,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core"
 
@@ -186,6 +187,9 @@ export const fileVersions = pgTable(
     height: integer("height"),
     gpsChecked: boolean("gps_checked").notNull().default(false),
     smart: text("smart").array(),
+    // Phase 20: what the AI service has handled for this version: "faces" and
+    // "clip:<model>". A version without the mark is in that feature's backlog.
+    mlDone: text("ml_done").array().notNull().default(sql`'{}'::text[]`),
     createdAt: createdAt(),
   },
   (t) => [
@@ -722,6 +726,19 @@ export const settings = pgTable(
       .$type<Record<string, string>>()
       .notNull()
       .default({}),
+    // Phase 20, the optional nimbus-ml service. Empty URL: use the ML_URL env.
+    mlUrl: text("ml_url").notNull().default(""),
+    mlSpeech: boolean("ml_speech").notNull().default(false),
+    mlClip: boolean("ml_clip").notNull().default(false),
+    mlFaces: boolean("ml_faces").notNull().default(false),
+    whisperModel: text("whisper_model").notNull().default("base"),
+    clipModel: text("clip_model").notNull().default("vitb32"),
+    // Faces for members who haven't chosen: on (opt-out) or off (opt-in).
+    facesDefault: boolean("faces_default").notNull().default(false),
+    aiAccess: text("ai_access")
+      .$type<"everyone" | "chosen">()
+      .notNull()
+      .default("everyone"),
     // Vaults. Off stops new vaults; existing ones keep working. Null cap: no limit.
     vaultsEnabled: boolean("vaults_enabled").notNull().default(true),
     maxVaultsPerMember: integer("max_vaults_per_member"),
@@ -906,6 +923,9 @@ export const nodeTextParts = pgTable(
     tMs: integer("t_ms"),
     // [x, y, w, h] as 0-1 fractions of the image.
     box: jsonb("box").$type<[number, number, number, number]>(),
+    // Phase 20: where the text came from. Speech parts are kind "time" with an end.
+    source: text("source").$type<"ocr" | "speech">().notNull().default("ocr"),
+    endMs: integer("end_ms"),
     body: text("body").notNull(),
     tsv: tsvector("tsv")
       .notNull()
@@ -914,6 +934,103 @@ export const nodeTextParts = pgTable(
   (t) => [
     index("node_text_parts_node_idx").on(t.nodeId),
     index("node_text_parts_tsv_idx").using("gin", t.tsv),
+  ]
+)
+
+// What was said in a video or audio file (Phase 20), by the nimbus-ml service.
+// Its lines are in node_text_parts (source "speech"). noSpeech: nothing to hear.
+export const nodeSpeech = pgTable(
+  "node_speech",
+  {
+    nodeId: uuid("node_id")
+      .primaryKey()
+      .references(() => nodes.id, { onDelete: "cascade" }),
+    versionId: uuid("version_id").notNull(),
+    lang: text("lang"),
+    // The Whisper model it was made with, to redo it when the admin picks another.
+    model: text("model").notNull(),
+    body: text("body").notNull(),
+    tsv: tsvector("tsv")
+      .notNull()
+      .generatedAlwaysAs(sql`to_tsvector('simple', body)`),
+    noSpeech: boolean("no_speech").notNull().default(false),
+    failed: text("failed"),
+    indexedAt: timestamp("indexed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("node_speech_tsv_idx").using("gin", t.tsv)]
+)
+
+// What a picture looks like (Phase 20, CLIP): one row per photo, or per sampled
+// video frame (t_ms). Needs the pgvector extension; the migration skips it without.
+export const nodeEmbeddings = pgTable(
+  "node_embeddings",
+  {
+    id: id(),
+    nodeId: uuid("node_id")
+      .notNull()
+      .references(() => nodes.id, { onDelete: "cascade" }),
+    versionId: uuid("version_id").notNull(),
+    tMs: integer("t_ms"),
+    model: text("model").notNull(),
+    vec: vector("vec", { dimensions: 512 }).notNull(),
+  },
+  (t) => [
+    index("node_embeddings_node_idx").on(t.nodeId),
+    index("node_embeddings_vec_idx").using("hnsw", t.vec.op("vector_cosine_ops")),
+  ]
+)
+
+// People found in an owner's own photos (Phase 20). Never shared across accounts.
+export const people = pgTable(
+  "people",
+  {
+    id: id(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name"),
+    hidden: boolean("hidden").notNull().default(false),
+    // Off: no "With X" memory cards for this person.
+    memories: boolean("memories").notNull().default(true),
+    coverFaceId: uuid("cover_face_id"),
+    // Mean of the person's face vectors, normalised; the match target for new faces.
+    centroid: vector("centroid", { dimensions: 128 }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("people_owner_idx").on(t.ownerId)]
+)
+
+export const faces = pgTable(
+  "faces",
+  {
+    id: id(),
+    nodeId: uuid("node_id")
+      .notNull()
+      .references(() => nodes.id, { onDelete: "cascade" }),
+    versionId: uuid("version_id").notNull(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    personId: uuid("person_id").references(() => people.id, {
+      onDelete: "set null",
+    }),
+    // "Is this X?": a near match that isn't joined yet.
+    suggestPersonId: uuid("suggest_person_id").references(() => people.id, {
+      onDelete: "set null",
+    }),
+    // People this face was said not to be.
+    rejected: uuid("rejected").array().notNull().default(sql`'{}'::uuid[]`),
+    // [x, y, w, h] as 0-1 fractions of the image.
+    box: jsonb("box").$type<[number, number, number, number]>().notNull(),
+    score: doublePrecision("score").notNull(),
+    vec: vector("vec", { dimensions: 128 }).notNull(),
+  },
+  (t) => [
+    index("faces_node_idx").on(t.nodeId),
+    index("faces_owner_person_idx").on(t.ownerId, t.personId),
+    index("faces_vec_idx").using("hnsw", t.vec.op("vector_cosine_ops")),
   ]
 )
 

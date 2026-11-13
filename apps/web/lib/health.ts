@@ -28,7 +28,8 @@ import {
   type Status,
 } from "@/lib/health-rules"
 import { notify } from "@/lib/notify"
-import { HEARTBEAT_KEY, INDEXER_KEY, redis } from "@/lib/redis"
+import { ml as mlClient, mlBase } from "@/lib/ml"
+import { HEARTBEAT_KEY, INDEXER_KEY, ML_KEY, redis } from "@/lib/redis"
 import { BUCKET, deleteObject, getText, putObject } from "@/lib/s3"
 import { getSettings, type Settings } from "@/lib/signup"
 
@@ -155,6 +156,21 @@ const PROBES: Record<Service, (s: Settings) => Promise<Found>> = {
       detail: `Last sweep ${ago(new Date(k.at).toISOString(), Date.now())}. ${extra.join(", ")}.`,
       timed: false,
     }
+  },
+
+  // Asks the service itself, then adds each feature's backlog from the worker's last sweep.
+  async ml(s) {
+    if (!s.mlSpeech && !s.mlClip && !s.mlFaces) return off("No AI feature is on.")
+    const h = await mlClient(mlBase(s.mlUrl)).health()
+    const raw = await redis.get(ML_KEY)
+    const k = raw ? (JSON.parse(raw) as { features?: Record<string, { backlog: number; failed: number }> }) : null
+    const rows = Object.entries({ speech: s.mlSpeech, clip: s.mlClip, faces: s.mlFaces })
+      .filter(([, on]) => on)
+      .map(([f]) => {
+        const r = k?.features?.[f]
+        return `${f}: ${r ? `${r.backlog} waiting${r.failed ? `, ${r.failed} failed` : ""}` : "no sweep yet"}`
+      })
+    return { detail: `nimbus-ml ${h.version} answered, using ${Math.round(h.rssMb)} MB. ${rows.join("; ")}.` }
   },
 
   async backups(s) {

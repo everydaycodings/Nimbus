@@ -230,3 +230,13 @@ export async function revokeMemberAppPassword(targetId: string, id: string) {
   revalidatePath("/admin/members", "layout")
   return { ok: true }
 }
+
+// Only used while Admin → AI features is on "Only chosen members".
+export async function setMemberAi(targetId: string, on: boolean) {
+  const target = await recoverable(targetId)
+  if (!target) return { error: "You can't change AI features for this person." }
+  await db.update(user).set({ aiAllowed: on }).where(eq(user.id, target.id))
+  await audit("ai_access", { targetId, detail: on ? "on" : "off" })
+  revalidatePath("/admin/members", "layout")
+  return { ok: true }
+}

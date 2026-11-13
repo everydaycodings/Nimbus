@@ -16,6 +16,7 @@ import {
   PaperPlaneTiltIcon,
   PaletteIcon,
   ScanIcon,
+  SparkleIcon,
   TrashIcon,
   UploadSimpleIcon,
   UserCheckIcon,
@@ -106,6 +107,7 @@ export const ADMIN_GROUPS: { title: string; pages: AdminPage[] }[] = [
       },
       { href: "/admin/system/webdav", label: "WebDAV", icon: HardDriveIcon },
       { href: "/admin/system/ocr", label: "Text in images", icon: ScanIcon },
+      { href: "/admin/system/ai", label: "AI features", icon: SparkleIcon },
       { href: "/admin/system/photos", label: "Photos map", icon: MapTrifoldIcon },
       {
         href: "/admin/system/appearance",
@@ -436,6 +438,36 @@ export const ADMIN_SETTINGS: {
     label: "Text recognition languages",
     href: "/admin/system/ocr",
     keywords: "ocr tesseract images screenshots language",
+  },
+  {
+    id: "ml-url",
+    label: "AI service address",
+    href: "/admin/system/ai",
+    keywords: "ai ml nimbus-ml whisper clip faces remote url service",
+  },
+  {
+    id: "ml-speech",
+    label: "Speech search (Whisper)",
+    href: "/admin/system/ai",
+    keywords: "ai speech transcribe whisper captions subtitles transcript video audio",
+  },
+  {
+    id: "ml-clip",
+    label: "Search by what's in a photo",
+    href: "/admin/system/ai",
+    keywords: "ai clip picture photo semantic search looks like pgvector",
+  },
+  {
+    id: "ml-faces",
+    label: "People (face grouping)",
+    href: "/admin/system/ai",
+    keywords: "ai faces people face recognition opt-in opt-out privacy",
+  },
+  {
+    id: "ai-access",
+    label: "Who can use AI features",
+    href: "/admin/system/ai",
+    keywords: "ai access allow list members chosen everyone",
   },
   {
     id: "map-enabled",

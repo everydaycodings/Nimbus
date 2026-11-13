@@ -12,6 +12,7 @@ import { AdminPage, FRAME } from "@/components/admin/setting"
 import { SubmitButton } from "@/components/submit-button"
 import { Badge } from "@/components/ui/badge"
 import { UserAvatar } from "@/components/user-avatar"
+import { aiAdmin } from "@/lib/ai"
 import { db } from "@/lib/db"
 import {
   account,
@@ -30,6 +31,7 @@ import { getSettings } from "@/lib/signup"
 import { vaultsByOwner } from "@/lib/vault"
 import { revokeLink } from "../../actions"
 import { MemberActions } from "../member-actions"
+import { MemberAi } from "../member-ai"
 import { MemberWebdav } from "../member-webdav"
 
 export const metadata = { title: "Member · Admin · Nimbus" }
@@ -371,6 +373,23 @@ export default async function MemberPage({
                     ? `On, ${apps.length === 1 ? "1 app password" : `${apps.length} app passwords`}`
                     : "On, no app passwords"}
             </Row>
+            <Row
+              label="AI features"
+              on={
+                (settings.mlSpeech || settings.mlClip || settings.mlFaces) &&
+                (settings.aiAccess === "everyone" || p.aiAllowed || aiAdmin(p.role))
+              }
+            >
+              {!(settings.mlSpeech || settings.mlClip || settings.mlFaces)
+                ? "Off for everyone (Admin → AI features)"
+                : settings.aiAccess === "everyone"
+                  ? "On, everyone may use them"
+                  : aiAdmin(p.role)
+                    ? "On, as an admin"
+                    : p.aiAllowed
+                      ? "Allowed for them"
+                      : "Not on the chosen list"}
+            </Row>
             <Row label="Last active">
               {lastActive ? moment.format(lastActive) : "No active sessions"}
             </Row>
@@ -396,6 +415,12 @@ export default async function MemberPage({
                 </li>
               ))}
             </ul>
+          )}
+          {settings.aiAccess === "chosen" && editable && (
+            <>
+              <h3 className="pt-3 text-sm font-medium">AI features</h3>
+              <MemberAi id={p.id} on={p.aiAllowed} />
+            </>
           )}
           <h3 className="pt-3 text-sm font-medium">App passwords (WebDAV)</h3>
           <MemberWebdav

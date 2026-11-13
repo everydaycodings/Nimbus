@@ -7,7 +7,7 @@ import { PixelRatio, Pressable, View } from "react-native"
 import { useReducedMotion } from "react-native-reanimated"
 
 import { FileIcon } from "@/components/file-icon"
-import { Places, Snippet } from "@/components/search-places"
+import { MatchTag, Places, Snippet } from "@/components/search-places"
 import { Text } from "@/components/ui"
 import { useApi } from "@/lib/files"
 import { systemLabel } from "@/lib/system-folders"
@@ -232,6 +232,7 @@ function ListRowImpl(p: TileProps) {
   const { item, tags, selecting, selected, compact, pinned, pending, dim } = p
   const snippet = "snippet" in item ? item.snippet : null
   const inComment = "inComment" in item && !!item.inComment
+  const match = "match" in item ? item.match : undefined
   const places = "places" in item && item.places?.length && p.q && p.onPlace ? (item as Hit) : null
   return (
     <View style={{ borderBottomWidth: 1, borderBottomColor: c.border }}>
@@ -247,7 +248,7 @@ function ListRowImpl(p: TileProps) {
             </Text>
             {item.system && <SystemTag kind={item.system} />}
             <Meta item={item} tags={tags} text={dim ? "Not available offline" : metaText(item)} pinned={pinned} pending={pending} />
-            {places ? <Places hit={places} q={p.q!} onPlace={p.onPlace!} /> : snippet ? <Snippet text={snippet} prefix={inComment ? "In a comment: " : undefined} /> : null}
+            {places ? <Places hit={places} q={p.q!} onPlace={p.onPlace!} /> : match ? <MatchTag match={match} /> : snippet ? <Snippet text={snippet} prefix={inComment ? "In a comment: " : undefined} /> : null}
           </View>
           {!selecting && <MenuButton item={item} onMenu={p.onMenu} />}
         </View>

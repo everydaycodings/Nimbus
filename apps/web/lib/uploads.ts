@@ -513,7 +513,7 @@ export async function finishTusUpload(
     await pruneVersions(result.nodeId)
     await checkStorage(token.u)
     // A browser makes these itself; this covers API uploads and closed tabs.
-    if (result.versionId) await enqueueDerive(result.versionId)
+    if (result.versionId) await enqueueDerive(result.versionId, token.k === "camera")
     if (token.b) await notifyEdit(token.b, result.nodeId)
     if (token.s) {
       const link = await dropLink(token.s)

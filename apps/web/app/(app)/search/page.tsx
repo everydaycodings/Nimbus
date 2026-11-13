@@ -23,7 +23,7 @@ export default async function SearchPage({
   // ?found=name,text,comments narrows where it looks.
   const found = ((await searchParams).found ?? "")
     .split(",")
-    .filter((f) => ["name", "text", "comments"].includes(f))
+    .filter((f) => ["name", "text", "comments", "speech", "picture"].includes(f))
   const [items, prefs, tags] = await Promise.all([
     searchItems(me, q, 50, { found }),
     viewPrefs(),

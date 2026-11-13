@@ -12,6 +12,7 @@ import {
   HEALTH_QUEUE,
   HEARTBEAT_KEY,
   INDEXER_KEY,
+  ML_KEY,
   JOBS_QUEUE,
   redis,
   scheduleHealth,
@@ -23,6 +24,7 @@ import { signToken } from "../lib/upload-rules.ts"
 import { derive, deriveMisses, exifMisses, hashMisses } from "./derive.ts"
 import { fetchLang } from "../lib/extract.ts"
 import { sql as indexSql, status, sweep } from "./indexer.ts"
+import { faceCluster, mlSweep, mlStatus } from "./ml.ts"
 import { transcode, transcodeMisses } from "./transcode.ts"
 
 const app = process.env.BETTER_AUTH_URL ?? "http://localhost:3000"
@@ -92,6 +94,7 @@ let sweeping: Promise<unknown> | undefined
 async function index() {
   await (sweeping ??= (async () => {
     await sweep()
+    await mlSweep()
     await deriveMisses()
     await exifMisses()
     await hashMisses()
@@ -102,6 +105,7 @@ async function index() {
   })().finally(() => (sweeping = undefined)))
   // Admin → Health shows the indexer as running while this key lives.
   await redis.set(INDEXER_KEY, JSON.stringify({ at: Date.now(), ...status }), "PX", 3 * 60_000)
+  await redis.set(ML_KEY, JSON.stringify({ at: Date.now(), ...mlStatus }), "PX", 3 * 60_000)
 }
 
 // Admin → Text in images: fetch each saved language and record ready or why not.
@@ -119,6 +123,7 @@ const jobs = new Worker(
   JOBS_QUEUE,
   async (job) => {
     if (job.name === "index") return index()
+    if (job.name === "face-cluster") return faceCluster()
     if (job.name === "ocr-langs") return ocrLangs(job.data.langs)
     const res = await fetch(`${app}/api/jobs`, {
       method: "POST",

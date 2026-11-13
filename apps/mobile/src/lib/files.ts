@@ -83,8 +83,8 @@ export type Source =
   | { kind: "folder" | "tag"; id: string }
   | { kind: "search"; q: string }
 
-// `found` narrows a search to where the words are: the name, the text inside, or comments.
-export type Found = "name" | "text" | "comments"
+// `found` narrows a search to where the words are: the name, the text inside, spoken words, a look-alike picture, or comments.
+export type Found = "name" | "text" | "speech" | "picture" | "comments"
 export type Filters = Pick<ListQuery, "type" | "modified" | "size" | "tag"> & { found?: Found }
 
 const PAGE = 100

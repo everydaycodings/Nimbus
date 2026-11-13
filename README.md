@@ -160,9 +160,23 @@ plain `docker compose up -d` always starts the same set:
 | `postgres` | Postgres here, your own S3 |
 | *(empty)* | your own Postgres and S3 |
 
-Add `backup` to any of them to run the backup worker. Switching later? Move the data across
+Add `backup` to any of them to run the backup worker, `push` for ntfy, or `ml` for the optional AI service
+(`nimbus-ml`: speech, photo and face search; CPU only, `mem_limit` 3 GB, change it with `NIMBUS_ML_MEMORY`). Switching later? Move the data across
 first (a database dump, or copying the bucket), then change `.env` and run
 `docker compose up -d --remove-orphans`.
+
+The bundled Postgres is `pgvector/pgvector:pg17` (Debian), which replaced `postgres:17-alpine`. The two sort
+text differently, so after switching an existing install, rebuild the indexes once:
+
+```sh
+docker compose up -d postgres
+docker compose exec postgres psql -U nimbus -d nimbus -c 'REINDEX DATABASE nimbus' \
+  -c 'CREATE EXTENSION IF NOT EXISTS vector'
+```
+
+A cluster created by the Alpine image records no collation version, so Postgres has nothing to warn about and
+`ALTER DATABASE ... REFRESH COLLATION VERSION` fails with "invalid collation version change". Only run it if
+Postgres later logs a collation version mismatch.
 
 #### Your own Postgres
 

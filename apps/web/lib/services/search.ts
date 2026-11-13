@@ -14,7 +14,7 @@ import type { FileTextStatus, TextPlace } from "@nimbus/shared/api"
 // The search box's dropdown: the best place in each file only.
 export async function quickSearch(me: Me, q: string): Promise<Hit[]> {
   if (typeof q !== "string") return []
-  return searchItems(me.id, q, 12, { places: 1 })
+  return searchItems(me.id, q, 12, { places: 1, picture: "thin" })
 }
 
 export async function ocrLangs() {
@@ -23,12 +23,12 @@ export async function ocrLangs() {
 }
 
 // The file, if I can see it; its current version.
-async function visibleFile(me: Me, id: string) {
+export async function visibleFile(me: Me, id: string) {
   if (!UUID.test(id)) return null
   const a = await accessOne(me.id, id)
   if (!a || a.kind !== "file" || a.trashed) return null
   const [n] = await db
-    .select({ v: nodes.currentVersionId, name: nodes.name, mime: nodes.mime })
+    .select({ v: nodes.currentVersionId, name: nodes.name, mime: nodes.mime, ownerId: nodes.ownerId })
     .from(nodes)
     .where(eq(nodes.id, id))
   return n?.v ? { ...n, v: n.v, role: a.role } : null
@@ -102,7 +102,7 @@ export async function fileTextStatus(
 export async function reread(me: Me, id: string) {
   const f = await visibleFile(me, id)
   if (!f || f.role !== "owner") return false
-  await db.delete(nodeTextParts).where(eq(nodeTextParts.nodeId, id))
+  await db.delete(nodeTextParts).where(and(eq(nodeTextParts.nodeId, id), eq(nodeTextParts.source, "ocr")))
   await db.delete(nodeContent).where(eq(nodeContent.nodeId, id))
   return true
 }

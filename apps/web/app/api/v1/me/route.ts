@@ -1,4 +1,5 @@
 import { fail } from "@/lib/api"
+import { aiFlags } from "@/lib/ai"
 import { getUsage, speedCap } from "@/lib/quota"
 import { gateOf, getSession, hasPassword, isAdmin } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
@@ -10,11 +11,12 @@ export async function GET() {
   if (!session) return fail(401, "signed-out", "Sign in first.")
   const me = session.user
   const gate = await gateOf(me)
-  const [password, settings, usage, uploadSpeedBytes] = await Promise.all([
+  const [password, settings, usage, uploadSpeedBytes, ai] = await Promise.all([
     hasPassword(me.id),
     getSettings(),
     me.status === "active" ? getUsage(me.id) : null,
     speedCap(me.id),
+    aiFlags(me.id),
   ])
   return Response.json(
     {
@@ -30,6 +32,7 @@ export async function GET() {
       gate,
       usage,
       uploadSpeedBytes,
+      ai,
     },
     { headers: { "Cache-Control": "no-store" } }
   )

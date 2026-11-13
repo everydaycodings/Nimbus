@@ -21,6 +21,7 @@ import { and, count, eq, gt, isNotNull, isNull, or, sql } from "drizzle-orm"
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 
+import { AiProvider } from "@/components/ai-context"
 import { AdminNav } from "@/components/admin-nav"
 import { Search } from "@/components/admin-search"
 import { PlaybackDock } from "@/components/playback-dock"
@@ -43,6 +44,7 @@ import { NewMenu, UploadProvider } from "@/components/upload-provider"
 import { VaultKeysProvider } from "@/components/vault-keys"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { aiFlags } from "@/lib/ai"
 import { cached } from "@/lib/cache"
 import { db } from "@/lib/db"
 import { notifications, shares, user } from "@/lib/db/schema"
@@ -373,8 +375,11 @@ export default async function AppLayout({
     </div>
   )
 
+  const ai = await aiFlags(me.id)
+
   return (
     <Toaster position={settings.toastPosition}>
+      <AiProvider flags={ai}>
       <TransferProvider enabled={settings.transfersEnabled}>
       <UploadProvider
         tusUrl={process.env.TUS_URL ?? ""}
@@ -408,6 +413,7 @@ export default async function AppLayout({
         )}
       </UploadProvider>
       </TransferProvider>
+      </AiProvider>
     </Toaster>
   )
 }

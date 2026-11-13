@@ -108,7 +108,8 @@ export async function indexFile(f: IndexFile, bytes?: Uint8Array) {
       console.error(`${f.name}: ${err.message}`)
       status.lastError = `${f.name}: ${err.message}`
       // Gone from the bucket: nothing to retry. Anything else may pass.
-      if (err.name !== "NoSuchKey") return false
+      // (ffmpeg reads videos by URL, so for them "gone" is an HTTP 404.)
+      if (err.name !== "NoSuchKey" && !/404 Not Found/.test(err.message)) return false
       failed = "The file is gone from storage."
     }
   // A failed image or video is read again only after a language change.
@@ -124,7 +125,7 @@ export async function indexFile(f: IndexFile, bytes?: Uint8Array) {
         ocr_langs = excluded.ocr_langs, ocr_failed = excluded.ocr_failed, indexed_at = now()
       returning node_id`
     if (!row) return false
-    await tx`delete from node_text_parts where node_id = ${f.id}`
+    await tx`delete from node_text_parts where node_id = ${f.id} and source = 'ocr'`
     for (let i = 0; i < parts.length; i += 500)
       await tx`insert into node_text_parts ${tx(
         parts.slice(i, i + 500).map((p) => ({
@@ -149,7 +150,7 @@ export async function indexFile(f: IndexFile, bytes?: Uint8Array) {
   return true
 }
 
-const busy = async () =>
+export const busy = async () =>
   (await Promise.all([deriveQueue.getActiveCount(), transcodeQueue.getActiveCount()])).some((n) => n > 0)
 
 // A few files a minute, so the worker's CPU stays free for uploads: up to 50

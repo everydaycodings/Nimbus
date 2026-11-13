@@ -49,6 +49,8 @@ import {
 import { parsePhotoCursor, photoCursor } from "@nimbus/shared/photos"
 import { decodeMentions, mentionIds } from "@nimbus/shared/comments"
 import type { SystemKind, TextPlace } from "@nimbus/shared/api"
+import { mixHits } from "@/lib/ml"
+import { personHits, pictureHits } from "@/lib/services/ai-search"
 import { purgeSavedLogins } from "@/lib/saved-logins"
 import { getSession } from "@/lib/session"
 import { deleteNodes } from "@/lib/uploads"
@@ -411,6 +413,8 @@ export type Hit = Item & {
   // Best places in the file's text (pages, video moments, image lines), and the matches beyond them.
   places?: TextPlace[]
   moreCount?: number
+  // Found by what it looks like or who's in it, not by words.
+  match?: "picture" | "person"
 }
 
 // Everything the viewer can see, newest first, for search's filters with no text.
@@ -467,16 +471,32 @@ export async function searchItems(
   raw: string,
   limit = 50,
   // `found`: where to look (all when empty); `places`: how many places per file.
-  { found: where = [], places = 3 }: { found?: string[]; places?: number } = {}
+  // `picture: "thin"`: look-alike and person hits only when under 5 other results (quick search).
+  {
+    found: where = [],
+    places = 3,
+    picture = "always",
+  }: { found?: string[]; places?: number; picture?: "always" | "thin" } = {}
 ): Promise<Hit[]> {
   const all = !where.length
   const inName = all || where.includes("name")
   const inText = all || where.includes("text")
+  const inSpeech = all || where.includes("speech")
+  const inPicture = all || where.includes("picture")
   const inComments = all || where.includes("comments")
   // "has:comments" keeps files with comments; alone, it lists them all.
   const hasComments = /(^|\s)has:comments(?=\s|$)/i.test(raw)
   const q = raw.replace(/(^|\s)has:comments(?=\s|$)/gi, " ").trim().slice(0, 200)
   if (!q && !hasComments) return []
+  // What's shared with the viewer: files they were given and everything inside shared folders.
+  const visible = sql`shared as (
+      select n.id from nodes n
+      join shares s on s.node_id = n.id and s.grantee_id = ${viewer}
+      where n.trashed_at is null and n.vault_id is null
+      union
+      select c.id from nodes c join shared on c.parent_id = shared.id
+      where c.trashed_at is null
+    )`
   const found = await db.execute<{
     id: string
     where: string | null
@@ -484,14 +504,7 @@ export async function searchItems(
     snippet: string | null
     in_comment: boolean
   }>(sql`
-    with recursive shared as (
-      select n.id from nodes n
-      join shares s on s.node_id = n.id and s.grantee_id = ${viewer}
-      where n.trashed_at is null and n.vault_id is null
-      union
-      select c.id from nodes c join shared on c.parent_id = shared.id
-      where c.trashed_at is null
-    ), q as (
+    with recursive ${visible}, q as (
       select websearch_to_tsquery('simple', ${q}) as tq, lower(replace(${q}, '"', '')) as s
     ), scored as (
       select n.id, n.owner_id, n.parent_id,
@@ -501,11 +514,14 @@ export async function searchItems(
           when word_similarity(q.s, lower(n.name)) >= 0.4 then word_similarity(q.s, lower(n.name))
         end as name_score,
         case when ${inText} and c.tsv @@ q.tq then 0.4 + ts_rank(c.tsv, q.tq) end as text_score,
+        case when ${inSpeech} and sp.tsv @@ q.tq and sp.version_id = n.current_version_id
+          then 0.35 + ts_rank(sp.tsv, q.tq) end as speech_score,
         case when ${inComments} then 0.3 + cm.score end as comment_score, cm.body as comment_body
       from nodes n
       cross join q
       left join node_content c
         on c.node_id = n.id and c.version_id = n.current_version_id
+      left join node_speech sp on sp.node_id = n.id
       left join lateral (
         select ts_rank(to_tsvector('simple', coalesce(k.body, '')), q.tq) as score, k.body
         from comments k
@@ -519,8 +535,8 @@ export async function searchItems(
           select 1 from comments k where k.node_id = n.id and k.deleted_at is null))
     ), top as (
       select * from scored
-      where name_score is not null or text_score is not null or comment_score is not null
-      order by greatest(name_score, text_score, comment_score) desc
+      where name_score is not null or text_score is not null or speech_score is not null or comment_score is not null
+      order by greatest(name_score, text_score, speech_score, comment_score) desc
       limit ${limit}
     )
     select top.id, top.name_score is not null as by_name,
@@ -530,9 +546,11 @@ export async function searchItems(
           where node_id = top.id and grantee_id = ${viewer}) then 'Shared with me'
         else p.name
       end as where,
-      top.text_score is null and top.comment_score is not null as in_comment,
+      top.text_score is null and top.speech_score is null and top.comment_score is not null as in_comment,
       case
         when top.text_score is not null then ts_headline('simple', c.body, q.tq,
+          'StartSel=' || chr(1) || ', StopSel=' || chr(2) || ', MaxFragments=1, MaxWords=18, MinWords=6')
+        when top.speech_score is not null then ts_headline('simple', sp.body, q.tq,
           'StartSel=' || chr(1) || ', StopSel=' || chr(2) || ', MaxFragments=1, MaxWords=18, MinWords=6')
         when top.comment_score is not null then ts_headline('simple', top.comment_body, q.tq,
           'StartSel=' || chr(1) || ', StopSel=' || chr(2) || ', MaxFragments=1, MaxWords=18, MinWords=6')
@@ -541,8 +559,37 @@ export async function searchItems(
     cross join q
     left join nodes p on p.id = top.parent_id
     left join node_content c on c.node_id = top.id
-    order by greatest(top.name_score, top.text_score, top.comment_score) desc`)
-  if (!found.length) return []
+    left join node_speech sp on sp.node_id = top.id
+    order by greatest(top.name_score, top.text_score, top.speech_score, top.comment_score) desc`)
+  // Look-alike pictures and named people come after the text matches.
+  const extra =
+    q && (inPicture || all) && (picture === "always" || found.length < 5)
+      ? await Promise.all([
+          personHits(viewer, q, 30),
+          inPicture ? pictureHits(viewer, q, 30, visible) : [],
+        ])
+      : [[], []]
+  const [peopleIds, pictures] = extra as [string[], { id: string; tMs: number | null }[]]
+  const tMs = new Map(pictures.map((p) => [p.id, p.tMs]))
+  const mixed = mixHits(
+    found.map((f) => ({ id: f.id })),
+    peopleIds.map((id) => ({ id })),
+    pictures.map((p) => ({ id: p.id })),
+    limit
+  )
+  const matchOf = new Map(mixed.map((m) => [m.id, m.match]))
+  if (!mixed.length) return []
+  const extraWhere = new Map<string, string | null>()
+  const extraIds = mixed.filter((m) => m.match).map((m) => m.id)
+  if (extraIds.length)
+    for (const r of await db.execute<{ id: string; where: string | null }>(sql`
+      select n.id, case
+          when n.owner_id = ${viewer} then coalesce(p.name, 'My files')
+          when exists (select 1 from shares where node_id = n.id and grantee_id = ${viewer}) then 'Shared with me'
+          else p.name end as where
+      from nodes n left join nodes p on p.id = n.parent_id
+      where n.id in (${sql.join(extraIds.map((i) => sql`${i}`), sql`, `)})`))
+      extraWhere.set(r.id, r.where)
   // Mentions in a comment snippet read as names.
   const ids = [
     ...new Set(found.flatMap((f) => (f.in_comment && f.snippet ? mentionIds(f.snippet) : []))),
@@ -558,13 +605,15 @@ export async function searchItems(
       : []
   )
   const meta = new Map(found.map((f, i) => [f.id, { ...f, i }]))
+  const rank = new Map(mixed.map((m, i) => [m.id, i]))
   // Where the words sit in each file that has positions (pages, moments, image lines).
   const textIds = found.filter((f) => !f.in_comment && f.snippet).map((f) => f.id)
   const spots = new Map<string, { list: TextPlace[]; total: number }>()
-  if (places > 0 && inText && q && textIds.length) {
+  if (places > 0 && (inText || inSpeech) && q && textIds.length) {
     const parts = await db.execute<{
       node_id: string
       kind: TextPlace["kind"]
+      source: "ocr" | "speech"
       page: number | null
       t_ms: number | null
       box: [number, number, number, number] | null
@@ -578,8 +627,9 @@ export async function searchItems(
         join nodes n on n.id = p.node_id and n.current_version_id = p.version_id
         cross join q
         where p.node_id in (${sql.join(textIds.map((i) => sql`${i}`), sql`, `)}) and p.tsv @@ q.tq
+          and (p.source = 'ocr' and ${inText} or p.source = 'speech' and ${inSpeech})
       )
-      select r.node_id, r.kind, r.page, r.t_ms, r.box, r.total,
+      select r.node_id, r.kind, r.source, r.page, r.t_ms, r.box, r.total,
         ts_headline('simple', r.body, q.tq,
           'StartSel=' || chr(1) || ', StopSel=' || chr(2) || ', MaxFragments=1, MaxWords=18, MinWords=6') as snippet
       from ranked r cross join q where r.rn <= ${places}
@@ -588,6 +638,7 @@ export async function searchItems(
       const e = spots.get(p.node_id) ?? { list: [], total: Number(p.total) }
       e.list.push({
         kind: p.kind,
+        source: p.source,
         ...(p.page !== null && { page: p.page }),
         ...(p.t_ms !== null && { tMs: p.t_ms }),
         ...(p.box && { box: p.box }),
@@ -602,13 +653,26 @@ export async function searchItems(
     .where(
       inArray(
         nodes.id,
-        found.map((f) => f.id)
+        mixed.map((m) => m.id)
       )
     )
   return (await withAccess(viewer, rows))
-    .sort((a, b) => meta.get(a.id)!.i - meta.get(b.id)!.i)
-    .map((item) => {
-      const m = meta.get(item.id)!
+    .sort((a, b) => rank.get(a.id)! - rank.get(b.id)!)
+    .map((item): Hit => {
+      const m = meta.get(item.id)
+      // A look-alike or person match, not found by words.
+      if (!m)
+        return {
+          ...item,
+          where: extraWhere.get(item.id) ?? "",
+          byName: false,
+          snippet: null,
+          match: matchOf.get(item.id),
+          ...(tMs.get(item.id) != null && {
+            places: [{ kind: "time", source: "picture", tMs: tMs.get(item.id)!, snippet: "" }],
+            moreCount: 0,
+          }),
+        }
       return {
         ...item,
         where: m.where ?? "",

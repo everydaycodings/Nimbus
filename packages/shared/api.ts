@@ -84,6 +84,8 @@ export type Instance = {
   blockedExtensions: string[]
   /** Largest PDF the editor opens, in bytes; older servers omit it (no PDF editing). */
   maxPdfEditBytes?: number
+  /** Which AI features the admin turned on (Phase 20); older servers omit it. See `Me.ai` for what this account may use. */
+  ai?: { speech: boolean; picture: boolean; faces: boolean }
 }
 
 // ---- GET /me ----
@@ -118,7 +120,12 @@ export type Me = {
   usage: Usage | null
   /** The upload speed cap in bytes a second, which clients keep to; null: none. Missing on older servers. */
   uploadSpeedBytes?: number | null
+  /** AI features this account can use (Phase 20); older servers omit it. */
+  ai?: AiFlags
 }
+
+/** Each is true only when the admin turned it on and this account is allowed it. `facesOn`: face grouping is on for me (`faces` must also be true). */
+export type AiFlags = { speech: boolean; picture: boolean; faces: boolean; facesOn: boolean }
 
 // ---- Items and lists ----
 
@@ -206,6 +213,8 @@ export type TagResponse = ListResponse & { tag: Tag; count: number }
 /** One place text was found in a file. box = x,y,w,h as 0-1 fractions; snippet uses \u0001/\u0002 markers. */
 export type TextPlace = {
   kind: "page" | "time" | "line"
+  /** Where the words came from: ocr (on screen or in a picture), speech (said), picture (a look-alike frame). Missing on older servers: ocr. */
+  source?: "ocr" | "speech" | "picture"
   page?: number
   tMs?: number
   box?: [number, number, number, number]
@@ -233,6 +242,8 @@ export type Hit = Item & {
   places?: TextPlace[]
   /** Matching places beyond `places`. */
   moreCount?: number
+  /** "picture": looks like the words ("Looks like"); "person": a named person is in it. Missing: a name, text or speech match. */
+  match?: "picture" | "person"
 }
 export type SearchResponse = ListResponse<Hit>
 export type QuickSearchResponse = { items: Hit[] }
@@ -930,7 +941,14 @@ export type SmartGroup = "screenshots" | "documents" | "receipts" | "videos"
 
 /** `GET /photos/memories?date=YYYY-MM-DD` (the client's today): this month and day in past years, newest year first. Hidden ones left out. */
 export type MemoryYear = { year: number; yearsAgo: number; items: PhotoItem[] }
-export type MemoriesResponse = { date: string; years: MemoryYear[] }
+export type MemoriesResponse = {
+  date: string
+  years: MemoryYear[]
+  /** "With Priya, 2024" cards (Phase 20, up to 2); older servers omit it. */
+  people?: PersonMemory[]
+}
+/** A named person with 6+ photos in a past year. Hidden with the same `memory_hides` as other memories. */
+export type PersonMemory = { personId: string; name: string; year: number; yearsAgo: number; items: PhotoItem[] }
 
 /** What I keep out of memories: one photo, a day (`day` is "MM-DD") or a folder. */
 export type MemoryHide = {
@@ -1082,10 +1100,10 @@ export type CastNoCopy = { error: "no-copy"; message: string; canMakeCopy: boole
 
 /** GET `/files/{id}/subtitles`. */
 export type SubtitleTrack = {
-  /** `s:<file id>` (a .srt/.vtt beside the video) or `e:<n>` (inside it). */
+  /** `s:<file id>` (a .srt/.vtt beside the video), `e:<n>` (inside it) or `t:speech` (the auto transcript, labelled like "Auto (Hindi)"). */
   id: string
   label: string
-  source: "sidecar" | "embedded"
+  source: "sidecar" | "embedded" | "speech"
   /** Absolute WebVTT URL with a signed token, valid 12 hours, usable by a TV without signing in. */
   url: string
 }
@@ -1128,3 +1146,63 @@ export type PhoneBackupRegisterResponse = { id: string; folderId: string }
 /** POST `/phone-backup/{id}/done` after uploading a copy. `keep` null keeps every copy. */
 export type PhoneBackupDone = { type: PhoneBackupType; keep: number | null }
 export type PhoneBackupDoneResponse = { trashed: number }
+
+// ---- AI features (Phase 20) ----
+
+/** One line of speech; times in milliseconds. */
+export type TranscriptLine = { tMs: number; endMs: number | null; text: string }
+/** GET `/files/{id}/transcript`. `waiting`: queued; `off`: not on for this file or account; `none`: nothing was said; `failed`: see `failed`. */
+export type TranscriptResponse = {
+  state: "done" | "waiting" | "off" | "none" | "failed"
+  /** Language code Whisper heard, like "hi". */
+  lang: string | null
+  failed?: string
+  lines: TranscriptLine[]
+  /** Owner only: POST the same URL to transcribe again. */
+  canRedo: boolean
+}
+
+/** A person found in my photos. `name` is null until I name them. */
+export type PhotoPerson = {
+  id: string
+  name: string | null
+  hidden: boolean
+  /** Off: no "With X" memory cards for them. */
+  memories: boolean
+  /** Photos they're in (not trashed). */
+  photos: number
+  /** "Is this X?" faces waiting for a yes or no. */
+  suggestions: number
+  /** The face to show (GET `/people/{id}/cover`, a webp). */
+  coverFaceId: string | null
+}
+/** GET `/people?hidden=1`: named first, then the most photos; hidden ones only with `hidden=1`. */
+export type PeopleResponse = { people: PhotoPerson[]; hiddenCount: number }
+/** GET `/people/{id}?limit=&cursor=`: their photos, like GET /photos. */
+export type PersonResponse = PhotosResponse & { person: PhotoPerson }
+/** PATCH `/people/{id}` body. */
+export type PersonUpdate = { name?: string | null; hidden?: boolean; memories?: boolean }
+/** POST `/people/{id}/merge` `{ intoId }`, `/split` `{ faceIds }` (new person), `/move` `{ faceIds, toId }`: the person that results. */
+export type PersonResult = { person: PhotoPerson }
+/** POST `/people/{id}/not` `{ faceIds }`: "not this person"; the faces never join them again. */
+export type PersonNotResult = { removed: number }
+/** A face on a photo; `box` is x, y, w, h as 0-1 fractions. Crop: GET `/faces/{id}/crop` (webp). */
+export type FileFace = {
+  id: string
+  box: [number, number, number, number]
+  personId: string | null
+  personName: string | null
+  /** "Is this X?" */
+  suggestion: { personId: string; name: string | null } | null
+}
+/** GET `/files/{id}/faces`: only on my own photos; empty on anyone else's. */
+export type FileFacesResponse = { faces: FileFace[] }
+/** GET `/people/{id}/suggestions`: faces that look like them. */
+export type PersonSuggestion = { faceId: string; nodeId: string; box: [number, number, number, number] }
+export type PersonSuggestionsResponse = { suggestions: PersonSuggestion[] }
+/** POST `/faces/{id}/assign`: put a face on an existing person (`personId`) or a new one (`name`, may be empty). */
+export type FaceAssign = { personId: string } | { name: string }
+/** POST `/faces/{id}/suggestion` `{ accept }`: confirm or reject its "Is this X?". */
+export type FaceSuggestionAnswer = { accept: boolean }
+/** PUT `/account/faces` `{ on }`. Off deletes my faces and people. */
+export type FacesToggle = { on: boolean }

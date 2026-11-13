@@ -10,6 +10,7 @@ export const SERVICES = [
   "email",
   "office",
   "indexer",
+  "ml",
   "oauth",
   "backups",
 ] as const
@@ -23,6 +24,7 @@ export const SERVICE_LABEL: Record<Service, string> = {
   email: "Email",
   office: "Office viewer",
   indexer: "Search indexer",
+  ml: "AI service",
   oauth: "Sign-in providers",
   backups: "Backups",
 }
@@ -38,6 +40,7 @@ export const PROBE_TEXT: Record<Service, string> = {
   office:
     "Fetches Collabora's discovery file from the server set under Office documents.",
   indexer: "Looks for a recent indexer sweep from npm run worker.",
+  ml: "Asks nimbus-ml for its status, and lists what each AI feature still has to process. Only checked while a feature is on.",
   oauth:
     "Checks that each Google or GitHub sign-in has both its client ID and secret.",
   backups:
@@ -49,6 +52,7 @@ export const SERVICE_HREF: Partial<Record<Service, string>> = {
   email: "/admin/system/email",
   office: "/admin/system/office",
   indexer: "/admin/system/ocr",
+  ml: "/admin/system/ai",
   backups: "/admin/system/backups",
 }
 

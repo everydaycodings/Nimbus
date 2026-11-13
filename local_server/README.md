@@ -18,6 +18,9 @@ docker compose up -d
 | Mailpit SMTP | 1025 | no auth, no TLS; catches every email |
 | Mailpit inbox | 8025 | http://localhost:8025 |
 | Collabora | 9980 | optional, `--profile office` (see below) |
+| nimbus-ml | 8100 | optional, `--profile ml`: speech, photo and face search (up to 3 GB RAM) |
+
+The Postgres image is `pgvector/pgvector:pg17`. Coming from the old `postgres:17-alpine` volume? Run `REINDEX DATABASE nimbus` once (`REFRESH COLLATION VERSION` is rejected on such a volume, as it has no version recorded).
 
 Ports clash with something else? Override `*_PORT` in `.env`.
 

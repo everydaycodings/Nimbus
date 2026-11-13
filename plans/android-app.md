@@ -1064,3 +1064,42 @@ JS only, no native rebuild. Built, not yet run on the emulator.
 - Details: "Text found" for images, PDFs and videos (`components/text-found.tsx`): status, collapsible text, Copy, Read text again.
 - Impeccable polish: 48 dp targets, accessible labels and selected/expanded states, live region for the match count, reduced motion skips the box fade, loading and error states for "N more". Places are optional, so cached and offline lists look as before.
 - Left for the emulator: box alignment on a letterboxed photo, PDF scroll settling on a long mixed-size file, video seek from the find bar (it plays).
+
+## Phase 20 status: Android parity (2026-11-13)
+
+BUILT, uncommitted, JS only (no native rebuild). Server contract: `plans/resilient-humming-snail.md` §5, §6, §8. Every AI screen is hidden unless `/me` `ai` says so (`lib/people.ts` `useAi`).
+
+- Photos: People chip, up to five named person chips, a People avatar row under the memories strip (both share one lead row so the fast scroller still adds up), "With Priya" memory cards (slideshow `person` param).
+- `app/people/index.tsx` (named first, Hidden behind a toggle, off and empty states) and `app/people/[id].tsx` (rename, hide, merge picker, "Is this X?" review sheet with Yes/No/Skip, Select photos then Not X / Move to… by looking up each photo's faces).
+- Details: People section (face crops; tap to confirm a guess, name, choose a person, open, "Not X") and Transcript (language, lines that seek in the open previewer or open the player at that time, Download .srt/.txt via the share sheet, owner "Transcribe again").
+- Video: `lib/captions.ts` VTT parser (test `lib/captions.test.ts`) and a caption overlay; sidecar and Auto (speech) tracks listed in Subtitles next to embedded ones.
+- Search: Spoken and Picture in Found in (only when allowed), "Said at" / "Seen at" place labels, "Looks like" / "Person" tag on hits without places.
+- Face grouping Row in Account and Photo settings with a delete-data confirm.
+- Impeccable pass: 48 dp targets, accessibility labels and roles, loading, error, empty and off states, no motion added.
+- Emulator (Expo Go): chips, People row, memory card, People page, person page, review (Yes saved), search "Said at 0:03", Found in options, Details Transcript, .srt share sheet, line opens paused at 0:04, caption overlay at 0:04, face-off dialog. Not run: Details People on a photo, merge, Not X / Move.
+- Known gaps: transcript lines on audio opened from a list start at 0:00 (only the video player honours a start time); no hide for person memory cards.
+
+## Phase 20 status: end-to-end run with the real nimbus-ml (2026-11-13)
+
+Real container (`local_server` ml profile, Whisper tiny, CLIP vitb32, YuNet+SFace), worker sweeps on the dev DB, AI on for `browser-test` only (`ai_access = chosen`).
+- Speech: 12 videos/audio; a Hindi video gave 54 lines (`hi`), tones and silent clips `no_speech`. Search "induction" → the video with "Said at 0:32"; transcript JSON/.srt and the "Auto (Hindi)" subtitle track work.
+- Pictures: 66 vectors (photos + video frames). "a group of people taking a selfie" → the 5 group photos tagged "Looks like"; "colorful gradient" → gradients; nonsense queries now return no picture hits.
+- Faces: 5 crops of a 57-face group photo → 179 faces; the nightly pass made 24 people (one face per photo each); a fifth photo joined 21 faces and suggested 13. Rename → search by name finds the photos; accept suggestion, merge, cover crop, file faces all 200.
+- Fixed in this pass:
+  - ml: a video with no audio track is "no speech", not failed.
+  - Worker: a video whose file can't be read is marked done for pictures instead of failing every sweep (it blocked faces).
+  - Clustering: one person never twice in the same photo; edges closest first (look-alike chains had merged 3 people into one).
+  - Matching: a new face can't join a person who's already in that photo.
+  - Picture search cut-off: similarity ≥ 0.26 and within 0.04 of the best hit (0.22 let every photo through).
+- Other dev DBs (`nimbus_admintest`, `nimbus_e2e`, `nimbus_apptest`) reindexed after the pgvector image switch and migrated to 0041.
+- Release APK (x86_64, 0.2.10 version fields unchanged, 2026-11-13; Cursor open with the low-memory recipe, next dev/ml/emulator stopped during Gradle; 1m 16s, lowest free RAM 4.9 GB). Maestro 24/24 on it, including the new `ai` flow (People chip → Zara Test → person page; search "induction" → "Said at 0:32"). The first run failed `file-actions` and `albums`: the root folder had grown (my 5 test photos, now in "AI test"), and a route's first compile in `next dev` timed out; both passed on rerun.
+- Web e2e 22/22, including the new `e2e/ai.spec.ts` (skips when AI is off). No AI rows on Vault files, no faces across accounts.
+- Also fixed (Phase 19 bug found here): OCR retried a video gone from storage every sweep, because ffmpeg reports a 404, not NoSuchKey.
+- Dev DB left with AI settings back at defaults (all off, Whisper base); test people/transcripts kept on `browser-test`. To try it: `docker compose -f local_server/docker-compose.yml --profile ml up -d ml`, then Admin → AI features.
+
+### Open items closed (2026-11-13, second pass)
+- Person memory cards can be hidden: "No memories of X" in the card menu (web) or on long press (app), with Undo; the person's page has "No memories of them" / "Show in memories" and a "Not in memories" note. Stored as `people.memories` (added to the unreleased 0041; dev DBs altered by hand).
+- App: audio opened from a transcript line or a search hit starts there (2 s early, like video).
+- Multilingual CLIP checked live: re-indexed 68 photos/frames; English, French and Hindi queries all find the group photos. Its scores run lower, so the cut-off is per model (`CLIP_MIN_SIM`: vitb32 0.26, multilingual 0.19). The env template now says to use 4g+ for it.
+- Admin AI page checked as owner on a fresh :3001 instance: saves for all features and Access are audited; Health shows "AI service: Working". Fixed: the status line read "with  loaded" (the service sends [feature, model] pairs), and the model state now describes the model the admin picked (`/health` gained `ready`, every model on disk per feature). Fixed: in "Only chosen members" mode the owner and admins couldn't be on the list, so they lost the features; they now always count as chosen ("On, as an admin").
+- Release APK rebuilt with these (1m 27s, lowest free RAM 3.3 GB, Cursor open); `ai`, `memories`, `photos` flows pass on it. The `ai` flow needs face grouping on for `browser-test` (or the opt-out default).

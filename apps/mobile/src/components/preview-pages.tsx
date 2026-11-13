@@ -502,7 +502,7 @@ function LocalAudioPage({ item, version, active, top }: PageProps) {
 
 // The folder's audio plays as a queue (lib/audio-queue.ts). This page starts it when it comes on
 // screen and shows whichever track is playing; the previewer follows the track when it moves on.
-function QueueAudioPage({ item, active, top, onAudioTrack }: PageProps) {
+function QueueAudioPage({ item, active, top, onAudioTrack, start }: PageProps) {
   const api = useApi()
   const queue = useQueue()
   const live = queue?.account === api.id && queue.items.some((i) => i.id === item.id) ? queue : null
@@ -544,6 +544,14 @@ function QueueAudioPage({ item, active, top, onAudioTrack }: PageProps) {
     })
     return () => sub.remove()
   }, [active, mine, queue, item.id, onAudioTrack])
+
+  // Opened at a place (a search hit, a transcript line): seek there once, 2 s early like video.
+  const started = useRef(false)
+  useEffect(() => {
+    if (!active || !mine || started.current || start?.tMs == null) return
+    started.current = true
+    void queue.playlist.seekTo(Math.max(0, start.tMs / 1000 - 2))
+  }, [active, mine, queue, start?.tMs])
 
   if (error) return <NoPreview item={item} reason={error} onRetry={() => setError(null)} />
   if (!mine) return <Loading />

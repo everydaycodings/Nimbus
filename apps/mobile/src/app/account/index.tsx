@@ -1,9 +1,10 @@
 import { router } from "expo-router"
-import { Bell, CheckCircle, DeviceMobile, Fingerprint, Key, LockKey, PencilSimple, Password, ShieldCheck, UsersThree } from "phosphor-react-native"
+import { Bell, CheckCircle, DeviceMobile, Fingerprint, Key, LockKey, PencilSimple, Password, ShieldCheck, UserFocus, UsersThree } from "phosphor-react-native"
 import { useState } from "react"
 import { Pressable, View } from "react-native"
 
 import { Avatar, serverName } from "@/components/avatar"
+import { FaceGroupingRow } from "@/components/people-ui"
 import { Caret, Group, Loaded, Page, Row } from "@/components/page"
 import { useSnack } from "@/components/snackbar"
 import { Button, Text } from "@/components/ui"
@@ -116,6 +117,7 @@ export default function Account() {
                 />
               )}
               <Row label="Partner sharing" detail="Share your photos with one person" icon={icon(UsersThree)} trailing={<Caret />} onPress={() => router.push("/account/partner")} />
+              <FaceGroupingRow icon={icon(UserFocus)} />
               <Row label="Vault lock" detail={`After ${a.vaultLockMinutes} minutes idle`} icon={icon(LockKey)} trailing={<Caret />} onPress={() => router.push("/account/vault-lock")} />
             </Group>
           </>

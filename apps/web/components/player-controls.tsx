@@ -1,7 +1,7 @@
 "use client"
 
 import { Menu } from "@base-ui/react/menu"
-import { CheckIcon, MoonIcon, ScreencastIcon } from "@phosphor-icons/react"
+import { CheckIcon, ClosedCaptioningIcon, MoonIcon, ScreencastIcon } from "@phosphor-icons/react"
 import { useState } from "react"
 
 import { MENU_ITEM, MENU_POPUP } from "@/components/overlay-styles"
@@ -14,6 +14,7 @@ import {
   sleepText,
 } from "@/lib/player-rules"
 import { cn } from "@/lib/utils"
+import type { SubtitleTrack } from "@nimbus/shared/api"
 
 // Controls the video player and the audio player share. `className` is the trigger's
 // look, since one sits on a dark video and the other on the page.
@@ -41,6 +42,44 @@ export function SpeedMenu({
               {SPEEDS.map((s) => (
                 <Menu.RadioItem key={s} value={s} closeOnClick className={cn(MENU_ITEM, "tabular-nums")}>
                   {s === 1 ? "Normal" : `${s}×`}
+                  <Menu.RadioItemIndicator className="ml-auto">
+                    <CheckIcon />
+                  </Menu.RadioItemIndicator>
+                </Menu.RadioItem>
+              ))}
+            </Menu.RadioGroup>
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
+  )
+}
+
+// Captions: Off, or one of the video's tracks (files beside it, ones inside it, the auto transcript).
+export function SubtitlesMenu({
+  tracks,
+  value,
+  onChange,
+  className,
+  container,
+}: Look & { tracks: SubtitleTrack[]; value: string; onChange: (id: string) => void }) {
+  const on = value !== "off"
+  return (
+    <Menu.Root>
+      <Menu.Trigger
+        className={cn(className, on && "text-brand")}
+        aria-label={on ? `Subtitles, ${tracks.find((t) => t.id === value)?.label ?? "on"}` : "Subtitles, off"}
+        title="Subtitles"
+      >
+        <ClosedCaptioningIcon weight={on ? "fill" : "regular"} />
+      </Menu.Trigger>
+      <Menu.Portal container={container}>
+        <Menu.Positioner side="top" align="end" sideOffset={8} className="z-[80]">
+          <Menu.Popup className={cn("w-56", MENU_POPUP)}>
+            <Menu.RadioGroup value={value} onValueChange={onChange}>
+              {[{ id: "off", label: "Off" }, ...tracks].map((t) => (
+                <Menu.RadioItem key={t.id} value={t.id} closeOnClick className={MENU_ITEM}>
+                  <span className="min-w-0 truncate">{t.label}</span>
                   <Menu.RadioItemIndicator className="ml-auto">
                     <CheckIcon />
                   </Menu.RadioItemIndicator>

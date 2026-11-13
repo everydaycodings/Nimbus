@@ -178,11 +178,17 @@ function TimelineShow() {
 }
 
 // On this day: a title card for each past year, starting at `year` when a card was tapped.
-function MemoriesShow({ date, year }: { date: string; year?: string }) {
+function MemoriesShow({ date, year, person }: { date: string; year?: string; person?: string }) {
   const memories = useMemories(date)
-  const slides = useMemo(() => memorySlides(memories.data?.years ?? []), [memories.data])
+  const slides = useMemo(() => {
+    if (!person) return memorySlides(memories.data?.years ?? [])
+    // "With Priya, 2024": one card, then that year's photos.
+    const m = memories.data?.people?.find((x) => x.personId === person && String(x.year) === year)
+    const photos = photoSlides(m?.items ?? [])
+    return m && photos.length ? [{ kind: "card" as const, year: m.year, title: `With ${m.name}`, caption: `${m.year} · ${photos.length} ${photos.length === 1 ? "photo" : "photos"}` }, ...photos] : []
+  }, [memories.data, person, year])
   const startAt = Math.max(0, slides.findIndex((s) => s.kind === "card" && String(s.year) === year))
-  return <Show key={slides.length ? "ready" : "wait"} title="On this day" slides={slides} loading={memories.isPending} startAt={startAt} memoryDate={date} />
+  return <Show key={slides.length ? "ready" : "wait"} title="On this day" slides={slides} loading={memories.isPending} startAt={person ? 0 : startAt} memoryDate={person ? undefined : date} />
 }
 
 function AlbumShow({ id, name }: { id: string; name?: string }) {
@@ -202,8 +208,8 @@ function FolderShow({ id, name }: { id: string; name?: string }) {
 }
 
 export default function Slideshow() {
-  const { folder, name, memories, year, album } = useLocalSearchParams<{ folder?: string; name?: string; memories?: string; year?: string; album?: string }>()
-  if (memories) return <MemoriesShow date={memories} year={year} />
+  const { folder, name, memories, year, album, person } = useLocalSearchParams<{ folder?: string; name?: string; memories?: string; year?: string; album?: string; person?: string }>()
+  if (memories) return <MemoriesShow date={memories} year={year} person={person} />
   if (album) return <AlbumShow id={album} name={name} />
   return folder ? <FolderShow id={folder} name={name} /> : <TimelineShow />
 }

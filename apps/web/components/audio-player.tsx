@@ -16,6 +16,7 @@ import { useEffect } from "react"
 
 import { CastButton, ResumePrompt, SleepMenu, SpeedMenu } from "@/components/player-controls"
 import { Thumb } from "@/components/thumb"
+import { CurrentLine } from "@/components/transcript"
 import {
   audioCast,
   audioCurrent,
@@ -138,6 +139,7 @@ export function AudioView({
             {many ? `Track ${s.order.indexOf(s.tracks.indexOf(now)) + 1} of ${s.tracks.length}` : "Audio"}
           </p>
         )}
+        {!ephemeral && <CurrentLine id={now.id} />}
       </div>
 
       {s.resume && <ResumePrompt resume={s.resume} className="self-center" />}

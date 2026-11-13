@@ -33,7 +33,7 @@ export const thumbSource = (account: { server: string; token: string }, p: { id:
 })
 
 // Every page of a photo list, loaded one after another in the background like usePhotos.
-function useAllPages(key: unknown[], path: string) {
+export function useAllPages(key: unknown[], path: string) {
   const api = useApi()
   const query = useInfiniteQuery({
     queryKey: [api.id, ...key],

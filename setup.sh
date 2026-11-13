@@ -225,6 +225,15 @@ default=n
 [ "$write_env" = n ] && [[ ",$(env_value COMPOSE_PROFILES)," == *",push,"* ]] && default=y
 confirm "Self-host push notifications (ntfy)?" "$default" && PROFILES="${PROFILES:+$PROFILES,}push"
 
+bold "AI search (optional)"
+echo "Search speech in videos, find photos by what's in them, and group faces. It runs on"
+echo "this server's CPU, needs about 3 GB of RAM while working and a few GB of disk for models."
+echo "You turn each feature on later in Admin → System → AI."
+PROFILES=$(tr ',' '\n' <<<"$PROFILES" | grep -vx -e ml -e '' | paste -sd, || true)
+default=n
+[ "$write_env" = n ] && [[ ",$(env_value COMPOSE_PROFILES)," == *",ml,"* ]] && default=y
+confirm "Run the AI service (nimbus-ml)?" "$default" && PROFILES="${PROFILES:+$PROFILES,}ml"
+
 bold "nginx and HTTPS"
 names="https://$DOMAIN${S3_DOMAIN:+ and https://$S3_DOMAIN}"
 echo "Nimbus listens only on 127.0.0.1. nginx makes it public on $names"
@@ -278,6 +287,7 @@ if [ "$write_env" = y ]; then
   set_env TUS_HOOK_SECRET "$(openssl rand -hex 24)"
   set_env BETTER_AUTH_SECRET "$(openssl rand -base64 32)"
   set_env BACKUP_ENCRYPTION_KEY "$(openssl rand -base64 32)"
+  set_env ML_TOKEN "$(openssl rand -hex 24)"
   set_env POSTGRES_PASSWORD "${POSTGRES_PASSWORD:-}"
   set_env DATABASE_URL "$(quoted "$DATABASE_URL")"
   set_env HOST_DATABASE_URL "$(quoted "$HOST_DATABASE_URL")"
@@ -306,6 +316,7 @@ if [ "$write_env" = y ]; then
   fi
 fi
 set_env COMPOSE_PROFILES "$PROFILES"
+[ -n "$(env_value ML_TOKEN)" ] || set_env ML_TOKEN "$(openssl rand -hex 24)"
 [ "$NGINX" = y ] && set_env CERTBOT_EMAIL "$CERTBOT_EMAIL"
 chmod 600 .env
 [ "$write_env" = y ] && echo "Saved .env (readable only by you)."

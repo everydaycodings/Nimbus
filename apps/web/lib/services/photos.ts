@@ -15,6 +15,7 @@ import { accessOne } from "@/lib/access"
 import { db } from "@/lib/db"
 import { fileVersions, memoryHides, nodes } from "@/lib/db/schema"
 import { UUID, ownMedia, photoItems, photoWhen } from "@/lib/files"
+import { personMemories } from "@/lib/services/people"
 import type { Me } from "@/lib/session"
 
 const utcDay = sql`to_char(${photoWhen} at time zone 'UTC', 'MM-DD')`
@@ -53,7 +54,7 @@ export async function memories(me: Me, date?: string): Promise<MemoriesResponse>
     if (!g) years.push((g = { year: y, yearsAgo: year - y, items: [] }))
     g.items.push(it)
   }
-  return { date: today, years }
+  return { date: today, years, people: await personMemories(me, today, years.map((y) => y.year)) }
 }
 
 export async function listHides(me: Me): Promise<MemoryHide[]> {

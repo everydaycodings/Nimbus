@@ -61,9 +61,12 @@ import { canEdit } from "@/lib/editor-rules"
 import { ActivityList } from "@/components/activity-list"
 import { Sheet, SheetDivider, SheetRow, useDismiss } from "@/components/sheet"
 import { useSnack } from "@/components/snackbar"
+import { PeopleFound } from "@/components/people-found"
 import { TextFound } from "@/components/text-found"
+import { Transcript } from "@/components/transcript"
 import { TagDialog } from "@/components/tag-dialog"
 import { VaultPickSheet, canVault } from "@/components/vault-sheets"
+import { useAi } from "@/lib/people"
 import { sendWithTransfer, useSent } from "@/lib/sent"
 import { useUploader } from "@/components/uploader"
 import { Button, Text } from "@/components/ui"
@@ -85,7 +88,7 @@ import { c } from "@/lib/theme"
 export const FILTER_LABELS: Record<"type" | "modified" | "size" | "found", Record<string, string>> = {
   type: Object.fromEntries(TYPE_KEYS.map((k) => [k, FILE_TYPES[k].label])),
   modified: { today: "Today", week: "Last 7 days", month: "Last 30 days", year: "This year" },
-  found: { name: "Names", text: "Text in files", comments: "Comments" },
+  found: { name: "Names", text: "Text in files", speech: "Spoken", picture: "Picture", comments: "Comments" },
   size: { small: "Under 1 MB", medium: "1 MB to 100 MB", large: "100 MB to 1 GB", huge: "Over 1 GB" },
 }
 
@@ -737,6 +740,8 @@ function DetailsSheet({ item, role, trash, tags, onChange, onClose, ask }: Props
       )}
       {!trash && item.kind === "file" && editable([item], role) && <VersionsLink item={item} />}
       {!trash && item.kind === "file" && ["image", "pdf", "video"].includes(typeKeyOf("file", item.mime, item.name)) && <TextFound item={item} />}
+      {!trash && item.kind === "file" && typeKeyOf("file", item.mime, item.name) === "image" && <PeopleFound item={item} />}
+      {!trash && item.kind === "file" && ["video", "audio"].includes(typeKeyOf("file", item.mime, item.name)) && <Transcript item={item} role={role} />}
       <ActivityList item={item} />
       {!trash && (
         <View style={{ paddingHorizontal: 20, paddingVertical: 8, gap: 8 }}>
@@ -960,10 +965,14 @@ type Option = { value: string; label: string; icon?: ReactNode }
 
 function FilterSheet({ filter, filters, onFilters, onClose, tags }: Props & { filter: "type" | "modified" | "size" | "tag" | "found"; onClose: () => void }) {
   const mine = useTags().data ?? tags
+  const ai = useAi()
   const options: Option[] =
     filter === "tag"
       ? mine.map((t) => ({ value: t.id, label: t.name, icon: <Dot color={c.tag[t.color]} /> }))
-      : Object.entries(FILTER_LABELS[filter]).map(([value, text]) => ({
+      : Object.entries(FILTER_LABELS[filter])
+          // Spoken and picture search only exist when the admin turned them on for me.
+          .filter(([value]) => filter !== "found" || (value !== "speech" || ai.speech) && (value !== "picture" || ai.picture))
+          .map(([value, text]) => ({
           value,
           label: text,
           icon:

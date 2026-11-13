@@ -18,11 +18,26 @@ export function clock(ms: number) {
   return h ? `${h}:${String(mm).padStart(2, "0")}:${ss}` : `${mm}:${ss}`
 }
 
-// "p. 4", "12:30" or "In image".
+// "p. 4", "12:30", "Said at 12:30", "Seen at 12:30" or "In image".
 export function placeLabel(p: TextPlace) {
   if (p.kind === "page" && p.page !== undefined) return `p. ${p.page}`
-  if (p.kind === "time" && p.tMs !== undefined) return clock(p.tMs)
+  if (p.kind === "time" && p.tMs !== undefined)
+    return p.source === "speech" ? `Said at ${clock(p.tMs)}` : p.source === "picture" ? `Seen at ${clock(p.tMs)}` : clock(p.tMs)
   return "In image"
+}
+
+// Why a hit is there when its words aren't: it looks like the search, or a person in it is named so.
+export function MatchTag({ match, className }: { match: "picture" | "person"; className?: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center rounded-full border border-brand/30 bg-brand/10 px-2 py-px text-xs font-medium text-foreground",
+        className
+      )}
+    >
+      {match === "picture" ? "Looks like" : "Person"}
+    </span>
+  )
 }
 
 // ts_headline marks matches with \u0001…\u0002.
@@ -97,9 +112,11 @@ export function Places({
               <span className="shrink-0 rounded bg-muted px-1.5 py-px font-medium text-foreground tabular-nums">
                 {placeLabel(p)}
               </span>
-              <span className="min-w-0 truncate">
-                …<Snippet text={p.snippet} />…
-              </span>
+              {p.snippet && (
+                <span className="min-w-0 truncate">
+                  …<Snippet text={p.snippet} />…
+                </span>
+              )}
             </button>
           </li>
         ))}

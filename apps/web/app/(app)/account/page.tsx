@@ -12,6 +12,7 @@ import { AppPasswords } from "@/components/app-passwords"
 import { AvatarPicker } from "@/components/avatar-picker"
 import { DeviceAccounts } from "@/components/device-accounts"
 import { DeviceLink } from "@/components/device-link"
+import { FaceGrouping } from "@/components/face-grouping"
 import { PartnerSettings } from "@/components/partner-settings"
 import { AddPasskey, PasskeyList } from "@/components/passkeys"
 import { PasswordForm } from "@/components/password-form"
@@ -29,6 +30,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { androidRelease } from "@/lib/android-release"
+import { aiFlags } from "@/lib/ai"
 import { enabledProviders, passkeyStatus } from "@/lib/auth"
 import { db } from "@/lib/db"
 import {
@@ -105,6 +107,7 @@ export default async function AccountPage() {
       passkeyStatus(),
     ])
   const partner = await getPartners(me)
+  const ai = await aiFlags(me.id)
   const phones = await listPhones(me)
   const { require2fa, multiAccount } = settings
   const day = (d: Date) =>
@@ -411,6 +414,21 @@ export default async function AccountPage() {
                 lastIp: a.lastIp,
               }))}
             />
+          </CardContent>
+        </Card>
+      )}
+
+      {ai.faces && (
+        <Card id="face-grouping" className="scroll-mt-20">
+          <CardHeader>
+            <CardTitle className="text-base">Face grouping</CardTitle>
+            <CardDescription>
+              Nimbus finds faces in your own photos on this server and groups them into people you can name. Faces
+              are never shared with other accounts.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <FaceGrouping initial={ai.facesOn} />
           </CardContent>
         </Card>
       )}

@@ -42,6 +42,10 @@ export const user = pgTable(
     vaultLockMinutes: integer("vault_lock_minutes").default(15).notNull(),
     // An admin turned WebDAV off for this account.
     webdavDisabled: boolean("webdav_disabled").default(false).notNull(),
+    // Phase 20: face grouping. Null follows settings.faces_default.
+    facesOn: boolean("faces_on"),
+    // On the chosen list for AI features (used when settings.ai_access is "chosen").
+    aiAllowed: boolean("ai_allowed").default(false).notNull(),
     // Web uploader speed cap for this account; null falls back to settings.upload_speed_bytes.
     uploadSpeedBytes: bigint("upload_speed_bytes", { mode: "number" }),
     // When the 90% storage warning went out; cleared once usage drops back.
