@@ -18,6 +18,7 @@ export const POST = projectRoute("admin", async (c, req) => {
       access: z.enum(["ro", "rw"]).default("ro"),
       expiresInDays: z.number().int().min(1).max(3650).nullable().default(null),
       ipAllow: z.array(z.string().max(60)).max(20).default([]),
+      scopes: z.array(z.string().max(20)).max(4).default([]),
     })
   )
   if (b instanceof Response) return b

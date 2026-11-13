@@ -763,6 +763,9 @@ export const settings = pgTable(
     secretMaxIdleMinutes: integer("secret_max_idle_minutes"),
     secretUnlockMaxHours: integer("secret_unlock_max_hours"),
     secretTrashDays: integer("secret_trash_days"),
+    // Secrets S6b: scan uploaded text files for leaked keys; check passwords against Have I Been Pwned.
+    secretLeakScan: boolean("secret_leak_scan").notNull().default(true),
+    secretHibp: boolean("secret_hibp").notNull().default(true),
     // Where action messages (toasts) appear for everyone.
     toastPosition: text("toast_position")
       .$type<ToastPosition>()
@@ -1889,6 +1892,8 @@ export const secretTokens = pgTable(
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     // 7 or 1: the last "expires soon" notice sent.
     warnedDays: integer("warned_days"),
+    // KMS operations this token may call: kms:encrypt, kms:decrypt, kms:sign, kms:verify.
+    scopes: text("scopes").array().notNull().default(sql`'{}'::text[]`),
   },
   (t) => [index("secret_tokens_project_idx").on(t.projectId)]
 )
@@ -2356,3 +2361,170 @@ export const secretItems = pgTable(
   },
   (t) => [index("secret_items_project_idx").on(t.projectId)]
 )
+
+// ---- Secrets S6a: dynamic database credentials and rotation -----------------
+
+export type DbEngine = "postgres" | "mysql" | "redis" | "mongodb"
+
+// A database Nimbus can create short-lived users on. The admin login is sealed; the
+// role template (creation and revoke statements with {{username}} {{password}}
+// {{expiry}}) lives here too, one per connection.
+export const secretDbConnections = pgTable(
+  "secret_db_connections",
+  {
+    id: id(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => secretProjects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    engine: text("engine").$type<DbEngine>().notNull(),
+    host: text("host").notNull(),
+    port: integer("port").notNull(),
+    // Postgres/MySQL database, Mongo auth database; empty for Redis.
+    database: text("database").notNull().default(""),
+    tls: boolean("tls").notNull().default(false),
+    adminEnc: text("admin_enc").notNull(),
+    createSql: text("create_sql").notNull(),
+    revokeSql: text("revoke_sql").notNull(),
+    defaultTtl: integer("default_ttl").notNull(),
+    maxTtl: integer("max_ttl").notNull(),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("secret_db_connections_name_idx").on(t.projectId, t.name)]
+)
+
+// One issued user. The password stays sealed so an admin can reveal it again until it ends.
+export const secretDbLeases = pgTable(
+  "secret_db_leases",
+  {
+    id: id(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => secretProjects.id, { onDelete: "cascade" }),
+    connectionId: uuid("connection_id")
+      .notNull()
+      .references(() => secretDbConnections.id, { onDelete: "cascade" }),
+    username: text("username").notNull(),
+    passwordEnc: text("password_enc").notNull(),
+    issuedBy: text("issued_by").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    // The last revoke attempt's error, so a failed one is retried by the sweep and shown.
+    error: text("error"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("secret_db_leases_conn_idx").on(t.connectionId, t.createdAt)]
+)
+
+// A secret whose value Nimbus changes on the database. alternate mode swaps between
+// username and usernameB (both must exist) and also writes the user name to usernameKey.
+export const secretRotations = pgTable(
+  "secret_rotations",
+  {
+    id: id(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => secretProjects.id, { onDelete: "cascade" }),
+    secretId: uuid("secret_id")
+      .notNull()
+      .references(() => secrets.id, { onDelete: "cascade" }),
+    connectionId: uuid("connection_id")
+      .notNull()
+      .references(() => secretDbConnections.id, { onDelete: "cascade" }),
+    username: text("username").notNull(),
+    usernameB: text("username_b"),
+    usernameKey: text("username_key"),
+    // Which of the two the secret holds now (alternate mode).
+    active: text("active"),
+    intervalDays: integer("interval_days"),
+    nextAt: timestamp("next_at", { withTimezone: true }),
+    lastAt: timestamp("last_at", { withTimezone: true }),
+    error: text("error"),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("secret_rotations_secret_idx").on(t.secretId)]
+)
+
+// ---- Secrets S6b: KMS keys, leak findings, root key rotation ----------------
+
+// A named key in a project's KMS. kind: aes (encrypt/decrypt), ed25519 or p256 (sign/verify).
+export const secretKmsKeys = pgTable(
+  "secret_kms_keys",
+  {
+    id: id(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => secretProjects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    kind: text("kind").$type<"aes" | "ed25519" | "p256">().notNull(),
+    // Disabled keys refuse every operation, old versions included.
+    state: text("state").$type<"enabled" | "disabled">().notNull().default("enabled"),
+    latest: integer("latest").notNull().default(1),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("secret_kms_keys_name_idx").on(t.projectId, t.name)]
+)
+
+// Key material per version, sealed with the project data key. publicKey is PEM for the asymmetric kinds.
+export const secretKmsVersions = pgTable(
+  "secret_kms_versions",
+  {
+    keyId: uuid("key_id")
+      .notNull()
+      .references(() => secretKmsKeys.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    materialEnc: text("material_enc").notNull(),
+    publicKey: text("public_key"),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.keyId, t.version] })]
+)
+
+// A suspected secret in one of a member's files. Only a hash and a masked preview are kept.
+export const secretLeaks = pgTable(
+  "secret_leaks",
+  {
+    id: id(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    nodeId: uuid("node_id")
+      .notNull()
+      .references(() => nodes.id, { onDelete: "cascade" }),
+    rule: text("rule").notNull(),
+    line: integer("line").notNull(),
+    masked: text("masked").notNull(),
+    hash: text("hash").notNull(),
+    status: text("status").$type<"open" | "dismissed" | "false_positive" | "moved">().notNull().default("open"),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("secret_leaks_node_hash_idx").on(t.nodeId, t.hash), index("secret_leaks_owner_idx").on(t.ownerId, t.status)]
+)
+
+// Hashes a member marked "false positive": never reported again, in any file.
+export const secretLeakAllow = pgTable(
+  "secret_leak_allow",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    hash: text("hash").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.hash] })]
+)
+
+// One row (id 1): which root key is in use, since when, and the re-wrap job's progress.
+export const secretRootKey = pgTable("secret_root_key", {
+  id: integer("id").primaryKey().default(1),
+  fingerprint: text("fingerprint").notNull(),
+  since: timestamp("since", { withTimezone: true }).notNull().defaultNow(),
+  running: boolean("running").notNull().default(false),
+  total: integer("total").notNull().default(0),
+  done: integer("done").notNull().default(0),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  error: text("error"),
+})

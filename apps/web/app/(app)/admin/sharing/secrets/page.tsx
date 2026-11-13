@@ -131,6 +131,46 @@ export default async function SecretsPage() {
           />
         </SettingRow>
         <SettingRow
+          id="secrets-leak-scan"
+          label="Scan uploaded files for leaked secrets"
+          htmlFor="secret-leak-scan"
+          hint="On: the worker reads new text and code files (up to 1 MB, never vault files) for keys, tokens and private keys, and tells the owner. Only a masked preview is kept."
+          tip={{
+            does: "Looks for AWS, GitHub, Stripe and Slack keys, private keys, JWTs and high-entropy passwords in files members upload.",
+            affects: "Members' uploads, and the worker's load.",
+            default: "On",
+          }}
+          reset={reset("secretLeakScan")}
+        >
+          <input
+            type="checkbox"
+            id="secret-leak-scan"
+            name="leakScan"
+            defaultChecked={s.secretLeakScan}
+            className="size-4 shrink-0 self-start accent-primary sm:self-end"
+          />
+        </SettingRow>
+        <SettingRow
+          id="secrets-hibp"
+          label="Check passwords against Have I Been Pwned"
+          htmlFor="secret-hibp"
+          hint="On: when a member sets a password in Secrets, their browser asks this server for the first five characters of its SHA-1 hash, and the server asks api.pwnedpasswords.com. The password never leaves the browser."
+          tip={{
+            does: "Warns when a Login item's password, or a secret named like a password, is in a known data breach.",
+            affects: "This server's outgoing connections to api.pwnedpasswords.com.",
+            default: "On",
+          }}
+          reset={reset("secretHibp")}
+        >
+          <input
+            type="checkbox"
+            id="secret-hibp"
+            name="hibp"
+            defaultChecked={s.secretHibp}
+            className="size-4 shrink-0 self-start accent-primary sm:self-end"
+          />
+        </SettingRow>
+        <SettingRow
           id="secrets-require-2fa"
           label="Require two-factor for Secrets"
           htmlFor="secret-2fa"

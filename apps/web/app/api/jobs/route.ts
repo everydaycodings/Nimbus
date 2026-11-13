@@ -8,8 +8,11 @@ import { sendNow, type Message } from "@/lib/email"
 import { purgeExpiredTrash } from "@/lib/files"
 import { sweepOrphans } from "@/lib/orphan-sweep"
 import { sendPush } from "@/lib/push"
+import { scanNode, scanUser } from "@/lib/secrets/leaks"
 import { sweep as secretsSweep } from "@/lib/secrets/notices"
+import { runRootRotation } from "@/lib/secrets/root-rotate"
 import { runPush } from "@/lib/secrets/push"
+import { expireLease } from "@/lib/secrets/dynamic"
 import { deliver } from "@/lib/secrets/webhooks"
 import { recheckWarned } from "@/lib/quota"
 import { removeObjects } from "@/lib/s3"
@@ -32,8 +35,12 @@ const jobs: Record<string, (data: never) => Promise<unknown>> = {
   "delete-keys": ({ keys }: { keys: string[] }) => removeObjects(keys),
   "backup-alert": backupAlert,
   "secrets-sweep": secretsSweep,
+  "leak-scan": ({ nodeId }: { nodeId: string }) => scanNode(nodeId),
+  "leak-scan-user": ({ userId }: { userId: string }) => scanUser(userId),
+  "secrets-rotate-root": runRootRotation,
   "secrets-push": ({ envId }: { envId: string }) => runPush(envId),
   "secrets-webhook": ({ id }: { id: string }) => deliver(id),
+  "secrets-lease-expire": ({ id }: { id: string }) => expireLease(id),
   push: ({ userId, id }: { userId: string; id: string }) => sendPush(userId, id),
   // An error here (not ours, gone) won't fix itself; only a throw is retried.
   "tus-finish": async ({ id }: { id: string }) => {

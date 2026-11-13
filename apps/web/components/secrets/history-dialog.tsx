@@ -22,6 +22,7 @@ const ACTION: Record<string, string> = {
   restore: "Restored",
   import: "Imported",
   rollback: "Rolled back",
+  rotate: "Rotated",
 }
 
 // Lines only the old value has come first (removed), then the new value's lines.

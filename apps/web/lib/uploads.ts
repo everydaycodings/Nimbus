@@ -30,7 +30,8 @@ import {
 import { notify, notifyEdit } from "@/lib/notify"
 import { checkStorage, release } from "@/lib/quota"
 import { UUID, formatBytes, typeAllowed, zipName } from "@/lib/file-rules"
-import { enqueueDerive } from "@/lib/redis"
+import { enqueue, enqueueDerive } from "@/lib/redis"
+import { scannable } from "@/lib/secrets/leak-rules"
 import { deleteKeys, getText, headSize } from "@/lib/s3"
 import {
   extOf,
@@ -514,6 +515,8 @@ export async function finishTusUpload(
     await checkStorage(token.u)
     // A browser makes these itself; this covers API uploads and closed tabs.
     if (result.versionId) await enqueueDerive(result.versionId, token.k === "camera")
+    // Text and code files are checked for leaked keys by the worker (if an admin left that on).
+    if (result.versionId && scannable(name, mime, size)) await enqueue("leak-scan", { nodeId: result.nodeId }).catch(() => {})
     if (token.b) await notifyEdit(token.b, result.nodeId)
     if (token.s) {
       const link = await dropLink(token.s)

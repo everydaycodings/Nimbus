@@ -36,6 +36,7 @@ import {
   setHealthServices,
 } from "./actions"
 import { AutoRefresh, HealthList } from "./health-list"
+import { RootKeyCard } from "./root-key-card"
 
 export const metadata = { title: "Health · Admin · Nimbus" }
 
@@ -207,6 +208,8 @@ export default async function HealthPage({
           them one at a time.
         </p>
       </section>
+
+      {s.secretsEnabled && <RootKeyCard />}
 
       <div className="flex max-w-3xl flex-col gap-10">
         <SettingsForm

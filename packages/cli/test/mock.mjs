@@ -31,6 +31,23 @@ export function startMock(port = 0) {
     if (state.locked && p.startsWith("/secrets")) return err(res, 423, "locked", "locked", { unlockUrl: "http://x/secrets" })
     if (p === "/projects") return send(res, 200, { projects: [{ id: "1", slug: "web", name: "Web" }] })
     if (p === "/projects/web/envs") return send(res, 200, { envs: [{ slug: "dev", name: "Development" }] })
+    if (p === "/kms/keys") return send(res, 200, { keys: [{ name: "pay", kind: "aes", state: "enabled", latest: 2 }] })
+    if (p.startsWith("/kms/") && req.method === "POST") {
+      const b = JSON.parse(body || "{}")
+      state.lastKms = { op: p.slice(5), ...b }
+      if (b.key !== "pay") return err(res, 404, "not_found", "No key by that name in this project.")
+      if (p === "/kms/encrypt") return send(res, 200, { ciphertext: "nkms:v1:pay:2:" + b.data, version: 2 })
+      if (p === "/kms/decrypt") return send(res, 200, { data: b.ciphertext.split(":").pop(), version: 2 })
+      if (p === "/kms/sign") return send(res, 200, { signature: "nkms:v1:pay:2:sig-" + b.data, version: 2 })
+      if (p === "/kms/verify") return send(res, 200, { valid: b.signature === "nkms:v1:pay:2:sig-" + b.data, version: 2 })
+    }
+    if (p === "/dynamic" && req.method === "POST") {
+      const b = JSON.parse(body || "{}")
+      if (b.connection !== "orders-db") return err(res, 404, "not_found", "No connection called " + b.connection)
+      state.lastTtl = b.ttl
+      return send(res, 200, { leaseId: "L1", username: "nim_abc", password: "pw1", host: "db", port: 5432, database: "app", url: "postgres://nim_abc:pw1@db:5432/app", expiresAt: "2030-01-01T00:00:00.000Z", engine: "postgres" })
+    }
+    if (p === "/dynamic" && req.method === "DELETE") return send(res, 200, {})
     if (p === "/secrets/version") return send(res, 200, { version: state.version, etag: `"${state.version}"` })
     if (p === "/secrets/watch") {
       const since = Number(u.searchParams.get("version"))

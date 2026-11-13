@@ -78,12 +78,14 @@ export async function scheduleHealth(minutes: number | null) {
 }
 
 export type JobName =
-  "email" | "secrets-sweep" | "secrets-push" | "secrets-webhook" | "delete-keys" | "tus-finish" | "backup-alert" | "orphan-sweep" | "push" | "ocr-langs"
+  "email" | "leak-scan" | "leak-scan-user" | "secrets-rotate-root" | "secrets-sweep" | "secrets-push" | "secrets-webhook" | "secrets-lease-expire" | "delete-keys" | "tus-finish" | "backup-alert" | "orphan-sweep" | "push" | "ocr-langs"
 
 // Work the request shouldn't wait for, retried by `npm run worker` until it lands.
 // Failed jobs stay a week for a look; done ones go, since emails carry file names.
-export async function enqueue(name: JobName, data: object) {
+// `delay` (ms) holds the job back, `jobId` makes a repeat a no-op.
+export async function enqueue(name: JobName, data: object, o: { delay?: number; jobId?: string } = {}) {
   await jobsQueue.add(name, data, {
+    ...o,
     attempts: 8,
     backoff: { type: "exponential", delay: 30_000 },
     removeOnComplete: true,

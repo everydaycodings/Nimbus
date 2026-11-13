@@ -59,6 +59,41 @@ In a protected environment nothing is written: the answer is `202 { "pending": t
 - Without `publicKey` Nimbus makes an ed25519 pair and returns the private key once; with it only the certificate is made.
 - CLI: `nimbus ssh cert --project P --principal deploy[,root] [--ttl H] [--key FILE.pub] [--out FILE]` writes `KEY-cert.pub` (and the key when it was generated, mode 600) and prints the `ssh -i … -o CertificateFile=…` line. The bash script does not implement it.
 
+## Dynamic database credentials (S6a)
+A project admin sets up connections (PostgreSQL, MySQL/MariaDB, Redis ACL, MongoDB) in the web app. These issue short-lived database users from the connection's role template. A member's CLI token (Developer or Admin) or a **read-write** machine token may use them; Viewers and read-only tokens get `403`. Machine tokens aren't environment-bound here: any rw token of the project works.
+
+`GET /dynamic?project=` -> `200 { "connections": [{ "id": "...", "name": "orders-db", "engine": "postgres", "defaultTtl": 3600, "maxTtl": 86400 }] }` (TTLs in seconds).
+
+`POST /dynamic` body `{ "project": "web"?, "connection": "orders-db", "ttl": "30m"? }` -> `200 { "leaseId": "uuid", "username": "nim_1a2b3c4d5e6f", "password": "...", "host": "db", "port": 5432, "database": "app", "tls": false, "engine": "postgres", "url": "postgres://nim_...:...@db:5432/app", "expiresAt": "2026-01-01T10:30:00.000Z", "ttl": 1800, "lease": { ... } }`
+- `connection` is the name or id. `ttl` is seconds or `90`, `30m`, `2h`, `7d`; default = the connection's default TTL; anything above the connection's max TTL is cut to it (read `ttl`/`expiresAt` in the answer). `502` when the database refuses.
+- The password is in this answer; a Developer/Admin can show it again in the web app until the lease ends (audited).
+- Nimbus removes the user at `expiresAt` (a delayed job, with the hourly sweep as a backstop, so allow up to a minute of slack).
+
+`PATCH /dynamic` body `{ "project"?, "lease": "uuid", "ttl": "1h"? }` -> `200 { "leaseId", "expiresAt" }`. Extends the lease to now + ttl, never past issue time + max TTL (`409` otherwise).
+
+`DELETE /dynamic?project=&lease=uuid` -> `200 {}`. Revokes at once.
+
+Every issue, renew and revoke is written to the audit log with the token name and IP.
+- CLI: `nimbus dynamic get NAME [--project P] [--ttl 1h] [--format env|json|url] [--prefix DB_]` prints `DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD DB_URL DB_LEASE_ID DB_EXPIRES_AT` as quoted lines (default; json and url also), and the lease id and end time on stderr; `nimbus dynamic list`; `nimbus dynamic revoke LEASE_ID`. The Go CLI and the bash script don't implement it yet.
+
+Rotation (attach a secret to a database user, rotate by interval or by hand) is configured in the web app only. It writes the new password as a new secret version (history action "rotate"). It skips change requests in protected environments and the project admins are told (the same notice any change to a protected environment sends). On failure the secret keeps its old value and the admins are told.
+
+## KMS (S6b)
+Named keys per project; the server holds the material (sealed with the project key) and never returns it. Keys are made, rotated, disabled and deleted by a project admin in the web app (**KMS** tab). Kinds: `aes` (AES-256-GCM: encrypt, decrypt), `ed25519` and `p256` (ECDSA P-256 with SHA-256, IEEE P1363 signature: sign, verify). Binary data is base64 in JSON. Values are text of the form `nkms:v1:<key>:<version>:<base64url>`, so decrypt and verify use the right key version without being told. After a rotation new work uses the latest version; older ciphertext and signatures still open. A disabled key refuses everything.
+
+`GET /kms/keys?project=` -> `200 { "keys": [ { "name": "pay", "kind": "aes", "state": "enabled", "latest": 2 } ] }` (names only; needs at least one `kms:*` scope).
+
+`POST /kms/encrypt` body `{ "project": "web", "key": "pay", "data": "<base64>", "context": "order-7"? }` -> `200 { "ciphertext": "nkms:v1:pay:2:...", "version": 2 }`
+`POST /kms/decrypt` body `{ "project", "key", "ciphertext", "context"? }` -> `200 { "data": "<base64>", "version": 1 }`. `context` is bound in (AAD): it must match what encrypt used, else `400`.
+`POST /kms/sign` body `{ "project", "key", "data": "<base64>" }` -> `200 { "signature": "nkms:v1:rel:1:...", "version": 1 }`
+`POST /kms/verify` body `{ "project", "key", "data": "<base64>", "signature" }` -> `200 { "valid": true, "version": 1 }` (a mismatch is `valid: false`, still `200`).
+
+- `project` may be left out for a machine token. Data up to 1 MB. Responses are `cache-control: no-store`.
+- Machine tokens need the scope for each call: `kms:encrypt`, `kms:decrypt`, `kms:sign`, `kms:verify` (set when the token is made; a token with none gets `403` here and keeps working for secrets). A member's CLI token follows their role: Viewers may verify, Developers and Admins all four.
+- Errors: `404` no such key or version, `409` the key is disabled or is the wrong kind for the call, `400` bad data or a ciphertext that can't be opened (wrong key, context or tampered; the message never echoes data).
+- Every call is audited (`secrets_kms_encrypt|decrypt|sign|verify`) with the key, version and sizes, never the data.
+- CLI: `nimbus kms encrypt|decrypt|sign|verify --key K [--project P] [--in FILE | --text S | stdin] [--context S] [--signature SIG] [--out FILE]`; `nimbus kms keys`. `verify` exits 1 on `valid: false`. Not in the bash script.
+
 ## Server notes (S2)
 - `slug` of a project is unique and lowercase; an `id` (UUID) is accepted wherever a project slug is.
 - `GET /projects` and `GET /projects/{p}/envs` also answer signed-in browsers (the web app reads the same URLs); the shapes above are the bearer-token view.

@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache"
 
-import { saveSettings } from "@/lib/audit"
+import { audit, saveSettings } from "@/lib/audit"
+import { fingerprint, previousRootKey, rootKey } from "@/lib/secrets/kms"
 import { runChecks } from "@/lib/health"
 import {
   DEFAULT_SLOW_MS,
@@ -70,5 +71,15 @@ export async function setHealthServices(form: FormData) {
     healthSlowMs: slow,
     updatedAt: new Date(),
   })
+  revalidatePath("/admin", "layout")
+}
+
+// Secrets root key: the worker seals every project key and share link again under the
+// current SECRETS_ROOT_KEY (the old one is SECRETS_ROOT_KEY_PREVIOUS). See README.
+export async function startRootRotation() {
+  await requireAdmin()
+  if (!previousRootKey()) return
+  await audit("secrets_root_rotate_start", { detail: `to key ${fingerprint(rootKey())}` })
+  await enqueue("secrets-rotate-root", {}, { jobId: "secrets-rotate-root" })
   revalidatePath("/admin", "layout")
 }

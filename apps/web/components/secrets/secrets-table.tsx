@@ -22,6 +22,8 @@ import {
   UserIcon,
   WarningIcon,
 } from "@phosphor-icons/react"
+import { PwnedHint } from "@/components/secrets/pwned-hint"
+import { looksLikePassword } from "@/lib/secrets/pwned-rules"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import {
@@ -959,6 +961,7 @@ function Line(p: LineProps) {
               <span className="ml-auto font-sans text-xs">Click to reveal</span>
             </button>
           )}
+          {valueVisible && editable && (p.isNew || dirty) && looksLikePassword(d.key) && <PwnedHint value={d.value} />}
         </div>
 
         <div className="col-start-3 row-start-1 flex items-center gap-0.5 sm:col-start-4">

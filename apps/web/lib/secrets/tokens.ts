@@ -20,6 +20,7 @@ import {
   settings,
   user,
 } from "@/lib/db/schema"
+import { KMS_SCOPES } from "./kms-core"
 import { formatCode, hashSecret, newCode, normalizeCode } from "@/lib/device-link-rules"
 import {
   CLI_PREFIX,
@@ -173,6 +174,7 @@ export type TokenInput = {
   access: "ro" | "rw"
   expiresInDays: number | null
   ipAllow: string[]
+  scopes?: string[]
 }
 
 export async function createMachineToken(projectId: string, userId: string, i: TokenInput) {
@@ -199,6 +201,7 @@ export async function createMachineToken(projectId: string, userId: string, i: T
       access: i.access,
       expiresAt: i.expiresInDays ? new Date(Date.now() + i.expiresInDays * 86400_000) : null,
       ipAllow: ips.length ? ips : null,
+      scopes: (i.scopes ?? []).filter((x) => KMS_SCOPES.includes(x as (typeof KMS_SCOPES)[number])),
       createdBy: userId,
     })
     .returning({ id: secretTokens.id })
@@ -224,6 +227,7 @@ export async function listMachineTokens(projectId: string) {
     access: t.access,
     expiresAt: t.expiresAt?.toISOString() ?? null,
     ipAllow: t.ipAllow ?? [],
+    scopes: t.scopes,
     createdBy: by,
     createdAt: t.createdAt.toISOString(),
     lastUsedAt: t.lastUsedAt?.toISOString() ?? null,

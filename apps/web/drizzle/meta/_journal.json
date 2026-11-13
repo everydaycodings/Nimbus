@@ -337,6 +337,20 @@
       "when": 1795400000000,
       "tag": "0047_secrets_s5_pki",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1795500000000,
+      "tag": "0048_secrets_s6a_dynamic",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1795600000000,
+      "tag": "0049_secrets_s6b",
+      "breakpoints": true
     }
   ]
 }

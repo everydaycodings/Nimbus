@@ -171,6 +171,26 @@ function sentence(e: typeof auditEvents.$inferSelect, who: string) {
       return `downloaded the file item ${d}`
     case "secrets_item_totp":
       return `showed the one-time code of ${d}`
+    case "secrets_dyn_conn_save":
+      return `database connection ${d}`
+    case "secrets_dyn_conn_delete":
+      return `deleted the database connection ${d}`
+    case "secrets_dyn_conn_test":
+      return `tested a database connection: ${d}`
+    case "secrets_dyn_lease":
+      return `dynamic database credentials: ${d}`
+    case "secrets_dyn_reveal":
+      return `revealed database credentials: ${d}`
+    case "secrets_dyn_renew":
+      return `renewed a database lease: ${d}`
+    case "secrets_dyn_revoke":
+      return `database lease: ${d}`
+    case "secrets_dyn_rotation_save":
+      return `password rotation: ${d}`
+    case "secrets_dyn_rotation_delete":
+      return `removed a password rotation: ${d}`
+    case "secrets_dyn_rotate":
+      return `rotated a password: ${d}`
     default:
       return e.action
   }

@@ -3,6 +3,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -56,6 +57,8 @@ const help = `nimbus <command>
   agent --out FILE [--on-change CMD] [--interval SECONDS] [--format F] [--once]
   ssh cert --project P --principal deploy[,root] [--ttl HOURS] [--key PUBKEY_FILE] [--out FILE]
                          ask the project's SSH CA for a 1-8 hour certificate (no --key: new key pair)
+  kms encrypt|decrypt|sign|verify --key K [--project P] [--in FILE | --text S | stdin] [--context S]
+                         [--signature SIG (verify)] [--out FILE]; kms keys lists the project's keys
 Common: --project P --env E --path /   Env: NIMBUS_TOKEN NIMBUS_SERVER`
 
 var boolFlags = map[string]bool{"plain": true, "once": true, "help": true}
@@ -577,6 +580,109 @@ func sshCert(flags map[string]string) error {
 	return nil
 }
 
+// KMS (CONTRACT.md "KMS"): data goes in as base64; encrypt and sign print the ciphertext or
+// signature, decrypt writes the bytes (stdout or --out), verify exits 1 when it doesn't match.
+func kmsCmd(flags map[string]string, pos []string) error {
+	c, err := getCtx(flags)
+	if err != nil {
+		return err
+	}
+	proj, _, _ := target(flags)
+	op := ""
+	if len(pos) > 1 {
+		op = pos[1]
+	}
+	if op == "keys" {
+		path := "/kms/keys"
+		if proj != "" {
+			path += "?project=" + url.QueryEscape(proj)
+		}
+		_, b, _, err := call(c, "GET", path, nil, true, nil)
+		if err != nil {
+			return err
+		}
+		var r struct {
+			Keys []struct {
+				Name   string `json:"name"`
+				Kind   string `json:"kind"`
+				State  string `json:"state"`
+				Latest int    `json:"latest"`
+			} `json:"keys"`
+		}
+		if err := json.Unmarshal(b, &r); err != nil {
+			return failf(1, "bad response: %v", err)
+		}
+		for _, k := range r.Keys {
+			fmt.Printf("%s\t%s\tv%d\t%s\n", k.Name, k.Kind, k.Latest, k.State)
+		}
+		return nil
+	}
+	if (op != "encrypt" && op != "decrypt" && op != "sign" && op != "verify") || flags["key"] == "" {
+		return failf(2, "Usage: nimbus kms encrypt|decrypt|sign|verify --key K\n%s", help)
+	}
+	var input []byte
+	if t, ok := flags["text"]; ok {
+		input = []byte(t)
+	} else if f := flags["in"]; f != "" {
+		if input, err = os.ReadFile(f); err != nil {
+			return failf(1, "%v", err)
+		}
+	} else if input, err = io.ReadAll(os.Stdin); err != nil {
+		return failf(1, "%v", err)
+	}
+	body := map[string]any{"key": flags["key"]}
+	if proj != "" {
+		body["project"] = proj
+	}
+	if v := flags["context"]; v != "" {
+		body["context"] = v
+	}
+	if op == "decrypt" {
+		body["ciphertext"] = strings.TrimSpace(string(input))
+	} else {
+		body["data"] = base64.StdEncoding.EncodeToString(input)
+	}
+	if op == "verify" {
+		body["signature"] = strings.TrimSpace(flags["signature"])
+	}
+	_, b, _, err := call(c, "POST", "/kms/"+op, body, true, nil)
+	if err != nil {
+		return err
+	}
+	var r struct {
+		Ciphertext string `json:"ciphertext"`
+		Signature  string `json:"signature"`
+		Data       string `json:"data"`
+		Valid      bool   `json:"valid"`
+	}
+	if err := json.Unmarshal(b, &r); err != nil {
+		return failf(1, "bad response: %v", err)
+	}
+	switch op {
+	case "encrypt":
+		fmt.Println(r.Ciphertext)
+	case "sign":
+		fmt.Println(r.Signature)
+	case "decrypt":
+		out, err := base64.StdEncoding.DecodeString(r.Data)
+		if err != nil {
+			return failf(1, "bad response: %v", err)
+		}
+		if f := flags["out"]; f != "" {
+			return os.WriteFile(f, out, 0o600)
+		}
+		_, _ = os.Stdout.Write(out)
+	default:
+		if r.Valid {
+			fmt.Println("valid")
+		} else {
+			fmt.Println("invalid")
+			os.Exit(1)
+		}
+	}
+	return nil
+}
+
 func main() {
 	flags, pos, rest := parse(os.Args[1:])
 	if len(pos) == 0 || flags["help"] != "" {
@@ -607,6 +713,8 @@ func main() {
 		} else {
 			err = sshCert(flags)
 		}
+	case "kms":
+		err = kmsCmd(flags, pos)
 	case "run":
 		var code int
 		code, err = runCmd(flags, rest)

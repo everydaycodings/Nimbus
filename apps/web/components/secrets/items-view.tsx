@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react"
 
 import { useLoad } from "@/components/secrets/access-view"
 import { api, copySecret, errorText } from "@/components/secrets/client"
+import { PwnedHint } from "@/components/secrets/pwned-hint"
 import { Empty, Expiry, TEXTAREA, readB64, useBusy } from "@/components/secrets/pki-ui"
 import { Confirm, Modal, SELECT } from "@/components/secrets/ui"
 import { SubmitButton } from "@/components/submit-button"
@@ -112,6 +113,7 @@ function ItemForm({ base, kind, item, onClose, onDone }: { base: string; kind: K
   const { busy, error, setError, setBusy } = useBusy()
   const [file, setFile] = useState<{ name: string; mime: string; b64: string } | null>(null)
   const pick = useRef<HTMLInputElement>(null)
+  const [pw, setPw] = useState("")
   return (
     <Modal title={item ? `Edit ${item.name}` : `New ${K.label.toLowerCase()}`} onClose={onClose}>
       <form
@@ -166,8 +168,9 @@ function ItemForm({ base, kind, item, onClose, onDone }: { base: string; kind: K
             {f.area ? (
               <textarea id={`it-${f.key}`} name={f.key} rows={f.key === "body" ? 8 : 3} className={TEXTAREA} spellCheck={false} defaultValue={item?.data[f.key]} />
             ) : (
-              <Input id={`it-${f.key}`} name={f.key} type={f.secret ? "password" : "text"} autoComplete="off" spellCheck={false} defaultValue={item?.data[f.key]} />
+              <Input id={`it-${f.key}`} name={f.key} type={f.secret ? "password" : "text"} autoComplete="off" spellCheck={false} defaultValue={item?.data[f.key]} onChange={kind === "login" && f.key === "password" ? (e) => setPw(e.target.value) : undefined} />
             )}
+            {kind === "login" && f.key === "password" && <PwnedHint value={pw} />}
             {f.hint && <p className="text-xs text-muted-foreground">{f.hint}</p>}
           </div>
         ))}

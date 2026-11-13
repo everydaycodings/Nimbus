@@ -38,8 +38,8 @@ export function useLoad<T>(path: string) {
 }
 
 // Who can open the project, what machines can read it, and where changes go.
-export function AccessView({ detail }: { detail: Detail }) {
-  const [tab, setTab] = useState<Tab>("members")
+export function AccessView({ detail, initialTab }: { detail: Detail; initialTab?: "tokens" }) {
+  const [tab, setTab] = useState<Tab>(initialTab ?? "members")
   return (
     <div className="flex flex-col gap-5">
       <div role="tablist" aria-label="Access" className="flex gap-1 overflow-x-auto border-b">
@@ -247,6 +247,7 @@ type Token = {
   access: "ro" | "rw"
   expiresAt: string | null
   ipAllow: string[]
+  scopes?: string[]
   createdBy: string | null
   lastUsedAt: string | null
   lastIp: string | null
@@ -288,6 +289,7 @@ function Tokens({ detail }: { detail: Detail }) {
                 <p className="text-xs text-pretty text-muted-foreground">
                   {t.access === "rw" ? "Read and write" : "Read only"} · {t.envIds.map(envName).filter(Boolean).join(", ")} · /{t.path}
                   {t.ipAllow.length > 0 && ` · from ${t.ipAllow.join(", ")}`}
+                  {t.scopes && t.scopes.length > 0 && ` · KMS: ${t.scopes.map((x) => x.replace("kms:", "")).join(", ")}`}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {t.revoked ? "Revoked" : expired ? "Expired" : t.expiresAt ? `Expires ${when(t.expiresAt)}` : "Never expires"} ·{" "}
@@ -337,6 +339,7 @@ function TokenDialog({ detail, onClose, onMade }: { detail: Detail; onClose: () 
   const [access, setAccess] = useState<"ro" | "rw">("ro")
   const [days, setDays] = useState("90")
   const [ips, setIps] = useState("")
+  const [scopes, setScopes] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   return (
@@ -354,6 +357,7 @@ function TokenDialog({ detail, onClose, onMade }: { detail: Detail; onClose: () 
               access,
               expiresInDays: days === "never" ? null : Number(days),
               ipAllow: ips.split(/[\s,]+/).filter(Boolean),
+              scopes,
             })
             onMade(name, r.token)
             onClose()
@@ -413,6 +417,23 @@ function TokenDialog({ detail, onClose, onMade }: { detail: Detail; onClose: () 
             <Input id="token-ips" value={ips} onChange={(e) => setIps(e.target.value)} placeholder="203.0.113.7, 10.0.0.0/8" className="font-mono" />
           </div>
         </div>
+        <fieldset className="grid gap-2">
+          <legend className="text-sm font-medium">KMS operations (optional)</legend>
+          <div className="flex flex-wrap gap-x-4 gap-y-2">
+            {["encrypt", "decrypt", "sign", "verify"].map((op) => (
+              <label key={op} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className={CHECKBOX}
+                  checked={scopes.includes(`kms:${op}`)}
+                  onChange={(ev) => setScopes(ev.target.checked ? [...scopes, `kms:${op}`] : scopes.filter((x) => x !== `kms:${op}`))}
+                />
+                {op[0].toUpperCase() + op.slice(1)}
+              </label>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">Lets the token call the project&apos;s KMS keys. Leave empty for secrets only.</p>
+        </fieldset>
         <p role="alert" className="text-sm text-destructive empty:hidden">{error}</p>
         <div className="flex justify-end gap-2">
           <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>

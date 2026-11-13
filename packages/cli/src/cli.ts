@@ -25,6 +25,11 @@ const HELP = `nimbus <command>
   agent --out FILE [--on-change CMD] [--interval SECONDS] [--format F] [--once]
   ssh cert --project P --principal deploy[,root] [--ttl HOURS] [--key PUBKEY_FILE] [--out FILE]
                          ask the project's SSH CA for a 1-8 hour certificate (no --key: new key pair)
+  dynamic get NAME [--project P] [--ttl 1h] [--format env|json|url] [--prefix DB_]
+                         issue a short-lived database user on connection NAME (env lines by default)
+  dynamic list | dynamic revoke LEASE_ID [--project P]
+  kms encrypt|decrypt|sign|verify --key K [--project P] [--in FILE | --text S | stdin] [--context S]
+                         [--signature SIG (verify)] [--out FILE]; kms keys lists the project's keys
 Common: --project P --env E --path /   Env: NIMBUS_TOKEN NIMBUS_SERVER`
 
 // ---- config -----------------------------------------------------------------
@@ -278,6 +283,70 @@ async function sshCert(flags: Record<string, string>) {
   console.log(`ssh -i ${keyFile} -o CertificateFile=${certFile} ${principals[0]}@HOST`)
 }
 
+// KMS (CONTRACT.md "KMS"). Data goes in as base64; encrypt and sign print the ciphertext or
+// signature, decrypt writes the bytes (stdout or --out), verify exits 1 when it doesn't match.
+async function kms(flags: Record<string, string>, pos: string[]) {
+  const c = ctx(flags)
+  const project = target(flags).project
+  const op = pos[1]
+  if (op === "keys") {
+    const r = (await (await call(c, "GET", `/kms/keys${project ? `?project=${encodeURIComponent(project)}` : ""}`)).json()) as { keys: { name: string; kind: string; state: string; latest: number }[] }
+    for (const k of r.keys) console.log(`${k.name}\t${k.kind}\tv${k.latest}\t${k.state}`)
+    return
+  }
+  if (!["encrypt", "decrypt", "sign", "verify"].includes(op) || !flags.key) throw new Fail(`Usage: nimbus kms encrypt|decrypt|sign|verify --key K\n${HELP}`, 2)
+  const input = flags.text !== undefined ? Buffer.from(flags.text) : flags.in ? readFileSync(flags.in) : readFileSync(0)
+  const body: Record<string, unknown> = { key: flags.key }
+  if (project) body.project = project
+  if (flags.context) body.context = flags.context
+  if (op === "decrypt") body.ciphertext = input.toString("utf8").trim()
+  else body.data = input.toString("base64")
+  if (op === "verify") body.signature = (flags.signature || "").trim()
+  const r = (await (await call(c, "POST", `/kms/${op}`, { body })).json()) as { ciphertext?: string; signature?: string; data?: string; valid?: boolean }
+  if (op === "encrypt") console.log(r.ciphertext)
+  else if (op === "sign") console.log(r.signature)
+  else if (op === "decrypt") {
+    const out = Buffer.from(r.data ?? "", "base64")
+    if (flags.out) writeFileSync(flags.out, out, { mode: 0o600 })
+    else process.stdout.write(out)
+  } else {
+    console.log(r.valid ? "valid" : "invalid")
+    if (!r.valid) process.exitCode = 1
+  }
+}
+
+// Short-lived database users (CONTRACT.md "Dynamic database credentials"). `get` prints
+// shell-safe env lines (NAME=value, quoted) so `eval "$(nimbus dynamic get db)"` works.
+async function dynamic(flags: Record<string, string>, pos: string[]) {
+  const c = ctx(flags)
+  const project = target(flags).project
+  const sub = pos[1]
+  if (sub === "list") {
+    const r = (await (await call(c, "GET", `/dynamic${project ? `?project=${encodeURIComponent(project)}` : ""}`)).json()) as { connections: { name: string; engine: string; defaultTtl: number; maxTtl: number }[] }
+    for (const x of r.connections) console.log(`${x.name}\t${x.engine}\tdefault ${x.defaultTtl}s\tmax ${x.maxTtl}s`)
+    return
+  }
+  if (sub === "revoke") {
+    if (!pos[2]) throw new Fail("Usage: nimbus dynamic revoke LEASE_ID", 2)
+    await call(c, "DELETE", `/dynamic?lease=${encodeURIComponent(pos[2])}${project ? `&project=${encodeURIComponent(project)}` : ""}`)
+    console.error("Revoked.")
+    return
+  }
+  if (sub !== "get" || !pos[2]) throw new Fail(`Usage: nimbus dynamic get NAME [--ttl 1h] [--format env|json|url]\n${HELP}`, 2)
+  const body: Record<string, unknown> = { connection: pos[2] }
+  if (project) body.project = project
+  if (flags.ttl) body.ttl = flags.ttl
+  const r = (await (await call(c, "POST", "/dynamic", { body })).json()) as { leaseId: string; username: string; password: string; host: string; port: number; database: string; url: string; expiresAt: string; engine: string }
+  const fmt = flags.format || "env"
+  if (fmt === "json") return void process.stdout.write(JSON.stringify({ leaseId: r.leaseId, engine: r.engine, host: r.host, port: r.port, database: r.database, username: r.username, password: r.password, url: r.url, expiresAt: r.expiresAt }, null, 2) + "\n")
+  if (fmt === "url") return void console.log(r.url)
+  if (fmt !== "env") throw new Fail(`Unknown format "${fmt}" (env, json, url)`, 2)
+  const p = flags.prefix ?? "DB_"
+  const vars: [string, string][] = [["HOST", r.host], ["PORT", String(r.port)], ["NAME", r.database], ["USER", r.username], ["PASSWORD", r.password], ["URL", r.url], ["LEASE_ID", r.leaseId], ["EXPIRES_AT", r.expiresAt]]
+  process.stdout.write(vars.filter(([, v]) => v !== "").map(([k, v]) => `${p}${k}=${q(v)}\n`).join(""))
+  console.error(`nimbus: lease ${r.leaseId} ends ${r.expiresAt}`)
+}
+
 async function main() {
   const { flags, pos, rest } = parse(process.argv.slice(2))
   const cmd = pos[0]
@@ -293,6 +362,8 @@ async function main() {
     case "ssh":
       if (pos[1] !== "cert") throw new Fail(`Usage: nimbus ssh cert --project P --principal user\n${HELP}`, 2)
       return sshCert(flags)
+    case "dynamic": return dynamic(flags, pos)
+    case "kms": return kms(flags, pos)
     case "run": process.exitCode = await run(flags, rest); return
     default: throw new Fail(`Unknown command "${cmd}"\n${HELP}`, 2)
   }

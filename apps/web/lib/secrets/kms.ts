@@ -1,19 +1,31 @@
 // Secrets encryption. SECRETS_ROOT_KEY (32 bytes, base64 or 64 hex) wraps each
 // project's random data key; the data key seals every value with AES-256-GCM.
 // Separate from BETTER_AUTH_SECRET. Rotating the root key = unwrap + wrap each
-// project key again (S6); values are not touched.
+// project key again (lib/secrets/root-rotate.ts); values are not touched.
 // Relative-import safe so node --test can load it.
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto"
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto"
 
-export function rootKey() {
-  const raw = (process.env.SECRETS_ROOT_KEY ?? "").trim()
+function parseKey(raw: string, name: string) {
+  raw = raw.trim()
   const key = /^[0-9a-f]{64}$/i.test(raw)
     ? Buffer.from(raw, "hex")
     : Buffer.from(raw, "base64")
-  if (key.length !== 32)
-    throw new Error("SECRETS_ROOT_KEY must be 32 bytes (openssl rand -base64 32).")
+  if (key.length !== 32) throw new Error(`${name} must be 32 bytes (openssl rand -base64 32).`)
   return key
 }
+
+export const rootKey = () => parseKey(process.env.SECRETS_ROOT_KEY ?? "", "SECRETS_ROOT_KEY")
+
+// The key being rotated away from (SECRETS_ROOT_KEY_PREVIOUS): reading still works with
+// it until every root-sealed value has been re-wrapped under the new key.
+export function previousRootKey() {
+  const raw = (process.env.SECRETS_ROOT_KEY_PREVIOUS ?? "").trim()
+  return raw ? parseKey(raw, "SECRETS_ROOT_KEY_PREVIOUS") : null
+}
+
+// A short public name for a key: sha256 of a labelled copy, never the key itself.
+export const fingerprint = (k: Buffer) =>
+  createHash("sha256").update("nimbus-root-key:").update(k).digest("hex").slice(0, 16)
 
 export const kmsConfigured = () => {
   try {
@@ -51,8 +63,35 @@ export function newProjectKey(projectId: string) {
   return { key, wrapped: seal(rootKey(), key, `project:${projectId}`) }
 }
 
+// Opens with the current root key, else the previous one while a rotation is under way.
+function openRoot(sealed: string, aad: string) {
+  try {
+    return open(rootKey(), sealed, aad)
+  } catch (e) {
+    const prev = previousRootKey()
+    if (!prev) throw e
+    return open(prev, sealed, aad)
+  }
+}
+
+// True when only the previous root key opens this (it still needs re-wrapping).
+export function needsRewrap(sealed: string, aad: string) {
+  try {
+    open(rootKey(), sealed, aad)
+    return false
+  } catch {
+    return previousRootKey() !== null
+  }
+}
+
+// The same plaintext sealed again under the current root key.
+export const rewrap = (sealed: string, aad: string) => seal(rootKey(), openRoot(sealed, aad), aad)
+
+export const projectAad = (projectId: string) => `project:${projectId}`
+export const SHARE_AAD = "share"
+
 export const unwrapProjectKey = (projectId: string, wrapped: string) =>
-  open(rootKey(), wrapped, `project:${projectId}`)
+  openRoot(wrapped, `project:${projectId}`)
 
 export const sealValue = (key: Buffer, projectId: string, plain: string) =>
   seal(key, Buffer.from(plain, "utf8"), `value:${projectId}`)
@@ -62,4 +101,4 @@ export const openValue = (key: Buffer, projectId: string, sealed: string) =>
 
 // Share links aren't tied to a project, so their text is sealed with the root key itself.
 export const sealServer = (plain: string) => seal(rootKey(), Buffer.from(plain, "utf8"), "share")
-export const openServer = (sealed: string) => open(rootKey(), sealed, "share").toString("utf8")
+export const openServer = (sealed: string) => openRoot(sealed, "share").toString("utf8")

@@ -278,6 +278,19 @@ Everything secret lives in `.env` at the repo root:
   is lost or changed, every stored secret is unreadable, and backups don't contain it.
 - Rotating a storage key: create the new key, put it in `.env`, run `docker compose up -d`,
   then delete the old key.
+- **Rotating `SECRETS_ROOT_KEY`** (no secret is re-encrypted; only the keys that wrap them are):
+  1. Make a new key (`openssl rand -base64 32`, or Admin → System → Health → Secrets root key →
+     Rotate → Make a new key) and keep a copy offline.
+  2. In `.env`, set `SECRETS_ROOT_KEY_PREVIOUS` to the **current** value and `SECRETS_ROOT_KEY` to the
+     new one. Run `docker compose up -d` so the app and the worker both restart. Everything still
+     opens, because the app tries the new key and then the previous one.
+  3. Admin → System → Health → Secrets root key now shows both fingerprints and how many values
+     are still sealed with the old key. Press **Re-wrap**. The worker seals each project key and
+     share link again under the new key and shows progress; stopping it midway is fine, press the
+     button again and it carries on.
+  4. When it says everything is sealed with the new key, delete `SECRETS_ROOT_KEY_PREVIOUS` from
+     `.env` and restart. Keep the old key until you have taken a fresh backup, since older database
+     backups still need it.
 
 ### Setting it up by hand
 

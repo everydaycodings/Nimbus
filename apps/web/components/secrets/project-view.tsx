@@ -4,6 +4,9 @@ import {
   ArrowLeftIcon,
   ArrowDownIcon,
   CertificateIcon,
+  HeartbeatIcon,
+  LockKeyIcon,
+  DatabaseIcon,
   IdentificationCardIcon,
   ArrowUpIcon,
   ClockCounterClockwiseIcon,
@@ -34,7 +37,10 @@ import { AccessView } from "@/components/secrets/access-view"
 import { AuditView } from "@/components/secrets/audit-view"
 import { CertsView } from "@/components/secrets/certs-view"
 import { api, errorText } from "@/components/secrets/client"
+import { DynamicView } from "@/components/secrets/dynamic-view"
+import { HealthView } from "@/components/secrets/health-view"
 import { ItemsView } from "@/components/secrets/items-view"
+import { KmsView } from "@/components/secrets/kms-view"
 import { OverviewMatrix } from "@/components/secrets/overview-matrix"
 import { PoliciesView } from "@/components/secrets/policies-view"
 import { RequestsView } from "@/components/secrets/requests-view"
@@ -80,7 +86,7 @@ export function ProjectView({
     initialView === "overview" ||
     initialView === "trash" ||
     (["access", "audit", "policies"].includes(initialView) && detail.role === "admin") ||
-    ["requests", "snapshots", "access-requests", "shares", "ssh", "certs", "items"].includes(initialView) ||
+    ["requests", "snapshots", "access-requests", "shares", "ssh", "certs", "items", "dynamic", "health", "kms"].includes(initialView) ||
     slugs.includes(initialView)
       ? initialView
       : "overview"
@@ -94,6 +100,8 @@ export function ProjectView({
   const [dialog, setDialog] = useState<"envs" | "rename" | "delete" | null>(null)
   // A key the Overview asked the table to start with (a missing value to add).
   const [addKey, setAddKey] = useState<string | null>(null)
+  // Where Access opens: Health sends token lines to the Machine tokens tab.
+  const [accessTab, setAccessTab] = useState<"tokens" | undefined>(undefined)
   const admin = detail.role === "admin"
   const canWrite = detail.writableEnvs.length > 0
 
@@ -218,6 +226,20 @@ export function ProjectView({
             <IdentificationCardIcon className="size-4" />
             Items
           </button>
+          <button className={nav(view === "dynamic")} aria-current={view === "dynamic" ? "page" : undefined} onClick={() => go("dynamic")}>
+            <DatabaseIcon className="size-4" />
+            Dynamic secrets
+          </button>
+        </nav>
+        <nav aria-label="Security" className="flex flex-col gap-1">
+          <button className={nav(view === "health")} aria-current={view === "health" ? "page" : undefined} onClick={() => go("health")}>
+            <HeartbeatIcon className="size-4" />
+            Health
+          </button>
+          <button className={nav(view === "kms")} aria-current={view === "kms" ? "page" : undefined} onClick={() => go("kms")}>
+            <LockKeyIcon className="size-4" />
+            KMS
+          </button>
         </nav>
         <nav aria-label="Governance" className="flex flex-col gap-1">
           <p className="flex h-8 items-center gap-2 px-2.5 text-xs font-medium text-muted-foreground">
@@ -322,7 +344,7 @@ export function ProjectView({
             onOpen={(slug, key) => go(slug, folder, key)}
           />
         ) : view === "access" && admin ? (
-          <AccessView detail={detail} />
+          <AccessView key={accessTab} detail={detail} initialTab={accessTab} />
         ) : view === "requests" ? (
           <RequestsView detail={detail} initial={initialRequest ?? null} />
         ) : view === "snapshots" ? (
@@ -335,6 +357,12 @@ export function ProjectView({
           <CertsView projectId={detail.id} role={detail.role} />
         ) : view === "items" ? (
           <ItemsView projectId={detail.id} role={detail.role} />
+        ) : view === "dynamic" ? (
+          <DynamicView projectId={detail.id} role={detail.role} />
+        ) : view === "health" ? (
+          <HealthView projectId={detail.id} onOpen={(v, f, tab) => (setAccessTab(tab === "tokens" ? "tokens" : undefined), go(v, f ?? ""))} />
+        ) : view === "kms" ? (
+          <KmsView projectId={detail.id} role={detail.role} />
         ) : view === "shares" ? (
           <SharesView />
         ) : view === "audit" && admin ? (

@@ -15,7 +15,7 @@ type Moment = { at: string; by: string; counts: Record<string, number>; keys: st
 type Step = { kind: "add" | "change" | "delete"; key: string; folder: string; fields: string[] }
 
 const stamp = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "medium" })
-const WORD: Record<string, string> = { create: "added", update: "changed", delete: "deleted", restore: "restored", import: "imported", rollback: "rolled back" }
+const WORD: Record<string, string> = { create: "added", update: "changed", delete: "deleted", restore: "restored", import: "imported", rollback: "rolled back", rotate: "rotated" }
 const summary = (c: Record<string, number>) =>
   Object.entries(c).map(([k, n]) => `${n} ${WORD[k] ?? k}`).join(", ")
 

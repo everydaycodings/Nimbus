@@ -17,6 +17,7 @@ import {
   settings,
 } from "@/lib/db/schema"
 import { notify } from "@/lib/notify"
+import { dynSweep } from "./dynamic"
 import { pkiSweep } from "./pki-sweep"
 import type { Ctx } from "./service"
 
@@ -111,7 +112,7 @@ export async function envChanged(c: Ctx, envIds: string[], keys: string[]) {
 
 export async function sweep() {
   const now = new Date()
-  const out = { access: 0, rotation: 0, tokens: 0, shares: 0, trash: 0, pki: {} as Awaited<ReturnType<typeof pkiSweep>> }
+  const out = { access: 0, rotation: 0, tokens: 0, shares: 0, trash: 0, pki: {} as Awaited<ReturnType<typeof pkiSweep>>, dynamic: {} as Awaited<ReturnType<typeof dynSweep>> }
 
   // Temporary access that ran out: mark it, tell the person.
   const ended = await db
@@ -187,5 +188,7 @@ export async function sweep() {
   }
   // Certificates, API keys and watched domains: renewals and expiry warnings.
   out.pki = await pkiSweep({ admins, tell })
+  // Database leases past their end and rotations that are due.
+  out.dynamic = await dynSweep()
   return out
 }

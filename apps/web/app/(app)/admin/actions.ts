@@ -536,6 +536,8 @@ export async function setSecretsPolicy(form: FormData) {
   const trash = limit(form, "trashDays")
   await saveSettings({
     secretSharesEnabled: form.get("shares") === "on",
+    secretLeakScan: form.get("leakScan") === "on",
+    secretHibp: form.get("hibp") === "on",
     secretRequire2fa: form.get("require2fa") === "on",
     secretMaxIdleMinutes: idle && Math.min(Math.ceil(idle), 1440),
     secretUnlockMaxHours: hours && Math.min(Math.ceil(hours), 720),
@@ -644,6 +646,8 @@ const RESETTABLE: SettingKey[] = [
   "secretCliEnabled",
   "maxSecretProjectsPerMember",
   "maxSecretsPerProject",
+  "secretLeakScan",
+  "secretHibp",
   "officeUrl",
   "webdav",
   "ocrLangs",
