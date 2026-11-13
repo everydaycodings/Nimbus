@@ -1,7 +1,8 @@
 "use client"
 
 import { Dialog } from "@base-ui/react/dialog"
-import { LockSimpleIcon, SlidersHorizontalIcon, XIcon } from "@phosphor-icons/react"
+import { LockSimpleIcon, SlidersHorizontalIcon, TerminalWindowIcon, XIcon } from "@phosphor-icons/react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useEffect, useRef, useState } from "react"
 
@@ -65,6 +66,10 @@ export function SecretsShell({
           <span className="size-1.5 rounded-full bg-brand" aria-hidden />
           Unlocked, locks after {mins} min idle
         </span>
+        <Button variant="ghost" size="xs" render={<Link href="/secrets/cli" />}>
+          <TerminalWindowIcon />
+          CLI
+        </Button>
         <Button variant="ghost" size="xs" onClick={() => setSettings(true)}>
           <SlidersHorizontalIcon />
           Lock settings

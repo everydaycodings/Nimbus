@@ -85,6 +85,32 @@ function sentence(e: typeof auditEvents.$inferSelect, who: string) {
       return "set a Secrets PIN"
     case "secrets_pin_removed":
       return "removed their Secrets PIN"
+    case "secrets_member_add":
+      return `added ${who} to a Secrets project (${d})`
+    case "secrets_member_change":
+      return `changed ${who}'s Secrets role to ${d}`
+    case "secrets_member_remove":
+      return `removed ${who} from a Secrets project`
+    case "secrets_token_create":
+      return `made the Secrets token “${d}”`
+    case "secrets_token_revoke":
+      return `revoked the Secrets token “${d}”`
+    case "secrets_cli_approve":
+      return `signed in the command line on “${d}”`
+    case "secrets_cli_deny":
+      return `refused a command-line sign-in from “${d}”`
+    case "secrets_cli_revoke":
+      return `signed out the command line “${d}”`
+    case "secrets_push_save":
+      return `set up Secrets server push to ${d}`
+    case "secrets_push_run":
+      return `Secrets server push: ${d}`
+    case "secrets_push_remove":
+      return "removed a Secrets server push"
+    case "secrets_webhook_add":
+      return `added the Secrets webhook ${d}`
+    case "secrets_webhook_remove":
+      return "removed a Secrets webhook"
     default:
       return e.action
   }

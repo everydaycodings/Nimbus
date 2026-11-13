@@ -71,6 +71,46 @@ export default async function SecretsPage() {
           />
         </SettingRow>
         <SettingRow
+          id="allow-secret-tokens"
+          label="Allow machine tokens"
+          htmlFor="secret-tokens"
+          hint="Off: nms_ tokens stop working and no new ones can be made. Existing tokens are kept."
+          tip={{
+            does: "Lets project admins make read-only or read-write tokens for servers and CI.",
+            affects: "Scripts using a token.",
+            default: "On",
+          }}
+          reset={reset("secretTokensEnabled")}
+        >
+          <input
+            type="checkbox"
+            id="secret-tokens"
+            name="tokens"
+            defaultChecked={s.secretTokensEnabled}
+            className="size-4 shrink-0 self-start accent-primary sm:self-end"
+          />
+        </SettingRow>
+        <SettingRow
+          id="allow-secret-cli"
+          label="Allow the command line"
+          htmlFor="secret-cli"
+          hint="Off: nimbus login, signed-in CLIs and the downloads stop working."
+          tip={{
+            does: "Lets members sign in the nimbus command line and download it from Secrets.",
+            affects: "Everyone using the CLI.",
+            default: "On",
+          }}
+          reset={reset("secretCliEnabled")}
+        >
+          <input
+            type="checkbox"
+            id="secret-cli"
+            name="cli"
+            defaultChecked={s.secretCliEnabled}
+            className="size-4 shrink-0 self-start accent-primary sm:self-end"
+          />
+        </SettingRow>
+        <SettingRow
           id="secret-projects-per-member"
           label="Projects per member"
           htmlFor="maxProjects"

@@ -40,6 +40,7 @@ import {
   type Format,
   type Pair,
 } from "./format"
+import { notifyChange } from "./hooks"
 import { newProjectKey, openValue, sealValue, unwrapProjectKey } from "./kms"
 import { expand, hasRefs, selfId, type Scope } from "./refs"
 
@@ -49,6 +50,8 @@ export type Ctx = {
   projectId: string
   role: Role
   key: Buffer
+  // Environment ids this caller can see; null is all (admins, and members given everything).
+  envs: string[] | null
 }
 
 export class SecretsError extends Error {
@@ -90,16 +93,48 @@ export async function policy() {
 export async function projectCtx(userId: string, projectId: string): Promise<Ctx | null> {
   if (!/^[0-9a-f-]{36}$/i.test(projectId)) return null
   const [row] = await db
-    .select({ role: secretMembers.role, wrapped: secretProjects.wrappedKey })
+    .select({ role: secretMembers.role, wrapped: secretProjects.wrappedKey, envIds: secretMembers.envIds })
     .from(secretMembers)
     .innerJoin(secretProjects, eq(secretProjects.id, secretMembers.projectId))
     .where(and(eq(secretMembers.projectId, projectId), eq(secretMembers.userId, userId)))
   if (!row) return null
-  return { userId, projectId, role: row.role, key: unwrapProjectKey(projectId, row.wrapped) }
+  return {
+    userId,
+    projectId,
+    role: row.role,
+    key: unwrapProjectKey(projectId, row.wrapped),
+    envs: row.role === "admin" ? null : row.envIds,
+  }
 }
+
+// The project's id for a slug or an id, among the member's projects.
+export async function memberProjectId(userId: string, ref: string) {
+  const [row] = await db
+    .select({ id: secretProjects.id })
+    .from(secretProjects)
+    .innerJoin(secretMembers, eq(secretMembers.projectId, secretProjects.id))
+    .where(
+      and(
+        eq(secretMembers.userId, userId),
+        /^[0-9a-f-]{36}$/i.test(ref) ? eq(secretProjects.id, ref) : eq(secretProjects.slug, ref)
+      )
+    )
+  return row?.id ?? null
+}
+
+// A caller with every right: the worker pushing a .env or the API for a machine token.
+export async function systemCtx(projectId: string): Promise<Ctx | null> {
+  const [p] = await db.select().from(secretProjects).where(eq(secretProjects.id, projectId))
+  if (!p) return null
+  return { userId: p.createdBy ?? "", projectId, role: "admin", key: unwrapProjectKey(projectId, p.wrappedKey), envs: null }
+}
+
+const allowed = (c: Ctx, envId: string) => !c.envs || c.envs.includes(envId)
+const envScope = (c: Ctx) => (c.envs ? inArray(secrets.envId, c.envs.length ? c.envs : [randomUUID()]) : undefined)
 
 export type ProjectCard = {
   id: string
+  slug: string
   name: string
   description: string | null
   role: Role
@@ -109,7 +144,7 @@ export type ProjectCard = {
 
 export async function listProjects(userId: string): Promise<ProjectCard[]> {
   const rows = await db.execute<ProjectCard>(sql`
-    select p.id, p.name, p.description, m.role,
+    select p.id, p.slug, p.name, p.description, m.role,
       (select count(*)::int from secret_envs e where e.project_id = p.id) as envs,
       (select count(*)::int from secrets s where s.project_id = p.id and s.deleted_at is null) as secrets
     from secret_projects p join secret_members m on m.project_id = p.id
@@ -142,10 +177,17 @@ export async function createProject(userId: string, name: string, description?: 
   }
   const id = randomUUID()
   const { wrapped } = newProjectKey(id)
+  const taken = new Set(
+    (await db.select({ s: secretProjects.slug }).from(secretProjects)).map((r) => r.s)
+  )
+  const base = slugify(n).slice(0, 40)
+  let slug = base
+  for (let i = 2; taken.has(slug); i++) slug = `${base}-${i}`
   await db.transaction(async (tx) => {
     await tx.insert(secretProjects).values({
       id,
       name: n,
+      slug,
       description: clean(description, 300) || null,
       wrappedKey: wrapped,
       createdBy: userId,
@@ -180,19 +222,28 @@ export type FolderRow = { id: string; envId: string; parentId: string | null; na
 
 export async function projectDetail(c: Ctx) {
   const [p] = await db.select().from(secretProjects).where(eq(secretProjects.id, c.projectId))
-  const envs = await db
-    .select({ id: secretEnvs.id, name: secretEnvs.name, slug: secretEnvs.slug, position: secretEnvs.position })
-    .from(secretEnvs)
-    .where(eq(secretEnvs.projectId, c.projectId))
-    .orderBy(asc(secretEnvs.position), asc(secretEnvs.name))
-  const folders = await foldersOf(c.projectId)
+  const envs = (
+    await db
+      .select({ id: secretEnvs.id, name: secretEnvs.name, slug: secretEnvs.slug, position: secretEnvs.position })
+      .from(secretEnvs)
+      .where(eq(secretEnvs.projectId, c.projectId))
+      .orderBy(asc(secretEnvs.position), asc(secretEnvs.name))
+  ).filter((e) => allowed(c, e.id))
+  const folders = await foldersOf(c.projectId, db, envs.map((e) => e.id))
   const [{ trash }] = await db
     .select({ trash: count() })
     .from(secrets)
-    .where(and(eq(secrets.projectId, c.projectId), isNotNull(secrets.deletedAt)))
+    .where(
+      and(
+        eq(secrets.projectId, c.projectId),
+        isNotNull(secrets.deletedAt),
+        inArray(secrets.envId, envs.length ? envs.map((e) => e.id) : [randomUUID()])
+      )
+    )
   return {
     id: p.id,
     name: p.name,
+    slug: p.slug,
     description: p.description,
     role: c.role,
     envs,
@@ -209,9 +260,11 @@ async function env(c: Ctx, envId: string, q: Q = db) {
     .select()
     .from(secretEnvs)
     .where(and(eq(secretEnvs.id, envId), eq(secretEnvs.projectId, c.projectId)))
-  if (!e) throw bad("That environment doesn't exist.", 404)
+  if (!e || !allowed(c, e.id)) throw bad("That environment doesn't exist.", 404)
   return e
 }
+
+export const requireEnv = (c: Ctx, envId: string) => env(c, envId)
 
 export async function addEnv(c: Ctx, name: string) {
   const n = clean(name, 40)
@@ -258,8 +311,8 @@ export async function deleteEnv(c: Ctx, envId: string) {
 
 // ---- Folders ----------------------------------------------------------------
 
-async function foldersOf(projectId: string, q: Q = db): Promise<FolderRow[]> {
-  const rows = await q
+async function foldersOf(projectId: string, q: Q = db, onlyEnvs?: string[]): Promise<FolderRow[]> {
+  const rows = (await q
     .select({
       id: secretFolders.id,
       envId: secretFolders.envId,
@@ -268,6 +321,7 @@ async function foldersOf(projectId: string, q: Q = db): Promise<FolderRow[]> {
     })
     .from(secretFolders)
     .where(eq(secretFolders.projectId, projectId))
+  ).filter((r) => !onlyEnvs || onlyEnvs.includes(r.envId))
   const byId = new Map(rows.map((r) => [r.id, r]))
   const path = (r: (typeof rows)[number]): string =>
     r.parentId && byId.get(r.parentId) ? `${path(byId.get(r.parentId)!)}/${r.name}` : r.name
@@ -314,7 +368,7 @@ export async function renameFolder(c: Ctx, folderId: string, name: string) {
     .select()
     .from(secretFolders)
     .where(and(eq(secretFolders.id, folderId), eq(secretFolders.projectId, c.projectId)))
-  if (!f) throw bad("That folder doesn't exist.", 404)
+  if (!f || !allowed(c, f.envId)) throw bad("That folder doesn't exist.", 404)
   const sibs = await db
     .select({ id: secretFolders.id, name: secretFolders.name })
     .from(secretFolders)
@@ -334,7 +388,7 @@ export async function renameFolder(c: Ctx, folderId: string, name: string) {
 export async function deleteFolder(c: Ctx, folderId: string) {
   const all = await foldersOf(c.projectId)
   const f = all.find((x) => x.id === folderId)
-  if (!f) throw bad("That folder doesn't exist.", 404)
+  if (!f || !allowed(c, f.envId)) throw bad("That folder doesn't exist.", 404)
   const ids = new Set([folderId])
   for (let grew = true; grew; ) {
     grew = false
@@ -364,6 +418,7 @@ export async function deleteFolder(c: Ctx, folderId: string) {
       )
     await tx.delete(secretFolders).where(eq(secretFolders.id, folderId))
   })
+  await changed(c, [f.envId], [])
   return f.path
 }
 
@@ -401,12 +456,16 @@ type Row = typeof secrets.$inferSelect
 // Every live secret of the project, decrypted, with a lookup for references.
 // Only used server-side to expand references and answer exports.
 async function loadAll(c: Ctx, q: Q = db) {
-  const envs = await q.select().from(secretEnvs).where(eq(secretEnvs.projectId, c.projectId))
-  const folders = await foldersOf(c.projectId, q)
-  const rows = await q
-    .select()
-    .from(secrets)
-    .where(and(eq(secrets.projectId, c.projectId), isNull(secrets.deletedAt)))
+  const envs = (await q.select().from(secretEnvs).where(eq(secretEnvs.projectId, c.projectId))).filter((e) =>
+    allowed(c, e.id)
+  )
+  const folders = await foldersOf(c.projectId, q, envs.map((e) => e.id))
+  const rows = (
+    await q
+      .select()
+      .from(secrets)
+      .where(and(eq(secrets.projectId, c.projectId), isNull(secrets.deletedAt)))
+  ).filter((r) => allowed(c, r.envId))
   const envSlug = new Map(envs.map((e) => [e.id, e.slug]))
   const pathOf = new Map(folders.map((f) => [f.id, f.path]))
   const items = rows.map((r) => ({
@@ -554,12 +613,72 @@ export async function exportPairs(
 
 export const exportText = (pairs: Pair[], format: Format) => serialize(pairs, format)
 
+// The API's view of one folder: key, value, type, comment. `own` applies the caller's
+// personal overrides (user tokens only, and only when expanding).
+export async function apiSecrets(c: Ctx, envId: string, folderId: string | null, opts: { expand: boolean; own: boolean }) {
+  await env(c, envId)
+  const all = await loadAll(c)
+  const items = all.items.filter((i) => i.row.envId === envId && (i.row.folderId ?? null) === folderId)
+  const over =
+    opts.own && opts.expand && items.length
+      ? await db
+          .select()
+          .from(secretOverrides)
+          .where(and(inArray(secretOverrides.secretId, items.map((i) => i.row.id)), eq(secretOverrides.userId, c.userId)))
+      : []
+  const mine = new Map(over.map((o) => [o.secretId, unseal(c, o.valueEnc)]))
+  return items
+    .sort((a, b) => a.row.key.localeCompare(b.row.key))
+    .map((i) => {
+      const v = mine.get(i.row.id) ?? i.value
+      return {
+        key: i.row.key,
+        value: opts.expand ? expand(v, i.scope, all.lookup, selfId(i.scope, i.row.key)).value : v,
+        type: i.row.type ?? "string",
+        comment: i.row.comment ?? "",
+      }
+    })
+}
+
+// ---- Change hooks -----------------------------------------------------------
+
+// Every write ends here: bumps each environment's version (the API's ETag, so
+// agents notice) and queues pushes and webhooks. `keys` are names only.
+async function bump(envIds: string[]) {
+  if (envIds.length)
+    await db
+      .update(secretEnvs)
+      .set({ version: sql`${secretEnvs.version} + 1` })
+      .where(inArray(secretEnvs.id, envIds))
+}
+async function changed(c: Ctx, envIds: string[], keys: string[], quiet = false) {
+  const ids = [...new Set(envIds)]
+  await bump(ids)
+  if (!quiet) await notifyChange(c.projectId, ids, keys)
+}
+
+export async function envVersion(projectId: string, envId: string) {
+  const [e] = await db
+    .select({ v: secretEnvs.version })
+    .from(secretEnvs)
+    .where(and(eq(secretEnvs.id, envId), eq(secretEnvs.projectId, projectId)))
+  return e?.v ?? 0
+}
+
+export async function projectEnvs(projectId: string) {
+  return db
+    .select({ id: secretEnvs.id, name: secretEnvs.name, slug: secretEnvs.slug, position: secretEnvs.position })
+    .from(secretEnvs)
+    .where(eq(secretEnvs.projectId, projectId))
+    .orderBy(asc(secretEnvs.position), asc(secretEnvs.name))
+}
+
 export async function envSlugAndFolder(c: Ctx, envSlug: string, path: string) {
   const [e] = await db
     .select()
     .from(secretEnvs)
     .where(and(eq(secretEnvs.projectId, c.projectId), eq(secretEnvs.slug, envSlug)))
-  if (!e) throw bad("That environment doesn't exist.", 404)
+  if (!e || !allowed(c, e.id)) throw bad("That environment doesn't exist.", 404)
   const f = (await foldersOf(c.projectId)).find((x) => x.envId === e.id && x.path === path)
   if (path && !f) throw bad("That folder doesn't exist.", 404)
   return { envId: e.id, folderId: f?.id ?? null }
@@ -594,6 +713,7 @@ export async function search(c: Ctx, q: string) {
       and(
         eq(secrets.projectId, c.projectId),
         isNull(secrets.deletedAt),
+        c.envs ? inArray(secrets.envId, c.envs.length ? c.envs : [randomUUID()]) : undefined,
         sql`(${secrets.key} ilike ${term} or ${secrets.comment} ilike ${term} or exists (
           select 1 from secret_tag_links l join secret_tags t on t.id = l.tag_id
           where l.secret_id = ${secrets.id} and t.name ilike ${term}))`
@@ -834,6 +954,8 @@ export async function applyOps(
       }
     }
   })
+  if (summary.created.length || summary.updated.length || summary.deleted.length)
+    await changed(c, [envId], [...summary.created, ...summary.updated, ...summary.deleted])
   return { ...summary, env: e.name }
 }
 
@@ -842,9 +964,17 @@ export async function trashIds(c: Ctx, ids: string[]) {
   const rows = await db
     .update(secrets)
     .set({ deletedAt: new Date(), deletedBy: c.userId })
-    .where(and(inArray(secrets.id, ids), eq(secrets.projectId, c.projectId), isNull(secrets.deletedAt)))
+    .where(
+      and(
+        inArray(secrets.id, ids),
+        eq(secrets.projectId, c.projectId),
+        isNull(secrets.deletedAt),
+        envScope(c)
+      )
+    )
     .returning()
   for (const r of rows) await version(db, c, r, "delete")
+  await changed(c, rows.map((r) => r.envId), rows.map((r) => r.key))
   return rows.map((r) => r.key)
 }
 
@@ -853,7 +983,7 @@ async function owned(c: Ctx, ids: string[], tx: Q = db) {
     ? await tx
         .select()
         .from(secrets)
-        .where(and(inArray(secrets.id, ids), eq(secrets.projectId, c.projectId), isNull(secrets.deletedAt)))
+        .where(and(inArray(secrets.id, ids), eq(secrets.projectId, c.projectId), isNull(secrets.deletedAt), envScope(c)))
     : []
   return rows
 }
@@ -883,6 +1013,7 @@ export async function moveIds(c: Ctx, ids: string[], folderId: string | null) {
       .set({ folderId, updatedAt: new Date(), updatedBy: c.userId })
       .where(inArray(secrets.id, rows.map((r) => r.id)))
   })
+  await changed(c, [envId], rows.map((r) => r.key))
   return rows.map((r) => r.key)
 }
 
@@ -937,6 +1068,7 @@ export async function copyIds(c: Ctx, ids: string[], toEnvId: string, overwrite:
         await tx.insert(secretTagLinks).values(mine.map((l) => ({ secretId: target.id, tagId: l.tagId })))
     }
   })
+  if (done.copied) await changed(c, [toEnvId], rows.map((r) => r.key))
   return done
 }
 
@@ -944,6 +1076,7 @@ export async function copyIds(c: Ctx, ids: string[], toEnvId: string, overwrite:
 // path and this one lacks, empty (or with their values).
 export async function copyKeys(c: Ctx, fromEnvId: string, envId: string, folderId: string | null, withValues: boolean) {
   await env(c, fromEnvId)
+  await env(c, envId)
   const f = await folder(c, folderId, envId)
   const all = await foldersOf(c.projectId)
   const path = f ? (all.find((x) => x.id === f.id)?.path ?? "") : ""
@@ -1013,6 +1146,7 @@ export async function setOverride(c: Ctx, secretId: string, value: string | null
       .values({ secretId, userId: c.userId, valueEnc })
       .onConflictDoUpdate({ target: [secretOverrides.secretId, secretOverrides.userId], set: { valueEnc } })
   }
+  await changed(c, [r.envId], [], true)
   return r.key
 }
 
@@ -1020,6 +1154,7 @@ export async function setOverride(c: Ctx, secretId: string, value: string | null
 
 // The folder's current values by key, for the import preview (compared, never sent).
 export async function existingValues(c: Ctx, envId: string, folderId: string | null) {
+  await env(c, envId)
   const all = await loadAll(c)
   const here = new Map(
     all.items
@@ -1035,7 +1170,7 @@ export async function listTrash(c: Ctx) {
   const rows = await db
     .select()
     .from(secrets)
-    .where(and(eq(secrets.projectId, c.projectId), isNotNull(secrets.deletedAt)))
+    .where(and(eq(secrets.projectId, c.projectId), isNotNull(secrets.deletedAt), envScope(c)))
     .orderBy(desc(secrets.deletedAt))
     .limit(500)
   const [envs, folders, people] = await Promise.all([
@@ -1057,7 +1192,7 @@ export async function restoreIds(c: Ctx, ids: string[]) {
   const rows = await db
     .select()
     .from(secrets)
-    .where(and(inArray(secrets.id, ids), eq(secrets.projectId, c.projectId), isNotNull(secrets.deletedAt)))
+    .where(and(inArray(secrets.id, ids), eq(secrets.projectId, c.projectId), isNotNull(secrets.deletedAt), envScope(c)))
   const restored: string[] = []
   const skipped: string[] = []
   for (const r of rows) {
@@ -1085,13 +1220,14 @@ export async function restoreIds(c: Ctx, ids: string[]) {
     await version(db, c, row, "restore")
     restored.push(r.key)
   }
+  if (restored.length) await changed(c, rows.map((r) => r.envId), restored)
   return { restored, skipped }
 }
 
 export async function purgeIds(c: Ctx, ids: string[]) {
   const rows = await db
     .delete(secrets)
-    .where(and(inArray(secrets.id, ids), eq(secrets.projectId, c.projectId), isNotNull(secrets.deletedAt)))
+    .where(and(inArray(secrets.id, ids), eq(secrets.projectId, c.projectId), isNotNull(secrets.deletedAt), envScope(c)))
     .returning({ key: secrets.key })
   return rows.map((r) => r.key)
 }

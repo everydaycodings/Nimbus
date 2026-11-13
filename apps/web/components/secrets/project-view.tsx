@@ -8,6 +8,7 @@ import {
   FolderSimpleIcon,
   GearSixIcon,
   KeyIcon,
+  UsersThreeIcon,
   MagnifyingGlassIcon,
   PencilSimpleIcon,
   PlusIcon,
@@ -19,6 +20,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 
+import { AccessView } from "@/components/secrets/access-view"
 import { api, errorText } from "@/components/secrets/client"
 import { OverviewMatrix } from "@/components/secrets/overview-matrix"
 import { SecretsTable } from "@/components/secrets/secrets-table"
@@ -55,7 +57,10 @@ export function ProjectView({
   const router = useRouter()
   const slugs = detail.envs.map((e) => e.slug)
   const startView =
-    initialView === "overview" || initialView === "trash" || slugs.includes(initialView)
+    initialView === "overview" ||
+    initialView === "trash" ||
+    (initialView === "access" && detail.role === "admin") ||
+    slugs.includes(initialView)
       ? initialView
       : "overview"
   const [view, setView] = useState(startView)
@@ -155,6 +160,12 @@ export function ProjectView({
                 Environments
               </button>
             )}
+            {admin && (
+              <button className={nav(view === "access")} aria-current={view === "access" ? "page" : undefined} onClick={() => go("access")}>
+                <UsersThreeIcon className="size-4" />
+                Access
+              </button>
+            )}
           </div>
         </nav>
       </aside>
@@ -217,6 +228,8 @@ export function ProjectView({
             onFolder={setFolder}
             onOpen={(slug, key) => go(slug, folder, key)}
           />
+        ) : view === "access" && admin ? (
+          <AccessView detail={detail} />
         ) : view === "trash" ? (
           <TrashView detail={detail} canWrite={canWrite} onChanged={() => router.refresh()} />
         ) : env ? (

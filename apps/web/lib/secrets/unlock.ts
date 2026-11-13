@@ -91,13 +91,14 @@ export async function unlockState(touch = true) {
   }
 }
 
+// Locks every session of the member, so a CLI signed in as them is locked too.
 export async function lock() {
   const s = await getSession()
   if (s)
     await db
       .update(secretUnlocks)
       .set({ unlockedAt: null, lastActiveAt: null, challenge: null })
-      .where(eq(secretUnlocks.sessionId, s.session.id))
+      .where(eq(secretUnlocks.userId, s.user.id))
 }
 
 async function open(sessionId: string, userId: string) {

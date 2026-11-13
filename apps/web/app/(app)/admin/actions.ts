@@ -533,6 +533,8 @@ export async function setSecretsPolicy(form: FormData) {
   const perProject = limit(form, "maxSecrets")
   await saveSettings({
     secretsEnabled: form.get("enabled") === "on",
+    secretTokensEnabled: form.get("tokens") === "on",
+    secretCliEnabled: form.get("cli") === "on",
     maxSecretProjectsPerMember: projects && Math.min(Math.ceil(projects), 1000),
     maxSecretsPerProject: perProject && Math.min(Math.ceil(perProject), 100000),
     updatedAt: new Date(),
@@ -630,6 +632,8 @@ const RESETTABLE: SettingKey[] = [
   "vaultLinksEnabled",
   "maxVaultsPerMember",
   "secretsEnabled",
+  "secretTokensEnabled",
+  "secretCliEnabled",
   "maxSecretProjectsPerMember",
   "maxSecretsPerProject",
   "officeUrl",

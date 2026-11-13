@@ -68,3 +68,18 @@ export async function saveSettings(values: PgUpdateSetSource<typeof settings>) {
   )
   if (changed.length) await audit("settings", { detail: changed.join("; ") })
 }
+
+// An audit row for an actor who isn't the signed-in session: a machine token
+// (no member) or a CLI token (a member, named).
+export async function auditAs(
+  actor: { id: string | null; name: string },
+  action: string,
+  detail?: string
+) {
+  await db.insert(auditEvents).values({
+    actorId: actor.id,
+    actorName: actor.name,
+    action,
+    detail: detail ?? null,
+  })
+}

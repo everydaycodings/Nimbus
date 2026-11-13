@@ -46,6 +46,18 @@ Long-poll (SSE is not used). Holds the request until the version differs from `v
 -> `200 { "version": 43, "changed": true }` or `200 { "version": 42, "changed": false }` on timeout.
 Clients then re-GET `/secrets`.
 
+## Writes (optional for clients)
+`POST /secrets` body `{ "project": "web", "env": "dev", "path": "/", "set": { "KEY": "value" }, "delete": ["OLD_KEY"] }`
+-> `200 { "created": [], "updated": [], "deleted": [] }`. Needs a read-write machine token or a member who can edit. The shipped CLIs don't use it; it is for scripts.
+
+## Server notes (S2)
+- `slug` of a project is unique and lowercase; an `id` (UUID) is accepted wherever a project slug is.
+- `GET /projects` and `GET /projects/{p}/envs` also answer signed-in browsers (the web app reads the same URLs); the shapes above are the bearer-token view.
+- A machine token is scoped to one project, one or more environments and a folder path. Without `env`, a token with exactly one environment uses it; with several the caller must say which. Outside its scope: `403 forbidden`.
+- `version` changes when anything in that environment is written. A secret that references another environment (`${prod.KEY}`) is not noticed when only the other environment changes; re-fetch on an interval too (`agent` does).
+- Every 200 from `GET /secrets` is written to the audit log with the token name and IP; `304` and `/secrets/version` are not.
+- Token endpoints are rate limited per IP (`429` + `Retry-After`). `auth/device/*` and the downloads answer `403` when an admin turned the CLI off; machine tokens answer `403` when tokens are off.
+
 ## Errors
 Non-2xx bodies: `{ "error": { "code": "<machine_code>", "message": "<human text>" } }`
 

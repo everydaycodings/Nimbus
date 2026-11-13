@@ -746,6 +746,9 @@ export const settings = pgTable(
     secretsEnabled: boolean("secrets_enabled").notNull().default(true),
     maxSecretProjectsPerMember: integer("max_secret_projects_per_member"),
     maxSecretsPerProject: integer("max_secrets_per_project"),
+    // Machine tokens (nms_) and the CLI (nmu_ sign-in, downloads). Off refuses them; nothing is deleted.
+    secretTokensEnabled: boolean("secret_tokens_enabled").notNull().default(true),
+    secretCliEnabled: boolean("secret_cli_enabled").notNull().default(true),
     // Where action messages (toasts) appear for everyone.
     toastPosition: text("toast_position")
       .$type<ToastPosition>()
@@ -1662,6 +1665,8 @@ export const secretUnlocks = pgTable("secret_unlocks", {
 export const secretProjects = pgTable("secret_projects", {
   id: id(),
   name: text("name").notNull(),
+  // Lowercase, unique: how the CLI and REST API name the project.
+  slug: text("slug").notNull().unique(),
   description: text("description"),
   // The project data key, wrapped by SECRETS_ROOT_KEY. Rotating the root key re-wraps this.
   wrappedKey: text("wrapped_key").notNull(),
@@ -1682,6 +1687,8 @@ export const secretMembers = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     role: text("role").$type<"admin" | "developer" | "viewer">().notNull().default("admin"),
+    // Environments a developer or viewer can see; null is all of them (admins always see all).
+    envIds: uuid("env_ids").array(),
     createdAt: createdAt(),
   },
   (t) => [
@@ -1701,6 +1708,8 @@ export const secretEnvs = pgTable(
     // Lowercase, used in ${env.KEY} references and the API.
     slug: text("slug").notNull(),
     position: integer("position").notNull().default(0),
+    // Bumped on every write here (the API's ETag and watch).
+    version: integer("version").notNull().default(1),
   },
   (t) => [uniqueIndex("secret_envs_slug_idx").on(t.projectId, t.slug)]
 )
@@ -1828,4 +1837,114 @@ export const secretTagLinks = pgTable(
       .references(() => secretTags.id, { onDelete: "cascade" }),
   },
   (t) => [primaryKey({ columns: [t.secretId, t.tagId] })]
+)
+
+// ---- Secrets S2: machine tokens, CLI sign-in, server push, webhooks ----
+
+// Machine tokens (nms_…): only the sha256 is kept. Scoped to some environments and a folder path.
+export const secretTokens = pgTable(
+  "secret_tokens",
+  {
+    id: id(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => secretProjects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    hash: text("hash").notNull().unique(),
+    prefix: text("prefix").notNull(),
+    envIds: uuid("env_ids").array().notNull(),
+    path: text("path").notNull().default(""),
+    access: text("access").$type<"ro" | "rw">().notNull().default("ro"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    ipAllow: text("ip_allow").array(),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    lastIp: text("last_ip"),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [index("secret_tokens_project_idx").on(t.projectId)]
+)
+
+// CLI sign-ins (nmu_…): act as the member, hash only.
+export const secretCliTokens = pgTable(
+  "secret_cli_tokens",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    hash: text("hash").notNull().unique(),
+    createdAt: createdAt(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    lastIp: text("last_ip"),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [index("secret_cli_tokens_user_idx").on(t.userId)]
+)
+
+// The device-code login (lib/secrets/tokens.ts). status: pending | approved | denied | used.
+export const secretDeviceCodes = pgTable("secret_device_codes", {
+  id: id(),
+  codeHash: text("code_hash").notNull().unique(),
+  pollHash: text("poll_hash").notNull().unique(),
+  deviceName: text("device_name").notNull(),
+  ip: text("ip"),
+  status: text("status").notNull().default("pending"),
+  userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: createdAt(),
+})
+
+// Where an environment's .env is pushed over SSH. S4 can point keyEnc at a stored key.
+export const secretPushTargets = pgTable("secret_push_targets", {
+  envId: uuid("env_id")
+    .primaryKey()
+    .references(() => secretEnvs.id, { onDelete: "cascade" }),
+  host: text("host").notNull(),
+  port: integer("port").notNull().default(22),
+  username: text("username").notNull(),
+  path: text("path").notNull(),
+  keyEnc: text("key_enc").notNull(),
+  hostKey: text("host_key"),
+  postCommand: text("post_command"),
+  auto: boolean("auto").notNull().default(false),
+  lastAt: timestamp("last_at", { withTimezone: true }),
+  lastOk: boolean("last_ok"),
+  lastMessage: text("last_message"),
+})
+
+export const secretWebhooks = pgTable(
+  "secret_webhooks",
+  {
+    id: id(),
+    envId: uuid("env_id")
+      .notNull()
+      .references(() => secretEnvs.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    secretEnc: text("secret_enc").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [index("secret_webhooks_env_idx").on(t.envId)]
+)
+
+export const secretWebhookDeliveries = pgTable(
+  "secret_webhook_deliveries",
+  {
+    id: id(),
+    webhookId: uuid("webhook_id")
+      .notNull()
+      .references(() => secretWebhooks.id, { onDelete: "cascade" }),
+    event: text("event").notNull(),
+    payload: text("payload").notNull(),
+    status: text("status").notNull().default("pending"),
+    httpStatus: integer("http_status"),
+    message: text("message"),
+    attempts: integer("attempts").notNull().default(0),
+    createdAt: createdAt(),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+  },
+  (t) => [index("secret_webhook_deliveries_hook_idx").on(t.webhookId, t.createdAt)]
 )
