@@ -13,6 +13,8 @@ import {
   SIGNUP_MODES,
   TOAST_POSITIONS,
   invites,
+  nodeContent,
+  nodeTextParts,
   passkey,
   settings,
   shares,
@@ -24,7 +26,7 @@ import {
 import { passkeyHost } from "@/lib/passkey-rules"
 import { POLICY_MAX, POLICY_MIN } from "@/lib/password-policy"
 import { turnCopiesOffAndDelete } from "@/lib/video-copies"
-import { scheduleBackups, scheduleHealth } from "@/lib/redis"
+import { enqueue, scheduleBackups, scheduleHealth } from "@/lib/redis"
 import { hasPassword, requireAdmin } from "@/lib/session"
 import { getSettings, settingDefault, type SettingKey } from "@/lib/signup"
 
@@ -321,10 +323,46 @@ export async function setOcrLangs(form: FormData) {
     .split(/[\s,+]+/)
     .filter((l) => /^[a-z]{3}(_[a-z]+)?$/.test(l))
     .slice(0, 5)
+  const chosen = langs.length ? langs : ["eng"]
+  // Statuses start over; the worker downloads each language and writes them back.
   await saveSettings({
-    ocrLangs: langs.join("+") || "eng",
+    ocrLangs: chosen.join("+"),
+    ocrLangStatus: {},
     updatedAt: new Date(),
   })
+  await enqueue("ocr-langs", { langs: chosen })
+  revalidatePath("/admin", "layout")
+}
+
+const OCR_MODES = ["off", "images", "images_pdfs", "all"] as const
+
+// What the worker reads text from: nothing, images, images and PDFs, or those and videos.
+export async function setOcrMode(form: FormData) {
+  await requireAdmin()
+  const mode = OCR_MODES.find((m) => m === form.get("ocrMode"))
+  if (!mode) return
+  await saveSettings({ ocrMode: mode, updatedAt: new Date() })
+  revalidatePath("/admin", "layout")
+}
+
+// How many minutes from the start of a video are read.
+export async function setOcrVideoMax(form: FormData) {
+  await requireAdmin()
+  const n = limit(form, "videoMax")
+  if (n === null) return
+  await saveSettings({
+    ocrVideoMaxMin: Math.min(Math.ceil(n), 1440),
+    updatedAt: new Date(),
+  })
+  revalidatePath("/admin", "layout")
+}
+
+// Forgets every file's text; the worker reads them all again, a few a minute.
+export async function rereadAll() {
+  await requireAdmin()
+  await db.delete(nodeTextParts)
+  await db.delete(nodeContent)
+  await audit("settings", { detail: "ocr: read all files' text again" })
   revalidatePath("/admin", "layout")
 }
 
@@ -486,6 +524,8 @@ const RESETTABLE: SettingKey[] = [
   "officeUrl",
   "webdav",
   "ocrLangs",
+  "ocrMode",
+  "ocrVideoMaxMin",
   "mapEnabled",
   "mapStyleUrl",
   "deriveConcurrency",

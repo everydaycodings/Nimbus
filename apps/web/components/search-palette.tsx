@@ -25,6 +25,7 @@ import { Fragment, useEffect, useRef, useState } from "react"
 import { quickSearch } from "@/app/(app)/search-actions"
 import { DIALOG_BACKDROP } from "@/components/overlay-styles"
 import { Previewer } from "@/components/previewer"
+import { Snippet, placeLabel, startOf, type PlaceStart } from "@/components/text-places"
 import { startNewFolder, usePick } from "@/components/upload-provider"
 import { fileType } from "@/lib/file-types"
 import type { Hit } from "@/lib/files"
@@ -52,23 +53,6 @@ function remember(q: string) {
   } catch {}
 }
 
-// ts_headline marks matches with \u0001…\u0002.
-function Snippet({ text }: { text: string }) {
-  return text.split("\u0001").map((part, i) => {
-    const [hit, rest] = part.includes("\u0002")
-      ? part.split("\u0002")
-      : ["", part]
-    return (
-      <Fragment key={i}>
-        {hit && (
-          <mark className="rounded-sm bg-brand/20 text-foreground">{hit}</mark>
-        )}
-        {rest}
-      </Fragment>
-    )
-  })
-}
-
 type Row = {
   key: string
   label: React.ReactNode
@@ -89,7 +73,7 @@ export function SearchPalette({ admin }: { admin: boolean }) {
   const [active, setActive] = useState(0)
   const [recent, setRecent] = useState<string[]>([])
   const [hasLayout, setHasLayout] = useState(false)
-  const [previewing, setPreviewing] = useState<Hit | null>(null)
+  const [previewing, setPreviewing] = useState<{ hit: Hit; start?: PlaceStart } | null>(null)
   const list = useRef<HTMLUListElement>(null)
 
   function show() {
@@ -232,17 +216,25 @@ export function SearchPalette({ admin }: { admin: boolean }) {
     remember(query)
     if (h.kind === "folder") return go(`/folders/${h.id}`)()
     setOpen(false)
-    setPreviewing(h)
+    setPreviewing({ hit: h, start: h.places?.[0] && startOf(h.places[0]) })
   }
 
   const hitRow = (h: Hit): Row => {
     const t = fileType(h.kind, h.mime, h.name)
+    const place = h.places?.[0]
     return {
       key: h.id,
       label: h.name,
       icon: t.icon,
       iconClass: t.color,
-      detail: h.snippet ? (
+      detail: place ? (
+        <>
+          <span className="mr-1.5 rounded bg-muted px-1.5 py-px font-medium text-foreground tabular-nums">
+            {placeLabel(place)}
+          </span>
+          <Snippet text={place.snippet} />
+        </>
+      ) : h.snippet ? (
         <>
           {h.inComment && "In a comment: "}
           <Snippet text={h.snippet} />
@@ -453,7 +445,8 @@ export function SearchPalette({ admin }: { admin: boolean }) {
         </Dialog.Portal>
       </Dialog.Root>
       <Previewer
-        shown={previewing && { item: previewing }}
+        shown={previewing && { item: previewing.hit }}
+        start={previewing?.start}
         open={Boolean(previewing)}
         onClose={() => setPreviewing(null)}
       />

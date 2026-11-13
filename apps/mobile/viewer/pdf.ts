@@ -36,14 +36,24 @@ run(async () => {
   const ratio = first.getViewport({ scale: 1 }).height / first.getViewport({ scale: 1 }).width
 
   const shown = new Set<number>()
+  // The page in the middle of the screen: the first one still showing can be a sliver, e.g. at the end of a short file.
   const setCounter = () => {
-    if (shown.size) counter.textContent = `${Math.min(...shown)} / ${doc.numPages}`
+    const mid = document.elementFromPoint(innerWidth / 2, innerHeight / 2)?.closest<HTMLElement>(".page")?.dataset.n
+    if (mid || shown.size) counter.textContent = `${mid ?? Math.min(...shown)} / ${doc.numPages}`
   }
+  addEventListener("scroll", setCounter, { passive: true })
+
+  // Opening at a page: pages are guessed at the first one's shape until drawn, so keep it in view as the ones above settle,
+  // until the finger touches the page.
+  let goal = Math.min(Math.max(1, meta.page ?? 1), doc.numPages)
+  const toGoal = () => goal > 1 && (pages.children[goal - 1] as HTMLElement | undefined)?.scrollIntoView()
+  if (meta.page) addEventListener("touchstart", () => (goal = 0), { once: true, passive: true })
 
   const draw = async (box: HTMLElement, n: number) => {
     const page = await doc.getPage(n)
     const base = page.getViewport({ scale: 1 })
     box.style.aspectRatio = `${base.width} / ${base.height}`
+    if (n <= goal) toGoal()
     // Sharp when pinched in a little; a higher scale runs low-end phones out of canvas memory.
     const scale = Math.min(MAX_SCALE, ((width * devicePixelRatio) / base.width) * 1.5)
     const viewport = page.getViewport({ scale })
@@ -87,4 +97,5 @@ run(async () => {
     seen.observe(box)
     onScreen.observe(box)
   }
+  toGoal()
 }, "Couldn't read this PDF. It may be damaged or password protected.")

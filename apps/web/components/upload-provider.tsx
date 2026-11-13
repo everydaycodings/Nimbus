@@ -40,7 +40,6 @@ import {
   zipDownload,
   type ZipManifest,
 } from "@/lib/client-zip-download"
-import { ensureIndexed } from "@/lib/index-content"
 import { ensureThumb } from "@/lib/thumbs"
 import { zipName } from "@/lib/file-rules"
 import { cn } from "@/lib/utils"
@@ -520,7 +519,6 @@ class Engine {
           size: file.size,
         }
         ensureThumb(f, file)
-        ensureIndexed(f, file)
       }
       // "v3 added": only worth a lookup when the upload asked for a version.
       if (d.meta?.onConflict === "version")

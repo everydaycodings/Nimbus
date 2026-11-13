@@ -61,6 +61,7 @@ import { canEdit } from "@/lib/editor-rules"
 import { ActivityList } from "@/components/activity-list"
 import { Sheet, SheetDivider, SheetRow, useDismiss } from "@/components/sheet"
 import { useSnack } from "@/components/snackbar"
+import { TextFound } from "@/components/text-found"
 import { TagDialog } from "@/components/tag-dialog"
 import { VaultPickSheet, canVault } from "@/components/vault-sheets"
 import { sendWithTransfer, useSent } from "@/lib/sent"
@@ -81,9 +82,10 @@ import type { Tiles } from "@/lib/rows"
 import { c } from "@/lib/theme"
 
 // Same values as the API's query; the Browser's chips show these (tag looks up its own name).
-export const FILTER_LABELS: Record<"type" | "modified" | "size", Record<string, string>> = {
+export const FILTER_LABELS: Record<"type" | "modified" | "size" | "found", Record<string, string>> = {
   type: Object.fromEntries(TYPE_KEYS.map((k) => [k, FILE_TYPES[k].label])),
   modified: { today: "Today", week: "Last 7 days", month: "Last 30 days", year: "This year" },
+  found: { name: "Names", text: "Text in files", comments: "Comments" },
   size: { small: "Under 1 MB", medium: "1 MB to 100 MB", large: "100 MB to 1 GB", huge: "Over 1 GB" },
 }
 
@@ -734,6 +736,7 @@ function DetailsSheet({ item, role, trash, tags, onChange, onClose, ask }: Props
         </DetailLink>
       )}
       {!trash && item.kind === "file" && editable([item], role) && <VersionsLink item={item} />}
+      {!trash && item.kind === "file" && ["image", "pdf", "video"].includes(typeKeyOf("file", item.mime, item.name)) && <TextFound item={item} />}
       <ActivityList item={item} />
       {!trash && (
         <View style={{ paddingHorizontal: 20, paddingVertical: 8, gap: 8 }}>
@@ -955,7 +958,7 @@ function NewSheet({ parentId, onClose, ask }: Props & { parentId: string | null;
 
 type Option = { value: string; label: string; icon?: ReactNode }
 
-function FilterSheet({ filter, filters, onFilters, onClose, tags }: Props & { filter: "type" | "modified" | "size" | "tag"; onClose: () => void }) {
+function FilterSheet({ filter, filters, onFilters, onClose, tags }: Props & { filter: "type" | "modified" | "size" | "tag" | "found"; onClose: () => void }) {
   const mine = useTags().data ?? tags
   const options: Option[] =
     filter === "tag"
@@ -973,7 +976,7 @@ function FilterSheet({ filter, filters, onFilters, onClose, tags }: Props & { fi
         }))
   const current = filters[filter]
   const set = (value: string | undefined) => onFilters({ ...filters, [filter]: value })
-  const title = { type: "Type", modified: "Modified", size: "Size", tag: "Tags" }[filter]
+  const title = { type: "Type", modified: "Modified", size: "Size", tag: "Tags", found: "Found in" }[filter]
 
   return (
     <Sheet onClose={onClose} header={<Header title={title} />}>

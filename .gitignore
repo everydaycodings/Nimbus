@@ -49,3 +49,6 @@ playwright-report/
 
 # Android release APKs bundled into the image (npm run release:android)
 apps/web/android/*.apk
+
+# Tesseract language data (OCR_DATA_DIR)
+apps/web/.cache/

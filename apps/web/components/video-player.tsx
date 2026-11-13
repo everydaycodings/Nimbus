@@ -83,6 +83,7 @@ export function VideoPlayer({
   fileId,
   onError,
   onUseFrame,
+  startAt,
 }: {
   src: string
   title: string
@@ -96,6 +97,8 @@ export function VideoPlayer({
   onError: () => void
   // Shown to the file's editors: makes the current frame its thumbnail.
   onUseFrame?: (video: HTMLVideoElement) => Promise<void>
+  // A search match, in ms: opens paused 2 s before it, and leaves the saved resume position alone.
+  startAt?: number
 }) {
   const box = useRef<HTMLDivElement>(null)
   const video = useRef<HTMLVideoElement>(null)
@@ -194,12 +197,28 @@ export function VideoPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, linkToken])
 
+  const fromSearch = startAt !== undefined
   useEffect(() => {
-    if (!id) return
+    if (!id || fromSearch) return
     const r = createResume(video.current!, id, version)
     setResume(r)
-    return () => r.dispose()
-  }, [id, version])
+    return () => {
+      r.dispose()
+      setResume(null)
+    }
+  }, [id, version, fromSearch])
+  // Opens, or jumps (a new match in the file), paused a little before the text shows.
+  useEffect(() => {
+    const m = video.current
+    if (startAt === undefined || !m) return
+    const go = () => {
+      m.currentTime = Math.max(0, startAt - 2000) / 1000
+      m.pause()
+    }
+    if (m.readyState >= 1) go()
+    else m.addEventListener("loadedmetadata", go, { once: true })
+    return () => m.removeEventListener("loadedmetadata", go)
+  }, [startAt])
   useEffect(() => () => sleep.cancel(), [sleep])
 
   // Where Cast isn't there (Edge, Safari), the browser's own Remote Playback API.
@@ -359,7 +378,7 @@ export function VideoPlayer({
         src={url}
         // CORS mode, so a frame can be drawn to a canvas for the thumbnail.
         crossOrigin="anonymous"
-        autoPlay
+        autoPlay={!fromSearch}
         playsInline
         onClick={toggle}
         onDoubleClick={toggleFull}

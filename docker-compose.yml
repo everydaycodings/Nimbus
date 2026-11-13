@@ -114,6 +114,7 @@ services:
   app:
     <<: *nimbus
     ports: ["127.0.0.1:3400:3000"]
+    volumes: [tessdata:/data/tessdata]
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
@@ -123,6 +124,7 @@ services:
   worker:
     <<: *nimbus
     command: ["node", "scripts/worker.ts"]
+    volumes: [tessdata:/data/tessdata]
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
@@ -174,6 +176,7 @@ services:
       redis: { condition: service_healthy }
 
 volumes:
+  tessdata:
   postgres:
   minio:
   redis:

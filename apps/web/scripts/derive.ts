@@ -12,7 +12,7 @@ import {
   isJunk,
   previewKind,
 } from "../lib/file-rules.ts"
-import { MAX_BODY, OCR_MAX, extractText } from "../lib/extract.ts"
+import { MAX_BODY, sourceOf } from "../lib/extract.ts"
 import { ocrGroups, smartRules } from "@nimbus/shared/smart-groups"
 import { saveThumb } from "../lib/thumb-store.ts"
 import { serverThumb, serverThumbable } from "../lib/thumbs-server.ts"
@@ -30,14 +30,16 @@ const files = () => sql`
   where n.kind = 'file' and n.trashed_at is null and n.vault_id is null`
 
 const limits = () =>
-  sql<{ max: string; langs: string }[]>`
-    select derive_max_bytes as max, ocr_langs as langs from settings`
+  sql<{ max: string }[]>`
+    select derive_max_bytes as max from settings`
 
 // Skips anything a browser already did: a thumbnail that's no longer null, or text.
-async function deriveRow(f: Row, langs: string) {
+async function deriveRow(f: Row) {
   const kind = previewKind(f.mime, f.name)
   const thumb = f.thumb === null && serverThumbable(kind)
-  if (!thumb && f.indexed) return
+  // Videos are read by the indexer's sweep, from a URL, not here.
+  const index = !f.indexed && sourceOf(kind) !== null
+  if (!thumb && !index) return
   const size = Number(f.size)
   // Text needs only its start; images and PDFs are read whole.
   const end =
@@ -52,16 +54,16 @@ async function deriveRow(f: Row, langs: string) {
       })
     : new Uint8Array()
   if (thumb) await saveThumb(sql, f.key, await serverThumb(bytes, kind!))
-  if (!f.indexed) await indexFile(f, langs, bytes)
+  if (index) await indexFile(f, bytes)
 }
 
 export async function derive(versionId: string) {
-  const [{ max, langs }] = await limits()
+  const [{ max }] = await limits()
   const [f] = await sql<
     Row[]
   >`${files()} and n.current_version_id = ${versionId}`
   if (!f || isJunk(f.name) || Number(f.size) > Number(max)) return
-  await deriveRow(f, langs)
+  await deriveRow(f)
 }
 
 // Up to 5 thumbnails a minute that neither a browser nor a job made (files from
@@ -69,7 +71,7 @@ export async function derive(versionId: string) {
 // gets there first.
 // ponytail: rescans every video and audio file each run; filter by kind in SQL if that gets slow.
 export async function deriveMisses() {
-  const [{ max, langs }] = await limits()
+  const [{ max }] = await limits()
   const rows = await sql<Row[]>`${files()}
     and v.thumb is null and n.size <= ${max}
     and v.created_at < now() - interval '2 minutes'
@@ -80,7 +82,7 @@ export async function deriveMisses() {
     )
     .slice(0, 5)
   for (const f of todo)
-    await deriveRow(f, langs).catch((e: Error) =>
+    await deriveRow(f).catch((e: Error) =>
       console.error(`${f.name}: ${e.message}`)
     )
   return todo.length
@@ -139,53 +141,26 @@ export async function exifMisses() {
         }
       }
     }
-    const smart = smartRules({
-      name: f.name,
-      path: f.path ?? "",
-      mime: f.mime,
-      width,
-      height,
-      camera: Boolean(taken || gps),
-    })
+    // Photos the name rules can't place: the indexer's OCR text decides, once it has it.
+    const smart =
+      smartRules({
+        name: f.name,
+        path: f.path ?? "",
+        mime: f.mime,
+        width,
+        height,
+        camera: Boolean(taken || gps),
+      }) ??
+      (await sql<{ body: string }[]>`
+        select body from node_content where version_id = ${f.id} and ocr_failed is null and source = 'ocr'`
+      ).map((c) => ocrGroups(c.body))[0] ??
+      null
     await sql`update file_versions set
       taken_at = coalesce(taken_at, ${taken ?? f.created}), lat = ${gps?.lat ?? null}, lng = ${gps?.lng ?? null},
       width = ${width}, height = ${height}, smart = ${smart}::text[], gps_checked = true
       where id = ${f.id}`
   }
-  await smartOcr()
   return rows.length
-}
-
-// Images the rules couldn't place (smart is null): OCR a downscaled copy, to tell receipts and
-// documents from plain pictures. Two a sweep, since Tesseract is heavy on the CPU.
-// ponytail: runs whatever the memory gate says and tries an image once; Phase 19's OCR replaces this.
-async function smartOcr() {
-  const [{ langs }] = await limits()
-  const rows = await sql<{ id: string; key: string; name: string }[]>`
-    select v.id, v.s3_key as key, n.name
-    from file_versions v join nodes n on n.id = v.node_id
-    where v.smart is null and v.gps_checked and v.enc_key is null and n.vault_id is null
-      and n.name ~* ${IMAGE.source} and v.size > 0 and v.size <= ${OCR_MAX}
-    order by v.created_at desc limit 2`
-  for (const f of rows) {
-    let smart: string[] = []
-    try {
-      const small = await sharp(await read(f.key, OCR_MAX), { limitInputPixels: false })
-        .rotate()
-        .resize(1000, 1000, { fit: "inside", withoutEnlargement: true })
-        .jpeg()
-        .toBuffer()
-      smart = ocrGroups(await extractText(small, "ocr", langs))
-    } catch (e) {
-      const err = e as Error
-      // S3 down: try again next sweep. Anything else: no group.
-      if (err.name !== "NoSuchKey" && !/^Input|unsupported|corrupt/i.test(err.message)) {
-        console.error(`${f.name}: ${err.message}`)
-        continue
-      }
-    }
-    await sql`update file_versions set smart = ${smart}::text[] where id = ${f.id}`
-  }
 }
 
 // Versions saved without a hash (only the browser and the app's uploader send one) get it here,

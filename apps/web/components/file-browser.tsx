@@ -74,6 +74,7 @@ import { ShareDialog } from "@/components/share-dialog"
 import { IMAGE, VIDEO } from "@/lib/file-rules"
 import { UserAvatar } from "@/components/user-avatar"
 import { Previewer, type Shown } from "@/components/previewer"
+import { Places, startOf, type PlaceStart } from "@/components/text-places"
 import { Thumb } from "@/components/thumb"
 import { VersionsDialog } from "@/components/versions-dialog"
 import { RestoreDialog } from "@/components/restore-dialog"
@@ -106,7 +107,7 @@ import type { TagColor } from "@/lib/db/schema"
 import { SYSTEM, TAG_DOT, fileType, formatBytes, systemWarning } from "@/lib/file-types"
 import type { SystemKind } from "@nimbus/shared/api"
 import type { Item, Tag } from "@/lib/files"
-import { ensureIndexed } from "@/lib/index-content"
+import type { TextPlace } from "@nimbus/shared/api"
 import { resetThumb, thumbFromFrame, thumbFromImage } from "@/lib/thumbs"
 import { cn } from "@/lib/utils"
 
@@ -201,6 +202,8 @@ export function FileBrowser({
   layout: initialLayout,
   compact: initialCompact,
   tiles: initialTiles,
+  query = "",
+  found = [],
 }: {
   view: View
   items: Item[]
@@ -219,6 +222,9 @@ export function FileBrowser({
   layout: Layout
   compact: boolean
   tiles: Tiles
+  // Search view: the text searched for, and the "Found in" choices (none means anywhere).
+  query?: string
+  found?: string[]
 }) {
   const router = useRouter()
   const { upload, download } = useUploads()
@@ -262,6 +268,7 @@ export function FileBrowser({
   const [preview, setPreview] = useState<{
     id: string
     version?: Shown["version"]
+    start?: PlaceStart
   } | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
   // The item whose Share dialog is open.
@@ -396,8 +403,8 @@ export function FileBrowser({
     else if (canEdit) router.push(`/folders/${item.id}`)
   }
 
-  function showPreview(id: string, version?: Shown["version"]) {
-    setPreview({ id, version })
+  function showPreview(id: string, version?: Shown["version"], start?: PlaceStart) {
+    setPreview({ id, version, start })
     setPreviewOpen(true)
   }
 
@@ -952,19 +959,6 @@ export function FileBrowser({
     return () => window.removeEventListener("keydown", onKey)
   }, [canAdd])
 
-  // Files whose text isn't searchable yet get read in the background.
-  useEffect(() => {
-    if (view === "trash") return
-    for (const i of all)
-      if (
-        i.kind === "file" &&
-        !i.indexed &&
-        !i.shortcut &&
-        (i.role ?? role) !== "viewer"
-      )
-        ensureIndexed(i)
-  }, [all, view, role])
-
   // Sidebar New › New folder from another view lands here, then opens the dialog.
   useEffect(() => {
     if (view === "folder" && takeNewFolderRequest())
@@ -1292,6 +1286,23 @@ export function FileBrowser({
     )
   }
 
+  // Where a search matched inside a file; clicking one opens the previewer there.
+  function places(item: Item, tile = false) {
+    const h = item as Item & { places?: TextPlace[]; moreCount?: number }
+    if (view !== "search" || !h.places?.length) return null
+    return (
+      <Places
+        id={item.id}
+        q={query}
+        places={h.places}
+        more={h.moreCount ?? 0}
+        stop={tile}
+        onOpen={(p) => showPreview(item.id, undefined, startOf(p))}
+        className={tile ? "px-1.5 pb-1.5" : "pr-3 pb-1.5 pl-11"}
+      />
+    )
+  }
+
   const tagNames = (item: Item) =>
     item.tags.map((id) => tagById.get(id)?.name).join(", ")
 
@@ -1426,6 +1437,7 @@ export function FileBrowser({
                     />
                   </Thumb>
                   <span className="flex px-3 pb-2">{meta(f)}</span>
+                  {places(f, true)}
                 </div>
               )
             })}
@@ -1491,8 +1503,8 @@ export function FileBrowser({
       </div>
       <div className="divide-y">
         {items.map((i) => (
+          <div key={i.id}>
           <div
-            key={i.id}
             {...itemProps(i)}
             className={cn(
               "group grid h-file-row items-center gap-3 pr-1 pl-3 transition-colors outline-none select-none hover:bg-muted/40 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-inset aria-busy:opacity-60 aria-selected:bg-brand/8 data-drop:bg-brand/15 data-drop:ring-2 data-drop:ring-brand data-drop:ring-inset",
@@ -1513,6 +1525,8 @@ export function FileBrowser({
               {formatBytes(i.size)}
             </span>
             {itemMenu(i) ?? <span />}
+          </div>
+          {places(i)}
           </div>
         ))}
       </div>
@@ -1717,6 +1731,40 @@ export function FileBrowser({
 
       {description && (
         <p className="-mt-2 text-sm text-muted-foreground">{description}</p>
+      )}
+
+      {view === "search" && (query || found.length > 0) && (
+        <div className="flex flex-wrap items-center gap-2">
+          <div role="group" aria-label="Result type" className="flex flex-wrap items-center gap-1.5">
+            {[
+              ["", "All"],
+              ["image", "Images"],
+              ["video", "Videos"],
+              ["pdf", "PDFs"],
+              ["doc", "Documents"],
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                aria-pressed={typeFilter === key}
+                onClick={() => setTypeFilter(key)}
+                className="h-8 rounded-full border border-input bg-input/20 px-3 text-sm font-medium transition-colors outline-none hover:bg-input/40 focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-pressed:border-brand/40 aria-pressed:bg-brand/10"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <FoundIn
+            value={found}
+            onChange={(next) =>
+              start(() =>
+                router.replace(
+                  `/search?q=${encodeURIComponent(query)}${next.length ? `&found=${next.join(",")}` : ""}`
+                )
+              )
+            }
+          />
+        </div>
       )}
 
       <div className="flex min-h-9 flex-wrap items-center gap-x-3 gap-y-2">
@@ -2090,6 +2138,7 @@ export function FileBrowser({
 
       <Previewer
         shown={previewItem && { item: previewItem, version: preview?.version }}
+        start={preview?.start}
         // A file trashed or moved away from the previewer closes it.
         open={previewOpen && Boolean(previewItem)}
         onClose={() => {
@@ -2370,6 +2419,63 @@ function Pick({
         </button>
       )}
     </div>
+  )
+}
+
+const FOUND = [
+  ["name", "File names"],
+  ["text", "Text in files"],
+  ["comments", "Comments"],
+] as const
+
+// Search's "Found in": any mix of names, text and comments; none ticked means all.
+function FoundIn({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  const active = value.length > 0
+  return (
+    <Menu.Root>
+      <Menu.Trigger
+        aria-label={active ? `Found in: ${value.join(", ")}` : undefined}
+        className={cn(
+          "flex h-8 items-center gap-1.5 rounded-full border pr-2.5 pl-3 text-sm font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 [&_svg]:size-4 [&_svg]:shrink-0",
+          active ? "border-brand/40 bg-brand/10" : "border-input bg-input/20 hover:bg-input/40"
+        )}
+      >
+        {active
+          ? `Found in ${FOUND.filter(([k]) => value.includes(k)).map(([, l]) => l.toLowerCase()).join(", ")}`
+          : "Found in"}
+        <CaretDownIcon className="size-3! text-muted-foreground" />
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Positioner side="bottom" align="start" sideOffset={6}>
+          <Menu.Popup className={`min-w-52 ${MENU_POPUP}`}>
+            <div className="px-2 pt-1.5 pb-1 text-xs font-medium text-muted-foreground">
+              Found in
+            </div>
+            {FOUND.map(([key, label]) => (
+              <Menu.CheckboxItem
+                key={key}
+                checked={value.includes(key)}
+                onCheckedChange={(on) =>
+                  onChange(FOUND.map(([k]) => k).filter((k) => (k === key ? on : value.includes(k))))
+                }
+                closeOnClick={false}
+                className={cn(MENU_ITEM, "relative pr-8")}
+              >
+                {label}
+                <Menu.CheckboxItemIndicator className="absolute right-2">
+                  <CheckIcon />
+                </Menu.CheckboxItemIndicator>
+              </Menu.CheckboxItem>
+            ))}
+            {active && (
+              <Menu.Item className={MENU_ITEM} onClick={() => onChange([])}>
+                Anywhere
+              </Menu.Item>
+            )}
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
   )
 }
 

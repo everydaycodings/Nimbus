@@ -7,6 +7,7 @@ const FILTERS = ["type", "modified", "size", "tag"]
 // ?q= searches names and file text, my files and shared. ?quick=1 is the
 // search box's dropdown (12 hits, no filters needed). Otherwise it's the full
 // results page: up to 50 hits, relevance first, with the list filters. A filter
+// ?found=name,text,comments limits where it looks. A filter
 // with no text lists everything that matches it, newest first ("all my PDFs").
 export const GET = (req: Request) =>
   withMember(async (me) => {
@@ -18,7 +19,13 @@ export const GET = (req: Request) =>
     return listResponse(
       me,
       req,
-      browsing ? await browseItems(me.id) : await searchItems(me.id, q),
+      browsing
+        ? await browseItems(me.id)
+        : await searchItems(me.id, q, 50, {
+            found: (sp.get("found") ?? "")
+              .split(",")
+              .filter((f) => ["name", "text", "comments"].includes(f)),
+          }),
       { sort: "rank" }
     )
   })

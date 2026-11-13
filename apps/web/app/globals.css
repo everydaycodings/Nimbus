@@ -324,3 +324,14 @@
 [data-flash] {
   animation: setting-flash 1.8s cubic-bezier(0.22, 1, 0.36, 1);
 }
+
+/* A search match's box over an image: steady, then gone by 3 s. */
+@keyframes match-fade {
+  0%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}

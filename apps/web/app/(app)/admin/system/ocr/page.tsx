@@ -11,7 +11,16 @@ import { Input } from "@/components/ui/input"
 import { formatBytes } from "@/lib/file-rules"
 import { getSettings } from "@/lib/signup"
 import { copyStats } from "@/lib/video-copies"
-import { deleteVideoCopies, setDerive, setOcrLangs, setVideoCopies } from "../../actions"
+import { ConfirmButton } from "@/components/admin/confirm-button"
+import {
+  deleteVideoCopies,
+  rereadAll,
+  setDerive,
+  setOcrLangs,
+  setOcrMode,
+  setOcrVideoMax,
+  setVideoCopies,
+} from "../../actions"
 
 export const metadata = { title: "Text in images · Admin · Nimbus" }
 
@@ -25,14 +34,70 @@ export default async function OcrPage() {
   return (
     <AdminPage
       title="Text in images"
-      description="Search reads the words in photos and screenshots up to 20 MB, in the browser of whoever uploads or opens them."
+      description="The worker reads the words in photos, scanned PDF pages and video frames, so search finds them and opens at the right place. Nothing is read in anyone's browser."
     >
+      <SettingsForm action={setOcrMode}>
+        <SettingRow
+          id="ocr-mode"
+          label="Read text from"
+          htmlFor="ocrMode"
+          hint="PDF text that can be selected, and documents, are always searchable. This only decides what needs OCR."
+          tip={{
+            does: "Picks which files the worker runs text recognition on. Off reads none, and images only skips PDFs and videos.",
+            affects: "Files read from now on. Text already found stays until you re-read.",
+            default: "Everything",
+          }}
+          reset={reset("ocrMode")}
+        >
+          <select id="ocrMode" name="ocrMode" defaultValue={s.ocrMode} className={SELECT}>
+            <option value="off">Off</option>
+            <option value="images">Images only</option>
+            <option value="images_pdfs">Images and PDFs</option>
+            <option value="all">Everything (images, PDFs, videos)</option>
+          </select>
+        </SettingRow>
+      </SettingsForm>
+
+      <SettingsForm action={setOcrVideoMax}>
+        <SettingRow
+          id="ocr-video-max"
+          label="Longest video part to read"
+          htmlFor="videoMax"
+          hint="Minutes from the start of each video. A frame every 5 seconds and at scene changes."
+          tip={{
+            does: "Caps how much of each video the worker reads for on-screen text.",
+            affects: "Videos read from now on.",
+            default: "120 minutes",
+            example: "30",
+          }}
+          reset={reset("ocrVideoMaxMin")}
+        >
+          <Input
+            id="videoMax"
+            name="videoMax"
+            type="number"
+            min={1}
+            max={1440}
+            step={1}
+            defaultValue={s.ocrVideoMaxMin}
+          />
+        </SettingRow>
+      </SettingsForm>
+
       <SettingsForm action={setOcrLangs}>
         <SettingRow
           id="ocr-languages"
           label="Languages"
           htmlFor="ocrLangs"
-          hint="Tesseract codes, separated by commas. Up to 5. Each extra language makes reading slower."
+          hint={`Tesseract codes, separated by commas. Up to 5. Each extra language makes reading slower. Saving downloads them and re-reads images.${
+            // Empty until the first save; the worker fetches the default language on first use.
+            Object.keys(s.ocrLangStatus).length
+              ? ` ${s.ocrLangs
+                  .split("+")
+                  .map((l) => `${l}: ${s.ocrLangStatus[l] ?? "waiting for the worker"}`)
+                  .join(". ")}.`
+              : ""
+          }`}
           tip={{
             does: "Tells text recognition which languages to expect, so search can find words inside images.",
             affects:
@@ -53,10 +118,22 @@ export default async function OcrPage() {
         </SettingRow>
       </SettingsForm>
 
+      <div className="flex max-w-3xl items-center gap-4">
+        <ConfirmButton
+          action={rereadAll}
+          label="Re-read all"
+          title="Read every file again?"
+          message="Search text for all files is cleared and the worker reads it again, a few files a minute. Search finds less until it catches up; Admin, Health shows the backlog."
+        />
+        <p className="text-sm text-muted-foreground">
+          Reads all text again, for example after changing what is read.
+        </p>
+      </div>
+
       <SettingsForm
         action={setDerive}
         title="Background thumbnails & text"
-        description="Files no browser handled, like WebDAV and API uploads, get their thumbnail and search text from the worker a couple of minutes later. Images, PDFs and text files; videos wait for a browser."
+        description="Files no browser handled, like WebDAV and API uploads, get their thumbnail from the worker a couple of minutes later. Images, PDFs and text files get thumbnails here. Search text for every file comes from the worker, as set above."
       >
         <SettingRow
           id="derive-jobs"

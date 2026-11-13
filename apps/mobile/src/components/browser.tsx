@@ -1,4 +1,4 @@
-import type { Item, SystemKind, Tag } from "@nimbus/shared/api"
+import type { Item, SystemKind, Tag, TextPlace } from "@nimbus/shared/api"
 import { typeKeyOf } from "@nimbus/shared/file-rules"
 import * as Haptics from "expo-haptics"
 import { router, useFocusEffect } from "expo-router"
@@ -50,6 +50,7 @@ import { FileIcon } from "@/components/file-icon"
 import { FILTER_LABELS, FileSheets } from "@/components/file-sheets"
 import { isWide } from "@/components/nav"
 import { CapDialog } from "@/components/offline-ui"
+import { QuickChips } from "@/components/search-places"
 import { FileCard, FolderTile, ListRow, type TileProps } from "@/components/tiles"
 import { useSnack } from "@/components/snackbar"
 import { Bar, Button, Fab, IconButton, Text } from "@/components/ui"
@@ -272,7 +273,7 @@ export function Browser({
   const open = useCallback((item: Item) => router.push({ pathname: folderHref(tab, item.id), params: { name: item.name } }), [tab])
   // With no connection only files kept on the phone open.
   const available = (item: Item) => online || item.kind === "folder" || snap.files.has(item.id)
-  const press = (item: Item) => {
+  const press = (item: Item, place?: TextPlace) => {
     if (selecting) {
       setSelectedIds((s) => {
         const next = new Set(s)
@@ -291,6 +292,7 @@ export function Browser({
         items: files,
         index: files.findIndex((i) => i.id === item.id),
         role,
+        start: place && { page: place.page, tMs: place.tMs, box: place.box },
         more: async () => {
           if (!list.hasNextPage) return null
           const next = await list.fetchNextPage()
@@ -307,6 +309,7 @@ export function Browser({
   // The tiles are memoised; they get these stable wrappers and the latest closures through the ref.
   const latest = useRef({ press, longPress, menu })
   latest.current = { press, longPress, menu }
+  const onPlace = useCallback((item: Item, place: TextPlace) => latest.current.press(item, place), [])
   const onPress = useCallback((item: Item) => latest.current.press(item), [])
   const onLongPress = useCallback((item: Item) => latest.current.longPress(item), [])
   const onMenu = useCallback((item: Item) => latest.current.menu(item), [])
@@ -332,6 +335,7 @@ export function Browser({
     onPress,
     onLongPress,
     onMenu,
+    ...(isSearch ? { q: source.q, onPlace } : {}),
   })
   const renderItem = ({ item: row }: { item: Row }) => {
     if (row.type === "header")
@@ -439,6 +443,7 @@ export function Browser({
   const sortable = !keepsServerOrder(source)
   const header = (
     <View style={{ gap: 0 }}>
+      {isSearch && <QuickChips type={filters.type} onType={(type) => setFilters((f) => ({ ...f, type }))} />}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -447,6 +452,7 @@ export function Browser({
       >
         {recentChip}
         {offlineChip}
+        {isSearch && chip("found", "Found in", filters.found ? FILTER_LABELS.found[filters.found] : undefined)}
         {!showOffline && chip("type", "Type", filters.type ? FILE_TYPES[filters.type].label : undefined)}
         {!showOffline && chip("modified", isTrash ? "Trashed" : "Modified", filters.modified ? FILTER_LABELS.modified[filters.modified] : undefined)}
         {!showOffline && chip("size", "Size", filters.size ? FILTER_LABELS.size[filters.size] : undefined)}

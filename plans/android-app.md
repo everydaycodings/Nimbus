@@ -1043,3 +1043,24 @@ Decisions).
   on a real phone before any public release.
 - **Size:** phases 5 to 7 are the largest and most native-heavy.
 - **Before public release:** licence texts for bundled open-source packages, and tuning the `/api/v1` rate limits.
+
+## Phase 19 status (2026-11-13)
+
+BUILT, uncommitted. Decisions: Claude memory `nimbus-phase19-decisions`. Three builder agents (server/worker, web, app).
+
+- Server/worker: `drizzle/0040_phase19_ocr.sql` (`node_text_parts` with page/time/line + box, `node_content.ocr_langs`/`ocr_failed`, settings `ocr_mode`, `ocr_video_max_min`, `ocr_lang_status`). `lib/extract.ts` `extractParts` (tesseract line boxes, scanned PDF pages via pdfjs + @napi-rs/canvas), `scripts/video-ocr.ts` (ffmpeg every 5 s + scene changes, merged), `scripts/indexer.ts` sweep honours the mode, skips Vault, backs off while derive/transcode run. Browser OCR (`lib/index-content.ts`) and `smartOcr` removed. Routes `/api/v1/files/:id/text`, `/reread`, `found` filter on search. Health card shows the OCR backlog. Test: `node --test lib/ocr.test.ts`.
+- Web: search chips, Found in, place links, previewer `start` (PDF `#page=N`, video paused 2 s early, image box), find-in-file, Details "Text found", palette place label.
+- Checked on the web dev server: image, mixed PDF (scanned page 2) and video were read by the worker; search shows "p. 2"; PDF opens at `#page=2`; image box lines up; video opens paused at 8 s for a 10 s match; `/text`, `/reread` (204 then "waiting") and `found` work; no Vault rows.
+- Checked 2026-11-13 (second pass): admin OCR page on a fresh owner instance (mode, video cap, languages eng+deu downloaded and "ready", Re-read all with confirm, audit entries, Health card "0 waiting to be read"); a fresh DB migrates through 0040; `0040_snapshot.json` added (drizzle-kit shows no diff); OCR tests pass inside `node:24-slim` (canvas PDF render + ffmpeg), and `@napi-rs/canvas` is a prod dependency, so `npm prune --omit=dev` keeps it; app on the emulator: chips, Found in, place rows, PDF opens at page 2, image box on a letterboxed photo with Clear, find bar "1 of 1" with box, Details Text found, video opens paused at 0:08 for a 0:10 match.
+- Fixed in that pass: the app PDF counter now shows the page in the middle of the screen (it said "1 / 2" when opened at page 2 of a short file); admin copy and the language status before the first save.
+- Dev gotcha: `next dev -H 0.0.0.0` puts the browser into an endless Fast Refresh reload loop here; use plain `next dev`.
+
+### App part
+
+JS only, no native rebuild. Built, not yet run on the emulator.
+
+- Search: quick chips (All, Images, Videos, PDFs, Documents), a "Found in" filter, place rows under a result (p. 4, 12:30, In image, with snippet) and "N more" loading the rest from `/files/:id/text?q=`. A tap opens the previewer at that place (`components/search-places.tsx`, `lib/preview-session.ts` `start`).
+- Previewer: PDF opens at the page (viewer meta `page`, `npm run viewers` rerun), video opens paused 2 s early without touching the resume spot, image shows a box that fades after about 3 s with a Clear pill. A find bar in the top bar (`components/find-bar.tsx`) gives "2 of 7" with next and previous.
+- Details: "Text found" for images, PDFs and videos (`components/text-found.tsx`): status, collapsible text, Copy, Read text again.
+- Impeccable polish: 48 dp targets, accessible labels and selected/expanded states, live region for the match count, reduced motion skips the box fade, loading and error states for "N more". Places are optional, so cached and offline lists look as before.
+- Left for the emulator: box alignment on a letterboxed photo, PDF scroll settling on a long mixed-size file, video seek from the find bar (it plays).

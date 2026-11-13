@@ -2,6 +2,8 @@ import type {
   AccountResponse,
   CreateLinkResponse,
   Details,
+  FileTextResponse,
+  FileTextStatus,
   FolderResponse,
   Hit,
   Instance,
@@ -81,7 +83,9 @@ export type Source =
   | { kind: "folder" | "tag"; id: string }
   | { kind: "search"; q: string }
 
-export type Filters = Pick<ListQuery, "type" | "modified" | "size" | "tag">
+// `found` narrows a search to where the words are: the name, the text inside, or comments.
+export type Found = "name" | "text" | "comments"
+export type Filters = Pick<ListQuery, "type" | "modified" | "size" | "tag"> & { found?: Found }
 
 const PAGE = 100
 
@@ -129,6 +133,27 @@ export function useList(source: Source, query: ListQuery) {
   })
   const items = useMemo(() => list.data?.pages.flatMap((p) => p.items) ?? [], [list.data])
   return { ...list, items, first: list.data?.pages[0] }
+}
+
+// Every place the words are in one file, for the "N more" under a search result and the previewer's find bar.
+export function usePlaces(id: string, q: string, enabled = true) {
+  const api = useApi()
+  return useQuery({
+    enabled: enabled && !!q,
+    queryKey: [api.id, "places", id, q],
+    staleTime: 60_000,
+    queryFn: async () => (await api.get<FileTextResponse>(`/files/${id}/text${qs({ q })}`)).parts,
+  })
+}
+
+// What the worker read out of a file, for Details.
+export function useTextStatus(id: string, enabled: boolean) {
+  const api = useApi()
+  return useQuery({
+    enabled,
+    queryKey: [api.id, "text", id],
+    queryFn: () => api.get<FileTextStatus>(`/files/${id}/text`),
+  })
 }
 
 export function useDetails(id: string, enabled = true) {
@@ -242,7 +267,7 @@ export type FileSheet =
   | { kind: "vault"; items: Item[] }
   | { kind: "album"; items: Item[] }
   | { kind: "new"; parentId: string | null }
-  | { kind: "filter"; filter: "type" | "modified" | "size" | "tag" }
+  | { kind: "filter"; filter: "type" | "modified" | "size" | "tag" | "found" }
   | { kind: "sort" }
 
 // ---- Who may do what: the web's rules, from actions() in components/file-browser.tsx ----

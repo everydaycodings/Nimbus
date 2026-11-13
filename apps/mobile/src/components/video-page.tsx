@@ -71,6 +71,9 @@ export function resetScreen() {
   native?.setBrightness?.(-1)
 }
 
+// A search match opens this many seconds early, so the words arrive on screen.
+const SEARCH_LEAD_S = 2
+
 const clamp = (v: number, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v))
 const fmtRate = (r: number) => `${r}×`
 
@@ -122,7 +125,7 @@ export function VideoPage(props: PageProps) {
 
 type PlayerProps = PageProps & { url: string; onError: () => void; quality: Quality; copies: number[]; startAt: number | null; onQuality: (q: Quality, at: number) => void }
 
-function Player({ item, version, url, top, bottom, onBars, onZoom, onFullscreen, onPlayer, videoNav, onError, quality, copies, startAt, onQuality }: PlayerProps) {
+function Player({ start, item, version, url, top, bottom, onBars, onZoom, onFullscreen, onPlayer, videoNav, onError, quality, copies, startAt, onQuality }: PlayerProps) {
   const api = useApi()
   const snack = useSnack()
   const queries = useQueryClient()
@@ -173,8 +176,10 @@ function Player({ item, version, url, top, bottom, onBars, onZoom, onFullscreen,
   // ---- Player events ----
   // Kept from the time updates: on close the player may already be released when this saves.
   const last = useRef({ at: 0, time: 0, duration: 0 })
+  // Opened from a search result: paused just before the match, and the saved resume spot stays until it's played.
+  const held = useRef(!startAt && start?.tMs != null)
   const save = useCallback(() => {
-    if (!version && !vault && last.current.duration) putPosition(api, item.id, last.current.time, last.current.duration)
+    if (!version && !vault && !held.current && last.current.duration) putPosition(api, item.id, last.current.time, last.current.duration)
   }, [api, item.id, version, vault])
   // Asked for now, so the answer is there by the time the video can play.
   const saved = useRef<Promise<number | null> | null>(null)
@@ -212,6 +217,7 @@ function Player({ item, version, url, top, bottom, onBars, onZoom, onFullscreen,
         id: item.id,
         time: () => player.currentTime,
         seek: (t) => {
+          held.current = false
           player.currentTime = t
           player.play()
         },
@@ -223,6 +229,7 @@ function Player({ item, version, url, top, bottom, onBars, onZoom, onFullscreen,
     const subs = [
       player.addListener("playingChange", (e) => {
         setPlaying(e.isPlaying)
+        if (e.isPlaying) held.current = false
         if (!e.isPlaying) save()
       }),
       player.addListener("statusChange", (e) => {
@@ -236,6 +243,8 @@ function Player({ item, version, url, top, bottom, onBars, onZoom, onFullscreen,
         if (startAt) {
           player.currentTime = startAt
           if (!castingRef.current) player.play()
+        } else if (held.current) {
+          player.currentTime = Math.max(0, start!.tMs! / 1000 - SEARCH_LEAD_S)
         } else
           void saved.current!.then((at) => {
             if (castingRef.current) return

@@ -1,7 +1,8 @@
 // What every viewer page shares: the byte bridge to the app and the messages back.
 // These pages run in a WebView with no network and no file access (see scripts/build-viewers.ts).
 
-export type Meta = { name: string; size: number; top: number; bottom: number }
+// page: a PDF opens there, when a search found its words on it.
+export type Meta = { name: string; size: number; top: number; bottom: number; page?: number }
 
 declare global {
   interface Window {

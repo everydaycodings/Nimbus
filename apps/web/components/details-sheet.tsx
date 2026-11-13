@@ -9,6 +9,7 @@ import { getActivity, getDetails, undoRestore, type ActivityEvent, type Details 
 import type { Version } from "@/app/(app)/upload-actions"
 import { Comments } from "@/components/comments"
 import { MENU_ITEM, MENU_POPUP } from "@/components/overlay-styles"
+import { TextFound } from "@/components/text-found"
 import { Thumb } from "@/components/thumb"
 import { useNotice } from "@/components/toaster"
 import { Button } from "@/components/ui/button"
@@ -18,6 +19,7 @@ import {
   versionSummary,
 } from "@/components/versions-dialog"
 import { TAG_DOT, fileType, formatBytes } from "@/lib/file-types"
+import { previewKind } from "@/lib/file-rules"
 import type { Item, Tag } from "@/lib/files"
 
 const full = (iso: string) =>
@@ -243,6 +245,9 @@ export function DetailsSheet({
             )}
             {open && item.kind === "file" && details !== null && !item.trashedAt && (
               <Comments item={item} />
+            )}
+            {open && item.kind === "file" && details !== null && !item.trashedAt && ["image", "pdf", "video"].includes(previewKind(item.mime, item.name) ?? "") && (
+              <TextFound id={item.id} />
             )}
             {open && details !== null && <Activity item={item} />}
             {open && item.kind === "file" && details !== null && tags && (

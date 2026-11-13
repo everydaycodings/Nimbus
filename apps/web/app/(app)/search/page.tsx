@@ -13,15 +13,19 @@ export async function generateMetadata({
 export default async function SearchPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>
+  searchParams: Promise<{ q?: string; found?: string }>
 }) {
   const me = await pageUserId()
   const q =
     typeof (await searchParams).q === "string"
       ? (await searchParams).q!.trim()
       : ""
+  // ?found=name,text,comments narrows where it looks.
+  const found = ((await searchParams).found ?? "")
+    .split(",")
+    .filter((f) => ["name", "text", "comments"].includes(f))
   const [items, prefs, tags] = await Promise.all([
-    searchItems(me, q),
+    searchItems(me, q, 50, { found }),
     viewPrefs(),
     listTags(me),
   ])
@@ -29,6 +33,8 @@ export default async function SearchPage({
   return (
     <FileBrowser
       key={q}
+      query={q}
+      found={found}
       view="search"
       title={q ? `Results for “${q}”` : "Search"}
       items={items}

@@ -48,7 +48,7 @@ import {
 } from "@/lib/file-rules"
 import { parsePhotoCursor, photoCursor } from "@nimbus/shared/photos"
 import { decodeMentions, mentionIds } from "@nimbus/shared/comments"
-import type { SystemKind } from "@nimbus/shared/api"
+import type { SystemKind, TextPlace } from "@nimbus/shared/api"
 import { purgeSavedLogins } from "@/lib/saved-logins"
 import { getSession } from "@/lib/session"
 import { deleteNodes } from "@/lib/uploads"
@@ -408,6 +408,9 @@ export type Hit = Item & {
   snippet: string | null
   // The snippet is from a comment, not the file's text.
   inComment?: boolean
+  // Best places in the file's text (pages, video moments, image lines), and the matches beyond them.
+  places?: TextPlace[]
+  moreCount?: number
 }
 
 // Everything the viewer can see, newest first, for search's filters with no text.
@@ -462,8 +465,14 @@ export async function browseItems(viewer: string): Promise<Hit[]> {
 export async function searchItems(
   viewer: string,
   raw: string,
-  limit = 50
+  limit = 50,
+  // `found`: where to look (all when empty); `places`: how many places per file.
+  { found: where = [], places = 3 }: { found?: string[]; places?: number } = {}
 ): Promise<Hit[]> {
+  const all = !where.length
+  const inName = all || where.includes("name")
+  const inText = all || where.includes("text")
+  const inComments = all || where.includes("comments")
   // "has:comments" keeps files with comments; alone, it lists them all.
   const hasComments = /(^|\s)has:comments(?=\s|$)/i.test(raw)
   const q = raw.replace(/(^|\s)has:comments(?=\s|$)/gi, " ").trim().slice(0, 200)
@@ -487,11 +496,12 @@ export async function searchItems(
     ), scored as (
       select n.id, n.owner_id, n.parent_id,
         case
+          when not ${inName} then null
           when strpos(lower(n.name), q.s) > 0 then 2 + similarity(q.s, lower(n.name))
           when word_similarity(q.s, lower(n.name)) >= 0.4 then word_similarity(q.s, lower(n.name))
         end as name_score,
-        case when c.tsv @@ q.tq then 0.4 + ts_rank(c.tsv, q.tq) end as text_score,
-        0.3 + cm.score as comment_score, cm.body as comment_body
+        case when ${inText} and c.tsv @@ q.tq then 0.4 + ts_rank(c.tsv, q.tq) end as text_score,
+        case when ${inComments} then 0.3 + cm.score end as comment_score, cm.body as comment_body
       from nodes n
       cross join q
       left join node_content c
@@ -548,6 +558,44 @@ export async function searchItems(
       : []
   )
   const meta = new Map(found.map((f, i) => [f.id, { ...f, i }]))
+  // Where the words sit in each file that has positions (pages, moments, image lines).
+  const textIds = found.filter((f) => !f.in_comment && f.snippet).map((f) => f.id)
+  const spots = new Map<string, { list: TextPlace[]; total: number }>()
+  if (places > 0 && inText && q && textIds.length) {
+    const parts = await db.execute<{
+      node_id: string
+      kind: TextPlace["kind"]
+      page: number | null
+      t_ms: number | null
+      box: [number, number, number, number] | null
+      snippet: string
+      total: string
+    }>(sql`
+      with q as (select websearch_to_tsquery('simple', ${q}) as tq), ranked as (
+        select p.*, count(*) over (partition by p.node_id) as total,
+          row_number() over (partition by p.node_id order by ts_rank(p.tsv, q.tq) desc, p.page, p.t_ms) as rn
+        from node_text_parts p
+        join nodes n on n.id = p.node_id and n.current_version_id = p.version_id
+        cross join q
+        where p.node_id in (${sql.join(textIds.map((i) => sql`${i}`), sql`, `)}) and p.tsv @@ q.tq
+      )
+      select r.node_id, r.kind, r.page, r.t_ms, r.box, r.total,
+        ts_headline('simple', r.body, q.tq,
+          'StartSel=' || chr(1) || ', StopSel=' || chr(2) || ', MaxFragments=1, MaxWords=18, MinWords=6') as snippet
+      from ranked r cross join q where r.rn <= ${places}
+      order by r.node_id, r.rn`)
+    for (const p of parts) {
+      const e = spots.get(p.node_id) ?? { list: [], total: Number(p.total) }
+      e.list.push({
+        kind: p.kind,
+        ...(p.page !== null && { page: p.page }),
+        ...(p.t_ms !== null && { tMs: p.t_ms }),
+        ...(p.box && { box: p.box }),
+        snippet: p.snippet,
+      })
+      spots.set(p.node_id, e)
+    }
+  }
   const rows = await db
     .select(cols(viewer))
     .from(nodes)
@@ -570,6 +618,10 @@ export async function searchItems(
             ? decodeMentions(m.snippet, (id) => names.get(id))
             : m.snippet,
         inComment: m.in_comment,
+        ...(spots.has(item.id) && {
+          places: spots.get(item.id)!.list,
+          moreCount: spots.get(item.id)!.total - spots.get(item.id)!.list.length,
+        }),
       }
     })
 }

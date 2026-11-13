@@ -135,13 +135,24 @@ const PROBES: Record<Service, (s: Settings) => Promise<Found>> = {
 
   // `npm run worker` leaves a key that expires a few minutes after its last sweep.
   async indexer() {
-    const at = Number(await redis.get(INDEXER_KEY))
-    if (!at)
-      return off(
-        "Not running. Start `npm run worker`; until then browsers read files as people open them."
-      )
+    const raw = await redis.get(INDEXER_KEY)
+    const k = raw
+      ? (JSON.parse(raw) as {
+          at: number
+          ocrBacklog?: number
+          ocrFailed?: number
+          lastError?: string | null
+        })
+      : null
+    if (!k?.at)
+      return off("Not running. Start `npm run worker`; until then new files aren't searchable by their text.")
+    const extra = [
+      `${k.ocrBacklog ?? 0} waiting to be read`,
+      k.ocrFailed ? `${k.ocrFailed} couldn't be read` : null,
+      k.lastError ? `last error: ${k.lastError}` : null,
+    ].filter(Boolean)
     return {
-      detail: `Last sweep ${ago(new Date(at).toISOString(), Date.now())}.`,
+      detail: `Last sweep ${ago(new Date(k.at).toISOString(), Date.now())}. ${extra.join(", ")}.`,
       timed: false,
     }
   },

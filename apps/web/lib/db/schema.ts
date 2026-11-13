@@ -710,6 +710,18 @@ export const settings = pgTable(
     transferMaxBytes: bigint("transfer_max_bytes", { mode: "number" }),
     // Tesseract languages for reading text in images, joined with "+".
     ocrLangs: text("ocr_langs").notNull().default("eng"),
+    // What the worker reads text from (Phase 19): off, images, images_pdfs or all.
+    ocrMode: text("ocr_mode")
+      .$type<"off" | "images" | "images_pdfs" | "all">()
+      .notNull()
+      .default("all"),
+    // Video text is read from the first this-many minutes.
+    ocrVideoMaxMin: integer("ocr_video_max_min").notNull().default(120),
+    // {lang: "ready" | "failed: reason"}, written by the worker's language download.
+    ocrLangStatus: jsonb("ocr_lang_status")
+      .$type<Record<string, string>>()
+      .notNull()
+      .default({}),
     // Vaults. Off stops new vaults; existing ones keep working. Null cap: no limit.
     vaultsEnabled: boolean("vaults_enabled").notNull().default(true),
     maxVaultsPerMember: integer("max_vaults_per_member"),
@@ -868,11 +880,41 @@ export const nodeContent = pgTable(
       .generatedAlwaysAs(sql`to_tsvector('simple', body)`),
     // How the text was read: text, pdf, docx, sheet or ocr.
     source: text("source").notNull(),
+    // The languages the text was read with, to re-read when they change.
+    ocrLangs: text("ocr_langs"),
+    // Why the text couldn't be read; the sweep doesn't retry the version.
+    ocrFailed: text("ocr_failed"),
     indexedAt: timestamp("indexed_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
   (t) => [index("node_content_tsv_idx").using("gin", t.tsv)]
+)
+
+// Where text sits in a file (Phase 19): a PDF page, a video moment or an image
+// line with its box. Rows of a stale version_id are ignored.
+export const nodeTextParts = pgTable(
+  "node_text_parts",
+  {
+    id: id(),
+    nodeId: uuid("node_id")
+      .notNull()
+      .references(() => nodes.id, { onDelete: "cascade" }),
+    versionId: uuid("version_id").notNull(),
+    kind: text("kind").$type<"page" | "time" | "line">().notNull(),
+    page: integer("page"),
+    tMs: integer("t_ms"),
+    // [x, y, w, h] as 0-1 fractions of the image.
+    box: jsonb("box").$type<[number, number, number, number]>(),
+    body: text("body").notNull(),
+    tsv: tsvector("tsv")
+      .notNull()
+      .generatedAlwaysAs(sql`to_tsvector('simple', body)`),
+  },
+  (t) => [
+    index("node_text_parts_node_idx").on(t.nodeId),
+    index("node_text_parts_tsv_idx").using("gin", t.tsv),
+  ]
 )
 
 // When each person last opened something, for Recent.

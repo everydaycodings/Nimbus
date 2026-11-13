@@ -1,8 +1,8 @@
-import type { Item, Version } from "@nimbus/shared/api"
+import type { Item, TextPlace, Version } from "@nimbus/shared/api"
 import { router, useFocusEffect } from "expo-router"
 import { StatusBar } from "expo-status-bar"
 import { isPictureInPictureSupported, type VideoPlayer, type VideoView } from "expo-video"
-import { ArrowSquareOut, ChatCircle, DownloadSimple, DotsThreeVertical, NotePencil, PencilSimpleLine, PictureInPicture, ShareNetwork, X } from "phosphor-react-native"
+import { ArrowSquareOut, ChatCircle, DownloadSimple, DotsThreeVertical, MagnifyingGlass, NotePencil, PencilSimpleLine, PictureInPicture, ShareNetwork, X } from "phosphor-react-native"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { BackHandler, FlatList, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native"
 import Animated, { useAnimatedStyle, useReducedMotion, withTiming } from "react-native-reanimated"
@@ -11,13 +11,15 @@ import { useSafeAreaFrame, useSafeAreaInsets } from "react-native-safe-area-cont
 import { Directory } from "expo-file-system"
 
 import { CastBtn } from "@/components/cast-ui"
+import { FindBar } from "@/components/find-bar"
 import { FileSheets } from "@/components/file-sheets"
-import { AudioPage, CollaboraView, ImagePage, NoPreview, WebPage, type PageProps } from "@/components/preview-pages"
+import { AudioPage, CollaboraView, ImagePage, NoPreview, WebPage, type Mark, type PageProps } from "@/components/preview-pages"
 import { resetScreen, VideoPage } from "@/components/video-page"
 import { useSnack } from "@/components/snackbar"
 import { IconButton, Text } from "@/components/ui"
 import { errorText } from "@/lib/api"
 import { stopQueue } from "@/lib/audio-queue"
+import { anchorTarget } from "@/lib/comment-anchor"
 import { canEdit } from "@/lib/editor-rules"
 import { canEditPhoto } from "@/lib/photo-edit-rules"
 import { canEditPdf } from "@/lib/pdf-edit-rules"
@@ -95,6 +97,10 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
   const player = useRef<VideoPlayer | null>(null)
   const videoView = useRef<VideoView | null>(null)
   const [hasPlayer, setHasPlayer] = useState(false)
+  // Search in this file; and the box on an image where the words are.
+  const [finding, setFinding] = useState(false)
+  const [mark, setMark] = useState<Mark | null>(() => (session.start?.box ? { box: session.start.box, n: 0 } : null))
+  const markN = useRef(0)
 
   const shown = items[index]
   // Fresh details keep the name, star and thumbnail right after an action in the ⋯ menu.
@@ -113,6 +119,8 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
   const plan = shown ? planOf(item.name, version ? version.mime : item.mime, version?.size ?? item.size) : null
   const immersive = plan?.show === "image" || plan?.show === "video"
   const top = inset.top + BAR
+  // Words were read out of images, videos and PDFs; a vault's files are never read.
+  const canFind = !vaultId && !version && (plan?.show === "image" || plan?.show === "video" || (plan?.show === "web" && plan.viewer === "pdf"))
 
   // Counts as opened once it's been looked at, so swiping past doesn't fill Recent.
   useEffect(() => {
@@ -140,7 +148,9 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
   // Every new file starts with the bars showing, so its name is seen.
   useEffect(() => {
     setBars(true)
-  }, [index])
+    setFinding(false)
+    if (index !== session.index) setMark(null)
+  }, [index, session.index])
 
   // Swiping near the end of what's loaded asks the list for its next page.
   const asking = useRef(false)
@@ -243,6 +253,13 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
     [items]
   )
 
+  const jump = (p: TextPlace) => {
+    const to = anchorTarget(item.id)
+    if (p.kind === "page" && p.page) to?.page?.(p.page)
+    else if (p.kind === "time" && p.tMs != null) to?.seek?.(Math.max(0, p.tMs / 1000 - 2))
+    else if (p.box) setMark({ box: p.box, n: ++markN.current })
+  }
+
   const useFrame = async () => {
     const p = player.current
     if (!p) return
@@ -257,12 +274,13 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
   useFocusEffect(
     useCallback(() => {
       const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-        if (!sheet) return false
-        setSheet(null)
+        if (finding) setFinding(false)
+        else if (sheet) setSheet(null)
+        else return false
         return true
       })
       return () => sub.remove()
-    }, [sheet])
+    }, [sheet, finding])
   )
 
   const barStyle = useAnimatedStyle(() => {
@@ -292,10 +310,12 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
           onPlayer={onPlayer}
           videoNav={i === index ? videoNav : undefined}
           onAudioTrack={onAudioTrack}
+          start={i === session.index ? session.start : undefined}
+          mark={i === index ? mark : null}
         />
       </View>
     ),
-    [width, height, index, version, top, inset.bottom, edge, onTap, onScrollDown, onPlayer, onAudioTrack, videoNav?.prev, videoNav?.next]
+    [width, height, index, version, top, inset.bottom, edge, onTap, onScrollDown, onPlayer, onAudioTrack, videoNav?.prev, videoNav?.next, session.index, session.start, mark]
   )
 
   if (!shown) return <View style={{ flex: 1, backgroundColor: c.background }} />
@@ -366,6 +386,7 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
         {hasPlayer && plan?.show === "video" && isPictureInPictureSupported() && (
           <IconButton icon={PictureInPicture} label="Picture in picture" onPress={() => void videoView.current?.startPictureInPicture().catch(() => snack({ text: "Couldn't start picture in picture.", error: true }))} />
         )}
+        {canFind && <IconButton icon={MagnifyingGlass} label="Find in this file" onPress={() => setFinding(true)} />}
         {!vaultId && !version && (plan?.show === "image" || plan?.show === "video" || plan?.show === "audio") && <CastBtn />}
         {!vaultId && !version && (
           <IconButton
@@ -389,6 +410,12 @@ function Previewer({ session }: { session: NonNullable<ReturnType<typeof preview
         {!vaultId && <IconButton icon={DownloadSimple} label="Download" onPress={() => download([item], version)} />}
         {!vaultId && <IconButton icon={DotsThreeVertical} label="More actions" onPress={() => setSheet({ kind: "actions", items: [item] })} />}
       </Animated.View>
+
+      {finding && canFind && !fullscreen && (
+        <View style={{ position: "absolute", top: 0, left: 0, right: 0, height: top, paddingTop: inset.top, paddingHorizontal: 4, backgroundColor: immersive ? "#000" : c.background }}>
+          <FindBar id={item.id} background={immersive ? "#000" : c.background} onJump={jump} onClose={() => setFinding(false)} />
+        </View>
+      )}
 
       {vaultItem?.dialog}
       {!vaultId && <FileSheets

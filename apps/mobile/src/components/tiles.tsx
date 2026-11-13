@@ -1,4 +1,4 @@
-import type { Hit, Item, SystemKind, Tag } from "@nimbus/shared/api"
+import type { Hit, Item, SystemKind, Tag, TextPlace } from "@nimbus/shared/api"
 import { formatBytes } from "@nimbus/shared/file-rules"
 import { Image } from "expo-image"
 import { ArrowCircleDown, ChatCircle, CheckCircle, Clock, DotsThreeVertical, Link, Star, UsersThree } from "phosphor-react-native"
@@ -7,6 +7,7 @@ import { PixelRatio, Pressable, View } from "react-native"
 import { useReducedMotion } from "react-native-reanimated"
 
 import { FileIcon } from "@/components/file-icon"
+import { Places, Snippet } from "@/components/search-places"
 import { Text } from "@/components/ui"
 import { useApi } from "@/lib/files"
 import { systemLabel } from "@/lib/system-folders"
@@ -25,6 +26,9 @@ export type TileProps = {
   onPress: (item: Item) => void
   onLongPress: (item: Item) => void
   onMenu: (item: Item) => void
+  // A search result: the words asked for, and a tap on one of the places they were found.
+  q?: string
+  onPlace?: (item: Item, place: TextPlace) => void
 }
 
 const SIZE_FONT = { fontVariant: ["tabular-nums" as const] }
@@ -224,32 +228,11 @@ function FileCardImpl(p: TileProps) {
 }
 export const FileCard = memo(FileCardImpl)
 
-// \u0001 and \u0002 wrap the matched words in a snippet.
-function Snippet({ text, inComment }: { text: string; inComment?: boolean }) {
-  const [first, ...rest] = text.split("\u0001")
-  return (
-    <Text variant="caption" color={c.mutedForeground} numberOfLines={2}>
-      {inComment && "In a comment: "}
-      {first}
-      {rest.map((part, i) => {
-        const [hit, tail] = part.split("\u0002")
-        return (
-          <Text key={i} variant="caption" color={c.mutedForeground}>
-            <Text variant="caption" color={c.foreground} style={{ fontFamily: "Geist_600SemiBold" }}>
-              {hit}
-            </Text>
-            {tail}
-          </Text>
-        )
-      })}
-    </Text>
-  )
-}
-
 function ListRowImpl(p: TileProps) {
   const { item, tags, selecting, selected, compact, pinned, pending, dim } = p
   const snippet = "snippet" in item ? item.snippet : null
   const inComment = "inComment" in item && !!item.inComment
+  const places = "places" in item && item.places?.length && p.q && p.onPlace ? (item as Hit) : null
   return (
     <View style={{ borderBottomWidth: 1, borderBottomColor: c.border }}>
       <Frame p={p} outlined={false}>
@@ -264,7 +247,7 @@ function ListRowImpl(p: TileProps) {
             </Text>
             {item.system && <SystemTag kind={item.system} />}
             <Meta item={item} tags={tags} text={dim ? "Not available offline" : metaText(item)} pinned={pinned} pending={pending} />
-            {snippet ? <Snippet text={snippet} inComment={inComment} /> : null}
+            {places ? <Places hit={places} q={p.q!} onPlace={p.onPlace!} /> : snippet ? <Snippet text={snippet} prefix={inComment ? "In a comment: " : undefined} /> : null}
           </View>
           {!selecting && <MenuButton item={item} onMenu={p.onMenu} />}
         </View>

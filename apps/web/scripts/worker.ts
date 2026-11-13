@@ -21,7 +21,8 @@ import {
 } from "../lib/redis.ts"
 import { signToken } from "../lib/upload-rules.ts"
 import { derive, deriveMisses, exifMisses, hashMisses } from "./derive.ts"
-import { sql as indexSql, sweep } from "./indexer.ts"
+import { fetchLang } from "../lib/extract.ts"
+import { sql as indexSql, status, sweep } from "./indexer.ts"
 import { transcode, transcodeMisses } from "./transcode.ts"
 
 const app = process.env.BETTER_AUTH_URL ?? "http://localhost:3000"
@@ -100,13 +101,25 @@ async function index() {
     derives.concurrency = Math.max(1, n)
   })().finally(() => (sweeping = undefined)))
   // Admin → Health shows the indexer as running while this key lives.
-  await redis.set(INDEXER_KEY, Date.now(), "PX", 3 * 60_000)
+  await redis.set(INDEXER_KEY, JSON.stringify({ at: Date.now(), ...status }), "PX", 3 * 60_000)
+}
+
+// Admin → Text in images: fetch each saved language and record ready or why not.
+async function ocrLangs(langs: string[]) {
+  for (const lang of langs) {
+    const result = await fetchLang(lang).then(
+      () => "ready",
+      (e: Error) => `failed: ${e.message}`.slice(0, 200)
+    )
+    await indexSql`update settings set ocr_lang_status = ocr_lang_status || ${indexSql.json({ [lang]: result })}`
+  }
 }
 
 const jobs = new Worker(
   JOBS_QUEUE,
   async (job) => {
     if (job.name === "index") return index()
+    if (job.name === "ocr-langs") return ocrLangs(job.data.langs)
     const res = await fetch(`${app}/api/jobs`, {
       method: "POST",
       headers: {

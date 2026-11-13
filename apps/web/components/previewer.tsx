@@ -12,6 +12,7 @@ import {
   DownloadSimpleIcon,
   FolderIcon,
   InfoIcon,
+  MagnifyingGlassIcon,
   MagnifyingGlassMinusIcon,
   MagnifyingGlassPlusIcon,
   PencilSimpleIcon,
@@ -27,6 +28,8 @@ import { officeFrame, previewUrl } from "@/app/(app)/upload-actions"
 import { linkPreviewUrl } from "@/app/s/actions"
 import { AudioView } from "@/components/audio-player"
 import { Comments } from "@/components/comments"
+import { FileSearch } from "@/components/file-search"
+import { startOf, type PlaceStart } from "@/components/text-places"
 import { CastButton } from "@/components/player-controls"
 import { PlaybackDock } from "@/components/playback-dock"
 import { ImageEditor, canEditImage } from "@/components/image-editor"
@@ -86,6 +89,7 @@ export function Previewer({
   queue,
   commentsFirst = false,
   editable = false,
+  start,
 }: {
   shown: Shown | null
   open: boolean
@@ -110,6 +114,8 @@ export function Previewer({
   commentsFirst?: boolean
   // The viewer can change this file (owner or editor): images get an Edit button.
   editable?: boolean
+  // Where a search match is: a PDF opens at its page, a video just before its time, an image shows its box.
+  start?: PlaceStart
 }) {
   const item = shown?.item
   const { saveEdit } = useUploads()
@@ -126,6 +132,12 @@ export function Previewer({
     if (commentsFirst) setCommentsOpen(true)
   }
   const v = shown?.version
+  // A match picked in the find-in-file box wins over where the file was opened.
+  const [jump, setJump] = useState<{ id: string; at: PlaceStart } | null>(null)
+  const [searching, setSearching] = useState(false)
+  const at = jump?.id === item?.id ? jump?.at : start
+  const pk = previewKind(v ? v.mime : (item?.mime ?? null), item?.name ?? "")
+  const searchable = commentable && (pk === "image" || pk === "pdf" || pk === "video")
   // Not on a public link, a vault file (src) or an older version.
   const editImage = editable && !link && src === undefined && !v && canEditImage(item?.mime ?? null)
   // Same rules as photos, plus the admin's size cap (Edit shows disabled, with the reason, above it).
@@ -177,6 +189,12 @@ export function Previewer({
     src !== undefined ? (src?.url ?? null) : item && downloadHref(item, v, link)
 
   function onKeyDown(e: React.KeyboardEvent) {
+    if (searchable && e.key.toLowerCase() === "f" && (e.ctrlKey || e.metaKey) && !e.altKey) {
+      e.preventDefault()
+      setSearching(true)
+      document.getElementById("file-search-input")?.focus()
+      return
+    }
     if (
       e.target instanceof HTMLElement &&
       e.target.closest("video, audio, input, textarea, [role=menu]")
@@ -189,7 +207,17 @@ export function Previewer({
   }
 
   return (
-    <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
+    <Dialog.Root
+      open={open}
+      onOpenChange={(o, d) => {
+        if (o) return
+        // Esc closes the find box first, then the previewer.
+        if (searchable && searching && d.reason === "escape-key") {
+          d.cancel()
+          setSearching(false)
+        } else onClose()
+      }}
+    >
       <Dialog.Portal>
         <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/95 transition-opacity duration-150 data-ending-style:opacity-0 data-starting-style:opacity-0" />
         <Dialog.Popup
@@ -251,6 +279,19 @@ export function Previewer({
                     onClick={openPdfEditor}
                   >
                     <PencilSimpleIcon className="size-5" />
+                  </Button>
+                )}
+                {searchable && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Search in file"
+                    title="Search in file (Ctrl+F)"
+                    aria-pressed={searching}
+                    onClick={() => setSearching((o) => !o)}
+                    className={cn(searching && "bg-accent")}
+                  >
+                    <MagnifyingGlassIcon className="size-5" />
                   </Button>
                 )}
                 {href && (
@@ -337,6 +378,7 @@ export function Previewer({
                   link={link?.token}
                   queue={queue}
                   src={src}
+                  at={at}
                   onUseFrame={
                     onUseFrame && !v
                       ? (video) => onUseFrame(item, video)
@@ -350,6 +392,14 @@ export function Previewer({
                   <Step label="Next file" onClick={onNext} side="right" />
                 )}
               </div>
+              {searchable && searching && item && (
+                <FileSearch
+                  key={item.id}
+                  id={item.id}
+                  onJump={(p) => setJump({ id: item.id, at: startOf(p) })}
+                  onClose={() => setSearching(false)}
+                />
+              )}
               {commentable && commentsOpen && (
                 <aside
                   aria-label="Comments"
@@ -419,6 +469,7 @@ export function View({
   queue,
   src,
   onUseFrame,
+  at,
 }: {
   item: Item
   version?: Shown["version"]
@@ -430,6 +481,8 @@ export function View({
   // Already-decrypted bytes: no server URL, and Collabora is skipped.
   src?: Decrypted
   onUseFrame?: (video: HTMLVideoElement) => Promise<void>
+  // A search match to open at.
+  at?: PlaceStart
 }) {
   const mime = version ? version.mime : item.mime
   const size = version ? version.size : item.size
@@ -484,7 +537,7 @@ export function View({
   }
   switch (kind) {
     case "image":
-      return <ImageView {...props} />
+      return <ImageView {...props} at={at} />
     case "video":
       return (
         <VideoPlayer
@@ -495,6 +548,7 @@ export function View({
           linkToken={link && !version ? link : undefined}
           fileId={item.id}
           onUseFrame={onUseFrame}
+          startAt={at?.tMs}
           onError={() => setFailed("This video can't play in this browser.")}
         />
       )
@@ -507,16 +561,18 @@ export function View({
           ephemeral={Boolean(link) || src !== undefined || Boolean(version)}
         />
       )
-    case "pdf":
+    case "pdf": {
+      const hash = [at?.page && `page=${at.page}`, !href && "toolbar=0"].filter(Boolean).join("&")
       return (
         <iframe
-          // Hides the browser's PDF toolbar, and its download button.
-          src={href ? shownUrl : `${shownUrl}#toolbar=0`}
+          // #toolbar=0 hides the browser's PDF toolbar, and its download button.
+          src={hash ? `${shownUrl}#${hash}` : shownUrl}
           data-pdf
           title={item.name}
           className="size-full rounded-lg border bg-white"
         />
       )
+    }
     case "markdown":
     case "text":
       return <TextView {...props} markdown={kind === "markdown"} />
@@ -661,13 +717,38 @@ function Failed({
 
 // Fit to the screen, or zoom with the wheel, buttons or a double-click, and
 // drag to pan.
-function ImageView({ url, item, href }: ViewProps) {
+function ImageView({ url, item, href, at }: ViewProps & { at?: PlaceStart }) {
   const img = useRef<HTMLImageElement>(null)
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [broken, setBroken] = useState(false)
   const [dragging, setDragging] = useState(false)
   const drag = useRef({ x: 0, y: 0 })
+  // Where the picture sits in its frame: the match box is laid over this rectangle.
+  const [rect, setRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+  // The matched line's box shows for about 3 s, or until Clear.
+  const [lit, setLit] = useState<PlaceStart | undefined>(at)
+  const [litAt, setLitAt] = useState(at)
+  if (litAt !== at) {
+    setLitAt(at)
+    setLit(at)
+  }
+  const box = lit?.box
+  useEffect(() => {
+    if (!lit) return
+    const t = setTimeout(() => setLit(undefined), 3000)
+    return () => clearTimeout(t)
+  }, [lit])
+  useEffect(() => {
+    const el = img.current
+    if (!el) return
+    const measure = () =>
+      setRect({ x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight })
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
   // Zoom that shows the image at its own pixel size, measured once it loads.
   const [actual, setActual] = useState(1)
 
@@ -743,7 +824,46 @@ function ImageView({ url, item, href }: ViewProps) {
               "transition-transform duration-100 ease-out motion-reduce:transition-none"
           )}
         />
+        {box && rect && (
+          // Same frame and transform as the picture, so the box follows any zoom or pan.
+          <div
+            aria-hidden
+            className={cn(
+              "pointer-events-none absolute",
+              !dragging &&
+                "transition-transform duration-100 ease-out motion-reduce:transition-none"
+            )}
+            style={{
+              left: rect.x,
+              top: rect.y,
+              width: rect.w,
+              height: rect.h,
+              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+            }}
+          >
+            <div
+              className="absolute animate-[match-fade_3s_ease-out_forwards] rounded-[3px] bg-brand/25 ring-2 ring-brand motion-reduce:animate-none"
+              style={{
+                left: `${box[0] * 100}%`,
+                top: `${box[1] * 100}%`,
+                width: `${box[2] * 100}%`,
+                height: `${box[3] * 100}%`,
+              }}
+            />
+          </div>
+        )}
       </div>
+      {box && (
+        <Button
+          variant="outline"
+          size="xs"
+          className="absolute top-2 left-1/2 -translate-x-1/2 rounded-full bg-background/80 backdrop-blur-sm"
+          onClick={() => setLit(undefined)}
+        >
+          <XIcon />
+          Clear
+        </Button>
+      )}
       <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 items-center gap-0.5 rounded-full border bg-background/80 p-1 shadow-lg backdrop-blur-sm">
         <Button
           variant="ghost"

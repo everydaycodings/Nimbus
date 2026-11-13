@@ -7,11 +7,11 @@ import { fetch as streamingFetch } from "expo/fetch"
 import { Image } from "expo-image"
 import { useNetworkState, NetworkStateType } from "expo-network"
 import type { VideoPlayer, VideoView } from "expo-video"
-import { ArrowClockwise, ArrowCounterClockwise, Moon, Pause, Play, SkipBack, SkipForward } from "phosphor-react-native"
+import { ArrowClockwise, ArrowCounterClockwise, Moon, Pause, Play, SkipBack, SkipForward, X as XIcon } from "phosphor-react-native"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ActivityIndicator, Linking, Pressable, ScrollView, View, useWindowDimensions, type GestureResponderEvent } from "react-native"
 import { Gesture, GestureDetector } from "react-native-gesture-handler"
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated"
+import Animated, { runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withTiming } from "react-native-reanimated"
 import { WebView, type WebViewMessageEvent } from "react-native-webview"
 
 import { FileIcon } from "@/components/file-icon"
@@ -25,13 +25,16 @@ import { getSpeed, setSpeed, type Sleep } from "@/lib/playback"
 import { cachedFile, fetchToCache, offlineFile } from "@/lib/file-cache"
 import { registerAnchor } from "@/lib/comment-anchor"
 import { useApi } from "@/lib/files"
-import { previewSession } from "@/lib/preview-session"
+import { previewSession, type PlaceStart } from "@/lib/preview-session"
 import { decryptTemp, useVaultFile, vaultNative, vaultTemp } from "@/lib/vault"
 import { useVaultItem } from "@/components/vault-item"
 import { needsDataWarning, toBase64, type Plan, type Viewer } from "@/lib/preview-rules"
 import { useTransfers } from "@/lib/transfers"
 import { c, radius } from "@/lib/theme"
 import { clock } from "@/lib/time"
+
+// A box over the words a search found in an image; `n` changes with each new one so it shows again.
+export type Mark = { box: [number, number, number, number]; n: number }
 
 export type PageProps = {
   item: Item
@@ -54,6 +57,10 @@ export type PageProps = {
   videoNav?: { prev: boolean; next: boolean; go: (by: 1 | -1) => void }
   // The audio queue moved on to this track.
   onAudioTrack: (item: Item) => void
+  // On the file a search opened: where to start (a PDF page, a video time).
+  start?: PlaceStart
+  // On the shown image: the words to point at.
+  mark?: Mark | null
 }
 
 // Lazy, so a viewer's few MB of script aren't parsed until it's needed.
@@ -131,7 +138,7 @@ export const Loading = ({ progress }: { progress?: number }) => (
 
 const TAP_SLOP = 12
 
-export function ImagePage({ item, version, active, near, bottom, onTap, onZoom }: PageProps & { near: boolean }) {
+export function ImagePage({ item, version, active, near, bottom, onTap, onZoom, mark }: PageProps & { near: boolean }) {
   const { account } = useApi()
   // The TV follows the swipes.
   const cast = useCastItem({ item, kind: "image", active: active && !version && !previewSession()?.vault })
@@ -139,6 +146,21 @@ export function ImagePage({ item, version, active, near, bottom, onTap, onZoom }
   const { width: W, height: H } = useWindowDimensions()
   const [failed, setFailed] = useState(false)
   const retried = useRef(false)
+  const [natural, setNatural] = useState<{ w: number; h: number } | null>(null)
+  const [area, setArea] = useState<{ w: number; h: number } | null>(null)
+  const [marked, setMarked] = useState(false)
+  const still = useReducedMotion()
+  const fade = useSharedValue(1)
+  // The box shows for a moment, then fades; the pill clears it sooner.
+  useEffect(() => {
+    if (!mark) return setMarked(false)
+    setMarked(true)
+    fade.value = 1
+    if (!still) fade.value = withDelay(2800, withTiming(0, { duration: 600 }))
+    const t = setTimeout(() => setMarked(false), 3500)
+    return () => clearTimeout(t)
+  }, [mark, still, fade])
+  const markStyle = useAnimatedStyle(() => ({ opacity: fade.value }))
 
   const scale = useSharedValue(1)
   const start = useSharedValue(1)
@@ -216,7 +238,14 @@ export function ImagePage({ item, version, active, near, bottom, onTap, onZoom }
   return (
     <>
     <GestureDetector gesture={gesture}>
-      <Animated.View collapsable={false} style={[{ flex: 1 }, style]} accessible accessibilityRole="image" accessibilityLabel={item.name}>
+      <Animated.View
+        collapsable={false}
+        onLayout={(e) => setArea({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
+        style={[{ flex: 1 }, style]}
+        accessible
+        accessibilityRole="image"
+        accessibilityLabel={item.name}
+      >
         <Image
           source={url ? { uri: url, cacheKey: `${item.id}-${versionId(item, version)}` } : undefined}
           placeholder={
@@ -229,6 +258,7 @@ export function ImagePage({ item, version, active, near, bottom, onTap, onZoom }
           cachePolicy="disk"
           transition={0}
           style={{ flex: 1 }}
+          onLoad={(e) => setNatural({ w: e.source.width, h: e.source.height })}
           onError={() => {
             // Once for a URL that went stale, then it's the file.
             if (retried.current) return setFailed(true)
@@ -237,10 +267,53 @@ export function ImagePage({ item, version, active, near, bottom, onTap, onZoom }
           }}
           accessibilityIgnoresInvertColors
         />
+        {marked && mark && natural && area && <MarkBox box={mark.box} natural={natural} area={area} style={markStyle} />}
       </Animated.View>
     </GestureDetector>
+    {marked && (
+      <View pointerEvents="box-none" style={{ position: "absolute", left: 0, right: 0, bottom: bottom + 24, alignItems: "center" }}>
+        <Pressable
+          onPress={() => setMarked(false)}
+          android_ripple={{ color: c.ripple }}
+          accessibilityRole="button"
+          accessibilityLabel="Clear highlight"
+          style={{ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 20, borderRadius: radius.pill, backgroundColor: "rgba(0,0,0,0.72)", borderWidth: 1, borderColor: c.input }}
+        >
+          <XIcon size={18} color={c.foreground} />
+          <Text variant="label">Clear</Text>
+        </Pressable>
+      </View>
+    )}
     {cast.casting && <CastBar bottom={bottom + 24} />}
     </>
+  )
+}
+
+// The matched words, drawn over the part of the view the picture really covers (it is letterboxed).
+function MarkBox({ box, natural, area, style }: { box: Mark["box"]; natural: { w: number; h: number }; area: { w: number; h: number }; style: object }) {
+  const k = Math.min(area.w / natural.w, area.h / natural.h)
+  const w = natural.w * k
+  const h = natural.h * k
+  const PAD = 4
+  return (
+    <Animated.View
+      pointerEvents="none"
+      importantForAccessibility="no-hide-descendants"
+      style={[
+        {
+          position: "absolute",
+          left: (area.w - w) / 2 + box[0] * w - PAD,
+          top: (area.h - h) / 2 + box[1] * h - PAD,
+          width: box[2] * w + PAD * 2,
+          height: box[3] * h + PAD * 2,
+          borderRadius: 6,
+          borderWidth: 2,
+          borderColor: c.brand,
+          backgroundColor: "rgba(95,208,187,0.2)",
+        },
+        style,
+      ]}
+    />
   )
 }
 
@@ -526,7 +599,7 @@ export function AudioPage(props: PageProps) {
 const MB = 1024 ** 2
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;")
 
-export function WebPage({ item, version, plan, active, top, bottom, onScrollDown, onZoom, onEdge }: PageProps & { plan: Extract<Plan, { show: "web" }> }) {
+export function WebPage({ item, version, plan, active, top, bottom, onScrollDown, onZoom, onEdge, start }: PageProps & { plan: Extract<Plan, { show: "web" }> }) {
   const api = useApi()
   const net = useNetworkState()
   const web = useRef<WebView>(null)
@@ -663,9 +736,9 @@ export function WebPage({ item, version, plan, active, top, bottom, onScrollDown
   // In the markup rather than injected: an injected script can lose the race with the page's own.
   const source = useMemo(() => {
     if (!ready) return null
-    const meta = `<head><meta name="nimbus" content="${esc(JSON.stringify({ name: item.name, size, top, bottom }))}">`
+    const meta = `<head><meta name="nimbus" content="${esc(JSON.stringify({ name: item.name, size, top, bottom, page: plan.viewer === "pdf" ? start?.page : undefined }))}">`
     return { html: VIEWER_HTML[plan.viewer]().replace("<head>", () => meta), baseUrl: "about:blank" }
-  }, [ready, plan.viewer, item.name, size, top, bottom])
+  }, [ready, plan.viewer, item.name, size, top, bottom, start?.page])
 
   if (error)
     return (

@@ -203,6 +203,24 @@ export type FolderResponse = ListResponse & {
 export type TrashResponse = ListResponse & { retentionDays: number | null }
 export type TagResponse = ListResponse & { tag: Tag; count: number }
 
+/** One place text was found in a file. box = x,y,w,h as 0-1 fractions; snippet uses \u0001/\u0002 markers. */
+export type TextPlace = {
+  kind: "page" | "time" | "line"
+  page?: number
+  tMs?: number
+  box?: [number, number, number, number]
+  snippet: string
+}
+export type FileTextResponse = { parts: TextPlace[] }
+export type FileTextStatus = {
+  state: "done" | "waiting" | "failed" | "off" | "none"
+  failed?: string
+  /** First ~2000 characters of the text. */
+  preview: string
+  readAt?: string
+  canReread: boolean
+}
+
 export type Hit = Item & {
   /** The folder it's in as I know it, "My files" or "Shared with me". */
   where: string
@@ -211,15 +229,14 @@ export type Hit = Item & {
   snippet: string | null
   /** The snippet is from a comment on it, not its text. Missing on older servers. */
   inComment?: boolean
+  /** Up to 3 best places in the file (1 for quick search), when its text has positions. */
+  places?: TextPlace[]
+  /** Matching places beyond `places`. */
+  moreCount?: number
 }
 export type SearchResponse = ListResponse<Hit>
 export type QuickSearchResponse = { items: Hit[] }
 export type OcrLangsResponse = { langs: string }
-export type SaveContentRequest = {
-  versionId: string
-  body: string
-  source: "text" | "pdf" | "docx" | "sheet" | "pptx" | "ocr"
-}
 
 export type ItemResponse = { item: Item | null; details: Details }
 export type Details = {
