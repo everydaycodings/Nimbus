@@ -1,5 +1,5 @@
 """nimbus-ml: optional CPU service for speech search, picture search and face grouping."""
-import gc, io, os, subprocess, threading, time, urllib.request
+import faulthandler, gc, io, os, subprocess, sys, threading, time, urllib.request
 from pathlib import Path
 
 import cv2
@@ -46,6 +46,14 @@ def rss_mb() -> int:
 def auth(authorization: str = Header(default="")):
     if TOKEN and authorization != f"Bearer {TOKEN}":
         raise HTTPException(401, "bad token")
+
+
+# A crash inside a native library (CTranslate2, onnxruntime, OpenCV) prints where it happened.
+faulthandler.enable()
+
+
+def log(msg: str):
+    print(f"nimbus-ml: {msg}", file=sys.stderr, flush=True)
 
 
 app = FastAPI(title="nimbus-ml")
@@ -178,35 +186,60 @@ class Transcribe(BaseModel):
     model: str = "base"
 
 
+# Audio is read and transcribed in 10-minute pieces: faster-whisper builds its features for the
+# whole input at once, so a 2-hour file in one go needs several GB. A piece needs ~0.3 GB.
+# ponytail: a word cut at a piece boundary can be lost; overlap pieces if that ever matters.
+CHUNK_SEC = 600
+
+
 @app.post("/transcribe", dependencies=guarded)
 def transcribe(b: Transcribe):
     if not b.url.startswith(("http://", "https://")):
         raise HTTPException(400, "url must be http(s)")
     d = need("speech", b.model)
-    p = subprocess.run(
+    log(f"transcribe {b.model}: reading up to {b.maxSec} s")
+    proc = subprocess.Popen(
         ["nice", "-n", "19", "ffmpeg", "-nostdin", "-loglevel", "error", "-protocol_whitelist", "http,https,tcp,tls,crypto",
-         "-t", str(b.maxSec), "-i", b.url, "-vn", "-ac", "1", "-ar", "16000", "-f", "s16le", "-"],
-        capture_output=True, timeout=b.maxSec + 600)
-    if p.returncode != 0:
-        err = p.stderr.decode()
-        if "does not contain any stream" in err:  # no audio track
-            return {"lang": None, "noSpeech": True, "segments": []}
-        raise HTTPException(422, "ffmpeg: " + err[-200:])
-    audio = np.frombuffer(p.stdout, np.int16).astype(np.float32) / 32768
-    if len(audio) < 1600:
-        return {"lang": None, "noSpeech": True, "segments": []}
+         "-rw_timeout", "60000000", "-t", str(b.maxSec), "-i", b.url, "-vn", "-ac", "1", "-ar", "16000", "-f", "s16le", "-"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     def load():
         from faster_whisper import WhisperModel
         return WhisperModel(str(d), device="cpu", compute_type="int8")
 
-    with heavy:
-        m = use(("speech", b.model), load)
-        segs, info = m.transcribe(audio, vad_filter=True, beam_size=1)
-        out = [{"start": round(s.start, 2), "end": round(s.end, 2), "text": s.text.strip()} for s in segs]
-        loaded["used"] = time.time()
-    out = [s for s in out if s["text"]]
-    return {"lang": info.language, "noSpeech": not out, "segments": out}
+    out, lang, offset = [], None, 0.0
+    try:
+        with heavy:
+            m = use(("speech", b.model), load)
+            while True:
+                raw = proc.stdout.read(CHUNK_SEC * 16000 * 2)
+                if not raw:
+                    break
+                audio = np.frombuffer(raw, np.int16).astype(np.float32)
+                del raw
+                audio /= 32768
+                if len(audio) >= 1600:
+                    # The language found in the first piece with speech holds for the rest.
+                    segs, info = m.transcribe(audio, vad_filter=True, beam_size=1, language=lang)
+                    found = [{"start": round(x.start + offset, 2), "end": round(x.end + offset, 2), "text": x.text.strip()}
+                             for x in segs if x.text.strip()]
+                    if found and lang is None:
+                        lang = info.language
+                    out += found
+                offset += len(audio) / 16000
+                loaded["used"] = time.time()
+                del audio
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait()
+    err = proc.stderr.read().decode(errors="replace")
+    log(f"transcribe {b.model}: {offset:.0f} s of audio, {len(out)} segments")
+    if proc.returncode != 0 and not offset:
+        if "does not contain any stream" in err:  # no audio track
+            return {"lang": None, "noSpeech": True, "segments": []}
+        raise HTTPException(422, "ffmpeg: " + err[-200:])
+    return {"lang": lang, "noSpeech": not out, "segments": out}
 
 
 # ----------------------------------------------------------------------- clip
@@ -238,6 +271,7 @@ def prep(data: bytes) -> np.ndarray:
 @app.post("/clip/images", dependencies=guarded)
 def clip_images(files: list[UploadFile] = File(...), model: str = Form("vitb32")):
     d = need("clip", model)
+    log(f"clip {model}: {len(files)} images")
     try:
         batch = [prep(f.file.read())[None] for f in files]
     except Exception:
@@ -289,6 +323,7 @@ def faces(file: UploadFile = File(...)):
     if img is None:
         raise HTTPException(400, "unreadable image")
     h0, w0 = img.shape[:2]
+    log(f"faces: {w0}x{h0}")
     scale = min(1, 1600 / max(h0, w0))
     if scale < 1:
         img = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
