@@ -1,4 +1,5 @@
 // The rules behind offline files and the change queue. No React or native imports, so node --test can run them.
+import type { DocOp } from "./documents-rules.ts"
 
 const GB = 1024 ** 3
 export const CAPS: (number | null)[] = [1 * GB, 2 * GB, 5 * GB, 10 * GB, 20 * GB, 50 * GB, null]
@@ -19,8 +20,10 @@ export type Op =
   | { op: "saveText"; id: string; parentId: string | null; name: string; text: string; base: string | null }
   // An edited PDF waiting in the app's own folder (`uri`); same `base` rule as saveText, except a copy never clashes.
   | { op: "savePdf"; id: string; parentId: string | null; name: string; uri: string; size: number; base: string | null; as: "version" | "copy" }
+  // Documents: edited fields (or Confirm), and Not a document / Mark as document.
+  | DocOp
 
-export const QUEUEABLE = ["rename", "move", "star", "trash", "restore", "newFolder", "applyTag", "saveText", "savePdf"] as const
+export const QUEUEABLE = ["rename", "move", "star", "trash", "restore", "newFolder", "applyTag", "saveText", "savePdf", "docPatch", "docMark"] as const
 export const canQueue = (op: string) => (QUEUEABLE as readonly string[]).includes(op)
 
 export const newTempId = () => `temp-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
@@ -28,7 +31,7 @@ export const isTemp = (id: string | null) => !!id && id.startsWith("temp-")
 
 // Every id an op points at, not counting the temporary id a new folder is born with.
 export function idsOf(op: Op): string[] {
-  const ids = op.op === "rename" || op.op === "saveText" || op.op === "savePdf" ? [op.id] : op.op === "newFolder" ? [] : op.ids
+  const ids = op.op === "rename" || op.op === "saveText" || op.op === "savePdf" || op.op === "docPatch" ? [op.id] : op.op === "newFolder" ? [] : op.ids
   const parent = op.op === "move" || op.op === "newFolder" || op.op === "saveText" || op.op === "savePdf" ? [op.parentId] : []
   return [...ids, ...parent].filter((i): i is string => !!i)
 }
@@ -39,6 +42,7 @@ export function remap<T extends Op>(op: T, real: Record<string, string>): T {
   const swap = (id: string) => real[id] ?? id
   switch (op.op) {
     case "rename":
+    case "docPatch":
       return { ...op, id: swap(op.id) }
     case "newFolder":
     case "saveText":

@@ -1,6 +1,7 @@
 // Changes made with no connection: kept in SQLite, shown at once on screen, and replayed in order
 // when the server is back. The rules (what may wait, what to do with an error) are in offline-rules.ts.
 import type { Item } from "@nimbus/shared/api"
+import type { DocStatus, DocumentItem } from "@nimbus/shared/documents-api"
 import type { InfiniteData, QueryClient } from "@tanstack/react-query"
 import { useSyncExternalStore } from "react"
 
@@ -8,6 +9,7 @@ import { ApiError, json, type Account } from "./api"
 import { db } from "./offline-db"
 import { idsOf, remap, renamed, classify, unresolved, type Op } from "./offline-rules"
 import { savedAccounts, tellNative } from "./offline"
+import { applyDocOp, applyPatch } from "./documents-rules"
 import { CHANGED, currentOf, uploadFile, uploadText } from "./editor-save"
 
 export type Failed = { id: number; op: Op; label: string; error: string; created: number }
@@ -100,8 +102,24 @@ export function applyOp(items: Item[], path: string, first: boolean, op: Op): It
   return items
 }
 
+// Documents lists and details live under [account, "docs"]; see documents.ts.
+function patchDocs(client: QueryClient, account: string, op: Op) {
+  if (op.op !== "docPatch" && op.op !== "docMark") return
+  for (const q of client.getQueryCache().findAll({ queryKey: [account, "docs", "list"] })) {
+    const status = (q.queryKey[3] as { status?: DocStatus } | undefined)?.status
+    client.setQueryData<InfiniteData<{ items: DocumentItem[] }>>(q.queryKey, (old) =>
+      old && { ...old, pages: old.pages.map((p) => ({ ...p, items: applyDocOp(p.items, op, status) })) }
+    )
+  }
+  if (op.op === "docPatch")
+    client.setQueryData<{ item: DocumentItem } | null>([account, "docs", "item", op.id], (old) =>
+      old ? { item: applyPatch(old.item, op) } : old
+    )
+}
+
 export function showOptimistically(client: QueryClient, account: string, op: Op) {
   patchLists(client, account, (items, path, first) => applyOp(items, path, first, op))
+  patchDocs(client, account, op)
 }
 
 // ---- Replay ----
@@ -124,6 +142,12 @@ async function exec(a: Account, op: Op): Promise<string | void> {
       return void (await send("POST", "/tags/apply", { ids: op.ids, tagId: op.tagId, on: op.on }))
     case "newFolder":
       return (await send<{ id: string }>("POST", "/folders", { parentId: op.parentId, name: op.name })).id
+    case "docPatch":
+      return void (await send("PATCH", `/documents/${op.id}`, op.patch))
+    case "docMark":
+      if (op.on) return void (await send("POST", "/documents", { ids: op.ids }))
+      for (const id of op.ids) await send("PATCH", `/documents/${id}`, { status: "dismissed" })
+      return
     case "saveText": {
       // The server's copy wins: if it moved on, this goes to Couldn't sync with the text still in it.
       const now = (await currentOf(a, op.id)).item

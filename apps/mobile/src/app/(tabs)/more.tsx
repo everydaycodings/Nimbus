@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from "expo-router"
 import { formatBytes } from "@nimbus/shared/file-rules"
-import { ArrowCircleDown, ArrowSquareOut, Broom, CaretRight, ClockCounterClockwise, CloudArrowUp, Fingerprint, FolderOpen, FolderSimple as FolderSync, GearSix, Info, Lock, PaperPlaneTilt, Tag, Trash, UploadSimple } from "phosphor-react-native"
+import { ArrowCircleDown, ArrowSquareOut, Broom, CaretRight, ClockCounterClockwise, CloudArrowUp, Fingerprint, FileText, FolderOpen, FolderSimple as FolderSync, GearSix, Info, Lock, PaperPlaneTilt, Tag, Trash, UploadSimple } from "phosphor-react-native"
 import * as LocalAuthentication from "expo-local-authentication"
 import { useCallback, useEffect, useState } from "react"
 import { ActivityIndicator, Linking, Pressable, ScrollView, View } from "react-native"
@@ -18,6 +18,7 @@ import { backupAvailable, useBackup } from "@/lib/backup"
 import { syncAvailable } from "@/lib/folder-sync"
 import { describe } from "@/lib/backup-rules"
 import { readPhone } from "@/lib/phone-backup"
+import { useDocSummary } from "@/lib/documents"
 import { useApi, useMe } from "@/lib/files"
 import { useOffline } from "@/lib/offline"
 import { useQueue } from "@/lib/offline-queue"
@@ -43,6 +44,7 @@ export default function More() {
   const offline = useOffline(id)
   const queue = useQueue(id)
   const sent = useSent()
+  const docs = useDocSummary()
   useFocusEffect(useCallback(() => setCached(cacheSize(id)), [id]))
   const [locked, setLocked] = useState(false)
   useEffect(() => void lockSetting().then((s) => setLocked(s === "on")), [])
@@ -99,6 +101,8 @@ export default function More() {
               onPress={() => router.push("/offline")}
             />
             {sent.data?.options.enabled !== false && <Row label="Transfers" detail="Send files by email or link" icon={<PaperPlaneTilt size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/transfers")} />}
+            {/* The server answers 404 when the admin turned Documents off; then there is nothing to open. */}
+            {!docs.off && <Row label="Documents" detail={docs.data?.review ? `${docs.data.review} to review` : undefined} icon={<FileText size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/documents")} />}
             <Row label="Recent" icon={<ClockCounterClockwise size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.navigate(homeHref("(recent)"))} />
             <Row label="Trash" icon={<Trash size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/trash")} />
             <Row label="Tags" icon={<Tag size={24} color={c.mutedForeground} />} trailing={caret} onPress={() => router.push("/tags")} />

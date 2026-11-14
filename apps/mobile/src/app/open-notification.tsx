@@ -35,6 +35,7 @@ export default function OpenNotification() {
       const target = notificationTarget({ kind: (p.kind ?? "shared") as NotificationKind, href: p.href ?? "", nodeId: p.node || null })
       if (target.to === "browser") return Linking.openURL(account.server + target.path)
       if (target.to === "album") return router.push({ pathname: "/albums/[id]", params: { id: target.id } })
+      if (target.to === "document") return router.push({ pathname: "/documents/[id]", params: { id: target.id } })
       if (target.to === "route") return router.push(target.path as Href)
       try {
         const { item } = await json<{ item: Item | null }>(account.server, `/api/v1/items/${target.id}`, { token: account.token })

@@ -4,6 +4,7 @@ export type Target =
   | { to: "browser"; path: string }
   | { to: "item"; id: string; comments?: boolean }
   | { to: "album"; id: string }
+  | { to: "document"; id: string }
   | { to: "route"; path: "/storage" | "/transfers" | "/account/devices" | "/account/partner" | "/(tabs)/(shared)/home" }
 
 // `href` is a web path. The app has its own screens for all of them but admin.
@@ -17,6 +18,7 @@ export function notificationTarget(n: Pick<Notification, "kind" | "href" | "node
   const album = n.kind === "album" ? /^\/photos\/albums\/([^/?#]+)/.exec(n.href)?.[1] : undefined
   if (album) return { to: "album", id: album }
   if (n.kind === "album") return { to: "route", path: "/(tabs)/(shared)/home" }
+  if (n.kind === "document_expiring" && n.nodeId) return { to: "document", id: n.nodeId }
   if (n.kind === "comment" && n.nodeId) return { to: "item", id: n.nodeId, comments: true }
   if (n.nodeId) return { to: "item", id: n.nodeId }
   return { to: "route", path: "/(tabs)/(shared)/home" }

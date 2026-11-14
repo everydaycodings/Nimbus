@@ -25,3 +25,8 @@ test("the rest go to their item, or Shared when there's none", () => {
   assert.deepEqual(notificationTarget({ kind: "shared", href: "/shared", nodeId: "n1" }), { to: "item", id: "n1" })
   assert.deepEqual(notificationTarget({ kind: "access_removed", href: "/shared", nodeId: null }), { to: "route", path: "/(tabs)/(shared)/home" })
 })
+
+test("a document reminder opens the document", () => {
+  assert.deepEqual(notificationTarget({ kind: "document_expiring", href: "/documents", nodeId: "n7" }), { to: "document", id: "n7" })
+  assert.deepEqual(notificationTarget({ kind: "document_expiring", href: "/documents", nodeId: null }), { to: "route", path: "/(tabs)/(shared)/home" })
+})

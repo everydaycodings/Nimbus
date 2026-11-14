@@ -4,7 +4,7 @@ import { dehydrate, hydrate, type Query, type QueryClient } from "@tanstack/reac
 
 import { db } from "./offline-db"
 
-const KEPT = new Set(["list", "item", "counts", "tags"])
+const KEPT = new Set(["list", "item", "counts", "tags", "docs"])
 const SKIP_LISTS = ["/trash", "/search", "/tags/"]
 const MAX_PER_ACCOUNT = 300
 

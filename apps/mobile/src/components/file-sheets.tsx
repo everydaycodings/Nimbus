@@ -62,6 +62,7 @@ import { CapDialog } from "@/components/offline-ui"
 import { SwitchRow } from "@/components/page"
 import { canEdit } from "@/lib/editor-rules"
 import { ActivityList } from "@/components/activity-list"
+import { DocumentLink, DocumentRows } from "@/components/document-rows"
 import { Sheet, SheetDivider, SheetRow, useDismiss } from "@/components/sheet"
 import { useSnack } from "@/components/snackbar"
 import { PeopleFound } from "@/components/people-found"
@@ -413,6 +414,7 @@ function ActionsSheet({ items, role, trash, onChange, onClose, onOpen, onSelectA
           }}
         />
       )}
+      {!trash && <DocumentRows items={items} />}
       {file && (
         <SheetRow
           label="Open with"
@@ -758,6 +760,7 @@ function DetailsSheet({ item, role, trash, tags, onChange, onClose, ask }: Props
           <Text>{item.comments ? `${item.comments} open thread${item.comments === 1 ? "" : "s"}` : "Add a comment"}</Text>
         </DetailLink>
       )}
+      {!trash && <DocumentLink item={item} />}
       {!trash && item.kind === "file" && editable([item], role) && <VersionsLink item={item} />}
       {!trash && item.kind === "file" && ["image", "pdf", "video"].includes(typeKeyOf("file", item.mime, item.name)) && <TextFound item={item} />}
       {!trash && item.kind === "file" && typeKeyOf("file", item.mime, item.name) === "image" && <PeopleFound item={item} />}
