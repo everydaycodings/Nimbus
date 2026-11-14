@@ -10,6 +10,7 @@ import { db } from "@/lib/db"
 import {
   account,
   appPasswords,
+  registryTokens,
   s3Keys,
   savedLogins,
   session,
@@ -21,6 +22,7 @@ import {
 import { appUrl, message, sendInBackground } from "@/lib/email"
 import { notify } from "@/lib/notify"
 import { getUsage } from "@/lib/quota"
+import { revokeToken } from "@/lib/registry/manage"
 import { revokeKey } from "@/lib/s3api/manage"
 import { forgetSavedLogins } from "@/lib/saved-logins"
 import { requireAdmin } from "@/lib/session"
@@ -226,6 +228,25 @@ export async function setMemberS3(targetId: string, on: boolean) {
   await db.update(user).set({ s3Disabled: !on }).where(eq(user.id, target.id))
   if (!on) await db.delete(s3Keys).where(eq(s3Keys.userId, target.id))
   await audit("s3", { targetId, detail: on ? "on" : "off" })
+  revalidatePath("/admin", "layout")
+  return { ok: true }
+}
+
+// Off also removes their tokens, so nothing they set up keeps working.
+export async function setMemberRegistry(targetId: string, on: boolean) {
+  const target = await recoverable(targetId)
+  if (!target) return { error: "You can't change the registry for this person." }
+  await db.update(user).set({ registryDisabled: !on }).where(eq(user.id, target.id))
+  if (!on) await db.delete(registryTokens).where(eq(registryTokens.userId, target.id))
+  await audit("registry", { targetId, detail: on ? "on" : "off" })
+  revalidatePath("/admin", "layout")
+  return { ok: true }
+}
+
+export async function revokeMemberRegistryToken(targetId: string, id: string) {
+  const target = await recoverable(targetId)
+  if (!target) return { error: "You can't change this person's registry tokens." }
+  await revokeToken(target.id, id, true)
   revalidatePath("/admin", "layout")
   return { ok: true }
 }

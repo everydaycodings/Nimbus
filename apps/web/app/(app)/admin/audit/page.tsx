@@ -53,6 +53,26 @@ function sentence(e: typeof auditEvents.$inferSelect, who: string) {
       return `made the folder “${d}” an S3 bucket`
     case "s3_bucket_remove":
       return `stopped using “${d}” as an S3 bucket`
+    case "registry_name_claim":
+      return `claimed the registry name ${d}`
+    case "registry_org_create":
+      return `made the registry org ${d}`
+    case "registry_org_delete":
+      return `deleted the registry org ${d}`
+    case "registry_token_create":
+      return `made the registry token ${d}`
+    case "registry_token_revoke":
+      return e.targetName ? `revoked ${who}'s registry token ${d}` : `revoked the registry token ${d}`
+    case "registry_repo_create":
+      return `made the repository ${d}`
+    case "registry_repo_delete":
+      return `deleted the repository ${d}`
+    case "registry_tag_delete":
+      return `deleted the tag ${d}`
+    case "registry_quota":
+      return `set the registry storage limit for ${d}`
+    case "registry":
+      return `turned the registry ${d} for ${who}`
     case "invite_create":
       return "made an invite link"
     case "invite_revoke":

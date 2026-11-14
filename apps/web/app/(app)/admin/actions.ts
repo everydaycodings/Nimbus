@@ -26,6 +26,7 @@ import {
 } from "@/lib/db/schema"
 import { passkeyHost } from "@/lib/passkey-rules"
 import { POLICY_MAX, POLICY_MIN } from "@/lib/password-policy"
+import { adminDeleteRepo, revokeToken, setNamespaceQuota } from "@/lib/registry/manage"
 import { revokeKey } from "@/lib/s3api/manage"
 import { turnCopiesOffAndDelete } from "@/lib/video-copies"
 import { enqueue, scheduleBackups, scheduleHealth } from "@/lib/redis"
@@ -138,6 +139,47 @@ export async function setS3(form: FormData) {
     updatedAt: new Date(),
   })
   revalidatePath("/", "layout")
+}
+
+// Off makes every registry request fail; names, repos and tokens are kept.
+export async function setRegistry(form: FormData) {
+  await requireAdmin()
+  const rps = limit(form, "registryRpsLimit")
+  const bps = limit(form, "registryBps")
+  const quota = limit(form, "quota")
+  const bpsUnit = String(form.get("bpsUnit")) === "KB" ? 2 ** 10 : 2 ** 20
+  const quotaUnit = UNITS[String(form.get("quotaUnit"))] ?? UNITS.GB
+  await saveSettings({
+    registry: form.get("registry") === "on",
+    registryPublic: form.get("registryPublic") === "on",
+    registryRedirect: form.get("registryRedirect") === "on",
+    registryRpsLimit: rps === null ? null : Math.min(Math.floor(rps), 100_000),
+    registryBpsLimit: bps === null ? null : Math.max(1024, Math.round(bps * bpsUnit)),
+    registryOrgCreate: form.get("registryOrgCreate") === "admins" ? "admins" : "anyone",
+    registryDefaultQuotaBytes: quota === null ? null : Math.round(quota * quotaUnit),
+    updatedAt: new Date(),
+  })
+  revalidatePath("/", "layout")
+}
+
+export async function revokeRegistryToken(id: string) {
+  await requireAdmin()
+  await revokeToken(null, String(id), true)
+  revalidatePath("/admin", "layout")
+}
+
+export async function deleteRegistryRepo(id: string) {
+  await requireAdmin()
+  await adminDeleteRepo(String(id))
+  revalidatePath("/", "layout")
+}
+
+export async function setRegistryQuota(form: FormData) {
+  await requireAdmin()
+  const n = limit(form, "quota")
+  const unit = UNITS[String(form.get("unit"))] ?? UNITS.GB
+  await setNamespaceQuota(String(form.get("id")), n === null ? null : Math.round(n * unit))
+  revalidatePath("/admin", "layout")
 }
 
 export async function revokeS3Key(id: string) {
@@ -693,6 +735,13 @@ const RESETTABLE: SettingKey[] = [
   "webdav",
   "s3Api",
   "s3RpsLimit",
+  "registry",
+  "registryPublic",
+  "registryRedirect",
+  "registryRpsLimit",
+  "registryBpsLimit",
+  "registryOrgCreate",
+  "registryDefaultQuotaBytes",
   "ocrLangs",
   "ocrMode",
   "ocrVideoMaxMin",

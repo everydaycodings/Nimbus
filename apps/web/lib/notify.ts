@@ -215,6 +215,7 @@ async function describe(userId: string, ids?: string[]) {
       storage_low: `${r.actor ? `${who} reminded you: your` : "Your"} storage is ${d.percent ?? 90}% full. See what's using it.`,
       phone_backup: `${d.device ?? "Your phone"} hasn't backed up contacts or calendar for 7 days`,
       document_expiring: `“${r.name ?? "A document"}” ${d.what === "expired" ? "has expired" : d.days === "0" ? "expires today" : d.days === "1" ? "expires tomorrow" : `expires in ${d.days ?? "a few"} days`}`,
+      registry_token: `A new registry token “${d.name ?? "unnamed"}” was made for your account${d.ip ? ` from ${d.ip}` : ""}. Revoke it in Registry if it wasn't you.`,
       secrets: d.text ?? "Something needs a look in Secrets",
     }[r.kind]
     const seen = r.nodeId ? access.get(r.nodeId) : undefined
@@ -241,6 +242,8 @@ async function describe(userId: string, ids?: string[]) {
               : "/account#connect"
           : r.kind === "storage_low"
             ? "/storage"
+          : r.kind === "registry_token"
+            ? "/registry"
           : r.kind === "phone_backup"
             ? `/account/phone-backup/${d.id}`
           : r.kind === "document_expiring"

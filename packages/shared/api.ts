@@ -630,6 +630,7 @@ export type NotificationKind =
   | "phone_backup"
   | "secrets"
   | "document_expiring"
+  | "registry_token"
 export type Notification = {
   id: string
   kind: NotificationKind

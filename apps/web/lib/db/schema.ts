@@ -603,6 +603,8 @@ export const NOTIFICATION_KINDS = [
   "secrets",
   // A document's expiry or due date is coming up (Documents).
   "document_expiring",
+  // A new container registry token was made for your account.
+  "registry_token",
 ] as const
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number]
 // Only admins get these, so only admins see their settings.

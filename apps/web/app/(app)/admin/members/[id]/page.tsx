@@ -25,7 +25,9 @@ import {
   user,
 } from "@/lib/db/schema"
 import { formatBytes } from "@/lib/file-rules"
+import { listTokens } from "@/lib/registry/manage"
 import { listKeys } from "@/lib/s3api/manage"
+import { endpoint as registryEndpoint } from "@/lib/registry/rules"
 import { endpoint } from "@/lib/s3api/rules"
 import { usedByOwner } from "@/lib/quota"
 import { requireAdmin } from "@/lib/session"
@@ -34,6 +36,7 @@ import { vaultsByOwner } from "@/lib/vault"
 import { revokeLink } from "../../actions"
 import { MemberActions } from "../member-actions"
 import { MemberAi } from "../member-ai"
+import { MemberRegistry } from "../member-registry"
 import { MemberS3 } from "../member-s3"
 import { MemberWebdav } from "../member-webdav"
 
@@ -187,6 +190,7 @@ export default async function MemberPage({
     events,
     apps,
     s3Keys,
+    regTokens,
   ] = await Promise.all([
     getSettings(),
     usedByOwner([id]),
@@ -251,6 +255,7 @@ export default async function MemberPage({
       .where(eq(appPasswords.userId, id))
       .orderBy(desc(appPasswords.createdAt)),
     listKeys(id),
+    listTokens(id),
   ])
 
   const vaults = vaultMap.get(id) ?? []
@@ -387,6 +392,17 @@ export default async function MemberPage({
                       : "On, no access keys"}
               </Row>
             )}
+            {registryEndpoint() && (
+              <Row label="Container registry" on={settings.registry && !p.registryDisabled}>
+                {!settings.registry
+                  ? "Off for everyone (Admin → Container registry)"
+                  : p.registryDisabled
+                    ? "Turned off for them"
+                    : regTokens.length
+                      ? `On, ${regTokens.length === 1 ? "1 token" : `${regTokens.length} tokens`}`
+                      : "On, no tokens"}
+              </Row>
+            )}
             <Row
               label="AI features"
               on={
@@ -456,6 +472,22 @@ export default async function MemberPage({
                 on={!p.s3Disabled}
                 editable={editable}
                 keys={s3Keys.map((k) => ({
+                  id: k.id,
+                  name: k.name,
+                  access: k.access,
+                  used: `${k.lastUsedAt ? `${k.lastIp && !/^[0:.]*$/.test(k.lastIp) ? `${k.lastIp} · ` : ""}Used ${moment.format(new Date(k.lastUsedAt))}` : "Never used"} · Made ${day.format(new Date(k.createdAt))}`,
+                }))}
+              />
+            </>
+          )}
+          {registryEndpoint() && (
+            <>
+              <h3 className="pt-3 text-sm font-medium">Tokens (Container registry)</h3>
+              <MemberRegistry
+                id={p.id}
+                on={!p.registryDisabled}
+                editable={editable}
+                keys={regTokens.map((k) => ({
                   id: k.id,
                   name: k.name,
                   access: k.access,

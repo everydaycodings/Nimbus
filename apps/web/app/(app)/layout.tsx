@@ -2,6 +2,7 @@ import {
   ClockIcon,
   CloudIcon,
   CubeIcon,
+  PackageIcon,
   FolderIcon,
   ImageIcon,
   EnvelopeSimpleIcon,
@@ -66,6 +67,7 @@ import {
 } from "@/lib/session"
 import { OFFER_SAVE_COOKIE, mayUse } from "@/lib/saved-login-rules"
 import { savedOnBrowser } from "@/lib/saved-logins"
+import { registryState } from "@/lib/registry/manage"
 import { s3State } from "@/lib/s3api/manage"
 import { getSettings } from "@/lib/signup"
 import { signOut } from "./actions"
@@ -293,6 +295,7 @@ export default async function AppLayout({
     .from(user)
     .where(eq(user.id, me.id))
   const s3 = await s3State(me.id)
+  const registry = await registryState(me.id)
   const label =
     "transition-opacity group-data-[collapsed=true]/sidebar:opacity-0"
 
@@ -352,6 +355,9 @@ export default async function AppLayout({
           )}
           {(s3 === "ready" || (admin && s3 !== "disabled")) && (
             <NavLink href="/buckets" icon={<CubeIcon />} label="S3 buckets" />
+          )}
+          {(registry === "ready" || registry === "unclaimed" || (admin && registry !== "disabled")) && (
+            <NavLink href="/registry" icon={<PackageIcon />} label="Registry" />
           )}
           <NavLink href="/trash" icon={<TrashIcon />} label="Trash" />
         </div>
