@@ -16,6 +16,7 @@
     --color-file-audio: var(--file-audio);
     --color-file-code: var(--file-code);
     --color-file-archive: var(--file-archive);
+    --color-file-bucket: var(--file-bucket);
     --color-tag-red: var(--tag-red);
     --color-tag-orange: var(--tag-orange);
     --color-tag-yellow: var(--tag-yellow);
@@ -125,6 +126,8 @@
     --file-audio: #4fd1a5;
     --file-code: #ff9f66;
     --file-archive: #b5b5b5;
+    /* Folders used as S3 buckets */
+    --file-bucket: #a3d977;
 
     /* Tag colors: user-chosen labels, shown as small dots */
     --tag-red: #ff6b6b;

@@ -143,6 +143,7 @@ export async function visiblePath(userId: string, id: string) {
     name: string
     owner_id: string
     system_kind: SystemKind | null
+    bucket: string | null
     shared: boolean
   }>(sql`
     with recursive up as (
@@ -151,14 +152,17 @@ export async function visiblePath(userId: string, id: string) {
       select n.id, n.name, n.parent_id, n.owner_id, n.system_kind, up.depth + 1
       from nodes n join up on n.id = up.parent_id
     )
-    select id, name, owner_id, system_kind, exists (
+    select id, name, owner_id, system_kind, (
+      select b.name from s3_buckets b where b.node_id = up.id and b.user_id = ${userId}
+    ) as bucket, exists (
       select 1 from shares s where s.node_id = up.id and s.grantee_id = ${userId}
     ) as shared
     from up order by depth desc`)
-  const crumb = ({ id, name, system_kind }: (typeof rows)[number]) => ({
+  const crumb = ({ id, name, system_kind, bucket }: (typeof rows)[number]) => ({
     id,
     name,
     ...(system_kind ? { system: system_kind } : {}),
+    ...(bucket ? { bucket } : {}),
   })
   if (!rows.length || rows[0].owner_id === userId) return rows.map(crumb)
   const top = rows.findIndex((r) => r.shared)

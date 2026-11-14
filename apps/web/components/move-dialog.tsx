@@ -2,7 +2,7 @@
 
 import { Dialog } from "@base-ui/react/dialog"
 import type { SystemKind } from "@nimbus/shared/api"
-import { CaretRightIcon, FolderIcon } from "@phosphor-icons/react"
+import { CaretRightIcon, CubeIcon, FolderIcon } from "@phosphor-icons/react"
 import { useEffect, useState } from "react"
 
 import { listFolders } from "@/app/(app)/file-actions"
@@ -11,18 +11,30 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { SYSTEM } from "@/lib/file-types"
 
-// A folder icon, or the system folder's own in the brand tint.
-export function SystemMark({ kind, className }: { kind?: SystemKind; className?: string }) {
-  const Icon = kind ? SYSTEM[kind].icon : FolderIcon
+// A folder icon, the system folder's own in the brand tint, or a cube for an S3 bucket.
+export function SystemMark({
+  kind,
+  bucket,
+  className,
+}: {
+  kind?: SystemKind
+  bucket?: boolean
+  className?: string
+}) {
+  const Icon = kind ? SYSTEM[kind].icon : bucket ? CubeIcon : FolderIcon
   return (
     <Icon
       weight="fill"
-      className={cn("shrink-0", kind ? "text-brand" : "text-file-folder", className)}
+      className={cn(
+        "shrink-0",
+        kind ? "text-brand" : bucket ? "text-file-bucket" : "text-file-folder",
+        className
+      )}
     />
   )
 }
 
-export type Place = { id: string | null; name: string; system?: SystemKind }
+export type Place = { id: string | null; name: string; system?: SystemKind; bucket?: string }
 
 // Folder picker. Starts at `start` (root first) and walks down one level at a time.
 export function MoveDialog({

@@ -1294,14 +1294,14 @@ export function FileBrowser({
   // The leading icon turns into a checkbox on hover and while anything is selected.
   function lead(item: Item, size: string) {
     const t = fileType(item.kind, item.mime, item.name)
-    const Icon = item.system ? SYSTEM[item.system].icon : t.icon
+    const Icon = item.system ? SYSTEM[item.system].icon : item.bucket ? CubeIcon : t.icon
     return (
       <span className={cn("relative grid shrink-0 place-items-center", size)}>
         <Icon
           weight={item.kind === "folder" ? "fill" : "regular"}
           className={cn(
             "size-full",
-            item.system ? "text-brand" : t.color,
+            item.system ? "text-brand" : item.bucket ? "text-file-bucket" : t.color,
             canEdit &&
               "group-hover:invisible group-data-[selecting=true]/browser:invisible"
           )}
@@ -1338,6 +1338,7 @@ export function FileBrowser({
             {SYSTEM[item.system].label}
           </span>
         )}
+        {inline && item.bucket && <BucketBadge name={item.bucket} folder={item.name} className="max-sm:hidden" />}
         {item.starred && view !== "starred" && (
           <StarIcon
             weight="fill"
@@ -1506,6 +1507,11 @@ export function FileBrowser({
                   {name(f)}
                   {f.system && (
                     <span className="truncate text-xs text-brand" title={SYSTEM[f.system].label}>{SYSTEM[f.system].label}</span>
+                  )}
+                  {f.bucket && (
+                    <span className="truncate text-xs text-file-bucket" title={`S3 bucket ${f.bucket}`}>
+                      {bucketLabel(f.bucket, f.name)}
+                    </span>
                   )}
                   {meta(f)}
                 </span>
@@ -1704,13 +1710,14 @@ export function FileBrowser({
                   </span>
                 ) : i === crumbs.length - 1 ? (
                   <h1 key={c.id ?? "root"} className="flex min-w-0 items-center gap-2 truncate">
-                    {c.system && <SystemMark kind={c.system} className="size-6" />}
+                    {(c.system || c.bucket) && <SystemMark kind={c.system} bucket={!!c.bucket} className="size-6" />}
                     <span className="truncate">{c.name}</span>
                     {c.system && (
                       <span className="shrink-0 rounded-full bg-brand/12 px-2 py-0.5 text-xs font-medium text-foreground/70 max-sm:hidden">
                         {SYSTEM[c.system].label}
                       </span>
                     )}
+                    {c.bucket && <BucketBadge name={c.bucket} folder={c.name} className="px-2 py-0.5 text-xs max-sm:hidden" />}
                   </h1>
                 ) : (
                   <span
@@ -1724,7 +1731,9 @@ export function FileBrowser({
                       {...dropTarget(c)}
                       className="-mx-1 truncate rounded-md px-1 text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 data-drop:bg-brand/15 data-drop:text-foreground"
                     >
-                      {c.system && <SystemMark kind={c.system} className="mr-1 inline size-5 align-text-bottom" />}
+                      {(c.system || c.bucket) && (
+                        <SystemMark kind={c.system} bucket={!!c.bucket} className="mr-1 inline size-5 align-text-bottom" />
+                      )}
                       {c.name}
                     </Link>
                     <CaretRightIcon className="size-4 shrink-0 text-muted-foreground" />
@@ -2776,5 +2785,24 @@ export function NameDialog({
         </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
+  )
+}
+
+// The bucket's name only when it differs from the folder's.
+const bucketLabel = (bucket: string, folder: string) =>
+  bucket === folder.toLowerCase() ? "S3 bucket" : `S3 · ${bucket}`
+
+// Marks a folder the viewer uses as an S3 bucket.
+function BucketBadge({ name, folder, className }: { name: string; folder: string; className?: string }) {
+  return (
+    <span
+      title={`S3 bucket ${name}`}
+      className={cn(
+        "max-w-40 shrink-0 truncate rounded-full bg-file-bucket/12 px-1.5 py-px text-[11px] font-medium text-foreground/70",
+        className
+      )}
+    >
+      {bucketLabel(name, folder)}
+    </span>
   )
 }

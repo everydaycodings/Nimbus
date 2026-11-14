@@ -90,6 +90,8 @@ export type Item = {
   comments?: number
   // A folder the app made itself; missing for everything else.
   system?: SystemKind
+  // The viewer's S3 bucket name when they use this folder as one.
+  bucket?: string
   // The viewer's own Documents entry for this file, when it has one.
   doc?: "review" | "confirmed" | "dismissed" | null
 }
@@ -145,6 +147,8 @@ const cols = (viewer: string) => ({
     select nt.tag_id from node_tags nt join tags t on t.id = nt.tag_id
     where nt.node_id = "nodes".id and t.owner_id = ${viewer})`,
   system: nodes.systemKind,
+  bucket: sql<string | null>`(select name from s3_buckets
+    where node_id = "nodes".id and user_id = ${viewer})`,
   version: nodes.currentVersionId,
   thumb: sql<string | null>`(
     select thumb from file_versions where id = "nodes".current_version_id)`,
@@ -161,15 +165,17 @@ const cols = (viewer: string) => ({
     where node_id = "nodes".id and owner_id = ${viewer})`,
 })
 
-type Row = Omit<Item, "updatedAt" | "trashedAt" | "system"> & {
+type Row = Omit<Item, "updatedAt" | "trashedAt" | "system" | "bucket"> & {
   system: string | null
+  bucket: string | null
   updatedAt: Date
   trashedAt: Date | null
 }
 
-const toItem = ({ system, ...r }: Row): Item => ({
+const toItem = ({ system, bucket, ...r }: Row): Item => ({
   ...r,
   ...(system ? { system: system as SystemKind } : {}),
+  ...(bucket ? { bucket } : {}),
   updatedAt: r.updatedAt.toISOString(),
   trashedAt: r.trashedAt?.toISOString() ?? null,
 })
