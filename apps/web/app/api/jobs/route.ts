@@ -9,6 +9,7 @@ import { purgeExpiredTrash } from "@/lib/files"
 import { sweepOrphans } from "@/lib/orphan-sweep"
 import { sendPush } from "@/lib/push"
 import { computeEtags } from "@/lib/s3api/etags"
+import { abortStale as abortStaleUploads } from "@/lib/registry/uploads"
 import { abortStale } from "@/lib/s3api/multipart"
 import { scanNode, scanUser } from "@/lib/secrets/leaks"
 import { sweep as secretsSweep } from "@/lib/secrets/notices"
@@ -35,6 +36,7 @@ const jobs: Record<string, (data: never) => Promise<unknown>> = {
   "orphan-sweep": sweepOrphans,
   "s3-etags": computeEtags,
   "s3-multipart-stale": abortStale,
+  "registry-uploads-stale": abortStaleUploads,
   "phone-backup-stale": alertStalePhones,
   "documents-remind": remindExpiring,
   email: (m: Message) => sendNow(m),

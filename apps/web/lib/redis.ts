@@ -80,7 +80,7 @@ export async function scheduleHealth(minutes: number | null) {
 }
 
 export type JobName =
-  "email" | "leak-scan" | "leak-scan-user" | "secrets-rotate-root" | "secrets-sweep" | "secrets-push" | "secrets-webhook" | "secrets-lease-expire" | "delete-keys" | "tus-finish" | "backup-alert" | "orphan-sweep" | "push" | "ocr-langs" | "s3-etags" | "s3-multipart-stale"
+  "email" | "leak-scan" | "leak-scan-user" | "secrets-rotate-root" | "secrets-sweep" | "secrets-push" | "secrets-webhook" | "secrets-lease-expire" | "delete-keys" | "tus-finish" | "backup-alert" | "orphan-sweep" | "push" | "ocr-langs" | "s3-etags" | "s3-multipart-stale" | "registry-uploads-stale"
 
 // Work the request shouldn't wait for, retried by `npm run worker` until it lands.
 // Failed jobs stay a week for a look; done ones go, since emails carry file names.
@@ -162,6 +162,11 @@ export async function scheduleJobs() {
     "s3-multipart-stale",
     { every: 24 * 3600_000 },
     { name: "s3-multipart-stale", opts }
+  )
+  await jobsQueue.upsertJobScheduler(
+    "registry-uploads-stale",
+    { every: 24 * 3600_000 },
+    { name: "registry-uploads-stale", opts }
   )
   await jobsQueue.upsertJobScheduler(
     "face-cluster",

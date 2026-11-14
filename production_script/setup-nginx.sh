@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Puts nginx in front of Nimbus with Let's Encrypt certificates, on Debian/Ubuntu.
 # Reads DOMAIN, S3_DOMAIN (empty when you use your own S3), CERTBOT_EMAIL and
-# COMPOSE_PROFILES ("push" adds ntfy.DOMAIN, "s3api" adds S3API_DOMAIN) from .env at the repo root.
+# COMPOSE_PROFILES ("push" adds ntfy.DOMAIN, "s3api" adds S3API_DOMAIN, "registry" adds REGISTRY_DOMAIN) from .env at the repo root.
 # Already set up and working? It checks and changes nothing.
 # Run as root once DNS points here: sudo ./setup-nginx.sh
 set -euo pipefail
@@ -23,6 +23,8 @@ export NTFY_DOMAIN=""
 [[ ",$(env_value COMPOSE_PROFILES)," == *",push,"* ]] && NTFY_DOMAIN="ntfy.$DOMAIN" && names+=("$NTFY_DOMAIN")
 export S3API_DOMAIN=""
 [[ ",$(env_value COMPOSE_PROFILES)," == *",s3api,"* ]] && S3API_DOMAIN="$(env_value S3API_DOMAIN)" && [ -n "$S3API_DOMAIN" ] && names+=("$S3API_DOMAIN")
+export REGISTRY_DOMAIN=""
+[[ ",$(env_value COMPOSE_PROFILES)," == *",registry,"* ]] && REGISTRY_DOMAIN="$(env_value REGISTRY_DOMAIN)" && [ -n "$REGISTRY_DOMAIN" ] && names+=("$REGISTRY_DOMAIN")
 site=/etc/nginx/sites-available/nimbus
 cert=/etc/letsencrypt/live/$DOMAIN/fullchain.pem
 realip=/etc/nginx/snippets/nimbus-realip.conf
@@ -66,12 +68,20 @@ working() {
     [ "$d" = "$S3_DOMAIN" ] && path=/minio/health/live
     [ "$d" = "$NTFY_DOMAIN" ] && path=/v1/health
     [ "$d" = "$S3API_DOMAIN" ] && path=/
+    [ "$d" = "$REGISTRY_DOMAIN" ] && path=/v2/
     code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
       --resolve "$d:443:127.0.0.1" "https://$d$path" || true)
     # The S3 API answers an unsigned request with S3 error XML (403, or 400).
     if [ "$d" = "$S3API_DOMAIN" ]; then [[ "$code" =~ ^(403|400)$ ]] || return 1
+    elif [ "$d" = "$REGISTRY_DOMAIN" ]; then [ "$code" = 401 ] || return 1
     else [[ "$code" =~ ^[23] ]] || return 1; fi
   done
+  # The registry answers an unauthenticated /v2/ with 401, on the main domain too; older sites have no block.
+  if [ -n "$REGISTRY_DOMAIN" ]; then
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+      --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/v2/" || true)
+    [ "$code" = 401 ] || return 1
+  fi
   # Sites set up before WebDAV have no /dav block.
   curl -s -o /dev/null -D - -X OPTIONS --max-time 10 \
     --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/dav/" | grep -qi '^dav:' || return 1
@@ -115,6 +125,7 @@ fi
   [ -n "$S3_DOMAIN" ] && envsubst '${S3_DOMAIN}' < nginx/nimbus-s3.conf.template
   [ -n "$NTFY_DOMAIN" ] && envsubst '${NTFY_DOMAIN}' < nginx/nimbus-ntfy.conf.template
   [ -n "$S3API_DOMAIN" ] && envsubst '${S3API_DOMAIN}' < nginx/nimbus-s3api.conf.template
+  [ -n "$REGISTRY_DOMAIN" ] && envsubst '${REGISTRY_DOMAIN}' < nginx/nimbus-registry.conf.template
 } > "$site"
 ln -sf "$site" /etc/nginx/sites-enabled/nimbus
 rm -f /etc/nginx/sites-enabled/default

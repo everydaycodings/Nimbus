@@ -10,6 +10,7 @@ name: nimbus
 #   backup    run the backup worker
 #   push      run ntfy, a push server for the Android app (README, "Android app")
 #   s3api     run the S3-compatible API (README, "S3-compatible API")
+#   registry  run the container registry (docker push/pull)
 #   ml        run nimbus-ml, the optional AI service (speech, photo and face search)
 
 x-nimbus: &nimbus
@@ -185,6 +186,19 @@ services:
       <<: *nimbus-env
       S3API_APP_URL: http://app:3000
     ports: ["127.0.0.1:3407:3407"]
+    depends_on:
+      app: { condition: service_started }
+
+  # Container registry (profile registry): docker, podman, helm and buildx push and pull here.
+  # Like s3api, it hands each request to the app as a signed POST. Layers stream through.
+  registry:
+    <<: *nimbus
+    profiles: [registry]
+    command: ["node", "scripts/registry.ts"]
+    environment:
+      <<: *nimbus-env
+      REGISTRY_APP_URL: http://app:3000
+    ports: ["127.0.0.1:3408:3408"]
     depends_on:
       app: { condition: service_started }
 
