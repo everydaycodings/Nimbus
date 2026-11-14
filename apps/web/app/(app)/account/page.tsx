@@ -63,7 +63,7 @@ const KIND_LABEL = {
   signup_request: "Someone asks to join this Nimbus",
   service_health: "A service goes down or comes back (Admin → Health)",
   backup: "A backup fails, warns, or hasn't run (Admin → Backups)",
-  app_password: "A new app password is made for my account",
+  app_password: "A new app password or S3 access key is made for my account",
   storage_low: "My storage is nearly full (90%)",
   phone_backup: "My phone hasn't backed up contacts or calendar for 7 days",
   document_expiring: "A document is about to expire or fall due (Documents)",

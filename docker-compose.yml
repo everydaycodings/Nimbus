@@ -9,6 +9,7 @@ name: nimbus
 #   minio     run MinIO here as file storage (otherwise S3_* point at yours)
 #   backup    run the backup worker
 #   push      run ntfy, a push server for the Android app (README, "Android app")
+#   s3api     run the S3-compatible API (README, "S3-compatible API")
 #   ml        run nimbus-ml, the optional AI service (speech, photo and face search)
 
 x-nimbus: &nimbus
@@ -171,6 +172,19 @@ services:
       <<: *nimbus-env
       WEBDAV_APP_URL: http://app:3000
     ports: ["127.0.0.1:3404:3404"]
+    depends_on:
+      app: { condition: service_started }
+
+  # S3-compatible API on its own subdomain (profile s3api): aws cli, rclone, restic and
+  # Terraform talk to it. Like webdav, it hands each request to the app as a signed POST.
+  s3api:
+    <<: *nimbus
+    profiles: [s3api]
+    command: ["node", "scripts/s3.ts"]
+    environment:
+      <<: *nimbus-env
+      S3API_APP_URL: http://app:3000
+    ports: ["127.0.0.1:3407:3407"]
     depends_on:
       app: { condition: service_started }
 

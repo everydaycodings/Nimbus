@@ -10,6 +10,7 @@ import { db } from "@/lib/db"
 import {
   account,
   appPasswords,
+  s3Keys,
   savedLogins,
   session,
   twoFactor,
@@ -20,6 +21,7 @@ import {
 import { appUrl, message, sendInBackground } from "@/lib/email"
 import { notify } from "@/lib/notify"
 import { getUsage } from "@/lib/quota"
+import { revokeKey } from "@/lib/s3api/manage"
 import { forgetSavedLogins } from "@/lib/saved-logins"
 import { requireAdmin } from "@/lib/session"
 import { destroyVault, getVault } from "@/lib/vault"
@@ -214,6 +216,25 @@ export async function setMemberWebdav(targetId: string, on: boolean) {
     .where(eq(user.id, target.id))
   await audit("webdav", { targetId, detail: on ? "on" : "off" })
   revalidatePath("/admin/members", "layout")
+  return { ok: true }
+}
+
+// Off also revokes their access keys, so nothing they set up keeps working.
+export async function setMemberS3(targetId: string, on: boolean) {
+  const target = await recoverable(targetId)
+  if (!target) return { error: "You can't change S3 for this person." }
+  await db.update(user).set({ s3Disabled: !on }).where(eq(user.id, target.id))
+  if (!on) await db.delete(s3Keys).where(eq(s3Keys.userId, target.id))
+  await audit("s3", { targetId, detail: on ? "on" : "off" })
+  revalidatePath("/admin", "layout")
+  return { ok: true }
+}
+
+export async function revokeMemberS3Key(targetId: string, id: string) {
+  const target = await recoverable(targetId)
+  if (!target) return { error: "You can't change this person's S3 keys." }
+  await revokeKey(target.id, id, true)
+  revalidatePath("/admin", "layout")
   return { ok: true }
 }
 

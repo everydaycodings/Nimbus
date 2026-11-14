@@ -137,6 +137,7 @@ Nimbus binds only to 127.0.0.1, on ports chosen to stay clear of other apps:
 | tusd | 3401 | always |
 | WebDAV proxy | 3404 | always |
 | SSH terminal (WebSocket) | 3406 | always |
+| S3-compatible API | 3407 | `s3api` profile |
 | Redis | 6340 | always |
 | Postgres | 54340 | `postgres` profile |
 | MinIO API / console | 3402 / 3403 | `minio` profile |
@@ -424,6 +425,47 @@ has the steps for each. nginx forwards `/dav` to the `webdav` service, so there'
 up. Turn it off for everyone in **Admin → System → WebDAV**, or for one member on their page.
 
 davfs2 can't list folders on Linux 7 kernels; use rclone there to mount it as a folder.
+
+### S3-compatible API (optional)
+
+Lets aws cli, rclone, restic, Terraform and backup tools use Nimbus folders as S3 buckets. Turn it
+on in `setup.sh` ("Turn on the S3-compatible API?"): it adds the `s3api` profile, asks for a
+subdomain (default `s3api.<DOMAIN>`, not the same as the MinIO `S3_DOMAIN`), and saves it as
+`S3API_DOMAIN`. Add a DNS A record for it pointing at this server and run
+`sudo production_script/setup-nginx.sh`, which serves it over HTTPS. The `s3api` service listens
+on port 3407.
+
+Members make access keys and buckets on the **S3 buckets** page, or with **Use as S3 bucket** on a
+folder. Endpoint `https://<S3API_DOMAIN>`, region `us-east-1`, path-style addressing.
+
+```sh
+aws --endpoint-url https://s3api.example.com s3 ls s3://my-bucket
+rclone config create nimbus s3 provider Other endpoint https://s3api.example.com \
+  access_key_id NMS3... secret_access_key ... force_path_style true
+restic -r s3:https://s3api.example.com/my-bucket init
+```
+
+Terraform backend:
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket                      = "my-bucket"
+    key                         = "state/terraform.tfstate"
+    region                      = "us-east-1"
+    endpoints                   = { s3 = "https://s3api.example.com" }
+    use_lockfile                = true
+    use_path_style              = true
+    skip_credentials_validation = true
+    skip_region_validation      = true
+    skip_requesting_account_id  = true
+    skip_metadata_api_check     = true
+  }
+}
+```
+
+Limits: a bucket name is unique per account and, like every name in Nimbus, case-insensitive.
+Deletes move to the trash. Versioning is always on. Vault folders can't be buckets.
 
 ### SSH keys, CA and browser terminal (Secrets → SSH)
 

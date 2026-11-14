@@ -1,6 +1,7 @@
 import {
   ClockIcon,
   CloudIcon,
+  CubeIcon,
   FolderIcon,
   ImageIcon,
   EnvelopeSimpleIcon,
@@ -36,6 +37,7 @@ import { PasswordForm } from "@/components/password-form"
 import { PasswordPolicyProvider } from "@/components/password-input"
 import { ResendVerification } from "@/components/resend-verification"
 import { SaveLoginPrompt } from "@/components/save-login-prompt"
+import { S3Provider } from "@/components/s3-context"
 import { NotificationBell, SharedBadge } from "@/components/notification-bell"
 import { SidebarShell } from "@/components/sidebar-shell"
 import { SidebarTags } from "@/components/sidebar-tags"
@@ -64,6 +66,7 @@ import {
 } from "@/lib/session"
 import { OFFER_SAVE_COOKIE, mayUse } from "@/lib/saved-login-rules"
 import { savedOnBrowser } from "@/lib/saved-logins"
+import { s3State } from "@/lib/s3api/manage"
 import { getSettings } from "@/lib/signup"
 import { signOut } from "./actions"
 
@@ -289,6 +292,7 @@ export default async function AppLayout({
     })
     .from(user)
     .where(eq(user.id, me.id))
+  const s3 = await s3State(me.id)
   const label =
     "transition-opacity group-data-[collapsed=true]/sidebar:opacity-0"
 
@@ -346,6 +350,9 @@ export default async function AppLayout({
           {settings.secretsEnabled && (
             <NavLink href="/secrets" icon={<KeyIcon />} label="Secrets" />
           )}
+          {(s3 === "ready" || (admin && s3 !== "disabled")) && (
+            <NavLink href="/buckets" icon={<CubeIcon />} label="S3 buckets" />
+          )}
           <NavLink href="/trash" icon={<TrashIcon />} label="Trash" />
         </div>
         <SidebarTags tags={await listTags(me.id)} fade={label} />
@@ -393,6 +400,7 @@ export default async function AppLayout({
       <AiProvider flags={ai}>
       <TransferProvider enabled={settings.transfersEnabled}>
       <DocsProvider enabled={settings.documentsEnabled}>
+      <S3Provider enabled={s3 === "ready"}>
       <UploadProvider
         tusUrl={process.env.TUS_URL ?? ""}
         zipMode={process.env.VERCEL ? "client" : "server"}
@@ -424,6 +432,7 @@ export default async function AppLayout({
           />
         )}
       </UploadProvider>
+      </S3Provider>
       </DocsProvider>
       </TransferProvider>
       </AiProvider>

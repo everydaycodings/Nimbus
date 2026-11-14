@@ -18,6 +18,7 @@
     "indexer": "node --env-file=.env.local scripts/indexer.ts",
     "worker": "node --env-file=.env.local scripts/worker.ts",
     "webdav": "node --env-file=.env.local scripts/webdav.ts",
+    "s3api": "node --env-file=.env.local scripts/s3.ts",
     "ssh-terminal": "node --env-file=.env.local scripts/ssh-terminal.ts",
     "worker:backup": "node --env-file=.env.local scripts/backup-worker.ts",
     "backup:restore": "node --env-file=.env.local scripts/backup-restore.ts",

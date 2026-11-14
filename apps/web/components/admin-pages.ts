@@ -2,6 +2,7 @@ import {
   ArchiveIcon,
   ChartBarIcon,
   ClockCounterClockwiseIcon,
+  CubeIcon,
   EnvelopeSimpleIcon,
   FileDocIcon,
   FilesIcon,
@@ -109,6 +110,7 @@ export const ADMIN_GROUPS: { title: string; pages: AdminPage[] }[] = [
         icon: FileDocIcon,
       },
       { href: "/admin/system/webdav", label: "WebDAV", icon: HardDriveIcon },
+      { href: "/admin/system/s3", label: "S3 API", icon: CubeIcon },
       { href: "/admin/system/ocr", label: "Text in images", icon: ScanIcon },
       { href: "/admin/system/ai", label: "AI features", icon: SparkleIcon },
       { href: "/admin/system/photos", label: "Photos map", icon: MapTrifoldIcon },
@@ -454,6 +456,24 @@ export const ADMIN_SETTINGS: {
     href: "/admin/system/webdav",
     keywords:
       "webdav dav mount drive app password rclone davfs finder explorer",
+  },
+  {
+    id: "allow-s3",
+    label: "Allow the S3 API",
+    href: "/admin/system/s3",
+    keywords: "s3 api bucket access key aws cli rclone restic terraform minio object storage",
+  },
+  {
+    id: "s3-rate-limit",
+    label: "S3 requests per second",
+    href: "/admin/system/s3",
+    keywords: "s3 rate limit throttle requests per second key",
+  },
+  {
+    id: "s3-keys",
+    label: "S3 access keys",
+    href: "/admin/system/s3",
+    keywords: "s3 keys revoke access key secret members",
   },
   {
     id: "ocr-languages",

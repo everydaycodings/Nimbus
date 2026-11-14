@@ -42,6 +42,8 @@ export const user = pgTable(
     vaultLockMinutes: integer("vault_lock_minutes").default(15).notNull(),
     // An admin turned WebDAV off for this account.
     webdavDisabled: boolean("webdav_disabled").default(false).notNull(),
+    // An admin turned the S3 API off for this account.
+    s3Disabled: boolean("s3_disabled").default(false).notNull(),
     // Phase 20: face grouping. Null follows settings.faces_default.
     facesOn: boolean("faces_on"),
     // On the chosen list for AI features (used when settings.ai_access is "chosen").

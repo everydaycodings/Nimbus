@@ -26,6 +26,7 @@ import {
 } from "@/lib/db/schema"
 import { passkeyHost } from "@/lib/passkey-rules"
 import { POLICY_MAX, POLICY_MIN } from "@/lib/password-policy"
+import { revokeKey } from "@/lib/s3api/manage"
 import { turnCopiesOffAndDelete } from "@/lib/video-copies"
 import { enqueue, scheduleBackups, scheduleHealth } from "@/lib/redis"
 import { requireAdmin } from "@/lib/session"
@@ -124,6 +125,24 @@ export async function setWebdav(form: FormData) {
     webdav: form.get("webdav") === "on",
     updatedAt: new Date(),
   })
+  revalidatePath("/", "layout")
+}
+
+// Off makes every S3 request fail; buckets and keys are kept.
+export async function setS3(form: FormData) {
+  await requireAdmin()
+  const rps = Math.floor(Number(String(form.get("s3RpsLimit") ?? "").trim()))
+  await saveSettings({
+    s3Api: form.get("s3Api") === "on",
+    s3RpsLimit: Number.isFinite(rps) && rps > 0 ? Math.min(rps, 100_000) : null,
+    updatedAt: new Date(),
+  })
+  revalidatePath("/", "layout")
+}
+
+export async function revokeS3Key(id: string) {
+  await requireAdmin()
+  await revokeKey(null, String(id), true)
   revalidatePath("/", "layout")
 }
 
@@ -672,6 +691,8 @@ const RESETTABLE: SettingKey[] = [
   "secretAllowPrivate",
   "officeUrl",
   "webdav",
+  "s3Api",
+  "s3RpsLimit",
   "ocrLangs",
   "ocrMode",
   "ocrVideoMaxMin",

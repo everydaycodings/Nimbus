@@ -234,6 +234,22 @@ default=n
 [ "$write_env" = n ] && [[ ",$(env_value COMPOSE_PROFILES)," == *",ml,"* ]] && default=y
 confirm "Run the AI service (nimbus-ml)?" "$default" && PROFILES="${PROFILES:+$PROFILES,}ml"
 
+bold "S3-compatible API (optional)"
+echo "Lets aws cli, rclone, restic, Terraform and backup tools use your folders as S3 buckets,"
+echo "on its own subdomain (members make keys and buckets in Nimbus under S3 buckets)."
+PROFILES=$(tr ',' '\n' <<<"$PROFILES" | grep -vx -e s3api -e '' | paste -sd, || true)
+default=n
+[ "$write_env" = n ] && [[ ",$(env_value COMPOSE_PROFILES)," == *",s3api,"* ]] && default=y
+S3API_DOMAIN=""
+if confirm "Turn on the S3-compatible API?" "$default"; then
+  PROFILES="${PROFILES:+$PROFILES,}s3api"
+  S3API_DOMAIN=$(env_value S3API_DOMAIN)
+  while :; do
+    ask S3API_DOMAIN "S3 API domain" "${S3API_DOMAIN:-s3api.$DOMAIN}"
+    valid_domain "$S3API_DOMAIN" && [ "$S3API_DOMAIN" != "$DOMAIN" ] && [ "$S3API_DOMAIN" != "$S3_DOMAIN" ] && break
+  done
+fi
+
 bold "nginx and HTTPS"
 names="https://$DOMAIN${S3_DOMAIN:+ and https://$S3_DOMAIN}"
 echo "Nimbus listens only on 127.0.0.1. nginx makes it public on $names"
@@ -256,6 +272,7 @@ ports=(3400 3401 3404 3406 6340)
 has_profile postgres && ports+=(54340)
 has_profile minio && ports+=(3402 3403)
 has_profile push && ports+=(3405)
+has_profile s3api && ports+=(3407)
 if [ -z "$(docker compose ps -q 2>/dev/null || true)" ] && command -v ss >/dev/null; then
   for p in "${ports[@]}"; do
     [ -z "$(ss -ltnH "sport = :$p")" ] ||
@@ -318,6 +335,7 @@ if [ "$write_env" = y ]; then
 fi
 set_env COMPOSE_PROFILES "$PROFILES"
 [ -n "$(env_value ML_TOKEN)" ] || set_env ML_TOKEN "$(openssl rand -hex 24)"
+set_env S3API_DOMAIN "$S3API_DOMAIN"
 [ "$NGINX" = y ] && set_env CERTBOT_EMAIL "$CERTBOT_EMAIL"
 chmod 600 .env
 [ "$write_env" = y ] && echo "Saved .env (readable only by you)."
@@ -345,7 +363,7 @@ if docker image inspect nimbus:latest >/dev/null 2>&1 &&
 fi
 
 # --- nginx --------------------------------------------------------------------
-for d in "$DOMAIN" ${S3_DOMAIN:+"$S3_DOMAIN"}; do
+for d in "$DOMAIN" ${S3_DOMAIN:+"$S3_DOMAIN"} ${S3API_DOMAIN:+"$S3API_DOMAIN"}; do
   ip=$(getent ahostsv4 "$d" | awk 'NR == 1 { print $1 }' || true)
   if [ -z "$ip" ]; then warn "$d doesn't resolve yet. Add its DNS A record before HTTPS can work."
   else echo "$d → $ip"; fi
@@ -366,6 +384,8 @@ Point your proxy at these (all on 127.0.0.1), with HTTPS:
 EOF
   [ -n "$S3_DOMAIN" ] &&
     echo "  https://$S3_DOMAIN/     → 127.0.0.1:3402  (pass the Host header through unchanged)"
+  [ -n "$S3API_DOMAIN" ] &&
+    echo "  https://$S3API_DOMAIN/  → 127.0.0.1:3407  (pass the Host header through unchanged; no body limit)"
   cat <<EOF
 
 Ready nginx configs are in production_script/nginx/. Or let the script do it later:
@@ -390,6 +410,14 @@ if has_profile push; then
   cat <<EOF
 ntfy runs on 127.0.0.1:3405. Add a DNS A record for ntfy.$DOMAIN pointing here;
 setup-nginx.sh serves it over HTTPS. Then enter https://ntfy.$DOMAIN as the server in the ntfy app.
+
+EOF
+fi
+if has_profile s3api; then
+  cat <<EOF
+The S3 API runs on 127.0.0.1:3407. Add a DNS A record for $S3API_DOMAIN pointing here;
+setup-nginx.sh serves it over HTTPS. Endpoint https://$S3API_DOMAIN, region us-east-1, path-style.
+Members create keys and buckets under S3 buckets in Nimbus.
 
 EOF
 fi

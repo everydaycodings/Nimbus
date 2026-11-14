@@ -177,6 +177,11 @@ export const fileVersions = pgTable(
     // SHA-256 (hex) the browser computed while uploading, for spotting duplicates.
     // Null when unknown (resumed uploads, WebDAV, vaults).
     sha256: text("sha256"),
+    // S3 ETag without quotes: the MD5 (hex) of the bytes, or "<md5>-<parts>" for
+    // a multipart upload. Null until known (the worker fills it for bucket files).
+    etag: text("etag"),
+    // S3 object metadata: the Content-Type the client sent and its x-amz-meta-* headers.
+    meta: jsonb("meta").$type<{ contentType?: string; user?: Record<string, string> }>(),
     // Photos and videos: when it was taken (EXIF), else its upload time. The
     // worker fills it in; null means not looked at yet (the timeline then uses createdAt).
     takenAt: timestamp("taken_at", { withTimezone: true }),
@@ -791,6 +796,10 @@ export const settings = pgTable(
     deviceLinks: boolean("device_links").notNull().default(true),
     // Mounting files over WebDAV at /dav with app passwords.
     webdav: boolean("webdav").notNull().default(true),
+    // The S3-compatible API (scripts/s3.ts, only when setup turned it on: S3API_DOMAIN).
+    s3Api: boolean("s3_api").notNull().default(true),
+    // Requests per second each S3 access key may make; null means no limit.
+    s3RpsLimit: integer("s3_rps_limit"),
     // Rules for new passwords and vault passphrases. Null: the owner hasn't
     // chosen, so the industry-standard defaults apply (lib/password-policy).
     passwordPolicy: jsonb("password_policy").$type<PasswordPolicy>(),
@@ -2631,3 +2640,94 @@ export const secretRootKey = pgTable("secret_root_key", {
   finishedAt: timestamp("finished_at", { withTimezone: true }),
   error: text("error"),
 })
+
+// S3 API (lib/s3api). A bucket is a folder its member marked; the name is unique
+// per member, since the access key already says whose buckets are meant. The
+// folder can be one shared with them; access is checked on every request.
+export const s3Buckets = pgTable(
+  "s3_buckets",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    nodeId: uuid("node_id")
+      .notNull()
+      .references(() => nodes.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    // Skips thumbnails, indexing, edit notifications and Recent for files that come in over S3.
+    quiet: boolean("quiet").notNull().default(false),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("s3_buckets_user_name_idx").on(t.userId, t.name),
+    uniqueIndex("s3_buckets_user_node_idx").on(t.userId, t.nodeId),
+    index("s3_buckets_node_idx").on(t.nodeId),
+  ]
+)
+
+// S3 access keys. SigV4 needs the secret itself to check a signature, so it's
+// sealed with lib/crypto.ts (AES-256-GCM under BETTER_AUTH_SECRET) instead of hashed.
+export const s3Keys = pgTable(
+  "s3_keys",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    accessKeyId: text("access_key_id").notNull().unique(),
+    secretEnc: text("secret_enc").notNull(),
+    access: text("access").$type<"rw" | "ro">().notNull(),
+    // Off: only the buckets in s3_key_buckets.
+    allBuckets: boolean("all_buckets").notNull().default(true),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    lastIp: text("last_ip"),
+  },
+  (t) => [
+    index("s3_keys_user_idx").on(t.userId),
+    check("s3_keys_access_check", sql`${t.access} in ('rw', 'ro')`),
+  ]
+)
+
+export const s3KeyBuckets = pgTable(
+  "s3_key_buckets",
+  {
+    keyId: uuid("key_id")
+      .notNull()
+      .references(() => s3Keys.id, { onDelete: "cascade" }),
+    bucketId: uuid("bucket_id")
+      .notNull()
+      .references(() => s3Buckets.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.keyId, t.bucketId] })]
+)
+
+// Multipart uploads in progress. Parts go straight to the backing store's own
+// multipart upload under backing_key; Complete turns it into a file version.
+// The worker aborts ones older than 7 days.
+export const s3Multipart = pgTable(
+  "s3_multipart",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    bucketId: uuid("bucket_id")
+      .notNull()
+      .references(() => s3Buckets.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    backingKey: text("backing_key").notNull(),
+    backingUploadId: text("backing_upload_id").notNull(),
+    // Bytes of the parts so far, counted against the folder owner's quota.
+    bytes: bigint("bytes", { mode: "number" }).notNull().default(0),
+    meta: jsonb("meta").$type<{ contentType?: string; user?: Record<string, string> }>(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("s3_multipart_bucket_idx").on(t.bucketId),
+    index("s3_multipart_created_idx").on(t.createdAt),
+  ]
+)

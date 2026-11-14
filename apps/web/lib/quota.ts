@@ -39,7 +39,13 @@ const transferBytes = (userId: string) =>
 export async function getUsage(userId: string): Promise<Usage> {
   const [[stored], [current], quota, [held]] = await Promise.all([
     db.execute<{ used: string }>(sql`
-      select coalesce(sum(size), 0)::text as used from (
+      select (coalesce(sum(size), 0) + (
+        -- S3 multipart parts uploaded but not yet completed (lib/s3api/multipart.ts).
+        select coalesce(sum(m.bytes), 0) from s3_multipart m
+        join s3_buckets b on b.id = m.bucket_id
+        join nodes bn on bn.id = b.node_id
+        where bn.owner_id = ${userId}
+      ))::text as used from (
         select distinct on (fv.s3_key) fv.size from file_versions fv
         join nodes n on n.id = fv.node_id
         where n.owner_id = ${userId}

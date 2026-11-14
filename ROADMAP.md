@@ -402,5 +402,16 @@ password accounts must set it up. Google and GitHub sign-ins rely on the provide
   preview, trash + Undo; share a folder with a member who opens it; a public link opened signed
   out; a vault made, filled, locked, unlocked and deleted. Each test cleans up after itself.
 
+## S3 API a: Folders as S3 buckets (in progress)
+- Optional `s3api` compose profile (`scripts/s3.ts`, port 3407) on its own subdomain
+  (`S3API_DOMAIN`, asked by `setup.sh`, served by `setup-nginx.sh`). Signed requests (SigV4) from
+  aws cli, rclone, restic and Terraform reach the app the way WebDAV's do.
+- Members make access keys and buckets on the Buckets page, or "Use as S3 bucket" on a folder.
+
+## S3 API b: Polish and docs (in progress)
+- README section with aws cli, rclone, restic and Terraform backend examples and the known
+  limits (bucket names unique per account and case-insensitive, deletes go to the trash,
+  versioning always on, vault folders can't be buckets).
+
 ## Phase 8: Ship
 - Production Dockerfile and compose, Vercel guide, backups

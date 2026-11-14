@@ -25,6 +25,8 @@ import {
   user,
 } from "@/lib/db/schema"
 import { formatBytes } from "@/lib/file-rules"
+import { listKeys } from "@/lib/s3api/manage"
+import { endpoint } from "@/lib/s3api/rules"
 import { usedByOwner } from "@/lib/quota"
 import { requireAdmin } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
@@ -32,6 +34,7 @@ import { vaultsByOwner } from "@/lib/vault"
 import { revokeLink } from "../../actions"
 import { MemberActions } from "../member-actions"
 import { MemberAi } from "../member-ai"
+import { MemberS3 } from "../member-s3"
 import { MemberWebdav } from "../member-webdav"
 
 export const metadata = { title: "Member · Admin · Nimbus" }
@@ -183,6 +186,7 @@ export default async function MemberPage({
     [people],
     events,
     apps,
+    s3Keys,
   ] = await Promise.all([
     getSettings(),
     usedByOwner([id]),
@@ -246,6 +250,7 @@ export default async function MemberPage({
       .from(appPasswords)
       .where(eq(appPasswords.userId, id))
       .orderBy(desc(appPasswords.createdAt)),
+    listKeys(id),
   ])
 
   const vaults = vaultMap.get(id) ?? []
@@ -371,6 +376,17 @@ export default async function MemberPage({
                     ? `On, ${apps.length === 1 ? "1 app password" : `${apps.length} app passwords`}`
                     : "On, no app passwords"}
             </Row>
+            {endpoint() && (
+              <Row label="S3 API" on={settings.s3Api && !p.s3Disabled}>
+                {!settings.s3Api
+                  ? "Off for everyone (Admin → S3 API)"
+                  : p.s3Disabled
+                    ? "Turned off for them"
+                    : s3Keys.length
+                      ? `On, ${s3Keys.length === 1 ? "1 access key" : `${s3Keys.length} access keys`}`
+                      : "On, no access keys"}
+              </Row>
+            )}
             <Row
               label="AI features"
               on={
@@ -432,6 +448,22 @@ export default async function MemberPage({
               used: `${a.lastUsedAt ? `${a.lastIp && !/^[0:.]*$/.test(a.lastIp) ? `${a.lastIp} · ` : ""}Used ${moment.format(a.lastUsedAt)}` : "Never used"} · Made ${day.format(a.createdAt)}`,
             }))}
           />
+          {endpoint() && (
+            <>
+              <h3 className="pt-3 text-sm font-medium">Access keys (S3)</h3>
+              <MemberS3
+                id={p.id}
+                on={!p.s3Disabled}
+                editable={editable}
+                keys={s3Keys.map((k) => ({
+                  id: k.id,
+                  name: k.name,
+                  access: k.access,
+                  used: `${k.lastUsedAt ? `${k.lastIp && !/^[0:.]*$/.test(k.lastIp) ? `${k.lastIp} · ` : ""}Used ${moment.format(new Date(k.lastUsedAt))}` : "Never used"} · Made ${day.format(new Date(k.createdAt))}`,
+                }))}
+              />
+            </>
+          )}
           {events.length > 0 && (
             <>
               <h3 className="pt-3 text-sm font-medium">

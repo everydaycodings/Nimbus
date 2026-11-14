@@ -20,6 +20,7 @@ import {
   ImagesIcon,
   ShapesIcon,
   CaretDownIcon,
+  CubeIcon,
   InfoIcon,
   ArrowCounterClockwiseIcon,
   ArrowsInLineVerticalIcon,
@@ -74,6 +75,8 @@ import type { Version } from "@/app/(app)/upload-actions"
 import { CommentCount } from "@/components/comments"
 import { useAi } from "@/components/ai-context"
 import { DetailsSheet } from "@/components/details-sheet"
+import { BucketDialog } from "@/components/s3-bucket-dialog"
+import { useS3Enabled } from "@/components/s3-context"
 import { useNotice, type Notice } from "@/components/toaster"
 import { AddToAlbumDialog } from "@/components/album-dialogs"
 import { AddToPersonDialog } from "@/components/people"
@@ -240,6 +243,9 @@ export function FileBrowser({
   const { upload, download } = useUploads()
   const transfer = useTransfer()
   const docsOn = useDocsEnabled()
+  const s3On = useS3Enabled()
+  const [bucketFor, setBucketFor] = useState<Item | null>(null)
+  const [bucketOpen, setBucketOpen] = useState(false)
   const [layout, setLayout] = useState(initialLayout)
   const [compact, setCompact] = useState(initialCompact)
   const [tiles, setTiles] = useState(initialTiles)
@@ -933,6 +939,18 @@ export function FileBrowser({
           menuOnly: true,
           group: 2,
           run: () => restorePoint(one.id, one.name),
+        },
+      s3On &&
+        one?.kind === "folder" &&
+        !one.shortcut && {
+          label: "Use as S3 bucket…",
+          icon: CubeIcon,
+          menuOnly: true,
+          group: 2,
+          run: () => {
+            setBucketFor(one)
+            setBucketOpen(true)
+          },
         },
       edit &&
         one?.kind === "file" && {
@@ -2180,6 +2198,16 @@ export function FileBrowser({
         item={sharing}
         request={requesting}
         onClose={() => setSharing(null)}
+      />
+
+      <BucketDialog
+        open={bucketOpen}
+        folder={bucketFor ?? undefined}
+        onClose={() => setBucketOpen(false)}
+        onDone={(name) => {
+          setBucketOpen(false)
+          setNotice({ text: `“${name}” is now an S3 bucket.` })
+        }}
       />
 
       <DetailsSheet

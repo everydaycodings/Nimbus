@@ -43,6 +43,16 @@ function sentence(e: typeof auditEvents.$inferSelect, who: string) {
       return `turned WebDAV ${d} for ${who}`
     case "revoke_app_password":
       return `revoked ${who}'s app password “${d}”`
+    case "s3":
+      return `turned S3 ${d} for ${who}`
+    case "s3_key_create":
+      return `made the S3 access key ${d}`
+    case "s3_key_revoke":
+      return e.targetName ? `revoked ${who}'s S3 access key ${d}` : `revoked the S3 access key ${d}`
+    case "s3_bucket_add":
+      return `made the folder “${d}” an S3 bucket`
+    case "s3_bucket_remove":
+      return `stopped using “${d}” as an S3 bucket`
     case "invite_create":
       return "made an invite link"
     case "invite_revoke":

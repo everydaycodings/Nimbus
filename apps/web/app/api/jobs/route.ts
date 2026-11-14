@@ -8,6 +8,8 @@ import { sendNow, type Message } from "@/lib/email"
 import { purgeExpiredTrash } from "@/lib/files"
 import { sweepOrphans } from "@/lib/orphan-sweep"
 import { sendPush } from "@/lib/push"
+import { computeEtags } from "@/lib/s3api/etags"
+import { abortStale } from "@/lib/s3api/multipart"
 import { scanNode, scanUser } from "@/lib/secrets/leaks"
 import { sweep as secretsSweep } from "@/lib/secrets/notices"
 import { runRootRotation } from "@/lib/secrets/root-rotate"
@@ -31,6 +33,8 @@ const jobs: Record<string, (data: never) => Promise<unknown>> = {
     await recheckWarned()
   },
   "orphan-sweep": sweepOrphans,
+  "s3-etags": computeEtags,
+  "s3-multipart-stale": abortStale,
   "phone-backup-stale": alertStalePhones,
   "documents-remind": remindExpiring,
   email: (m: Message) => sendNow(m),

@@ -3,12 +3,15 @@
 import { Dialog } from "@base-ui/react/dialog"
 import { Menu } from "@base-ui/react/menu"
 import { CaretLeftIcon, CaretRightIcon, PlusIcon, StarIcon, XIcon } from "@phosphor-icons/react"
+import Link from "next/link"
 import { useEffect, useState } from "react"
 
+import { getBucket, setQuiet } from "@/app/(app)/buckets/actions"
 import { getActivity, getDetails, undoRestore, type ActivityEvent, type Details } from "@/app/(app)/file-actions"
 import type { Version } from "@/app/(app)/upload-actions"
 import { Comments } from "@/components/comments"
 import { MENU_ITEM, MENU_POPUP } from "@/components/overlay-styles"
+import { useS3Enabled } from "@/components/s3-context"
 import { FilePeople } from "@/components/people"
 import { TextFound } from "@/components/text-found"
 import type { PlaceStart } from "@/components/text-places"
@@ -66,6 +69,15 @@ export function DetailsSheet({
     details: Details | null
   } | null>(null)
   const details = loaded && loaded.id === item?.id ? loaded.details : undefined
+  // The folder's S3 bucket, when it is one.
+  const s3On = useS3Enabled()
+  const [bucket, setBucket] = useState<{
+    id: string
+    name: string
+    quiet: boolean
+    for: string
+  } | null>(null)
+  const isBucket = bucket && bucket.for === item?.id ? bucket : null
 
   useEffect(() => {
     if (!open || !item) return
@@ -73,10 +85,12 @@ export function DetailsSheet({
     getDetails(item.id).then(
       (d) => live && setLoaded({ id: item.id, details: d })
     )
+    if (s3On && item.kind === "folder" && !item.trashedAt)
+      getBucket(item.id).then((b) => live && setBucket(b && { ...b, for: item.id }))
     return () => {
       live = false
     }
-  }, [open, item])
+  }, [open, item, s3On])
 
   if (!item) return null
   const applied = (tags ?? []).filter((t) => item.tags.includes(t.id))
@@ -116,6 +130,36 @@ export function DetailsSheet({
             ? `Shared ${plural(details.shares, "time")}`
             : "Only you"),
     ],
+    ...(isBucket
+      ? [
+          [
+            "S3 bucket",
+            <div key="b" className="grid gap-1.5">
+              <span className="font-mono break-all">{isBucket.name}</span>
+              <label className="flex cursor-pointer items-center gap-2 text-muted-foreground">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={isBucket.quiet}
+                  onChange={(e) => {
+                    const quiet = e.target.checked
+                    setBucket({ ...isBucket, quiet })
+                    setQuiet(isBucket.id, quiet)
+                  }}
+                  className="size-4 accent-primary"
+                />
+                Quiet
+              </label>
+              <Link
+                href="/buckets"
+                className="w-fit rounded-sm underline underline-offset-4 outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              >
+                Manage in S3 buckets
+              </Link>
+            </div>,
+          ] as [string, React.ReactNode],
+        ]
+      : []),
     ...(tags
       ? [
           [

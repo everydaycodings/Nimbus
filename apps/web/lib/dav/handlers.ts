@@ -2,10 +2,9 @@
 // as the web app, so access, quotas, versions, trash and notifications match.
 import "server-only"
 
-import { randomBytes, randomUUID } from "node:crypto"
+import { randomUUID } from "node:crypto"
 
-import { and, eq, ne, sql } from "drizzle-orm"
-import { lookup } from "mime-types"
+import { eq, sql } from "drizzle-orm"
 
 import { atLeast } from "@/lib/access"
 import {
@@ -32,15 +31,14 @@ import {
   type Entry,
   type Lock,
 } from "@/lib/dav/xml"
-import { recordSaved } from "@/lib/activity"
 import { db } from "@/lib/db"
 import { fileVersions, nodes } from "@/lib/db/schema"
 import { isDropped, isJunk, mimeOf } from "@/lib/file-rules"
 import { notifyEdit } from "@/lib/notify"
 import { checkStorage, getUsage, spaceLeft } from "@/lib/quota"
-import { enqueue, enqueueDerive } from "@/lib/redis"
-import { scannable } from "@/lib/secrets/leak-rules"
-import { getRange, putObject, putStream } from "@/lib/s3"
+import { enqueueDerive } from "@/lib/redis"
+import { getRange } from "@/lib/s3"
+import { mimeFor, storeFile } from "@/lib/store-file"
 import {
   CLASH,
   GONE,
@@ -52,11 +50,7 @@ import {
 import {
   addVersion,
   deleteNodes,
-  deleteUnreferenced,
   pruneVersions,
-  rejectReason,
-  saveUploaded,
-  uploadLimits,
 } from "@/lib/uploads"
 
 export type Ctx = { me: DavUser; names: string[]; req: Request }
@@ -70,8 +64,6 @@ const xml = (status: number, body: string, headers?: HeadersInit) =>
 // tree-ops answers in words; WebDAV wants a status.
 const statusOf = (error: string) =>
   error === GONE ? 409 : error === CLASH ? 405 : 403
-
-const mimeFor = (name: string) => lookup(name) || "application/octet-stream"
 
 const typeOf = (n: Row) => {
   const m = mimeOf(n.mime, n.name)
@@ -206,27 +198,8 @@ export async function get(c: Ctx, head: boolean) {
   }
 }
 
-// Counts bytes on the way to S3 and stops past `max`.
-function capped(body: ReadableStream<Uint8Array>, max: number | null) {
-  let seen = 0
-  const over = { hit: false }
-  const stream = body.pipeThrough(
-    new TransformStream<Uint8Array, Uint8Array>({
-      transform(chunk, ctl) {
-        seen += chunk.byteLength
-        if (max !== null && seen > max) {
-          over.hit = true
-          ctl.error(new Error("too big"))
-        } else ctl.enqueue(chunk)
-      },
-    })
-  )
-  return { stream, over, size: () => seen }
-}
-
 // Stores bytes as a new file in the folder, or a new version of the file with
-// that name. An empty current version (clients often create a file empty, then
-// write it) is replaced rather than kept as history.
+// that name (see lib/store-file.ts).
 async function store(
   c: Ctx,
   at: { ownerId: string; parentId: string | null },
@@ -234,74 +207,18 @@ async function store(
   existing: Row | null,
   body: ReadableStream<Uint8Array> | null
 ) {
-  const limits = await uploadLimits()
   // Chunked uploads don't say their size; they're counted as they stream.
   const raw = c.req.headers.get("content-length")
-  const known = raw !== null && Number.isFinite(Number(raw))
-  const declared = known ? Number(raw) : 0
-  const why = rejectReason(name, declared, limits)
-  if (why) {
-    const tooBig = limits.maxUploadBytes !== null && declared > limits.maxUploadBytes
-    return say(tooBig ? 413 : 403, why)
-  }
-  const left = await spaceLeft(at.ownerId)
-  if (left !== null && declared > left) return say(507, "Storage is full.")
-
-  const key = `dav-${randomBytes(16).toString("hex")}`
-  const mime = mimeFor(name)
-  let size = 0
-  if (body && !(known && declared === 0)) {
-    const max = Math.min(left ?? Infinity, limits.maxUploadBytes ?? Infinity)
-    const counted = capped(body, Number.isFinite(max) ? max : null)
-    try {
-      await putStream(key, counted.stream, mime)
-    } catch (e) {
-      if (counted.over.hit)
-        return say(left !== null && counted.size() > left ? 507 : 413)
-      throw e
-    }
-    size = counted.size()
-  } else await putObject(key, new Uint8Array(), mime)
-
-  const before = existing?.currentVersionId
-    ? (
-        await db
-          .select({ id: fileVersions.id, size: fileVersions.size, key: fileVersions.s3Key, keep: fileVersions.keep })
-          .from(fileVersions)
-          .where(eq(fileVersions.id, existing.currentVersionId))
-      )[0]
-    : undefined
-  const saved = await db.transaction((tx) =>
-    saveUploaded(tx, {
-      ownerId: at.ownerId,
-      parentId: at.parentId,
-      name,
-      version: { s3Key: key, size, mime, uploadedBy: c.me.id },
-      onConflict: "version",
-    })
-  )
-  if (saved.error || !saved.nodeId) return say(409, saved.error)
-  if (before && before.size === 0 && !before.keep) {
-    await db.delete(fileVersions).where(eq(fileVersions.id, before.id))
-    await deleteUnreferenced([before.key])
-  }
-  if (isJunk(name)) {
-    // Temporary save files keep no history and tell nobody.
-    const old = await db
-      .delete(fileVersions)
-      .where(and(eq(fileVersions.nodeId, saved.nodeId), ne(fileVersions.id, saved.versionId!)))
-      .returning({ key: fileVersions.s3Key })
-    await deleteUnreferenced(old.map((o) => o.key))
-  } else {
-    await pruneVersions(saved.nodeId)
-    await recordSaved(saved.nodeId, saved.versionId!, c.me.id)
-    if (at.ownerId !== c.me.id) await notifyEdit(c.me.id, saved.nodeId)
-    await enqueueDerive(saved.versionId!)
-    // The worker checks text and code files for leaked keys (if an admin left that on).
-    if (scannable(name, mime, size)) await enqueue("leak-scan", { nodeId: saved.nodeId }).catch(() => {})
-  }
-  await checkStorage(at.ownerId)
-  return say(existing ? 204 : 201, undefined, { ETag: `"${saved.versionId}"` })
+  const r = await storeFile({
+    me: c.me.id,
+    at,
+    name,
+    existing,
+    body,
+    declared: raw !== null && Number.isFinite(Number(raw)) ? Number(raw) : null,
+  })
+  if ("error" in r) return say(r.error.status, r.error.message)
+  return say(existing ? 204 : 201, undefined, { ETag: `"${r.versionId}"` })
 }
 
 export async function put(c: Ctx) {
