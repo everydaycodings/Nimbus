@@ -4,6 +4,7 @@ import {
   FolderIcon,
   ImageIcon,
   EnvelopeSimpleIcon,
+  FileTextIcon,
   FingerprintIcon,
   HourglassIcon,
   KeyIcon,
@@ -19,10 +20,12 @@ import {
 } from "@phosphor-icons/react/dist/ssr"
 import { and, count, eq, gt, isNotNull, isNull, or, sql } from "drizzle-orm"
 import { cookies } from "next/headers"
+import { Fragment } from "react"
 import { redirect } from "next/navigation"
 
 import { AiProvider } from "@/components/ai-context"
 import { AdminNav } from "@/components/admin-nav"
+import { DocsProvider } from "@/components/docs-context"
 import { Search } from "@/components/admin-search"
 import { PlaybackDock } from "@/components/playback-dock"
 import { NavLink } from "@/components/nav-link"
@@ -321,9 +324,14 @@ export default async function AppLayout({
             label="My files"
           />
           {FILE_LINKS.map(({ href, label: name, icon: Icon }) => (
-            <NavLink key={href} href={href} icon={<Icon />} label={name}>
-              {href === "/shared" && <SharedBadge initial={counts} />}
-            </NavLink>
+            <Fragment key={href}>
+              <NavLink href={href} icon={<Icon />} label={name}>
+                {href === "/shared" && <SharedBadge initial={counts} />}
+              </NavLink>
+              {href === "/photos" && settings.documentsEnabled && (
+                <NavLink href="/documents" icon={<FileTextIcon />} label="Documents" />
+              )}
+            </Fragment>
           ))}
           {settings.transfersEnabled && (
             <NavLink
@@ -384,6 +392,7 @@ export default async function AppLayout({
     <Toaster position={settings.toastPosition}>
       <AiProvider flags={ai}>
       <TransferProvider enabled={settings.transfersEnabled}>
+      <DocsProvider enabled={settings.documentsEnabled}>
       <UploadProvider
         tusUrl={process.env.TUS_URL ?? ""}
         zipMode={process.env.VERCEL ? "client" : "server"}
@@ -415,6 +424,7 @@ export default async function AppLayout({
           />
         )}
       </UploadProvider>
+      </DocsProvider>
       </TransferProvider>
       </AiProvider>
     </Toaster>

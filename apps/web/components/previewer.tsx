@@ -10,6 +10,7 @@ import {
   CircleNotchIcon,
   CopyIcon,
   DownloadSimpleIcon,
+  FileTextIcon,
   FolderIcon,
   InfoIcon,
   MagnifyingGlassIcon,
@@ -28,6 +29,8 @@ import { officeFrame, previewUrl } from "@/app/(app)/upload-actions"
 import { linkPreviewUrl } from "@/app/s/actions"
 import { AudioView } from "@/components/audio-player"
 import { Comments } from "@/components/comments"
+import { DocumentPanel } from "@/components/document-panel"
+import { useDocsEnabled } from "@/components/docs-context"
 import { FileSearch } from "@/components/file-search"
 import { startOf, type PlaceStart } from "@/components/text-places"
 import { CastButton } from "@/components/player-controls"
@@ -92,6 +95,7 @@ export function Previewer({
   src,
   queue,
   commentsFirst = false,
+  docFirst = false,
   editable = false,
   editOnOpen = false,
   start,
@@ -117,6 +121,8 @@ export function Previewer({
   queue?: Item[]
   // Open with the comments panel showing (a notification's link).
   commentsFirst?: boolean
+  // Open with the Document panel showing (the Documents page).
+  docFirst?: boolean
   // The viewer can change this file (owner or editor): images get an Edit button.
   editable?: boolean
   // Open straight in the photo editor (a menu's "Edit").
@@ -133,10 +139,19 @@ export function Previewer({
   // Members only: not on a public link's page, a vault file or an older version.
   const commentable = !link && src === undefined && !shown?.version
   const [commentsOpen, setCommentsOpen] = useState(commentsFirst)
+  // The Document panel and the comments share the side: one at a time.
+  const docsOn = useDocsEnabled()
+  const [docOpen, setDocOpen] = useState(docFirst)
+  const docable = docsOn && commentable && item?.kind === "file" && !item.shortcut
   const [wasFirst, setWasFirst] = useState(commentsFirst)
   if (commentsFirst !== wasFirst) {
     setWasFirst(commentsFirst)
     if (commentsFirst) setCommentsOpen(true)
+  }
+  const [wasDocFirst, setWasDocFirst] = useState(docFirst)
+  if (docFirst !== wasDocFirst) {
+    setWasDocFirst(docFirst)
+    if (docFirst) setDocOpen(true)
   }
   const v = shown?.version
   // A match picked in the find-in-file box wins over where the file was opened.
@@ -325,6 +340,22 @@ export function Previewer({
                     <DownloadSimpleIcon className="size-5" />
                   </Button>
                 )}
+                {docable && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Document"
+                    title="Document fields"
+                    aria-pressed={docOpen}
+                    onClick={() => {
+                      setDocOpen((o) => !o)
+                      setCommentsOpen(false)
+                    }}
+                    className={cn(docOpen && "bg-accent")}
+                  >
+                    <FileTextIcon className="size-5" />
+                  </Button>
+                )}
                 {commentable && (
                   <Button
                     variant="ghost"
@@ -336,7 +367,10 @@ export function Previewer({
                     }
                     title="Comments"
                     aria-pressed={commentsOpen}
-                    onClick={() => setCommentsOpen((o) => !o)}
+                    onClick={() => {
+                      setCommentsOpen((o) => !o)
+                      setDocOpen(false)
+                    }}
                     className={cn("relative", commentsOpen && "bg-accent")}
                   >
                     <ChatCircleIcon className="size-5" />
@@ -417,6 +451,14 @@ export function Previewer({
                   onJump={(p) => setJump({ id: item.id, at: startOf(p) })}
                   onClose={() => setSearching(false)}
                 />
+              )}
+              {docable && docOpen && item && (
+                <aside
+                  aria-label="Document"
+                  className="absolute inset-0 z-10 overflow-y-auto border-l bg-popover p-4 text-popover-foreground sm:static sm:w-96 sm:shrink-0 sm:rounded-tl-xl"
+                >
+                  <DocumentPanel key={item.id} id={item.id} owner={canEditItem(item)} />
+                </aside>
               )}
               {commentable && commentsOpen && (
                 <aside

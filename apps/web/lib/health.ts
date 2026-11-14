@@ -29,7 +29,7 @@ import {
 } from "@/lib/health-rules"
 import { notify } from "@/lib/notify"
 import { ml as mlClient, mlBase } from "@/lib/ml"
-import { HEARTBEAT_KEY, INDEXER_KEY, ML_KEY, redis } from "@/lib/redis"
+import { DOCS_KEY, HEARTBEAT_KEY, INDEXER_KEY, ML_KEY, redis } from "@/lib/redis"
 import { BUCKET, deleteObject, getText, putObject } from "@/lib/s3"
 import { getSettings, type Settings } from "@/lib/signup"
 
@@ -194,6 +194,22 @@ const PROBES: Record<Service, (s: Settings) => Promise<Found>> = {
       .flatMap((k) => (k.lastGood ? [`${KIND_LABEL[k.kind]} ${ago(k.lastGood.startedAt.toISOString(), Date.now())}`] : []))
       .join(", ")
     return { detail: `Wrote a test file to ${b.dest.bucket}.${last ? ` Last good: ${last}.` : ""}` }
+  },
+
+  // The worker's documents sweep leaves a key like the indexer's, with how many files still wait to be read.
+  async documents(s) {
+    if (!s.documentsEnabled) return off("Documents is turned off.")
+    const raw = await redis.get(DOCS_KEY)
+    const k = raw
+      ? (JSON.parse(raw) as { at: number; backlog: number; documents: number; review: number; lastError?: string | null })
+      : null
+    if (!k?.at) throw new Error("No recent sweep. Start `npm run worker`; until then new documents aren't filed.")
+    const extra = [
+      `${k.documents} documents, ${k.review} to review`,
+      `${k.backlog} waiting to be read`,
+      k.lastError ? `last error: ${k.lastError}` : null,
+    ].filter(Boolean)
+    return { detail: `Last sweep ${ago(new Date(k.at).toISOString(), Date.now())}. ${extra.join(", ")}.`, timed: false }
   },
 
   async oauth() {

@@ -16,6 +16,7 @@ import { expireLease } from "@/lib/secrets/dynamic"
 import { deliver } from "@/lib/secrets/webhooks"
 import { recheckWarned } from "@/lib/quota"
 import { removeObjects } from "@/lib/s3"
+import { remindExpiring } from "@/lib/services/documents"
 import { alertStalePhones } from "@/lib/services/phone-backup"
 import { purgeTransfers } from "@/lib/services/transfers"
 import { readToken } from "@/lib/upload-rules"
@@ -31,6 +32,7 @@ const jobs: Record<string, (data: never) => Promise<unknown>> = {
   },
   "orphan-sweep": sweepOrphans,
   "phone-backup-stale": alertStalePhones,
+  "documents-remind": remindExpiring,
   email: (m: Message) => sendNow(m),
   "delete-keys": ({ keys }: { keys: string[] }) => removeObjects(keys),
   "backup-alert": backupAlert,

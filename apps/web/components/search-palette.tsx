@@ -23,6 +23,7 @@ import { useRouter } from "next/navigation"
 import { Fragment, useEffect, useRef, useState } from "react"
 
 import { quickSearch } from "@/app/(app)/search-actions"
+import { DocChips } from "@/components/doc-bits"
 import { DIALOG_BACKDROP } from "@/components/overlay-styles"
 import { canEditItem, Previewer } from "@/components/previewer"
 import { MatchTag, Snippet, placeLabel, startOf, type PlaceStart } from "@/components/text-places"
@@ -224,7 +225,14 @@ export function SearchPalette({ admin }: { admin: boolean }) {
     const place = h.places?.[0]
     return {
       key: h.id,
-      label: h.name,
+      label: h.docInfo ? (
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="truncate">{h.name}</span>
+          <DocChips info={h.docInfo} />
+        </span>
+      ) : (
+        h.name
+      ),
       icon: t.icon,
       iconClass: t.color,
       detail: place ? (

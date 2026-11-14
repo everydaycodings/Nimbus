@@ -32,6 +32,7 @@ export function MoveDialog({
   start,
   onClose,
   onMove,
+  action = "Move here",
 }: {
   open: boolean
   title: string
@@ -39,6 +40,8 @@ export function MoveDialog({
   start: Place[]
   onClose: () => void
   onMove: (to: Place) => void
+  // The confirm button.
+  action?: string
 }) {
   const [path, setPath] = useState(start)
   const here = path[path.length - 1]
@@ -159,7 +162,7 @@ export function MoveDialog({
             <Dialog.Close render={<Button variant="outline" />}>
               Cancel
             </Dialog.Close>
-            <Button onClick={() => onMove(here)}>Move here</Button>
+            <Button onClick={() => onMove(here)}>{action}</Button>
           </div>
         </Dialog.Popup>
       </Dialog.Portal>

@@ -4,6 +4,7 @@ import {
   ClockCounterClockwiseIcon,
   EnvelopeSimpleIcon,
   FileDocIcon,
+  FilesIcon,
   FingerprintIcon,
   GaugeIcon,
   HardDriveIcon,
@@ -111,6 +112,7 @@ export const ADMIN_GROUPS: { title: string; pages: AdminPage[] }[] = [
       { href: "/admin/system/ocr", label: "Text in images", icon: ScanIcon },
       { href: "/admin/system/ai", label: "AI features", icon: SparkleIcon },
       { href: "/admin/system/photos", label: "Photos map", icon: MapTrifoldIcon },
+      { href: "/admin/system/documents", label: "Documents", icon: FilesIcon },
       {
         href: "/admin/system/appearance",
         label: "Appearance",
@@ -488,6 +490,24 @@ export const ADMIN_SETTINGS: {
     label: "Who can use AI features",
     href: "/admin/system/ai",
     keywords: "ai access allow list members chosen everyone",
+  },
+  {
+    id: "documents-enabled",
+    label: "Documents section",
+    href: "/admin/system/documents",
+    keywords: "documents paperless pdf scans receipts invoices expiry reminders turn off",
+  },
+  {
+    id: "docs-ml",
+    label: "Guess document types from pictures",
+    href: "/admin/system/documents",
+    keywords: "documents ai ml clip type hint scans",
+  },
+  {
+    id: "docs-backfill",
+    label: "Read documents again",
+    href: "/admin/system/documents",
+    keywords: "documents backfill rerun review sweep status",
   },
   {
     id: "map-enabled",

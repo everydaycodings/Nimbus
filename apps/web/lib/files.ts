@@ -49,6 +49,7 @@ import {
 import { parsePhotoCursor, photoCursor } from "@nimbus/shared/photos"
 import { decodeMentions, mentionIds } from "@nimbus/shared/comments"
 import type { SystemKind, TextPlace } from "@nimbus/shared/api"
+import { hasDocTokens, parseDocTokens } from "@/lib/doc-search"
 import { mixHits } from "@/lib/ml"
 import { personHits, pictureHits } from "@/lib/services/ai-search"
 import { purgeSavedLogins } from "@/lib/saved-logins"
@@ -88,6 +89,8 @@ export type Item = {
   comments?: number
   // A folder the app made itself; missing for everything else.
   system?: SystemKind
+  // The viewer's own Documents entry for this file, when it has one.
+  doc?: "review" | "confirmed" | "dismissed" | null
 }
 
 export type Tag = { id: string; name: string; color: TagColor }
@@ -153,6 +156,8 @@ const cols = (viewer: string) => ({
     where node_id = "nodes".id and version_id = "nodes".current_version_id)`,
   comments: sql<number>`(select count(*)::int from comments
     where node_id = "nodes".id and parent_id is null and resolved_at is null)`,
+  doc: sql<Item["doc"]>`(select status from documents
+    where node_id = "nodes".id and owner_id = ${viewer})`,
 })
 
 type Row = Omit<Item, "updatedAt" | "trashedAt" | "system"> & {
@@ -415,6 +420,8 @@ export type Hit = Item & {
   moreCount?: number
   // Found by what it looks like or who's in it, not by words.
   match?: "picture" | "person"
+  // Its Documents fields, for the chips on a result.
+  docInfo?: { type: string | null; sender: string | null; amount: number | null; currency: string | null; date: string | null }
 }
 
 // Everything the viewer can see, newest first, for search's filters with no text.
@@ -486,8 +493,23 @@ export async function searchItems(
   const inComments = all || where.includes("comments")
   // "has:comments" keeps files with comments; alone, it lists them all.
   const hasComments = /(^|\s)has:comments(?=\s|$)/i.test(raw)
-  const q = raw.replace(/(^|\s)has:comments(?=\s|$)/gi, " ").trim().slice(0, 200)
-  if (!q && !hasComments) return []
+  // type:, sender:, amount>, year: and expires: keep documents with those fields.
+  const { rest, tokens } = parseDocTokens(raw.replace(/(^|\s)has:comments(?=\s|$)/gi, " "))
+  const q = rest.slice(0, 200)
+  const onDocs = hasDocTokens(tokens)
+  if (!q && !hasComments && !onDocs) return []
+  const like = (v: string) => `%${v.toLowerCase().replace(/[%_\\]/g, "\\$&")}%`
+  const docWhere = [
+    tokens.type && sql`(lower(dt.name) like ${like(tokens.type)} or dt.key = ${tokens.type.toLowerCase()})`,
+    tokens.sender && sql`lower(ds.name) like ${like(tokens.sender)}`,
+    tokens.minAmount !== undefined && sql`dd.amount >= ${tokens.minAmount}`,
+    tokens.maxAmount !== undefined && sql`dd.amount <= ${tokens.maxAmount}`,
+    tokens.year && sql`extract(year from dd.doc_date) = ${tokens.year}`,
+    tokens.expires === "soon" &&
+      sql`dd.expires_at between current_date and current_date + coalesce(dd.remind_days, dt.remind_days, 30)`,
+    tokens.expires === "expired" && sql`dd.expires_at < current_date`,
+    tokens.expires === "any" && sql`dd.expires_at is not null`,
+  ].filter(Boolean) as SQL[]
   // What's shared with the viewer: files they were given and everything inside shared folders.
   const visible = sql`shared as (
       select n.id from nodes n
@@ -533,6 +555,13 @@ export async function searchItems(
         and (n.owner_id = ${viewer} or n.id in (select id from shared))
         and (not ${hasComments} or exists (
           select 1 from comments k where k.node_id = n.id and k.deleted_at is null))
+        and (not ${onDocs} or exists (
+          select 1 from documents dd
+          left join doc_types dt on dt.id = dd.type_id
+          left join doc_senders ds on ds.id = dd.sender_id
+          where dd.node_id = n.id and dd.status <> 'dismissed'
+            and (dd.owner_id = ${viewer} or dd.status = 'confirmed')
+            and ${docWhere.length ? sql.join(docWhere, sql` and `) : sql`true`}))
     ), top as (
       select * from scored
       where name_score is not null or text_score is not null or speech_score is not null or comment_score is not null
@@ -656,9 +685,17 @@ export async function searchItems(
         mixed.map((m) => m.id)
       )
     )
+  const docs = new Map<string, NonNullable<Hit["docInfo"]>>()
+  for (const r of await db.execute<{ id: string } & NonNullable<Hit["docInfo"]>>(sql`
+    select d.node_id as id, t.name as type, s.name as sender, d.amount::float8 as amount, d.currency, d.doc_date::text as date
+    from documents d left join doc_types t on t.id = d.type_id left join doc_senders s on s.id = d.sender_id
+    where d.status <> 'dismissed' and (d.owner_id = ${viewer} or d.status = 'confirmed')
+      and d.node_id in (${sql.join(mixed.map((m) => sql`${m.id}`), sql`, `)})`))
+    docs.set(r.id, { type: r.type, sender: r.sender, amount: r.amount, currency: r.currency, date: r.date })
   return (await withAccess(viewer, rows))
     .sort((a, b) => rank.get(a.id)! - rank.get(b.id)!)
-    .map((item): Hit => {
+    .map((hit): Hit => {
+      const item = docs.has(hit.id) ? { ...hit, docInfo: docs.get(hit.id) } : hit
       const m = meta.get(item.id)
       // A look-alike or person match, not found by words.
       if (!m)

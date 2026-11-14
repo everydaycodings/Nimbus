@@ -7,10 +7,10 @@ export const OTHER = process.env.E2E_EMAIL2 ?? "newbie@example.invalid"
 // Names no earlier run left behind.
 export const unique = (base: string) => `e2e ${Date.now().toString(36)} ${base}`
 
-export async function signIn(page: Page, email = ME) {
+export async function signIn(page: Page, email = ME, password = PASSWORD) {
   await page.goto("/sign-in")
   await page.getByLabel("Email").fill(email)
-  await page.getByLabel("Password", { exact: true }).fill(PASSWORD)
+  await page.getByLabel("Password", { exact: true }).fill(password)
   await page.getByRole("button", { name: "Sign in", exact: true }).click()
   await expect(page).not.toHaveURL(/sign-in/)
   // Asked once after a fresh sign-in, unless the admin turned saved logins off.

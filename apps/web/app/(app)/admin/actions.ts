@@ -460,6 +460,26 @@ export async function reindexFaces() {
   revalidatePath("/admin", "layout")
 }
 
+// Off hides Documents (nav, page and API) and stops the worker filing and reminding; nothing is deleted.
+// `docsMl`: nimbus-ml may hint the type of scanned pictures.
+export async function setDocuments(form: FormData) {
+  await requireAdmin()
+  await saveSettings({
+    documentsEnabled: form.get("documentsEnabled") === "on",
+    docsMl: form.get("docsMl") === "on",
+    updatedAt: new Date(),
+  })
+  revalidatePath("/", "layout")
+}
+
+// Files still in review are read again by the worker, a batch a minute. Confirmed and hidden ones stay.
+export async function rerunDocsBackfill() {
+  await requireAdmin()
+  await db.execute(sql`update documents set version_id = null where status = 'review'`)
+  await audit("settings", { detail: "documents: read the documents in review again" })
+  revalidatePath("/admin", "layout")
+}
+
 // Off hides the Places map on the web and in the app. The style URL is a MapLibre style JSON.
 export async function setMap(form: FormData) {
   await requireAdmin()

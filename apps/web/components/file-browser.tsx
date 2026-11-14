@@ -7,6 +7,8 @@ import {
   ArrowBendUpRightIcon,
   ArrowDownIcon,
   ArrowSquareOutIcon,
+  FileTextIcon,
+  FileXIcon,
   LinkSimpleIcon,
   ShareNetworkIcon,
   UsersIcon,
@@ -67,6 +69,7 @@ import {
   tagItems,
   trashItems,
 } from "@/app/(app)/file-actions"
+import { dismissDocs, markDocs } from "@/app/(app)/documents/actions"
 import type { Version } from "@/app/(app)/upload-actions"
 import { CommentCount } from "@/components/comments"
 import { useAi } from "@/components/ai-context"
@@ -96,6 +99,8 @@ import {
   MENU_ITEM,
   MENU_POPUP,
 } from "@/components/overlay-styles"
+import { DocChips, type DocInfo } from "@/components/doc-bits"
+import { useDocsEnabled } from "@/components/docs-context"
 import { SubmitButton } from "@/components/submit-button"
 import { TagColors, useTagEditor } from "@/components/tag-edit"
 import { useTransfer } from "@/components/transfer-dialog"
@@ -234,6 +239,7 @@ export function FileBrowser({
   const router = useRouter()
   const { upload, download } = useUploads()
   const transfer = useTransfer()
+  const docsOn = useDocsEnabled()
   const [layout, setLayout] = useState(initialLayout)
   const [compact, setCompact] = useState(initialCompact)
   const [tiles, setTiles] = useState(initialTiles)
@@ -691,6 +697,31 @@ export function FileBrowser({
     )
   }
 
+  // "Not a document" hides files from Documents and leaves them where they are; Undo brings them back.
+  function hideDocs(t: Item[]) {
+    const ids = t.map((i) => i.id)
+    const text = `${label(t)} won't show in Documents.`
+    run(
+      async () => {
+        const r = await dismissDocs(ids)
+        router.refresh()
+        return r
+      },
+      { text, undo: () => showDocs(t, true) }
+    )
+  }
+  function showDocs(t: Item[], undone = false) {
+    const ids = t.map((i) => i.id)
+    run(
+      async () => {
+        const r = await markDocs(ids)
+        router.refresh()
+        return r
+      },
+      { text: undone ? `${label(t)} is back in Documents.` : `${label(t)} will show in Documents once it has been read.` }
+    )
+  }
+
   function actions(t: Item[]): Act[] {
     if (!t.length) return []
     const info: Act | null =
@@ -868,6 +899,23 @@ export function FileBrowser({
             text: `Removed the shortcut to “${one.name}”.`,
           }),
       },
+      docsOn &&
+        t.every((i) => i.kind === "file" && roleOf(i) === "owner" && !i.shortcut) &&
+        (t.every((i) => i.doc === "review" || i.doc === "confirmed")
+          ? {
+              label: "Not a document",
+              icon: FileXIcon,
+              menuOnly: true,
+              group: 2,
+              run: () => hideDocs(t),
+            }
+          : t.every((i) => !i.doc || i.doc === "dismissed") && {
+              label: "Mark as document",
+              icon: FileTextIcon,
+              menuOnly: true,
+              group: 2,
+              run: () => showDocs(t),
+            }),
       info && { ...info, group: 2 },
       edit &&
         one?.kind === "file" && {
@@ -1298,6 +1346,9 @@ export function FileBrowser({
           />
         )}
         <CommentCount n={item.comments} />
+        {view === "search" && (item as Item & { docInfo?: DocInfo }).docInfo && (
+          <DocChips info={(item as Item & { docInfo: DocInfo }).docInfo} />
+        )}
         {item.tags.length > 0 && (
           <span className="flex shrink-0 -space-x-0.5" title={tagNames(item)}>
             <span className="sr-only">Tags: {tagNames(item)}</span>

@@ -13,6 +13,7 @@ import { fail, withMember } from "@/lib/api"
 import { db } from "@/lib/db"
 import { docSenders, docTypes, docWatch, documents, nodes } from "@/lib/db/schema"
 import { recordSaved } from "@/lib/activity"
+import { notify } from "@/lib/notify"
 import { checkStorage, spaceLeft } from "@/lib/quota"
 import { enqueueDerive } from "@/lib/redis"
 import { putObject, getStream } from "@/lib/s3"
@@ -583,4 +584,46 @@ export async function mergePdf(me: Me, ids: string[], rawName?: string): Promise
   await markDocuments(me, [saved.nodeId])
   const [n] = await db.select({ name: nodes.name }).from(nodes).where(eq(nodes.id, saved.nodeId))
   return { id: saved.nodeId, name: n.name, folderId: target.folderId }
+}
+
+// Years that have a document (by document date), newest first: the page's year filter.
+export async function years(me: Me): Promise<number[]> {
+  const rows = await db.execute<{ y: number }>(sql`
+    select distinct extract(year from d.doc_date)::int as y from documents d join nodes n on n.id = d.node_id
+    where d.owner_id = ${me.id} and d.status <> 'dismissed' and d.doc_date is not null
+      and n.trashed_at is null and n.vault_id is null order by 1 desc`)
+  return rows.map((r) => r.y)
+}
+
+// ---- Reminders ----
+
+// The daily job: a bell notice (and the phone's push) once per document, when its expiry or due date
+// comes inside its lead time (its own, else its type's; none means never). Changing the expiry starts a new
+// reminder (updateDocument clears reminded_at). Ones that expired more than a week ago are skipped, so a
+// backfill of old files doesn't bury the bell.
+export async function remindExpiring() {
+  if (!(await getSettings()).documentsEnabled) return 0
+  const due = await db.execute<{ id: string; owner: string; days: number }>(sql`
+    select d.node_id as id, d.owner_id as owner, (d.expires_at - current_date)::int as days
+    from documents d
+    join nodes n on n.id = d.node_id
+    left join doc_types t on t.id = d.type_id
+    where d.status <> 'dismissed' and d.reminded_at is null and d.expires_at is not null
+      and n.trashed_at is null and n.vault_id is null
+      and d.expires_at between current_date - 7 and current_date + coalesce(d.remind_days, t.remind_days, -1)
+    limit 500`)
+  for (const r of due) {
+    // Marked first: a failed notice is not sent twice, and the job's retry doesn't repeat the others.
+    const [claimed] = await db
+      .update(documents)
+      .set({ remindedAt: new Date() })
+      .where(and(eq(documents.nodeId, r.id), isNull(documents.remindedAt)))
+      .returning({ id: documents.nodeId })
+    if (!claimed) continue
+    await notify(r.owner, "document_expiring", {
+      nodeId: r.id,
+      data: { days: String(Math.max(r.days, 0)), what: r.days < 0 ? "expired" : "soon" },
+    })
+  }
+  return due.length
 }
