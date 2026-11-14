@@ -13,8 +13,11 @@ import {
   APIError,
   createAuthEndpoint,
   createAuthMiddleware,
+  getSessionFromCtx,
   sessionMiddleware,
 } from "better-auth/api"
+import { symmetricDecrypt } from "better-auth/crypto"
+import { createOTP } from "@better-auth/utils/otp"
 import { setSessionCookie } from "better-auth/cookies"
 import { drizzleAdapter } from "better-auth/adapters/drizzle"
 import { nextCookies } from "better-auth/next-js"
@@ -237,6 +240,19 @@ async function pendingTwoFactor(ctx: GenericEndpointContext) {
       code: "INVALID_TWO_FACTOR_COOKIE",
     })
   return { identifier, userId: row.value, cookie }
+}
+
+async function hasCredential(userId: string) {
+  const [row] = await db
+    .select({ id: schema.account.id })
+    .from(schema.account)
+    .where(
+      and(
+        eq(schema.account.userId, userId),
+        eq(schema.account.providerId, "credential")
+      )
+    )
+  return Boolean(row)
 }
 
 // Provider sign-ins (Google, GitHub, OIDC) skip the two-factor plugin, whose
@@ -869,6 +885,37 @@ const options = {
         throw new APIError("FORBIDDEN", {
           message: "Your admin requires two-factor on this Nimbus.",
         })
+      // Accounts without a password (Google, GitHub, OIDC) use two-factor
+      // without one (allowPasswordless), so a current authenticator code
+      // stands in for it when turning it off or making new backup codes.
+      if (
+        ctx.path === "/two-factor/disable" ||
+        ctx.path === "/two-factor/generate-backup-codes"
+      ) {
+        const s = await getSessionFromCtx(ctx)
+        if (s && !(await hasCredential(s.user.id))) {
+          const [row] = await db
+            .select({ secret: schema.twoFactor.secret })
+            .from(schema.twoFactor)
+            .where(eq(schema.twoFactor.userId, s.user.id))
+          const code = String(ctx.body?.code ?? "").replace(/\s/g, "")
+          const ok =
+            row &&
+            /^\d{6}$/.test(code) &&
+            (await createOTP(
+              await symmetricDecrypt({
+                key: ctx.context.secretConfig,
+                data: row.secret,
+              }),
+              { digits: 6, period: 30 }
+            ).verify(code))
+          if (!ok)
+            throw new APIError("BAD_REQUEST", {
+              message:
+                "That code didn't match. Try the newest one from your authenticator app.",
+            })
+        }
+      }
       // OIDC only: the owner keeps their password, everyone else uses the provider.
       if (
         /^\/(sign-up\/email|sign-in\/email|sign-in\/social)$/.test(ctx.path)
@@ -887,7 +934,7 @@ const options = {
     }),
   },
   plugins: [
-    twoFactor({ issuer: "Nimbus" }),
+    twoFactor({ issuer: "Nimbus", allowPasswordless: true }),
     providerTwoFactor,
     // The admin's lower limit is checked before adding (app/(app)/actions.ts).
     multiSession({ maximumSessions: MAX_SESSIONS }),

@@ -49,11 +49,14 @@ function PasswordStep({
   label,
   submitLabel,
   variant,
+  code = false,
   onPassword,
 }: {
   label: string
   submitLabel: string
   variant?: "default" | "destructive" | "outline"
+  // No password on the account: ask for an authenticator code instead.
+  code?: boolean
   onPassword: (password: string) => Promise<string | null>
 }) {
   const [error, setError] = useState<string | null>(null)
@@ -66,7 +69,9 @@ function PasswordStep({
         setBusy(true)
         setError(
           await onPassword(
-            String(new FormData(e.currentTarget).get("password"))
+            String(
+              new FormData(e.currentTarget).get(code ? "code" : "password")
+            )
           )
         )
         setBusy(false)
@@ -74,14 +79,18 @@ function PasswordStep({
     >
       <div className="grid max-w-sm gap-2">
         <Label htmlFor="tf-password">{label}</Label>
-        <Input
-          id="tf-password"
-          name="password"
-          type="password"
-          autoComplete="current-password"
-          required
-          autoFocus
-        />
+        {code ? (
+          <CodeInput id="tf-password" autoFocus />
+        ) : (
+          <Input
+            id="tf-password"
+            name="password"
+            type="password"
+            autoComplete="current-password"
+            required
+            autoFocus
+          />
+        )}
       </div>
       <FormError>{error}</FormError>
       <SubmitButton pending={busy} variant={variant} className="self-start">
@@ -138,14 +147,16 @@ export function BackupCodes({
   )
 }
 
-// Turn on two-factor: confirm the password, scan the QR code, prove it works
-// with one code, then keep the backup codes.
+// Turn on two-factor: confirm the password (when there is one), scan the QR
+// code, prove it works with one code, then keep the backup codes.
 export function TwoFactorSetup({
   autoStart = false,
   startVariant = "default",
+  password = true,
 }: {
   autoStart?: boolean
   startVariant?: "default" | "outline"
+  password?: boolean
 }) {
   const router = useRouter()
   const [started, setStarted] = useState(autoStart)
@@ -153,15 +164,34 @@ export function TwoFactorSetup({
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  if (!started)
+  const enable = async (pw?: string) => {
+    const { data, error } = await authClient.twoFactor.enable(
+      pw === undefined ? {} : { password: pw }
+    )
+    if (error || data?.method !== "totp") return error?.message ?? ERROR
+    setStep({ name: "scan", uri: data.totpURI, backupCodes: data.backupCodes })
+    return null
+  }
+
+  // No password on the account: the start button goes straight to the QR code.
+  if (!started || (!password && step.name === "password"))
     return (
-      <Button
-        variant={startVariant}
-        onClick={() => setStarted(true)}
-        className="self-start"
-      >
-        Set up two-factor
-      </Button>
+      <div className="flex flex-col gap-3">
+        <Button
+          variant={startVariant}
+          disabled={busy}
+          onClick={async () => {
+            if (password) return setStarted(true)
+            setBusy(true)
+            setError(await enable())
+            setBusy(false)
+          }}
+          className="self-start"
+        >
+          Set up two-factor
+        </Button>
+        <FormError>{error}</FormError>
+      </div>
     )
 
   if (step.name === "password")
@@ -169,18 +199,7 @@ export function TwoFactorSetup({
       <PasswordStep
         label="Confirm your password to start"
         submitLabel="Continue"
-        onPassword={async (password) => {
-          const { data, error } = await authClient.twoFactor.enable({
-            password,
-          })
-          if (error || data?.method !== "totp") return error?.message ?? ERROR
-          setStep({
-            name: "scan",
-            uri: data.totpURI,
-            backupCodes: data.backupCodes,
-          })
-          return null
-        }}
+        onPassword={enable}
       />
     )
 
@@ -248,8 +267,16 @@ export function TwoFactorSetup({
   )
 }
 
-// Two-factor is on: make fresh backup codes or turn it off. Both need the password.
-export function TwoFactorManage({ locked }: { locked: boolean }) {
+// Two-factor is on: make fresh backup codes or turn it off. Both need the
+// password, or a current code for accounts without one.
+export function TwoFactorManage({
+  locked,
+  password = true,
+}: {
+  locked: boolean
+  password?: boolean
+}) {
+  const proof = (v: string) => (password ? { password: v } : { code: v })
   const router = useRouter()
   const [mode, setMode] = useState<"idle" | "codes" | "disable">("idle")
   const [codes, setCodes] = useState<string[] | null>(null)
@@ -269,11 +296,16 @@ export function TwoFactorManage({ locked }: { locked: boolean }) {
           New codes replace the old ones, which stop working.
         </p>
         <PasswordStep
-          label="Confirm your password"
+          label={
+            password
+              ? "Confirm your password"
+              : "Enter the code from your authenticator app"
+          }
           submitLabel="Make new codes"
-          onPassword={async (password) => {
+          code={!password}
+          onPassword={async (v) => {
             const { data, error } =
-              await authClient.twoFactor.generateBackupCodes({ password })
+              await authClient.twoFactor.generateBackupCodes(proof(v))
             if (error || !data) return error?.message ?? ERROR
             setCodes(data.backupCodes)
             return null
@@ -294,11 +326,16 @@ export function TwoFactorManage({ locked }: { locked: boolean }) {
     return (
       <div className="flex flex-col gap-3">
         <PasswordStep
-          label="Confirm your password to turn off two-factor"
+          label={
+            password
+              ? "Confirm your password to turn off two-factor"
+              : "Enter the code from your authenticator app to turn off two-factor"
+          }
           submitLabel="Turn off two-factor"
           variant="destructive"
-          onPassword={async (password) => {
-            const { error } = await authClient.twoFactor.disable({ password })
+          code={!password}
+          onPassword={async (v) => {
+            const { error } = await authClient.twoFactor.disable(proof(v))
             if (error) return error.message ?? ERROR
             router.refresh()
             return null

@@ -241,30 +241,26 @@ export default async function AccountPage() {
             )}
           </CardTitle>
           <CardDescription>
-            {!password
-              ? `Two-factor protects password sign-ins. For ${providers || "your provider"}, turn it on in that account instead.`
-              : me.twoFactorEnabled
-                ? "Signing in with your password also asks for a code from your authenticator app."
-                : "Ask for a code from your phone after your password, so a leaked password alone can't get in."}
+            {me.twoFactorEnabled
+              ? "Signing in also asks for a code from your authenticator app."
+              : "Ask for a code from your phone after you sign in, so a leaked password or provider account alone can't get in."}
           </CardDescription>
         </CardHeader>
-        {password && (
-          <CardContent className="flex flex-col gap-4">
-            {me.twoFactorEnabled ? (
-              <TwoFactorManage locked={require2fa} />
-            ) : (
-              <>
-                {require2fa && (
-                  <p className="flex items-center gap-2 text-sm">
-                    <WarningCircleIcon className="size-4 text-muted-foreground" />
-                    Your admin requires two-factor on this Nimbus.
-                  </p>
-                )}
-                <TwoFactorSetup />
-              </>
-            )}
-          </CardContent>
-        )}
+        <CardContent className="flex flex-col gap-4">
+          {me.twoFactorEnabled ? (
+            <TwoFactorManage locked={require2fa} password={password} />
+          ) : (
+            <>
+              {require2fa && (
+                <p className="flex items-center gap-2 text-sm">
+                  <WarningCircleIcon className="size-4 text-muted-foreground" />
+                  Your admin requires two-factor on this Nimbus.
+                </p>
+              )}
+              <TwoFactorSetup password={password} />
+            </>
+          )}
+        </CardContent>
       </Card>
 
       <Card id="passkeys" className="scroll-mt-20">

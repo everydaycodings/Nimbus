@@ -35,7 +35,9 @@ function Qr({ value }: { value: string }) {
   )
 }
 
-function PasswordStep({ label, submit, danger, onPassword, onCancel }: { label: string; submit: string; danger?: boolean; onPassword: (p: string) => Promise<void>; onCancel: () => void }) {
+// code: the account has no password (Google, GitHub, OIDC), so a current
+// authenticator code stands in for it.
+function PasswordStep({ label, submit, danger, code, onPassword, onCancel }: { label: string; submit: string; danger?: boolean; code?: boolean; onPassword: (p: string) => Promise<void>; onCancel: () => void }) {
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -51,8 +53,12 @@ function PasswordStep({ label, submit, danger, onPassword, onCancel }: { label: 
   }
   return (
     <View style={{ gap: 16 }}>
-      <Field label={label} value={password} onChangeText={setPassword} secret autoFocus autoComplete="current-password" returnKeyType="go" onSubmitEditing={go} error={error} />
-      <Button variant={danger ? "outlined" : "filled"} danger={danger} label={submit} busy={busy} disabled={!password} onPress={go} />
+      {code ? (
+        <Field label={label} value={password} onChangeText={setPassword} autoFocus keyboardType="number-pad" autoComplete="one-time-code" maxLength={6} returnKeyType="go" onSubmitEditing={go} error={error} />
+      ) : (
+        <Field label={label} value={password} onChangeText={setPassword} secret autoFocus autoComplete="current-password" returnKeyType="go" onSubmitEditing={go} error={error} />
+      )}
+      <Button variant={danger ? "outlined" : "filled"} danger={danger} label={submit} busy={busy} disabled={code ? password.length !== 6 : !password} onPress={go} />
       <Button variant="text" label="Cancel" onPress={onCancel} />
     </View>
   )
@@ -100,8 +106,11 @@ export default function TwoFactor() {
     <Page title="Two-factor authentication" onBack={showingCodes ? null : undefined}>
       <Loaded query={account}>
         {(a) => {
-          if (!a.hasPassword)
-            return <Text color={c.mutedForeground}>Two-factor protects password sign-ins. For a provider, turn it on in that account instead.</Text>
+          const proof = (v: string) => (a.hasPassword ? { password: v } : { code: v })
+          const enable = async (password?: string) => {
+            const r = await auth<{ totpURI: string; backupCodes: string[] }>("/api/auth/two-factor/enable", password === undefined ? {} : { password })
+            setStep({ name: "scan", uri: r.totpURI, backupCodes: r.backupCodes })
+          }
 
           if (step.name === "password") {
             const { purpose } = step
@@ -111,10 +120,7 @@ export default function TwoFactor() {
                   label="Confirm your password to start"
                   submit="Continue"
                   onCancel={idle}
-                  onPassword={async (password) => {
-                    const r = await auth<{ totpURI: string; backupCodes: string[] }>("/api/auth/two-factor/enable", { password })
-                    setStep({ name: "scan", uri: r.totpURI, backupCodes: r.backupCodes })
-                  }}
+                  onPassword={enable}
                 />
               )
             if (purpose === "codes")
@@ -122,11 +128,12 @@ export default function TwoFactor() {
                 <View style={{ gap: 16 }}>
                   <Text variant="bodySmall" color={c.mutedForeground}>New codes replace the old ones, which stop working.</Text>
                   <PasswordStep
-                    label="Confirm your password"
+                    label={a.hasPassword ? "Confirm your password" : "Enter the code from your authenticator app"}
                     submit="Make new codes"
+                    code={!a.hasPassword}
                     onCancel={idle}
-                    onPassword={async (password) => {
-                      const r = await auth<{ backupCodes: string[] }>("/api/auth/two-factor/generate-backup-codes", { password })
+                    onPassword={async (v) => {
+                      const r = await auth<{ backupCodes: string[] }>("/api/auth/two-factor/generate-backup-codes", proof(v))
                       setStep({ name: "codes", backupCodes: r.backupCodes })
                     }}
                   />
@@ -134,12 +141,13 @@ export default function TwoFactor() {
               )
             return (
               <PasswordStep
-                label="Confirm your password to turn off two-factor"
+                label={a.hasPassword ? "Confirm your password to turn off two-factor" : "Enter the code from your authenticator app to turn off two-factor"}
                 submit="Turn off two-factor"
                 danger
+                code={!a.hasPassword}
                 onCancel={idle}
-                onPassword={async (password) => {
-                  await auth("/api/auth/two-factor/disable", { password })
+                onPassword={async (v) => {
+                  await auth("/api/auth/two-factor/disable", proof(v))
                   actions.refresh()
                   snack({ text: "Two-factor is off." })
                   router.back()
@@ -228,7 +236,7 @@ export default function TwoFactor() {
           if (a.twoFactor)
             return (
               <View style={{ gap: 16 }}>
-                <Text color={c.mutedForeground}>Signing in with your password also asks for a code from your authenticator app.</Text>
+                <Text color={c.mutedForeground}>Signing in also asks for a code from your authenticator app.</Text>
                 <Button variant="outlined" label="New backup codes" onPress={() => setStep({ name: "password", purpose: "codes" })} />
                 {a.require2fa ? (
                   <Text variant="bodySmall" color={c.mutedForeground}>Your admin requires two-factor, so it can&apos;t be turned off.</Text>
@@ -240,9 +248,20 @@ export default function TwoFactor() {
 
           return (
             <View style={{ gap: 16 }}>
-              <Text color={c.mutedForeground}>Ask for a code from your phone after your password, so a leaked password alone can&apos;t get in.</Text>
+              <Text color={c.mutedForeground}>Ask for a code from your phone after you sign in, so a leaked password or provider account alone can&apos;t get in.</Text>
               {a.require2fa && <Text variant="bodySmall">Your admin requires two-factor on this Nimbus.</Text>}
-              <Button label="Set up two-factor" onPress={() => setStep({ name: "password", purpose: "enable" })} />
+              {error && <ErrorText>{error}</ErrorText>}
+              <Button
+                label="Set up two-factor"
+                busy={busy}
+                onPress={async () => {
+                  if (a.hasPassword) return setStep({ name: "password", purpose: "enable" })
+                  setBusy(true)
+                  setError(null)
+                  await enable().catch((e) => setError(errorText(e)))
+                  setBusy(false)
+                }}
+              />
             </View>
           )
         }}
