@@ -605,6 +605,10 @@ export const NOTIFICATION_KINDS = [
   "document_expiring",
   // A new container registry token was made for your account.
   "registry_token",
+  // Registry: a cleanup policy removed tags, a namespace is nearly out of registry storage, a scan found something (R3).
+  "registry_cleanup",
+  "registry_quota",
+  "registry_scan",
 ] as const
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number]
 // Only admins get these, so only admins see their settings.

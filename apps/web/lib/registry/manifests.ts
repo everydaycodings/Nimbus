@@ -16,6 +16,7 @@ import {
 } from "@/lib/db/schema"
 import type { registryRepos } from "@/lib/db/schema"
 
+import { announce, checkRegistryQuota } from "./events.ts"
 import type { C } from "./http.ts"
 import { RegError, errors, json, respond } from "./http.ts"
 import { MAX_MANIFEST_BYTES, matchPattern, parseDigest, validTag } from "./rules.ts"
@@ -23,18 +24,18 @@ import { paginate } from "./wire.ts"
 
 type Repo = typeof registryRepos.$inferSelect
 
-const DOCKER_MANIFEST = "application/vnd.docker.distribution.manifest.v2+json"
-const DOCKER_LIST = "application/vnd.docker.distribution.manifest.list.v2+json"
-const OCI_MANIFEST = "application/vnd.oci.image.manifest.v1+json"
-const OCI_INDEX = "application/vnd.oci.image.index.v1+json"
-const INDEXES = [DOCKER_LIST, OCI_INDEX]
-const KNOWN = [DOCKER_MANIFEST, OCI_MANIFEST, ...INDEXES]
+export const DOCKER_MANIFEST = "application/vnd.docker.distribution.manifest.v2+json"
+export const DOCKER_LIST = "application/vnd.docker.distribution.manifest.list.v2+json"
+export const OCI_MANIFEST = "application/vnd.oci.image.manifest.v1+json"
+export const OCI_INDEX = "application/vnd.oci.image.index.v1+json"
+export const INDEXES = [DOCKER_LIST, OCI_INDEX]
+export const KNOWN = [DOCKER_MANIFEST, OCI_MANIFEST, ...INDEXES]
 // Image configs aren't an "artifact type"; anything else in config.mediaType is (helm, wasm, …).
-const IMAGE_CONFIGS = ["application/vnd.oci.image.config.v1+json", "application/vnd.docker.container.image.v1+json"]
+export const IMAGE_CONFIGS = ["application/vnd.oci.image.config.v1+json", "application/vnd.docker.container.image.v1+json"]
 
-type Desc = { mediaType?: string; digest?: string; size?: number; urls?: string[]; platform?: { os?: string; architecture?: string; variant?: string }; artifactType?: string; annotations?: Record<string, string> }
+export type Desc = { mediaType?: string; digest?: string; size?: number; urls?: string[]; platform?: { os?: string; architecture?: string; variant?: string }; artifactType?: string; annotations?: Record<string, string> }
 
-const hashOf = (algo: "sha256" | "sha512", b: Buffer) => `${algo}:${createHash(algo).update(b).digest("hex")}`
+export const hashOf = (algo: "sha256" | "sha512", b: Buffer) => `${algo}:${createHash(algo).update(b).digest("hex")}`
 
 async function readBody(req: Request) {
   const parts: Buffer[] = []
@@ -49,7 +50,7 @@ async function readBody(req: Request) {
 }
 
 // The live manifest a tag or digest points to.
-async function find(repoId: string, ref: string) {
+export async function find(repoId: string, ref: string) {
   let digest = ref
   if (!parseDigest(ref)) {
     const [t] = await db
@@ -187,6 +188,8 @@ export async function putManifest(c: C, repo: Repo, name: string, ref: string) {
     if (!moved.length) await db.insert(registryTags).values({ repoId: repo.id, name: tag, ...set })
   }
   await auditAs({ id: c.actor.userId, name: c.who.name }, "registry_push", `${name}:${tag ?? digest}`, { ip: c.who.ip })
+  await announce("push", repo.id, name, { tag, digest, mediaType, size: bytes.length, pushedBy: c.who.name })
+  await checkRegistryQuota(repo.namespaceId)
   return respond(201, null, {
     Location: `/v2/${name}/manifests/${digest}`,
     "Docker-Content-Digest": digest,
@@ -206,8 +209,9 @@ export async function deleteManifest(c: C, repo: Repo, name: string, ref: string
       .update(registryTags)
       .set({ deletedAt: now })
       .where(and(eq(registryTags.repoId, repo.id), eq(registryTags.name, ref), isNull(registryTags.deletedAt)))
-      .returning({ id: registryTags.id })
+      .returning({ id: registryTags.id, digest: registryTags.digest })
     if (!gone.length) throw errors.manifestUnknown(ref)
+    await announce("delete", repo.id, name, { tag: ref, digest: gone[0].digest, pushedBy: c.who.name })
   } else {
     const m = await find(repo.id, ref)
     if (!m) throw errors.manifestUnknown(ref)
@@ -219,6 +223,7 @@ export async function deleteManifest(c: C, repo: Repo, name: string, ref: string
     if (locked) throw errors.denied(`Tag ${locked.name} is immutable.`)
     await db.update(registryTags).set({ deletedAt: now }).where(and(eq(registryTags.repoId, repo.id), eq(registryTags.digest, ref), isNull(registryTags.deletedAt)))
     await db.update(registryManifests).set({ deletedAt: now }).where(eq(registryManifests.id, m.id))
+    await announce("delete", repo.id, name, { digest: m.digest, mediaType: m.mediaType, size: m.size, pushedBy: c.who.name })
   }
   await auditAs({ id: c.actor.userId, name: c.who.name }, "registry_delete", `${name}:${ref}`, { ip: c.who.ip })
   return respond(202, null, { "Content-Length": "0" })

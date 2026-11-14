@@ -3,9 +3,10 @@
 import "server-only"
 
 import { canPull, canPush, catalogFor, createRepoOnPush, resolveRepo } from "./access.ts"
-import { getBlob, linked, linkExisting, unlinkBlob } from "./blobs.ts"
+import { getBlob, linked, linkExisting, throttle, unlinkBlob } from "./blobs.ts"
 import { RegError, errors, json, respond, type C } from "./http.ts"
 import { deleteManifest, getManifest, listTags, page, putManifest, referrers } from "./manifests.ts"
+import { isMirror, mirrorBlob, mirrorManifest, mirrorRepo } from "./mirror.ts"
 import { splitName, validUploadDigest } from "./rules.ts"
 import { contentRange } from "./wire.ts"
 import { discard, finish, getUpload, patch, startUpload } from "./uploads.ts"
@@ -24,6 +25,8 @@ const decode = (s: string) => {
 // nothing leaks); signed-in callers who can't read it get "unknown".
 async function readable(c: C, name: string): Promise<Resolved> {
   if (!splitName(name)) throw errors.nameInvalid(name)
+  // The pull-through mirror's cached copies (tags/list, referrers); blobs and manifests are handled before this.
+  if (isMirror(name)) return { repo: await mirrorRepo(c, name), namespace: null as never }
   const r = await resolveRepo(name)
   if (!r || !(await canPull(c.actor, r.repo, r.namespace))) {
     if (!c.actor.userId) throw errors.unauthorized()
@@ -35,6 +38,7 @@ async function readable(c: C, name: string): Promise<Resolved> {
 async function writable(c: C, name: string, create: boolean): Promise<Resolved> {
   if (!splitName(name)) throw errors.nameInvalid(name)
   if (!c.actor.userId) throw errors.unauthorized()
+  if (isMirror(name)) throw errors.denied("The pull-through mirror is read-only.")
   const r = await resolveRepo(name)
   if (r) {
     if (!(await canPush(c.actor, r.namespace, r.repo))) throw errors.denied()
@@ -84,7 +88,7 @@ async function uploads(c: C, name: string, id: string | null) {
         await discard(row)
         throw errors.digestInvalid("Invalid digest.")
       }
-      await finish(row, namespace, digest, c.req.body)
+      await finish(row, namespace, digest, await throttle(c.actor.tokenId, c.req.body))
       return respond(201, null, { Location: `/v2/${name}/blobs/${digest}`, "Docker-Content-Digest": digest, "Content-Length": "0" })
     }
     return respond(202, null, uploadHeaders(name, row.id, 0))
@@ -99,14 +103,14 @@ async function uploads(c: C, name: string, id: string | null) {
   }
   if (m === "PATCH") {
     checkRange(c, name, row)
-    const next = await patch(row, c.req.body)
+    const next = await patch(row, await throttle(c.actor.tokenId, c.req.body))
     return respond(202, null, uploadHeaders(name, next.id, next.offset))
   }
   if (m === "PUT") {
     const digest = c.q.get("digest")
     if (!digest || !validUploadDigest(digest)) throw errors.digestInvalid("A sha256 digest query parameter is required.")
     checkRange(c, name, row)
-    await finish(row, namespace, digest, c.req.body)
+    await finish(row, namespace, digest, await throttle(c.actor.tokenId, c.req.body))
     return respond(201, null, { Location: `/v2/${name}/blobs/${digest}`, "Docker-Content-Digest": digest, "Content-Length": "0" })
   }
   throw errors.unsupported("Method not allowed.")
@@ -134,7 +138,8 @@ export async function dispatch(c: C): Promise<Response> {
   if ((g = /^\/v2\/(.+)\/blobs\/([^/]+)$/.exec(path))) {
     const [name, digest] = [decode(g[1]), decode(g[2])]
     if (!/^[a-z0-9]+:[a-zA-Z0-9=_-]+$/.test(digest)) throw errors.digestInvalid("Invalid digest.")
-    if (read) return getBlob((await readable(c, name)).repo.id, digest, c.req.headers.get("range"), head)
+    if (read && isMirror(name)) return mirrorBlob(c, name, digest, c.req.headers.get("range"), head)
+    if (read) return getBlob((await readable(c, name)).repo.id, digest, c.req.headers.get("range"), head, c.actor.tokenId)
     if (m === "DELETE") {
       await unlinkBlob((await writable(c, name, false)).repo.id, digest)
       return respond(202, null, { "Content-Length": "0" })
@@ -142,6 +147,7 @@ export async function dispatch(c: C): Promise<Response> {
   }
   if ((g = /^\/v2\/(.+)\/manifests\/([^/]+)$/.exec(path))) {
     const [name, ref] = [decode(g[1]), decode(g[2])]
+    if (read && isMirror(name)) return mirrorManifest(c, name, ref, head)
     if (read) return getManifest((await readable(c, name)).repo, ref, head)
     if (m === "PUT") return putManifest(c, (await writable(c, name, true)).repo, name, ref)
     if (m === "DELETE") return deleteManifest(c, (await writable(c, name, false)).repo, name, ref)

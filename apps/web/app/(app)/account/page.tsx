@@ -68,6 +68,9 @@ const KIND_LABEL = {
   phone_backup: "My phone hasn't backed up contacts or calendar for 7 days",
   document_expiring: "A document is about to expire or fall due (Documents)",
   registry_token: "A new container registry token is made for my account",
+  registry_cleanup: "A registry cleanup policy removes tags or images from my namespace",
+  registry_quota: "My registry namespace is nearly out of storage (90%)",
+  registry_scan: "A registry image scan finds critical vulnerabilities",
   secrets: "Secrets: change and access requests, rotation reminders, expiring tokens, project invites",
 } as const
 

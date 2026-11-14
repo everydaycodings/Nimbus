@@ -631,6 +631,9 @@ export type NotificationKind =
   | "secrets"
   | "document_expiring"
   | "registry_token"
+  | "registry_cleanup"
+  | "registry_quota"
+  | "registry_scan"
 export type Notification = {
   id: string
   kind: NotificationKind

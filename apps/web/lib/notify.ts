@@ -216,6 +216,9 @@ async function describe(userId: string, ids?: string[]) {
       phone_backup: `${d.device ?? "Your phone"} hasn't backed up contacts or calendar for 7 days`,
       document_expiring: `“${r.name ?? "A document"}” ${d.what === "expired" ? "has expired" : d.days === "0" ? "expires today" : d.days === "1" ? "expires tomorrow" : `expires in ${d.days ?? "a few"} days`}`,
       registry_token: `A new registry token “${d.name ?? "unnamed"}” was made for your account${d.ip ? ` from ${d.ip}` : ""}. Revoke it in Registry if it wasn't you.`,
+      registry_cleanup: `Registry cleanup removed ${d.tags ?? "0"} tag${d.tags === "1" ? "" : "s"}${Number(d.untagged) ? ` and ${d.untagged} untagged image${d.untagged === "1" ? "" : "s"}` : ""} from ${d.name ?? "your namespace"}. They stay in the trash for 7 days.`,
+      registry_quota: `Registry storage for ${d.name ?? "your namespace"} is ${d.percent ?? 90}% full. Delete old images or ask an admin for more.`,
+      registry_scan: `A registry scan found ${d.critical ?? "critical"} vulnerabilities in ${d.name ?? "an image"}`,
       secrets: d.text ?? "Something needs a look in Secrets",
     }[r.kind]
     const seen = r.nodeId ? access.get(r.nodeId) : undefined
@@ -242,7 +245,7 @@ async function describe(userId: string, ids?: string[]) {
               : "/account#connect"
           : r.kind === "storage_low"
             ? "/storage"
-          : r.kind === "registry_token"
+          : r.kind === "registry_token" || r.kind === "registry_cleanup" || r.kind === "registry_quota" || r.kind === "registry_scan"
             ? "/registry"
           : r.kind === "phone_backup"
             ? `/account/phone-backup/${d.id}`

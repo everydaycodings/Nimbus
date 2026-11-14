@@ -1,6 +1,10 @@
 // The worker (scripts/worker.ts) hands queued and scheduled jobs here, because
 // they reuse the app's database, storage and email code. Anything but a 2xx
 // makes the worker try the job again later.
+import { eq, isNull } from "drizzle-orm"
+
+import { db } from "@/lib/db"
+import { registryNamespaces, registryRepos } from "@/lib/db/schema"
 import { purgeActivity } from "@/lib/activity"
 import { backupAlert } from "@/lib/backup/alert"
 import { sweepJunk } from "@/lib/dav/locks"
@@ -9,6 +13,11 @@ import { purgeExpiredTrash } from "@/lib/files"
 import { sweepOrphans } from "@/lib/orphan-sweep"
 import { sendPush } from "@/lib/push"
 import { computeEtags } from "@/lib/s3api/etags"
+import { checkRegistryQuota, namespaceOwners } from "@/lib/registry/events"
+import { runGc, purgeTrash } from "@/lib/registry/gc"
+import { deliver as deliverRegistryHook } from "@/lib/registry/hooks"
+import { expireMirror } from "@/lib/registry/mirror"
+import { applyPolicy, effectivePolicy } from "@/lib/registry/policy"
 import { abortStale as abortStaleUploads } from "@/lib/registry/uploads"
 import { abortStale } from "@/lib/s3api/multipart"
 import { scanNode, scanUser } from "@/lib/secrets/leaks"
@@ -17,6 +26,7 @@ import { runRootRotation } from "@/lib/secrets/root-rotate"
 import { runPush } from "@/lib/secrets/push"
 import { expireLease } from "@/lib/secrets/dynamic"
 import { deliver } from "@/lib/secrets/webhooks"
+import { notify } from "@/lib/notify"
 import { recheckWarned } from "@/lib/quota"
 import { removeObjects } from "@/lib/s3"
 import { remindExpiring } from "@/lib/services/documents"
@@ -24,6 +34,30 @@ import { alertStalePhones } from "@/lib/services/phone-backup"
 import { purgeTransfers } from "@/lib/services/transfers"
 import { readToken } from "@/lib/upload-rules"
 import { finishTusUpload } from "@/lib/uploads"
+
+// Every live repo with a policy (its own or its namespace's); one bell per namespace owner when something went.
+async function runPolicies() {
+  const repos = await db
+    .select({ id: registryRepos.id, name: registryRepos.name, namespaceId: registryRepos.namespaceId, ns: registryNamespaces.name })
+    .from(registryRepos)
+    .innerJoin(registryNamespaces, eq(registryNamespaces.id, registryRepos.namespaceId))
+    .where(isNull(registryRepos.deletedAt))
+  const removed = new Map<string, { name: string; tags: number; untagged: number }>()
+  for (const r of repos) {
+    if (!(await effectivePolicy(r.id))) continue
+    const done = await applyPolicy(r.id)
+    if (!done.tags.length && !done.untagged.length) continue
+    const t = removed.get(r.namespaceId) ?? { name: r.ns, tags: 0, untagged: 0 }
+    t.tags += done.tags.length
+    t.untagged += done.untagged.length
+    removed.set(r.namespaceId, t)
+  }
+  for (const [namespaceId, t] of removed) {
+    for (const id of await namespaceOwners(namespaceId))
+      await notify(id, "registry_cleanup", { data: { name: t.name, tags: String(t.tags), untagged: String(t.untagged) } })
+    await checkRegistryQuota(namespaceId)
+  }
+}
 
 const jobs: Record<string, (data: never) => Promise<unknown>> = {
   purge: async () => {
@@ -37,6 +71,11 @@ const jobs: Record<string, (data: never) => Promise<unknown>> = {
   "s3-etags": computeEtags,
   "s3-multipart-stale": abortStale,
   "registry-uploads-stale": abortStaleUploads,
+  "registry-gc": () => runGc(),
+  "registry-trash-purge": purgeTrash,
+  "registry-policy": runPolicies,
+  "registry-mirror-expire": expireMirror,
+  "registry-webhook": ({ id }: { id: string }) => deliverRegistryHook(id),
   "phone-backup-stale": alertStalePhones,
   "documents-remind": remindExpiring,
   email: (m: Message) => sendNow(m),

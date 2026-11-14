@@ -5,13 +5,42 @@ import { and, eq, sql } from "drizzle-orm"
 
 import { db } from "@/lib/db"
 import { registryBlobs, registryRepoBlobs, registryRepos, settings } from "@/lib/db/schema"
+import { redis } from "@/lib/redis"
 import { getRange, presignGet } from "@/lib/s3"
+import { getSettings } from "@/lib/signup"
 import type { registryNamespaces } from "@/lib/db/schema"
 
 import { RegError, errors, respond } from "./http.ts"
 import { registrySpaceLeft } from "./quota.ts"
 
 type Ns = typeof registryNamespaces.$inferSelect
+
+// Bandwidth limit (settings.registryBpsLimit, bytes a second) shared by all of one token's
+// streams: each chunk adds to a per-second counter in Redis and waits for the next second once
+// the second's budget is spent. Redis down: no limit. Not applied to 307 redirects.
+export async function throttle(tokenId: string | null, body: ReadableStream<Uint8Array> | null) {
+  const bps = (await getSettings()).registryBpsLimit
+  if (!body || !bps) return body
+  return body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      async transform(chunk, ctl) {
+        for (;;) {
+          const sec = Math.floor(Date.now() / 1000)
+          const k = `registry:bps:${tokenId ?? "anon"}:${sec}`
+          let used = 0
+          try {
+            used = ((await redis.multi().incrby(k, chunk.byteLength).expire(k, 3).exec()) as [[null, number]])[0][1] - chunk.byteLength
+          } catch {
+            break
+          }
+          if (used < bps) break
+          await new Promise((r) => setTimeout(r, (sec + 1) * 1000 - Date.now() + 5))
+        }
+        ctl.enqueue(chunk)
+      },
+    })
+  )
+}
 
 // The blob when this repo holds it.
 export async function linked(repoId: string, digest: string) {
@@ -23,7 +52,7 @@ export async function linked(repoId: string, digest: string) {
   return row ?? null
 }
 
-export async function getBlob(repoId: string, digest: string, range: string | null, head: boolean) {
+export async function getBlob(repoId: string, digest: string, range: string | null, head: boolean, tokenId: string | null = null) {
   const b = await linked(repoId, digest)
   if (!b) throw errors.blobUnknown(digest)
   const base = {
@@ -39,7 +68,7 @@ export async function getBlob(repoId: string, digest: string, range: string | nu
   const m = range && /^bytes=\d*-\d*$/.test(range) && range !== "bytes=-" ? range : undefined
   try {
     const r = await getRange(b.key, m)
-    return respond(m ? 206 : 200, r.body, {
+    return respond(m ? 206 : 200, await throttle(tokenId, r.body), {
       ...base,
       "Content-Length": String(r.length ?? b.size),
       ...(r.contentRange && { "Content-Range": r.contentRange }),
@@ -72,6 +101,8 @@ export async function inNamespace(namespaceId: string, digest: string) {
 
 // Throws unless the namespace has room for `size` more bytes (nothing when it already holds the digest).
 export async function claimSpace(ns: Ns, digest: string, size: number) {
+  // The pull-through mirror's namespace (refId "system") isn't metered.
+  if (ns.kind === "org" && ns.refId === "system") return
   if (await inNamespace(ns.id, digest)) return
   const left = await registrySpaceLeft(ns.id)
   if (left !== null && size > left) throw errors.denied("The registry storage quota for this namespace is full.")

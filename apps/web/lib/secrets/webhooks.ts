@@ -19,7 +19,7 @@ import { SecretsError, systemCtx, type Ctx } from "./service"
 export const sign = (secret: string, body: string) =>
   `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`
 
-const checkUrl = (raw: string) => {
+export const checkUrl = (raw: string) => {
   let u: URL
   try {
     u = new URL(raw.trim())
@@ -35,7 +35,7 @@ const checkUrl = (raw: string) => {
 const allowPrivate = async () => Boolean((await db.select({ on: settings.secretAllowPrivate }).from(settings))[0]?.on)
 
 // Where a delivery may go: public addresses unless an admin allows private ones (lib/secrets/egress.ts).
-async function dialable(u: URL) {
+export async function dialable(u: URL) {
   return checkAddress(u.hostname, Number(u.port) || (u.protocol === "https:" ? 443 : 80), await allowPrivate())
 }
 
@@ -48,7 +48,7 @@ async function checkHookUrl(raw: string) {
 }
 
 // One POST to the checked address (no second DNS lookup), no redirects, the answer's body thrown away.
-function post(u: URL, ip: string, headers: Record<string, string>, body: string) {
+export function post(u: URL, ip: string, headers: Record<string, string>, body: string) {
   return new Promise<number>((resolve, reject) => {
     const req = (u.protocol === "https:" ? https : http).request(
       u,
