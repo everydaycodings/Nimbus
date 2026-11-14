@@ -70,6 +70,7 @@ import {
   tagItems,
   trashItems,
 } from "@/app/(app)/file-actions"
+import { getBucket, markBucket, unmarkBucket } from "@/app/(app)/buckets/actions"
 import { dismissDocs, markDocs } from "@/app/(app)/documents/actions"
 import type { Version } from "@/app/(app)/upload-actions"
 import { CommentCount } from "@/components/comments"
@@ -514,6 +515,23 @@ export function FileBrowser({
     })
   }
 
+  // Only the bucket goes; the folder and its files stay. Undo marks it again with the same name.
+  function stopBucket(folder: Item) {
+    setNotice(null)
+    start(async () => {
+      const b = await getBucket(folder.id)
+      const r = b ? await unmarkBucket(b.id) : { error: "That folder isn't an S3 bucket any more." }
+      if (r.error || !b) return setNotice({ text: r.error ?? "", error: true })
+      setNotice({
+        text: `“${folder.name}” is no longer an S3 bucket. Apps using “${b.name}” lose access.`,
+        undo: () =>
+          run(() => markBucket(folder.id, b.name, b.quiet), {
+            text: `“${folder.name}” is an S3 bucket again.`,
+          }),
+      })
+    })
+  }
+
   function star(list: Item[]) {
     const on = !list.every((i) => i.starred)
     run(
@@ -942,16 +960,25 @@ export function FileBrowser({
         },
       s3On &&
         one?.kind === "folder" &&
-        !one.shortcut && {
-          label: "Use as S3 bucket…",
-          icon: CubeIcon,
-          menuOnly: true,
-          group: 2,
-          run: () => {
-            setBucketFor(one)
-            setBucketOpen(true)
-          },
-        },
+        !one.shortcut &&
+        (one.bucket
+          ? {
+              label: "Stop using as S3 bucket",
+              icon: CubeIcon,
+              menuOnly: true,
+              group: 2,
+              run: () => stopBucket(one),
+            }
+          : {
+              label: "Use as S3 bucket…",
+              icon: CubeIcon,
+              menuOnly: true,
+              group: 2,
+              run: () => {
+                setBucketFor(one)
+                setBucketOpen(true)
+              },
+            }),
       edit &&
         one?.kind === "file" && {
           label: "Change thumbnail…",
