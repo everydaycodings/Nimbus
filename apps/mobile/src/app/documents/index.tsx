@@ -23,7 +23,7 @@ import {
   X,
 } from "phosphor-react-native"
 import { useCallback, useEffect, useState } from "react"
-import { ActivityIndicator, BackHandler, FlatList, Pressable, RefreshControl, ScrollView, TextInput, View, useWindowDimensions } from "react-native"
+import { ActivityIndicator, BackHandler, PixelRatio, FlatList, Pressable, RefreshControl, ScrollView, TextInput, View, useWindowDimensions } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { PromptDialog } from "@/components/dialog"
@@ -123,16 +123,16 @@ export default function Documents() {
     if (!mine.length) snack({ text: "Documents shared with you can't be changed.", error: true })
     return mine.length > 0
   }
-  const done = (text?: string) => {
+  const done = (text?: string, undo?: () => void) => {
     setSelected([])
-    if (text) snack({ text })
+    if (text) snack({ text, undo })
   }
-  const run = async (task: () => Promise<string | void>, text: string) => {
+  const run = async (task: () => Promise<string | void>, text: string, undo?: () => void) => {
     setBusy(true)
     const err = await task()
     setBusy(false)
     if (err) snack({ text: err, error: true })
-    else done(text)
+    else done(text, undo)
   }
 
   const add = async (files: () => Promise<Entry[]>) => {
@@ -228,7 +228,7 @@ export default function Documents() {
         <View style={{ paddingHorizontal: 16, paddingBottom: 4 }}>
           <Segments
             value={dismissed ? "all" : tab}
-            options={[{ value: "all", label: "All" }, { value: "review", label: review ? `Needs review · ${review}` : "Needs review" }, { value: "totals", label: "Totals" }]}
+            options={[{ value: "all", label: "All" }, { value: "review", label: PixelRatio.getFontScale() > 1.3 ? (review ? `Review · ${review}` : "Review") : review ? `Needs review · ${review}` : "Needs review" }, { value: "totals", label: "Totals" }]}
             onChange={(t) => (setDismissed(false), setTab(t))}
           />
         </View>
@@ -257,7 +257,7 @@ export default function Documents() {
         </>
       ) : (
         <>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: 12, gap: 8 }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, flexShrink: 0 }} contentContainerStyle={{ paddingHorizontal: 12, gap: 8 }}>
             <Chip label={filters.type ? (types.data?.find((t) => t.id === filters.type)?.name ?? "Type") : "Type"} icon={Tag} on={!!filters.type} onPress={() => setSheet("type")} />
             <Chip label={filters.sender ? (senders.data?.find((s) => s.id === filters.sender)?.name ?? "Sender") : "Sender"} icon={UserCircle} on={!!filters.sender} onPress={() => setSheet("sender")} />
             <Chip label={filters.year ? String(filters.year) : filters.from || filters.to ? "Date range" : "Date"} icon={CalendarBlank} on={!!(filters.year || filters.from || filters.to)} onPress={() => setSheet("date")} />
@@ -324,7 +324,7 @@ export default function Documents() {
       )}
       {bulk === "more" && (
         <Sheet onClose={() => setBulk(null)}>
-          <SheetRow label="Not a document" detail="Hide them from Documents. The files stay where they are." needsNet icon={<FileDashed size={24} color={c.mutedForeground} />} onPress={() => need() && run(() => actions.mark(ids, false), "Marked as not a document.")} />
+          <SheetRow label="Not a document" detail="Hide them from Documents. The files stay where they are." needsNet icon={<FileDashed size={24} color={c.mutedForeground} />} onPress={() => need() && run(() => actions.mark(ids, false), `${ids.length === 1 ? "1 file" : `${ids.length} files`} hidden from Documents.`, () => void actions.mark(ids, true))} />
         </Sheet>
       )}
       {bulk === "add" && (
@@ -346,7 +346,7 @@ export default function Documents() {
             try {
               const r = await actions.merge(selected.filter((d) => d.role === "owner").map((d) => d.id), name || undefined)
               actions.refresh()
-              done(`Made ${r.name} in Documents.`)
+              done("Merged into one PDF in your Documents folder.")
             } catch (e) {
               return errorText(e)
             }

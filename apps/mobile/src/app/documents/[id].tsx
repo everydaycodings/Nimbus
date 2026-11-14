@@ -82,16 +82,17 @@ function Editor({ d }: { d: DocumentDetail }) {
     else if (confirm) router.back()
   }
 
-  // Nimbus's guesses that the form doesn't already say.
+  // Hints as on the web: "Guessed from the text" while the field is the guess, "Guessed X · Use" once changed.
   const g = d.guess
+  const review = d.status === "review" && !readOnly
   const guessType = g.type ? types.data?.find((t) => t.key === g.type || t.name.toLowerCase() === g.type!.toLowerCase()) : undefined
-  const guesses: { label: string; apply: () => void }[] = [
-    ...(guessType && guessType.id !== form.typeId ? [{ label: guessType.name, apply: () => set({ typeId: guessType.id }) }] : []),
-    ...(g.sender && g.sender !== form.sender ? [{ label: g.sender, apply: () => set({ sender: g.sender! }) }] : []),
-    ...(g.date && g.date !== form.docDate ? [{ label: dayText(g.date), apply: () => set({ docDate: g.date! }) }] : []),
-    ...(g.amount != null && String(g.amount) !== form.amount ? [{ label: money(g.amount, g.currency ?? null) ?? "", apply: () => set({ amount: String(g.amount), currency: g.currency ?? form.currency }) }] : []),
-    ...(g.expiry && g.expiry !== form.expiresAt ? [{ label: `Expires ${dayText(g.expiry)}`, apply: () => set({ expiresAt: g.expiry! }) }] : []),
-  ]
+  const clipType = !g.type && g.clip ? (types.data?.find((t) => t.key === g.clip!.type)?.name.toLowerCase() ?? g.clip.type) : null
+  const known = (senders.data ?? []).some((s) => s.name.toLowerCase() === form.sender.trim().toLowerCase())
+  const dateGuess = g.date ? dayText(g.date) : null
+  const amountGuess = g.amount != null ? money(g.amount, g.currency ?? null) : null
+  const expiryGuess = g.expiry ? dayText(g.expiry) : null
+  const hint = (same: boolean, guess: string | null | undefined, use: () => void) =>
+    review && guess ? <GuessHint same={same} guess={guess} use={use} /> : null
 
   const lock = readOnly ? { editable: false } : {}
   return (
@@ -107,41 +108,35 @@ function Editor({ d }: { d: DocumentDetail }) {
           />
         )}
         {exp && exp.tone !== "muted" && <Note tone={exp.tone === "danger" ? "danger" : "warn"} text={exp.text} />}
-        {d.status === "review" && !readOnly && (
-          <View style={{ gap: 8 }}>
-            <Text variant="bodySmall" color={c.mutedForeground}>Nimbus filled this in by reading the file. Check it, then confirm.</Text>
-            {guesses.length > 0 && (
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                {guesses.map((x) => (
-                  <Pressable key={x.label} accessibilityRole="button" accessibilityLabel={`Use guess ${x.label}`} onPress={x.apply} android_ripple={{ color: c.ripple }} style={{ minHeight: 36, justifyContent: "center", paddingHorizontal: 12, borderRadius: radius.pill, borderWidth: 1, borderColor: c.input }}>
-                    <Text variant="bodySmall">Use {x.label}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            )}
-          </View>
-        )}
+        {review && <Text variant="bodySmall" color={c.mutedForeground}>Nimbus filled this in by reading the file. Check it, then confirm.</Text>}
 
         <Pick label="Type" value={typeLine} placeholder="No type" disabled={readOnly} onPress={() => setSheet("type")} />
+        {hint(form.typeId === guessType?.id, guessType?.name, () => set({ typeId: guessType!.id }))}
+        {review && clipType && <Text variant="caption" color={c.mutedForeground} style={{ marginTop: -12 }}>Looks like {clipType} ({Math.round(g.clip!.score * 100)}% sure)</Text>}
         <Field label="Sender" value={form.sender} onChangeText={(sender) => set({ sender })} autoCapitalize="words" placeholder="Who it is from" {...lock} />
+        {!readOnly && form.sender.trim() && !known && <Text variant="caption" color={c.mutedForeground} style={{ marginTop: -12 }}>New sender, added when you save</Text>}
+        {hint(form.sender === g.sender, g.sender, () => set({ sender: g.sender! }))}
         {!readOnly && senders.data && senders.data.length > 0 && (
           <Pressable accessibilityRole="button" onPress={() => setSheet("sender")} style={{ marginTop: -12, minHeight: 36, justifyContent: "center", alignSelf: "flex-start" }}>
             <Text variant="bodySmall" color={c.brand}>Pick a known sender</Text>
           </Pressable>
         )}
         <ReadOnlyDate on={readOnly} label="Document date" value={form.docDate} onChange={(docDate) => set({ docDate })} />
+        {hint(form.docDate === g.date, dateGuess, () => set({ docDate: g.date! }))}
         <View style={{ flexDirection: "row", gap: 12 }}>
           <View style={{ flex: 2 }}><Field label="Amount" value={form.amount} onChangeText={(amount) => set({ amount })} keyboardType="decimal-pad" placeholder="0.00" {...lock} /></View>
           <View style={{ flex: 1 }}><Field label="Currency" value={form.currency} onChangeText={(currency) => set({ currency })} autoCapitalize="characters" maxLength={3} placeholder="USD" {...lock} /></View>
         </View>
+        {hint(String(g.amount) === form.amount, amountGuess, () => set({ amount: String(g.amount), currency: g.currency ?? form.currency }))}
         <ReadOnlyDate on={readOnly} label="Expires or due" value={form.expiresAt} onChange={(expiresAt) => set({ expiresAt })} />
+        {hint(form.expiresAt === g.expiry, expiryGuess, () => set({ expiresAt: g.expiry! }))}
         <Field
           label="Remind me before (days)"
           value={form.remindDays}
           onChangeText={(remindDays) => set({ remindDays })}
           keyboardType="number-pad"
           placeholder={follow == null ? "Never" : String(follow)}
-          hint={form.remindDays ? undefined : follow == null ? "This type never reminds. Enter days to remind." : `Following the type: ${follow} days before.`}
+          hint={form.remindDays.trim() ? "Your own lead time." : follow == null ? "Follows the type: no reminder." : `Follows the type: ${follow} days.`}
           {...lock}
         />
         <Field label="Notes" value={form.notes} onChangeText={(notes) => set({ notes })} multiline style={{ minHeight: 88, textAlignVertical: "top" }} {...lock} />
@@ -243,6 +238,18 @@ function Note({ text, tone = "muted", action, onAction }: { text: string; tone?:
       <Warning size={20} color={color} />
       <Text variant="bodySmall" style={{ flex: 1 }}>{text}</Text>
       {action && <Button variant="text" label={action} onPress={onAction!} />}
+    </View>
+  )
+}
+
+function GuessHint({ same, guess, use }: { same: boolean; guess: string; use: () => void }) {
+  if (same) return <Text variant="caption" color={c.mutedForeground} style={{ marginTop: -12 }}>Guessed from the text</Text>
+  return (
+    <View style={{ marginTop: -12, flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
+      <Text variant="caption" color={c.mutedForeground}>Guessed {guess} · </Text>
+      <Pressable accessibilityRole="button" accessibilityLabel={`Use ${guess}`} onPress={use} hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}>
+        <Text variant="caption" style={{ textDecorationLine: "underline" }}>Use</Text>
+      </Pressable>
     </View>
   )
 }

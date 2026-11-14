@@ -216,9 +216,9 @@ export function Segments<T extends string>({ value, options, onChange }: { value
           accessibilityRole="button"
           accessibilityState={{ selected: o.value === value }}
           onPress={() => onChange(o.value)}
-          style={{ flex: 1, minHeight: 36, alignItems: "center", justifyContent: "center", borderRadius: radius.pill, backgroundColor: o.value === value ? c.muted : "transparent" }}
+          style={{ flexGrow: 1, flexShrink: 1, paddingHorizontal: 8, minHeight: 36, alignItems: "center", justifyContent: "center", borderRadius: radius.pill, backgroundColor: o.value === value ? c.muted : "transparent" }}
         >
-          <Text variant="label" color={o.value === value ? c.foreground : c.mutedForeground}>{o.label}</Text>
+          <Text variant="label" numberOfLines={1} color={o.value === value ? c.foreground : c.mutedForeground}>{o.label}</Text>
         </Pressable>
       ))}
     </View>
