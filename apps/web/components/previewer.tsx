@@ -457,7 +457,7 @@ export function Previewer({
                   aria-label="Document"
                   className="absolute inset-0 z-10 overflow-y-auto border-l bg-popover p-4 text-popover-foreground sm:static sm:w-96 sm:shrink-0 sm:rounded-tl-xl"
                 >
-                  <DocumentPanel key={item.id} id={item.id} owner={canEditItem(item)} />
+                  <DocumentPanel key={item.id} id={item.id} owner={item.role === undefined} />
                 </aside>
               )}
               {commentable && commentsOpen && (

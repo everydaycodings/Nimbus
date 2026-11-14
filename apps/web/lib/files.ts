@@ -54,6 +54,7 @@ import { mixHits } from "@/lib/ml"
 import { personHits, pictureHits } from "@/lib/services/ai-search"
 import { purgeSavedLogins } from "@/lib/saved-logins"
 import { getSession } from "@/lib/session"
+import { getSettings } from "@/lib/signup"
 import { deleteNodes } from "@/lib/uploads"
 
 // What the browser gets for each file or folder. Dates are ISO strings so they
@@ -494,7 +495,10 @@ export async function searchItems(
   // "has:comments" keeps files with comments; alone, it lists them all.
   const hasComments = /(^|\s)has:comments(?=\s|$)/i.test(raw)
   // type:, sender:, amount>, year: and expires: keep documents with those fields.
-  const { rest, tokens } = parseDocTokens(raw.replace(/(^|\s)has:comments(?=\s|$)/gi, " "))
+  // (Only when Documents is on; off, they are just words.)
+  const docsOn = (await getSettings()).documentsEnabled
+  const noComments = raw.replace(/(^|\s)has:comments(?=\s|$)/gi, " ")
+  const { rest, tokens } = docsOn ? parseDocTokens(noComments) : { rest: noComments.replace(/\s+/g, " ").trim(), tokens: {} }
   const q = rest.slice(0, 200)
   const onDocs = hasDocTokens(tokens)
   if (!q && !hasComments && !onDocs) return []
@@ -506,14 +510,15 @@ export async function searchItems(
     tokens.maxAmount !== undefined && sql`dd.amount <= ${tokens.maxAmount}`,
     tokens.year && sql`extract(year from dd.doc_date) = ${tokens.year}`,
     tokens.expires === "soon" &&
-      sql`dd.expires_at between current_date and current_date + coalesce(dd.remind_days, dt.remind_days, 30)`,
-    tokens.expires === "expired" && sql`dd.expires_at < current_date`,
+      sql`dd.expires_at between (now() at time zone 'UTC')::date and (now() at time zone 'UTC')::date + coalesce(dd.remind_days, dt.remind_days, 30)`,
+    tokens.expires === "expired" && sql`dd.expires_at < (now() at time zone 'UTC')::date`,
     tokens.expires === "any" && sql`dd.expires_at is not null`,
   ].filter(Boolean) as SQL[]
   // What's shared with the viewer: files they were given and everything inside shared folders.
   const visible = sql`shared as (
       select n.id from nodes n
       join shares s on s.node_id = n.id and s.grantee_id = ${viewer}
+        and (s.expires_at is null or s.expires_at > now())
       where n.trashed_at is null and n.vault_id is null
       union
       select c.id from nodes c join shared on c.parent_id = shared.id
@@ -560,7 +565,7 @@ export async function searchItems(
           left join doc_types dt on dt.id = dd.type_id
           left join doc_senders ds on ds.id = dd.sender_id
           where dd.node_id = n.id and dd.status <> 'dismissed'
-            and (dd.owner_id = ${viewer} or dd.status = 'confirmed')
+            and (n.owner_id = ${viewer} or dd.status = 'confirmed')
             and ${docWhere.length ? sql.join(docWhere, sql` and `) : sql`true`}))
     ), top as (
       select * from scored
@@ -686,11 +691,12 @@ export async function searchItems(
       )
     )
   const docs = new Map<string, NonNullable<Hit["docInfo"]>>()
-  for (const r of await db.execute<{ id: string } & NonNullable<Hit["docInfo"]>>(sql`
+  for (const r of docsOn ? await db.execute<{ id: string } & NonNullable<Hit["docInfo"]>>(sql`
     select d.node_id as id, t.name as type, s.name as sender, d.amount::float8 as amount, d.currency, d.doc_date::text as date
-    from documents d left join doc_types t on t.id = d.type_id left join doc_senders s on s.id = d.sender_id
-    where d.status <> 'dismissed' and (d.owner_id = ${viewer} or d.status = 'confirmed')
-      and d.node_id in (${sql.join(mixed.map((m) => sql`${m.id}`), sql`, `)})`))
+    from documents d join nodes dn on dn.id = d.node_id
+    left join doc_types t on t.id = d.type_id left join doc_senders s on s.id = d.sender_id
+    where d.status <> 'dismissed' and (dn.owner_id = ${viewer} or d.status = 'confirmed')
+      and d.node_id in (${sql.join(mixed.map((m) => sql`${m.id}`), sql`, `)})`) : [])
     docs.set(r.id, { type: r.type, sender: r.sender, amount: r.amount, currency: r.currency, date: r.date })
   return (await withAccess(viewer, rows))
     .sort((a, b) => rank.get(a.id)! - rank.get(b.id)!)

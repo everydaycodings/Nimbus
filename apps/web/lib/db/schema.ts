@@ -1672,7 +1672,10 @@ export const docTypes = pgTable(
     // Days before the expiry or due date to remind. Null: no reminder.
     remindDays: integer("remind_days"),
   },
-  (t) => [uniqueIndex("doc_types_owner_name_idx").on(sql`coalesce(${t.ownerId}, '')`, sql`lower(${t.name})`)]
+  (t) => [
+    uniqueIndex("doc_types_owner_name_idx").on(sql`coalesce(${t.ownerId}, '')`, sql`lower(${t.name})`),
+    check("doc_types_remind_days_check", sql`${t.remindDays} between 0 and 3650`),
+  ]
 )
 
 export const docSenders = pgTable(
@@ -1717,10 +1720,16 @@ export const documents = pgTable(
     // What the extractor and CLIP thought: {type, sender, confidence, clip, ...}.
     guess: jsonb("guess").$type<Record<string, unknown>>().notNull().default({}),
     dupOf: uuid("dup_of").references(() => nodes.id, { onDelete: "set null" }),
+    // Fields the owner has set by hand ("type", "sender", "date", "amount", "expiry"): the worker never guesses over them.
+    touched: text("touched").array().notNull().default([]),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    check("documents_remind_days_check", sql`${t.remindDays} between 0 and 3650`),
+    index("documents_dup_of_idx").on(t.dupOf),
+    index("documents_sender_idx").on(t.senderId),
+    index("documents_type_idx").on(t.typeId),
     index("documents_owner_status_idx").on(t.ownerId, t.status),
     index("documents_owner_expires_idx").on(t.ownerId, t.expiresAt),
     index("documents_owner_date_idx").on(t.ownerId, t.docDate),

@@ -11,14 +11,17 @@ const MAX_PER_ACCOUNT = 300
 
 const isPlain = (f: unknown) => JSON.stringify(f) === JSON.stringify(NO_FILTERS)
 
+// A document's OCR text is never written to disk.
+const noText = (k: string, v: unknown) => (k === "text" ? undefined : v)
+
 // What's worth keeping: Files, folders, Recent, Starred, Shared, an item's details, the counts, tags and me.
 function keep(q: Query) {
   const [a, b, c] = q.queryKey as [string, string, string]
   if (q.state.status !== "success") return null
   if (a === "me") return b
   if (!KEPT.has(b)) return null
-  // Documents: only the unfiltered list and the summary; filtered lists, OCR text and the rest are not saved.
-  if (b === "docs" && !(c === "summary" || (c === "list" && isPlain(q.queryKey[3])))) return null
+  // Documents: the unfiltered list, the summary and a document's details (saved without its OCR text); filtered lists and the rest are not saved.
+  if (b === "docs" && !(c === "summary" || c === "item" || (c === "list" && isPlain(q.queryKey[3])))) return null
   if (b === "list" && SKIP_LISTS.some((p) => String(c).startsWith(p))) return null
   return a
 }
@@ -46,7 +49,7 @@ export function persistQueries(client: QueryClient) {
         const account = keep({ queryKey: q.queryKey, state: q.state } as Query)
         if (!account) continue
         touched.add(account)
-        d.runSync("INSERT OR REPLACE INTO qcache(account,hash,data,updated) VALUES(?,?,?,?)", account, q.queryHash, JSON.stringify(q), Date.now())
+        d.runSync("INSERT OR REPLACE INTO qcache(account,hash,data,updated) VALUES(?,?,?,?)", account, q.queryHash, JSON.stringify(q, q.queryKey[1] === "docs" ? noText : undefined), Date.now())
       }
       for (const account of touched)
         d.runSync(

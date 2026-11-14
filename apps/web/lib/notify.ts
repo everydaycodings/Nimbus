@@ -212,7 +212,7 @@ async function describe(userId: string, ids?: string[]) {
           : `${who} wants to share their photos with you`,
       storage_low: `${r.actor ? `${who} reminded you: your` : "Your"} storage is ${d.percent ?? 90}% full. See what's using it.`,
       phone_backup: `${d.device ?? "Your phone"} hasn't backed up contacts or calendar for 7 days`,
-      document_expiring: `“${r.name ?? "A document"}” ${d.what === "expired" ? "has expired" : d.days === "0" ? "expires today" : `expires in ${d.days ?? "a few"} days`}`,
+      document_expiring: `“${r.name ?? "A document"}” ${d.what === "expired" ? "has expired" : d.days === "0" ? "expires today" : d.days === "1" ? "expires tomorrow" : `expires in ${d.days ?? "a few"} days`}`,
       secrets: d.text ?? "Something needs a look in Secrets",
     }[r.kind]
     const seen = r.nodeId ? access.get(r.nodeId) : undefined

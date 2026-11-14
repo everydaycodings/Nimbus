@@ -27,7 +27,12 @@ const pick = <T extends string>(
   d: T
 ) => (all.includes(v as T) ? (v as T) : d)
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const DAY = /^\d{4}-\d{2}-\d{2}$/
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/
+/** YYYY-MM-DD that is a real calendar day. */
+export const isDay = (d: string) => {
+  const t = DAY_RE.test(d) ? Date.parse(d + "T00:00:00Z") : NaN
+  return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === d
+}
 const num = (v: string | undefined) =>
   v && v.trim() !== "" && Number.isFinite(Number(v)) ? String(Number(v)) : ""
 
@@ -42,8 +47,8 @@ export function readFilters(
     type: UUID.test(one("type") ?? "") ? one("type")! : "",
     sender: UUID.test(one("sender") ?? "") ? one("sender")! : "",
     year: /^\d{4}$/.test(one("year") ?? "") ? one("year")! : "",
-    from: DAY.test(one("from") ?? "") ? one("from")! : "",
-    to: DAY.test(one("to") ?? "") ? one("to")! : "",
+    from: isDay(one("from") ?? "") ? one("from")! : "",
+    to: isDay(one("to") ?? "") ? one("to")! : "",
     min: num(one("min")),
     max: num(one("max")),
     expiring: pick(

@@ -127,7 +127,6 @@ export function DocumentsView({
   const [opened, setOpened] = useState<DocumentItem | null>(open)
 
   // Filters live in the URL; the page reloads its data through the server.
-  const qs = hrefOf(filters)
   const go = (next: Partial<Filters>, replace = true) =>
     startFilter(() => {
       const href = hrefOf({ ...filters, ...next })
@@ -152,22 +151,31 @@ export function DocumentsView({
 
   // More pages are fetched here; they belong to the filters they were fetched for.
   const [more, setMore] = useState<{
-    qs: string
+    base: DocumentsResponse | null
     items: DocumentItem[]
     next: number | null
   } | null>(null)
-  const extra = more?.qs === qs ? more : null
+  // A fresh first page (a refresh after any change) drops them, so offsets never go stale.
+  const extra = more?.base === first ? more : null
   const items = first ? [...first.items, ...(extra?.items ?? [])] : []
   const next = extra ? extra.next : (first?.nextCursor ?? null)
 
+  const [loading, setLoading] = useState(false)
   async function loadMore() {
-    if (next === null) return
-    const r = await listDocs({ ...toQuery(filters), cursor: next })
-    setMore({
-      qs,
-      items: [...(extra?.items ?? []), ...r.items],
-      next: r.nextCursor,
-    })
+    if (next === null || loading) return
+    setLoading(true)
+    try {
+      const r = await listDocs({ ...toQuery(filters), cursor: next })
+      setMore({
+        base: first,
+        items: [...(extra?.items ?? []), ...r.items],
+        next: r.nextCursor,
+      })
+    } catch {
+      notice({ text: "Couldn't load more.", error: true })
+    } finally {
+      setLoading(false)
+    }
   }
 
   const chosen = items.filter((i) => selected.has(i.id))
@@ -951,6 +959,7 @@ export function DocumentsView({
               <Button
                 variant="outline"
                 className="self-center"
+                disabled={loading}
                 onClick={() => void loadMore()}
               >
                 Show more

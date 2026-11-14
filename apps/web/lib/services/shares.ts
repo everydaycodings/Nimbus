@@ -17,6 +17,7 @@ import { appUrl, emailEnabled, message, sendInBackground } from "@/lib/email"
 import { REQUEST_TYPES } from "@/lib/file-rules"
 import { UUID } from "@/lib/files"
 import { hashLinkPassword, newLinkToken } from "@/lib/links"
+import { moveDocuments } from "@/lib/doc-transfer"
 import { notify } from "@/lib/notify"
 import { spaceLeft } from "@/lib/quota"
 import type { Me } from "@/lib/session"
@@ -694,6 +695,7 @@ export async function answerOwnership(
         select n.id from nodes n join t on n.parent_id = t.id
       )
       update nodes set owner_id = ${me.id} where id in (select id from t)`)
+    await moveDocuments(tx, nodeId, me.id)
     await tx
       .update(nodes)
       .set({ parentId: null, name, updatedAt: new Date() })

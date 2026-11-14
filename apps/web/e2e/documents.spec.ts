@@ -188,7 +188,7 @@ test("an expiring document reaches the bell", async ({ page }) => {
     await page.getByRole("button", { name: /^Notifications/ }).click()
     await expect(
       page
-        .getByText(new RegExp(`${A}” expires in 1 days|${A}” expires today`))
+        .getByText(new RegExp(`${A}” expires tomorrow|${A}” expires today`))
         .first()
     ).toBeVisible({ timeout: 2_500 })
   }).toPass({ timeout: 60_000, intervals: [2_000] })

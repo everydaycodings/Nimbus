@@ -86,7 +86,8 @@ const CURRENCY: Record<string, string> = {
   rs: "INR", chf: "CHF", cad: "CAD", aud: "AUD", jpy: "JPY", "¥": "JPY", sek: "SEK", nok: "NOK", dkk: "DKK", pln: "PLN",
 }
 const CUR = "(€|\\$|£|₹|¥|US\\$|EUR|USD|GBP|INR|CHF|CAD|AUD|JPY|SEK|NOK|DKK|PLN|Rs\\.?)"
-const NUM = "(\\d{1,3}(?:[.,' ]\\d{3})*(?:[.,]\\d{1,2})?|\\d+(?:[.,]\\d{1,2})?)"
+// Runs are bounded and a number can't start inside another, so odd text can't blow up the regex.
+const NUM = "(?<![\\d,]|\\d\\.)(\\d{1,3}(?:[.,' ]\\d{3}){0,6}(?:[.,]\\d{1,2})?|\\d{1,15}(?:[.,]\\d{1,2})?)"
 
 // "1,234.56", "1.234,56", "12,50" and "1 234,50" all give a number.
 export function parseAmount(s: string) {
@@ -190,7 +191,7 @@ function guessType(text: string, name: string): DocTypeKey | null {
 
 const GENERIC =
   /^(invoice|receipt|bill|statement|tax invoice|page \d+|date|total|amount|customer|order|bank|account|dear|to|from|www|http|tel|phone|fax|email|e-mail|vat|gst|no\b|surname|given|nationality|sex|identity|passport|driver|licen|certificate|agreement|contract|policy|warranty|prescription|report|card|number|description|qty|item)/i
-const FROM_LINE = /^\s*(?:from|seller|sold by|issued by|billed by|supplier|vendor|company|von|absender)\s*[:\-]\s*(.{3,60})$/im
+const FROM_LINE = /^[ \t]*(?:from|seller|sold by|issued by|billed by|supplier|vendor|company|von|absender)\s*[:\-]\s*(.{3,60})$/im
 
 const clean = (s: string) => s.replace(/\s+/g, " ").replace(/[|•*_#]+/g, "").trim()
 const hasWord = (text: string, p: string) =>
@@ -206,11 +207,13 @@ const lead = (head: string) => {
   return words.join(" ")
 }
 
+const HEAD = 1500
 function findSender(text: string, name: string, known: KnownSender[]) {
-  const hay = `${name}\n${text}`
+  // Only the top of the page: a name further down is usually the recipient or a mention.
+  const hay = `${name}\n${text.slice(0, HEAD)}`
   for (const s of known) {
     for (const p of [s.name, ...s.patterns]) {
-      if (p.length >= 2 && hasWord(hay, p)) return { id: s.id, name: s.name, match: p.toLowerCase() }
+      if (p.length >= 3 && hasWord(hay, p)) return { id: s.id, name: s.name, match: p.toLowerCase() }
     }
   }
   const from = FROM_LINE.exec(text)?.[1]
@@ -238,7 +241,7 @@ function findSender(text: string, name: string, known: KnownSender[]) {
 }
 
 export function extractFields(text: string, name: string, senders: KnownSender[] = []): Extracted {
-  const t = text.slice(0, 60_000)
+  const t = text.slice(0, 50_000)
   const ds = findDates(t)
   const expiry = ds.find((h) => h.expiry)?.date ?? null
   const rest = ds.filter((h) => !h.expiry)

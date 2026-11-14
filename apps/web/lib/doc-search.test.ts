@@ -28,3 +28,9 @@ test("ignores values that aren't filters", () => {
 test("decimal comma", () => {
   assert.equal(parseDocTokens("amount>12,5").tokens.minAmount, 12.5)
 })
+
+test("amount accepts thousands separators and refuses junk", () => {
+  assert.equal(parseDocTokens("amount>1,234.56").tokens.minAmount, 1234.56)
+  assert.equal(parseDocTokens("amount<1.234,50").tokens.maxAmount, 1234.5)
+  assert.equal(parseDocTokens("amount>50").tokens.minAmount, 50)
+})

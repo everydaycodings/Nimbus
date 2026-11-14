@@ -23,9 +23,20 @@ type Row = {
   body: string
 }
 
+// The Documents system folders and watch folders with everything under them, walked once per sweep
+// (not once per file). Starts every query that uses candidates().
+const TREE = sql`with recursive tree as (
+    select id, owner_id from nodes where system_kind = 'documents' and kind = 'folder' and trashed_at is null
+    union
+    select n.id, w.owner_id from doc_watch w join nodes n on n.id = w.node_id and n.owner_id = w.owner_id
+      where n.kind = 'folder' and n.trashed_at is null
+    union
+    select c.id, t.owner_id from nodes c join tree t on c.parent_id = t.id where c.kind = 'folder' and c.trashed_at is null
+  )`
+
 // Files that count as documents and still need their guesses: no row yet, or a row still in review for an
-// older version. (A watch or Documents folder is any ancestor, for anything but video and audio; marked files have a row from the start.)
-const candidates = () => sql`
+// older version. (Anything in a watch or Documents folder, but video and audio; marked files have a row from the start.)
+const candidates = (skip: string[]) => sql`
   from nodes n
   join file_versions fv on fv.id = n.current_version_id and fv.enc_key is null
   join "user" u on u.id = n.owner_id and u.status = 'active'
@@ -33,15 +44,11 @@ const candidates = () => sql`
   left join documents d on d.node_id = n.id
   where n.kind = 'file' and n.trashed_at is null and n.vault_id is null
     and (d.node_id is null or (d.status = 'review' and d.version_id is distinct from n.current_version_id))
+    ${skip.length ? sql`and n.id not in ${sql(skip)}` : sql``}
     and (n.mime = 'application/pdf' or n.name ~* '\\.pdf$' or fv.smart && array['documents', 'receipts']
       or d.source = 'manual'
       or (coalesce(n.mime, '') !~ '^(video|audio)/' and exists (
-        with recursive up as (
-          select id, parent_id, system_kind from nodes where id = n.parent_id
-          union all
-          select p.id, p.parent_id, p.system_kind from nodes p join up on p.id = up.parent_id
-        ) select 1 from up where up.system_kind = 'documents'
-          or up.id in (select node_id from doc_watch where owner_id = n.owner_id))))`
+        select 1 from tree t where t.id = n.parent_id and t.owner_id = n.owner_id)))`
 
 const typeIds = async () =>
   new Map((await sql<{ key: string; id: string }[]>`select key, id from doc_types where owner_id is null`).map((t) => [t.key, t.id]))
@@ -69,20 +76,11 @@ const markLater = (id: string, sha: string | null) => sql`
 async function file(f: Row, types: Map<string, string>, known: Map<string, KnownSender[]>) {
   const senders = known.get(f.owner) ?? []
   const ex = extractFields(f.body, f.name, senders)
-  let senderId = ex.senderId
-  if (!senderId && ex.senderName) {
-    // A new sender learned from the text; the list is editable (rename, merge) on the Documents settings.
-    const [s] = await sql<{ id: string; name: string; patterns: string[] }[]>`
-      insert into doc_senders (owner_id, name, patterns)
-      values (${f.owner}, ${ex.senderName}, ${[ex.senderMatch ?? ex.senderName.toLowerCase()]})
-      on conflict (owner_id, lower(name)) do update set name = doc_senders.name
-      returning id, name, patterns`
-    senderId = s.id
-    if (!senders.some((x) => x.id === s.id)) known.set(f.owner, [...senders, s])
-  }
   const guess = {
     type: ex.type,
+    // A sender not known yet is only a guess: the sender is made when the owner saves or confirms.
     sender: ex.senderName,
+    senderId: ex.senderId,
     senderMatch: ex.senderMatch,
     date: ex.date,
     amount: ex.amount,
@@ -92,12 +90,17 @@ async function file(f: Row, types: Map<string, string>, known: Map<string, Known
   }
   await sql`
     insert into documents (node_id, owner_id, version_id, status, source, type_id, sender_id, doc_date, amount, currency, expires_at, guess)
-    values (${f.id}, ${f.owner}, ${f.v}, 'review', 'auto', ${(ex.type && types.get(ex.type)) || null}, ${senderId},
+    values (${f.id}, ${f.owner}, ${f.v}, 'review', 'auto', ${(ex.type && types.get(ex.type)) || null}, ${ex.senderId},
       ${ex.date}, ${ex.amount}, ${ex.currency}, ${ex.expiry}, ${sql.json(guess)})
     on conflict (node_id) do update set
-      version_id = excluded.version_id, type_id = excluded.type_id, sender_id = excluded.sender_id,
-      doc_date = excluded.doc_date, amount = excluded.amount, currency = excluded.currency,
-      expires_at = excluded.expires_at, updated_at = now(),
+      version_id = excluded.version_id, owner_id = excluded.owner_id, updated_at = now(),
+      -- what the owner set by hand stays
+      type_id = case when 'type' = any(documents.touched) then documents.type_id else excluded.type_id end,
+      sender_id = case when 'sender' = any(documents.touched) then documents.sender_id else excluded.sender_id end,
+      doc_date = case when 'date' = any(documents.touched) then documents.doc_date else excluded.doc_date end,
+      amount = case when 'amount' = any(documents.touched) then documents.amount else excluded.amount end,
+      currency = case when 'amount' = any(documents.touched) then documents.currency else excluded.currency end,
+      expires_at = case when 'expiry' = any(documents.touched) then documents.expires_at else excluded.expires_at end,
       guess = excluded.guess || case when documents.guess ? 'clip' then jsonb_build_object('clip', documents.guess->'clip') else '{}' end
     where documents.status = 'review'`
   await markDuplicate(f.id, f.sha)
@@ -155,18 +158,25 @@ async function clipHints(types: Map<string, string>) {
     const sure = best.score >= min && best.score - next.score >= 0.01
     await sql`update documents set guess = guess || ${sql.json({ clip: { type: best.k, score: Math.round(best.score * 1000) / 1000 } })},
         type_id = case when ${sure} then ${types.get(best.k) ?? null} else type_id end, updated_at = now()
-      where node_id = ${r.id} and status = 'review' and type_id is null`
+      where node_id = ${r.id} and status = 'review' and type_id is null and not 'type' = any(touched)`
     console.log(`doc   clip ${r.id}: ${best.k} ${best.score.toFixed(3)}${sure ? "" : " (not sure)"}`)
   }
 }
+
+// A file that fails keeps being retried until it has failed this often (per worker run), then it is skipped
+// so it can't hold up the batch. Restarting the worker tries it again.
+const MAX_TRIES = 3
+const failures = new Map<string, number>()
 
 export async function docsSweep() {
   const [{ on }] = await sql<{ on: boolean }[]>`select documents_enabled as on from settings`
   docsStatus.enabled = on
   if (!on) return 0
+  const skip = [...failures].filter(([, n]) => n >= MAX_TRIES).map(([k]) => k)
   const rows = await sql<Row[]>`
+    ${TREE}
     select n.id, n.owner_id as owner, n.current_version_id as v, n.name, n.created_at as created, fv.sha256 as sha, c.body
-    ${candidates()} order by n.updated_at desc limit ${BATCH}`
+    ${candidates(skip)} order by n.updated_at desc limit ${BATCH}`
   const types = await typeIds()
   const owners = [...new Set(rows.map((r) => r.owner))]
   const known = new Map<string, KnownSender[]>()
@@ -178,18 +188,28 @@ export async function docsSweep() {
   for (const f of rows) {
     try {
       await file(f, types, known)
+      failures.delete(f.id)
       done++
     } catch (e) {
+      failures.set(f.id, (failures.get(f.id) ?? 0) + 1)
       docsStatus.lastError = `${f.name}: ${(e as Error).message}`
       console.error(`doc   ${docsStatus.lastError}`)
     }
   }
+  if (done === rows.length) docsStatus.lastError = null
   await clipHints(types).catch((e: Error) => console.error(`doc   clip: ${e.message}`))
-  const [c] = await sql<{ backlog: number; docs: number; review: number }[]>`
-    select (select count(*)::int ${candidates()}) as backlog,
-      (select count(*)::int from documents where status <> 'dismissed') as docs,
+  // A short batch means the sweep got to the end; a full one counts what is left, up to 10 000.
+  const backlog =
+    rows.length < BATCH
+      ? rows.length - done
+      : (
+          await sql<{ n: number }[]>`
+            ${TREE} select count(*)::int as n from (select 1 ${candidates(skip)} limit 10000) x`
+        )[0].n
+  const [c] = await sql<{ docs: number; review: number }[]>`
+    select (select count(*)::int from documents where status <> 'dismissed') as docs,
       (select count(*)::int from documents where status = 'review') as review`
-  Object.assign(docsStatus, { backlog: c.backlog, documents: c.docs, review: c.review })
+  Object.assign(docsStatus, { backlog, documents: c.docs, review: c.review })
   return done
 }
 

@@ -63,3 +63,18 @@ test("extractFields", () => {
   eq(extractFields("RECEIPT\nBread 2.30\nSubtotal 3.50\nVisa paid", "r.jpg").amount, null, "a subtotal alone is not a total")
   eq(extractFields("hello world", "notes.txt").confidence, 0, "nothing found")
 })
+
+test("extractFields stays fast on hostile text", () => {
+  for (const t of ["1".repeat(60000), "\n".repeat(60000), " ".repeat(60000), "123 ".repeat(15000), "1,234".repeat(12000), "from \t".repeat(10000)]) {
+    const s = performance.now()
+    extractFields(t, "x.pdf", [])
+    assert.ok(performance.now() - s < 500)
+  }
+})
+
+test("known senders match in the head of the text only, and need 3 characters", () => {
+  const known = [{ id: "s1", name: "Acme", patterns: ["ab"] }]
+  assert.equal(extractFields("Acme invoice\nTotal $5.00", "a.pdf", known).senderId, "s1")
+  assert.equal(extractFields("x".repeat(2000) + " Acme", "a.pdf", known).senderId, null)
+  assert.equal(extractFields("a b ab c", "a.pdf", known).senderId, null)
+})

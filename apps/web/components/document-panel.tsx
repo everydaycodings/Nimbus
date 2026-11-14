@@ -43,7 +43,8 @@ type Draft = {
 
 const draftOf = (d: DocumentDetail): Draft => ({
   typeId: d.typeId ?? "",
-  sender: d.senderName ?? "",
+  // A sender that is only guessed (not made yet) is offered in the field; it is made when you save or confirm.
+  sender: d.senderName ?? (d.role === "owner" && d.status === "review" ? (d.guess.sender ?? "") : ""),
   docDate: d.docDate ?? "",
   amount: d.amount === null ? "" : String(d.amount),
   currency: d.currency ?? "",

@@ -15,12 +15,13 @@ import { docSenders, docTypes, docWatch, documents, nodes } from "@/lib/db/schem
 import { recordSaved } from "@/lib/activity"
 import { notify } from "@/lib/notify"
 import { checkStorage, spaceLeft } from "@/lib/quota"
-import { enqueueDerive } from "@/lib/redis"
+import { enqueueDerive, redis } from "@/lib/redis"
 import { putObject, getStream } from "@/lib/s3"
 import type { Me } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
 import { cleanName, GONE } from "@/lib/tree-ops"
-import { mkdirp, pruneVersions, saveUploaded } from "@/lib/uploads"
+import { freeName } from "@/lib/upload-rules"
+import { isClash, mkdirp, pruneVersions, saveUploaded } from "@/lib/uploads"
 import type {
   DocSender,
   DocType,
@@ -42,6 +43,9 @@ export const withDocs = (fn: (me: Me) => Promise<Response>) =>
   withMember(async (me) =>
     (await getSettings()).documentsEnabled ? fn(me) : fail(404, "not-found", "Documents are turned off.")
   )
+
+// One day basis for the whole feature: UTC (reminders, "soon", the upload year and merge names).
+const TODAY = sql`(now() at time zone 'UTC')::date`
 
 const iso = (d: unknown) => new Date(d as string).toISOString()
 
@@ -73,6 +77,7 @@ type Raw = {
   notes: string | null
   fields: Record<string, string>
   guess: DocumentItem["guess"]
+  touched: string[]
   dup_id: string | null
   dup_name: string | null
   days_left: number | null
@@ -105,8 +110,10 @@ const toItem = (r: Raw, me: string): DocumentItem => ({
   remindOverride: r.remind_override,
   notes: r.notes,
   fields: r.fields,
-  guess: r.guess,
-  dupOf: r.dup_id ? { id: r.dup_id, name: r.dup_name! } : null,
+  // A sender the owner cleared isn't offered again.
+  guess: r.touched.includes("sender") ? { ...r.guess, sender: null } : r.guess,
+  // The other file may not be shared with a viewer.
+  dupOf: r.dup_id && r.owner_id === me ? { id: r.dup_id, name: r.dup_name! } : null,
   missing: (
     [
       ["type", r.type_id],
@@ -153,8 +160,8 @@ async function query(me: Me, o: ListOpts) {
   const mineOnly = status === "review" || status === "dismissed" || o.shared === "0" || o.strip
   w.push(
     mineOnly
-      ? sql`d.owner_id = ${me.id}`
-      : sql`(d.owner_id = ${me.id} or (d.status = 'confirmed' and n.id in (select id from shared)))`
+      ? sql`n.owner_id = ${me.id}`
+      : sql`(n.owner_id = ${me.id} or (d.status = 'confirmed' and n.id in (select id from shared)))`
   )
   w.push(status ? sql`d.status = ${status}` : sql`d.status <> 'dismissed'`)
   if (o.id) w.push(sql`n.id = ${o.id}`)
@@ -167,12 +174,12 @@ async function query(me: Me, o: ListOpts) {
   if (o.maxAmount !== undefined) w.push(sql`d.amount <= ${o.maxAmount}`)
   if (o.currency) w.push(sql`d.currency = ${o.currency.toUpperCase()}`)
   if (o.strip)
-    w.push(sql`d.expires_at between current_date - 30 and current_date + ${LEAD}`)
+    w.push(sql`d.expires_at between ${TODAY} - 30 and ${TODAY} + ${LEAD}`)
   else if (o.expiring === "soon")
-    w.push(sql`d.expires_at between current_date and current_date + ${LEAD}`)
-  else if (o.expiring === "expired") w.push(sql`d.expires_at < current_date`)
+    w.push(sql`d.expires_at between ${TODAY} and ${TODAY} + ${LEAD}`)
+  else if (o.expiring === "expired") w.push(sql`d.expires_at < ${TODAY}`)
   else if (o.expiring === "any") w.push(sql`d.expires_at is not null`)
-  for (const m of (o.missing ?? "").split(",").filter((m): m is DocField => m in MISSING))
+  for (const m of (o.missing ?? "").split(",").filter((m): m is DocField => Object.hasOwn(MISSING, m)))
     w.push(sql.raw(MISSING[m]))
   if (likeQ) {
     const like = `%${likeQ.replace(/[%_\\]/g, "\\$&").toLowerCase()}%`
@@ -191,17 +198,17 @@ async function query(me: Me, o: ListOpts) {
       select c.id from nodes c join shared on c.parent_id = shared.id where c.trashed_at is null
     )
     select n.id, n.name, n.mime, n.size, n.current_version_id as version, fv.thumb, n.parent_id as folder_id,
-      n.updated_at, d.owner_id, ou.name as owner_name, d.status, d.source,
+      n.updated_at, n.owner_id, ou.name as owner_name, d.status, d.source,
       d.type_id, t.name as type_name, d.sender_id, s.name as sender_name,
       d.doc_date::text, d.amount::float8, d.currency, d.expires_at::text,
       d.remind_days as remind_override, coalesce(d.remind_days, t.remind_days) as remind_days,
-      d.notes, d.fields, d.guess, d.dup_of as dup_id, dn.name as dup_name,
-      (d.expires_at - current_date)::int as days_left,
+      d.notes, d.fields, d.guess, d.touched, d.dup_of as dup_id, dn.name as dup_name,
+      (d.expires_at - ${TODAY})::int as days_left,
       ${o.withText ? sql`left(c.body, 20000)` : sql`null`} as text,
       count(*) over() as total
     from documents d
     join nodes n on n.id = d.node_id
-    join "user" ou on ou.id = d.owner_id
+    join "user" ou on ou.id = n.owner_id
     left join file_versions fv on fv.id = n.current_version_id
     left join node_content c on c.node_id = n.id and c.version_id = n.current_version_id
     left join doc_types t on t.id = d.type_id
@@ -235,7 +242,7 @@ export async function summary(me: Me): Promise<DocumentsSummary> {
     select count(*) filter (where d.status = 'review')::int as review,
       count(*) filter (where d.status <> 'dismissed')::int as total
     from documents d join nodes n on n.id = d.node_id
-    where d.owner_id = ${me.id} and n.trashed_at is null and n.vault_id is null`)
+    where n.owner_id = ${me.id} and n.trashed_at is null and n.vault_id is null`)
   const { items } = await query(me, { strip: true, sort: "expires", order: "asc", limit: 10 })
   return { review: c.review, total: c.total, expiring: items.map(({ text, ...i }) => (void text, i)) }
 }
@@ -250,7 +257,7 @@ export async function totals(me: Me, q: DocumentsTotalsQuery): Promise<Documents
     from documents d join nodes n on n.id = d.node_id
     left join doc_types t on t.id = d.type_id
     left join doc_senders s on s.id = d.sender_id
-    where d.owner_id = ${me.id} and d.status <> 'dismissed' and n.trashed_at is null and n.vault_id is null
+    where n.owner_id = ${me.id} and d.status <> 'dismissed' and n.trashed_at is null and n.vault_id is null
       and d.amount is not null and d.doc_date is not null
       ${q.year ? sql`and extract(year from d.doc_date) = ${q.year}` : sql``}
     group by 1, 2, 3, 4 order by 1 desc, 5 desc`)
@@ -275,35 +282,68 @@ async function senderAllowed(me: Me, id: string) {
 }
 
 // The ids of mine among `ids` that are documents.
+// Ownership is the file's (nodes.owner_id), which a transfer changes.
 const mine = async (me: Me, ids: string[]) =>
   ids.length
     ? (
         await db
           .select({ id: documents.nodeId })
           .from(documents)
-          .where(and(eq(documents.ownerId, me.id), inArray(documents.nodeId, ids)))
+          .innerJoin(nodes, eq(nodes.id, documents.nodeId))
+          .where(and(eq(nodes.ownerId, me.id), inArray(documents.nodeId, ids)))
       ).map((r) => r.id)
     : []
 
-// Confirming teaches the sender: the text that was matched (when it isn't the name) becomes a pattern.
+const PATTERNS_MAX = 50
+const PATTERN_MIN = 3
+// Marks fields as set by hand (the worker won't guess over them) and pins the version the owner looked at.
+const edited = (keys: string[]) => ({
+  touched: sql`(select coalesce(array_agg(distinct k), '{}') from unnest(${documents.touched} || array[${sql.join(keys.map((k) => sql`${k}`), sql`, `)}]::text[]) k)`,
+  versionId: sql`case when ${documents.versionId} is not null then (select n.current_version_id from nodes n where n.id = ${documents.nodeId}) end`,
+})
+
+const DISMISS = {
+  status: "dismissed" as const,
+  guess: sql`case when ${documents.status} = 'confirmed' then ${documents.guess} || jsonb_build_object('prev', 'confirmed') else ${documents.guess} - 'prev' end` as unknown as Record<string, unknown>,
+}
+
+// "Not a document" for several at once (mine only); a confirmed one remembers it was, for Undo.
+export async function dismissDocuments(me: Me, ids: string[]): Promise<Result> {
+  const own = await mine(me, ids)
+  if (!own.length) return { error: "Those documents are gone." }
+  await db.update(documents).set({ ...DISMISS, updatedAt: new Date() }).where(inArray(documents.nodeId, own))
+  return {}
+}
+
+// Confirming makes a guessed sender real (unless the owner cleared it) and teaches the sender the text
+// that was matched, only when the document still has the sender that was guessed.
 async function confirm(me: Me, ids: string[]) {
   if (!ids.length) return
+  const guessed = await db.execute<{ id: string; name: string; match: string | null }>(sql`
+    select d.node_id as id, d.guess->>'sender' as name, d.guess->>'senderMatch' as match from documents d
+    where d.node_id in ${ids} and d.sender_id is null and d.guess->>'sender' is not null and not 'sender' = any(d.touched)`)
+  for (const g of guessed) {
+    const senderId = await senderByName(me, g.name, g.match)
+    await db.update(documents).set({ senderId }).where(eq(documents.nodeId, g.id))
+  }
   await db.execute(sql`
-    update doc_senders s set patterns = array_append(s.patterns, g.m)
+    update doc_senders s set patterns = (array_append(s.patterns, g.m))[1:${PATTERNS_MAX}]
     from (select distinct d.sender_id, lower(d.guess->>'senderMatch') as m from documents d
-      where d.node_id in ${ids} and d.owner_id = ${me.id} and d.sender_id is not null
-        and d.guess->>'senderMatch' is not null) g
+      where d.node_id in ${ids} and d.sender_id is not null and d.guess->>'senderId' = d.sender_id::text
+        and length(d.guess->>'senderMatch') >= ${PATTERN_MIN}) g
     where s.id = g.sender_id and s.owner_id = ${me.id} and lower(s.name) <> g.m and not (g.m = any(s.patterns))`)
   await db
     .update(documents)
     .set({ status: "confirmed", updatedAt: new Date() })
-    .where(and(eq(documents.ownerId, me.id), inArray(documents.nodeId, ids)))
+    .where(inArray(documents.nodeId, ids))
 }
 
-export async function senderByName(me: Me, raw: string) {
+export async function senderByName(me: Me, raw: string, match?: string | null) {
   const name = raw.trim().replace(/\s+/g, " ").slice(0, 100)
+  const pattern = (match ?? name).toLowerCase()
   const [s] = await db.execute<{ id: string }>(sql`
-    insert into doc_senders (owner_id, name, patterns) values (${me.id}, ${name}, array[${name.toLowerCase()}]::text[])
+    insert into doc_senders (owner_id, name, patterns)
+    values (${me.id}, ${name}, case when length(${pattern}::text) >= ${PATTERN_MIN} then array[${pattern}]::text[] else '{}' end)
     on conflict (owner_id, lower(name)) do update set name = doc_senders.name returning id`)
   return s.id
 }
@@ -319,20 +359,36 @@ export async function updateDocument(me: Me, id: string, p: DocumentPatch): Prom
       ? null
       : p.senderId
   const set: Partial<typeof documents.$inferInsert> = { updatedAt: new Date() }
-  if (p.typeId !== undefined) set.typeId = p.typeId
-  if (senderId !== undefined) set.senderId = senderId
-  if (p.docDate !== undefined) set.docDate = p.docDate
-  if (p.amount !== undefined) set.amount = p.amount
-  if (p.currency !== undefined) set.currency = p.currency?.toUpperCase() ?? null
+  // Only a value that differs from what's there counts as set by hand (a form sends every field).
+  const [cur] = await db.select().from(documents).where(eq(documents.nodeId, id))
+  const keys: string[] = []
+  const put = <K extends "typeId" | "senderId" | "docDate" | "amount" | "currency" | "expiresAt">(k: K, v: (typeof cur)[K], key: string) => {
+    set[k] = v
+    if (cur[k] !== v) keys.push(key)
+  }
+  if (p.typeId !== undefined) put("typeId", p.typeId, "type")
+  if (senderId !== undefined) put("senderId", senderId, "sender")
+  if (p.docDate !== undefined) put("docDate", p.docDate, "date")
+  if (p.amount !== undefined) put("amount", p.amount, "amount")
+  if (p.currency !== undefined) put("currency", p.currency?.toUpperCase() ?? null, "amount")
   if (p.expiresAt !== undefined) {
     set.expiresAt = p.expiresAt
     // A new date starts a new reminder.
-    set.remindedAt = null
+    if (cur.expiresAt !== p.expiresAt) {
+      keys.push("expiry")
+      set.remindedAt = null
+    }
   }
   if (p.remindDays !== undefined) set.remindDays = p.remindDays
   if (p.notes !== undefined) set.notes = p.notes?.trim() || null
   if (p.fields !== undefined) set.fields = p.fields
-  if (p.status && p.status !== "confirmed") set.status = p.status
+  // SQL values (cast to the column's type): Not a document remembers a confirmed status, Undo brings it back.
+  if (p.status === "dismissed") Object.assign(set, DISMISS)
+  else if (p.status === "review") {
+    set.status = sql`case when ${documents.status} = 'dismissed' and ${documents.guess}->>'prev' = 'confirmed' then 'confirmed' else 'review' end` as unknown as "review"
+    set.guess = sql`${documents.guess} - 'prev'` as unknown as Record<string, unknown>
+  }
+  if (keys.length) Object.assign(set, edited(keys))
   await db.update(documents).set(set).where(eq(documents.nodeId, id))
   if (p.status === "confirmed") await confirm(me, [id])
   return { item: (await getDocument(me, id)) ?? undefined }
@@ -352,7 +408,12 @@ export async function markDocuments(me: Me, ids: string[]): Promise<Result & { m
     .values(files.map((f) => ({ nodeId: f.id, ownerId: me.id, source: "manual" as const })))
     .onConflictDoUpdate({
       target: documents.nodeId,
-      set: { status: "review", source: "manual", updatedAt: new Date() },
+      set: {
+        status: sql`case when ${documents.guess}->>'prev' = 'confirmed' then 'confirmed' else 'review' end` as unknown as "review",
+        guess: sql`${documents.guess} - 'prev'` as unknown as Record<string, unknown>,
+        source: "manual",
+        updatedAt: new Date(),
+      },
       setWhere: eq(documents.status, "dismissed"),
     })
   return { marked: files.length }
@@ -367,8 +428,16 @@ export async function bulk(
   const ids = await mine(me, b.ids)
   if (!ids.length) return { error: "Those documents are gone." }
   const set: Partial<typeof documents.$inferInsert> = { updatedAt: new Date() }
-  if (b.typeId !== undefined) set.typeId = b.typeId
-  if (b.senderId !== undefined) set.senderId = b.senderId
+  const keys: string[] = []
+  if (b.typeId !== undefined) {
+    set.typeId = b.typeId
+    keys.push("type")
+  }
+  if (b.senderId !== undefined) {
+    set.senderId = b.senderId
+    keys.push("sender")
+  }
+  if (keys.length) Object.assign(set, edited(keys))
   await db.update(documents).set(set).where(inArray(documents.nodeId, ids))
   if (b.confirm) await confirm(me, ids)
   return { updated: ids.length }
@@ -384,8 +453,6 @@ export async function listTypes(me: Me): Promise<DocType[]> {
     .orderBy(sql`${docTypes.ownerId} is not null`, sql`lower(${docTypes.name})`)
   return rows.map((t) => ({ id: t.id, key: t.key, name: t.name, preset: !t.ownerId, remindDays: t.remindDays }))
 }
-
-const isClash = (e: unknown) => (e as { code?: string; cause?: { code?: string } })?.code === "23505" || (e as { cause?: { code?: string } })?.cause?.code === "23505"
 
 export async function saveType(me: Me, b: { name: string; remindDays: number | null }, id?: string): Promise<Result & { type?: DocType }> {
   try {
@@ -427,7 +494,8 @@ export async function createSender(me: Me, name: string): Promise<Result & { sen
 export async function updateSender(me: Me, id: string, b: { name?: string; patterns?: string[] }): Promise<Result & { sender?: DocSender }> {
   const set: Partial<typeof docSenders.$inferInsert> = {}
   if (b.name) set.name = b.name.trim().replace(/\s+/g, " ")
-  if (b.patterns) set.patterns = [...new Set(b.patterns.map((p) => p.trim().toLowerCase()).filter(Boolean))]
+  if (b.patterns)
+    set.patterns = [...new Set(b.patterns.map((p) => p.trim().toLowerCase()).filter((p) => p.length >= PATTERN_MIN))].slice(0, PATTERNS_MAX)
   try {
     const [s] = await db
       .update(docSenders)
@@ -461,7 +529,11 @@ export async function mergeSenders(me: Me, from: string, into: string): Promise<
     await tx.update(documents).set({ senderId: into }).where(eq(documents.senderId, from))
     await tx
       .update(docSenders)
-      .set({ patterns: [...new Set([...b.patterns, ...a.patterns, a.name.toLowerCase()])].filter((p) => p !== b.name.toLowerCase()) })
+      .set({
+        patterns: [...new Set([...b.patterns, ...a.patterns, a.name.toLowerCase()])]
+          .filter((p) => p !== b.name.toLowerCase() && p.length >= PATTERN_MIN)
+          .slice(0, PATTERNS_MAX),
+      })
       .where(eq(docSenders.id, into))
     await tx.delete(docSenders).where(eq(docSenders.id, from))
     return {}
@@ -498,19 +570,40 @@ export async function removeWatch(me: Me, folderId: string): Promise<Result> {
 
 // ---- Filing ----
 
-// Documents/<year>, made when missing and tagged as the Documents system folder.
+// Documents/<year>, made when missing and tagged as the Documents system folder. A folder the member
+// already has named "Documents" is never taken over: the system one gets a free name beside it.
 export async function uploadTarget(me: Me, date?: string) {
-  const year = String(date && /^\d{4}/.test(date) ? date.slice(0, 4) : new Date().getFullYear())
-  const dir = await mkdirp(db, me.id, null, ["Documents", year], undefined, "documents")
+  const y = Number(date?.slice(0, 4))
+  const year = String(y >= 1990 && y <= 2100 ? y : new Date().getUTCFullYear())
+  const roots = await db
+    .select({ name: nodes.name, kind: nodes.systemKind })
+    .from(nodes)
+    .where(and(eq(nodes.ownerId, me.id), isNull(nodes.parentId), isNull(nodes.trashedAt), isNull(nodes.vaultId)))
+  const root =
+    roots.find((r) => r.kind === "documents")?.name ??
+    freeName("Documents", new Set(roots.map((r) => r.name.toLowerCase())), true)
+  const dir = await mkdirp(db, me.id, null, [root, year], undefined, "documents")
   if ("error" in dir) return { error: dir.error }
-  return { folderId: dir.id!, path: `Documents/${year}` }
+  return { folderId: dir.id!, path: `${root}/${year}` }
 }
 
 const A4 = [595, 842]
-const MAX_MERGE = 300 * 1024 ** 2
+const MAX_MERGE = 100 * 1024 ** 2
 
 // Images and PDFs, in the order given, into one new PDF in Documents/<year>.
 export async function mergePdf(me: Me, ids: string[], rawName?: string): Promise<Result & { id?: string; name?: string; folderId?: string }> {
+  // One merge at a time per member (a merge holds the files in memory).
+  const lock = `lock:docs-merge:${me.id}`
+  if ((await redis.set(lock, "1", "EX", 300, "NX").catch(() => "OK")) !== "OK")
+    return { error: "A merge is already running. Try again in a moment." }
+  try {
+    return await merge(me, ids, rawName)
+  } finally {
+    await redis.del(lock).catch(() => {})
+  }
+}
+
+async function merge(me: Me, ids: string[], rawName?: string): Promise<Result & { id?: string; name?: string; folderId?: string }> {
   const order = [...new Set(ids)]
   const rows = order.length
     ? await db
@@ -520,7 +613,7 @@ export async function mergePdf(me: Me, ids: string[], rawName?: string): Promise
     : []
   const files = order.flatMap((id) => rows.find((r) => r.id === id) ?? [])
   if (files.length < 1 || files.length !== order.length) return { error: "Some of those files are gone." }
-  if (files.reduce((n, f) => n + f.size, 0) > MAX_MERGE) return { error: "Those files are too big to merge (300 MB at most)." }
+  if (files.reduce((n, f) => n + f.size, 0) > MAX_MERGE) return { error: "Those files are too big to merge (100 MB at most)." }
   const out = await PDFDocument.create()
   for (const f of files) {
     const bytes = new Uint8Array(await new Response(await getStream(f.key!)).arrayBuffer())
@@ -534,7 +627,7 @@ export async function mergePdf(me: Me, ids: string[], rawName?: string): Promise
     } else {
       let jpg: Buffer
       try {
-        jpg = await sharp(bytes, { limitInputPixels: 200_000_000 })
+        jpg = await sharp(bytes, { limitInputPixels: 40_000_000 })
           .rotate()
           .resize(3000, 3000, { fit: "inside", withoutEnlargement: true })
           .flatten({ background: "#fff" })
@@ -590,7 +683,7 @@ export async function mergePdf(me: Me, ids: string[], rawName?: string): Promise
 export async function years(me: Me): Promise<number[]> {
   const rows = await db.execute<{ y: number }>(sql`
     select distinct extract(year from d.doc_date)::int as y from documents d join nodes n on n.id = d.node_id
-    where d.owner_id = ${me.id} and d.status <> 'dismissed' and d.doc_date is not null
+    where n.owner_id = ${me.id} and d.status <> 'dismissed' and d.doc_date is not null
       and n.trashed_at is null and n.vault_id is null order by 1 desc`)
   return rows.map((r) => r.y)
 }
@@ -604,13 +697,14 @@ export async function years(me: Me): Promise<number[]> {
 export async function remindExpiring() {
   if (!(await getSettings()).documentsEnabled) return 0
   const due = await db.execute<{ id: string; owner: string; days: number }>(sql`
-    select d.node_id as id, d.owner_id as owner, (d.expires_at - current_date)::int as days
+    select d.node_id as id, n.owner_id as owner, (d.expires_at - ${TODAY})::int as days
     from documents d
     join nodes n on n.id = d.node_id
     left join doc_types t on t.id = d.type_id
     where d.status <> 'dismissed' and d.reminded_at is null and d.expires_at is not null
       and n.trashed_at is null and n.vault_id is null
-      and d.expires_at between current_date - 7 and current_date + coalesce(d.remind_days, t.remind_days, -1)
+      and coalesce(d.remind_days, t.remind_days) is not null
+      and d.expires_at between ${TODAY} - 7 and ${TODAY} + coalesce(d.remind_days, t.remind_days)
     limit 500`)
   for (const r of due) {
     // Marked first: a failed notice is not sent twice, and the job's retry doesn't repeat the others.

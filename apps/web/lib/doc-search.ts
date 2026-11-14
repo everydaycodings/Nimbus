@@ -1,6 +1,8 @@
 // The Documents filter words in search: type:receipt sender:amazon amount>50 year:2025 expires:soon.
 // Pure, so the search, the tests and (later) the app read them the same way.
 
+import { parseAmount } from "@nimbus/shared/documents"
+
 export type DocTokens = {
   type?: string
   sender?: string
@@ -11,7 +13,7 @@ export type DocTokens = {
 }
 
 const WORD = /(^|\s)(type|sender|year|expires):(?:"([^"]+)"|(\S+))/gi
-const AMOUNT = /(^|\s)amount\s*(>=|<=|>|<)\s*(\d+(?:[.,]\d+)?)(?=\s|$)/gi
+const AMOUNT = /(^|\s)amount\s*(>=|<=|>|<)\s*([\d.,]*\d)(?=\s|$)/gi
 
 // The words that are filters, and what is left to search for.
 export function parseDocTokens(raw: string): {
@@ -42,7 +44,8 @@ export function parseDocTokens(raw: string): {
     }
   )
   rest = rest.replace(AMOUNT, (_m, lead: string, op: string, n: string) => {
-    const v = Number(n.replace(",", "."))
+    const v = parseAmount(n)
+    if (v === null) return _m
     if (op[0] === ">") tokens.minAmount = v
     else tokens.maxAmount = v
     return lead
