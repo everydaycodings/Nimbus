@@ -540,7 +540,8 @@ export async function mergeSenders(me: Me, from: string, into: string): Promise<
   })
 }
 
-export async function listWatch(me: Me): Promise<DocWatchFolder[]> {
+// Watched folders, or with ignore the not watched ones.
+export async function listWatch(me: Me, ignore = false): Promise<DocWatchFolder[]> {
   const rows = await db.execute<{ id: string; name: string; path: string }>(sql`
     select n.id, n.name,
       (with recursive up as (
@@ -549,17 +550,32 @@ export async function listWatch(me: Me): Promise<DocWatchFolder[]> {
         select p.id, p.parent_id, p.name, up.d + 1 from nodes p join up on p.id = up.parent_id
       ) select string_agg(name, '/' order by d desc) from up) as path
     from doc_watch w join nodes n on n.id = w.node_id
-    where w.owner_id = ${me.id} and n.trashed_at is null order by lower(n.name)`)
+    where w.owner_id = ${me.id} and w.ignore = ${ignore} and n.trashed_at is null order by lower(n.name)`)
   return rows.map((r) => ({ ...r }))
 }
 
-export async function addWatch(me: Me, folderId: string): Promise<Result> {
+export async function addWatch(me: Me, folderId: string, ignore = false): Promise<Result> {
   const [f] = await db
     .select({ id: nodes.id })
     .from(nodes)
     .where(and(eq(nodes.id, folderId), eq(nodes.ownerId, me.id), eq(nodes.kind, "folder"), isNull(nodes.trashedAt), isNull(nodes.vaultId)))
   if (!f) return { error: GONE }
-  await db.insert(docWatch).values({ ownerId: me.id, nodeId: folderId }).onConflictDoNothing()
+  // One row per folder: watching a not watched folder (or the other way round) just flips it.
+  await db
+    .insert(docWatch)
+    .values({ ownerId: me.id, nodeId: folderId, ignore })
+    .onConflictDoUpdate({ target: [docWatch.ownerId, docWatch.nodeId], set: { ignore } })
+  // Guesses nobody looked at yet leave with it; confirmed and hand-marked documents stay.
+  if (ignore)
+    await db.execute(sql`
+      with recursive sub as (
+        select id from nodes where id = ${folderId}
+        union
+        select c.id from nodes c join sub on c.parent_id = sub.id where c.kind = 'folder'
+      )
+      delete from documents d using nodes n
+      where n.id = d.node_id and n.parent_id in (select id from sub) and n.owner_id = ${me.id}
+        and d.status = 'review' and d.source = 'auto'`)
   return {}
 }
 

@@ -43,9 +43,41 @@ test("the sweep guesses, makes no sender, and never overwrites what the owner se
     assert.equal((await row()).amount, 99, "kept through a re-run")
   } finally {
     await sql`delete from "user" where id = ${me}`
-    await sql.end()
   }
 })
 
-// The worker's Redis queues keep the process open.
-after(() => void setTimeout(() => process.exit(process.exitCode ?? 0), 100))
+test("nothing under a not watched folder is found, but a hand mark still counts", async () => {
+  const me = `ignore-test-${Date.now()}`
+  try {
+    await sql`insert into "user" (id, name, email, status) values (${me}, 'T', ${me + "@example.invalid"}, 'active')`
+    const folder = async (name: string, parent: string | null) =>
+      (await sql<{ id: string }[]>`insert into nodes (owner_id, parent_id, kind, name) values (${me}, ${parent}, 'folder', ${name}) returning id`)[0].id
+    const skipped = await folder("Work", null)
+    // A watched folder inside a not watched one: not watched wins.
+    const inner = await folder("Scans", skipped)
+    await sql`insert into doc_watch (owner_id, node_id, ignore) values (${me}, ${skipped}, true), (${me}, ${inner}, false)`
+    const pdf = async (name: string, parent: string) => {
+      const [f] = await sql<{ id: string }[]>`insert into nodes (owner_id, parent_id, kind, name, s3_key, mime) values (${me}, ${parent}, 'file', ${name}, 'k', 'application/pdf') returning id`
+      const [v] = await sql<{ id: string }[]>`insert into file_versions (node_id, s3_key, size, number) values (${f.id}, 'k', 1, 1) returning id`
+      await sql`update nodes set current_version_id = ${v.id} where id = ${f.id}`
+      await sql`insert into node_content (node_id, version_id, body, source) values (${f.id}, ${v.id}, 'Invoice
+Total due: $10.00', 'pdf')`
+      return f.id
+    }
+    await pdf("a.pdf", inner)
+    const marked = await pdf("b.pdf", inner)
+    await sql`insert into documents (node_id, owner_id, status, source) values (${marked}, ${me}, 'review', 'manual')`
+    await docsSweep()
+    const rows = await sql<{ node_id: string; amount: number | null }[]>`select node_id, amount::float8 from documents where owner_id = ${me}`
+    assert.deepEqual(rows.map((r) => r.node_id), [marked], "only the hand-marked file is a document")
+    assert.equal(rows[0].amount, 10, "and it still gets its guesses")
+  } finally {
+    await sql`delete from "user" where id = ${me}`
+  }
+})
+
+after(async () => {
+  await sql.end()
+  // The worker's Redis queues keep the process open.
+  setTimeout(() => process.exit(process.exitCode ?? 0), 100)
+})

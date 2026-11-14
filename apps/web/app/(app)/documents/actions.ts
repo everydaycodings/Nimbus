@@ -122,9 +122,9 @@ export async function mergeSender(from: string, into: string) {
   const me = await member()
   return uuid.safeParse(from).success && uuid.safeParse(into).success ? docs.mergeSenders(me, from, into) : BAD
 }
-export async function addDocWatch(folderId: string) {
+export async function addDocWatch(folderId: string, ignore = false) {
   const me = await member()
-  return uuid.safeParse(folderId).success ? docs.addWatch(me, folderId) : BAD
+  return uuid.safeParse(folderId).success ? docs.addWatch(me, folderId, ignore === true) : BAD
 }
 export async function removeDocWatch(folderId: string) {
   const me = await member()

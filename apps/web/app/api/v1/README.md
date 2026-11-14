@@ -401,7 +401,7 @@ touching `confirmed` or `dismissed` ones. Ids are file ids. Shared documents (co
 | GET | `/documents/summary` | `{review, total, expiring[]}` |
 | GET POST | `/documents/types`, PATCH DELETE `/documents/types/{id}` | presets are read-only |
 | GET POST | `/documents/senders`, PATCH DELETE `/documents/senders/{id}`, POST `/documents/senders/merge` `{from, into}` | |
-| GET POST | `/documents/watch` `{folderId}`, DELETE `/documents/watch/{folderId}` | |
+| GET POST | `/documents/watch` `{folderId, ignore?}` → `{folders, ignored}`, DELETE `/documents/watch/{folderId}` | `ignore: true` = Not watched: nothing under it is found unless marked by hand |
 | POST | `/documents/upload-target` `{date?}` | makes `Documents/<year>`, -> `{folderId, path}` |
 | POST | `/documents/merge` `{ids, name?}` | images and PDFs into one new PDF in `Documents/<year>` -> `{id, name, folderId}` |
 

@@ -76,7 +76,7 @@ export function useDocSenders() {
 
 export function useDocWatch() {
   const api = useApi()
-  return useQuery({ queryKey: [api.id, "docs", "watch"], queryFn: async () => (await api.get<DocWatchResponse>("/documents/watch")).folders })
+  return useQuery({ queryKey: [api.id, "docs", "watch"], queryFn: async () => await api.get<DocWatchResponse>("/documents/watch") })
 }
 
 // One file's document row, or null when it isn't one (the server answers 404). Disabled: no request.
@@ -155,7 +155,7 @@ export function useDocActions() {
       renameSender: (id: string, name: string) => attempt(() => api.patch(`/documents/senders/${id}`, { name })),
       deleteSender: (id: string) => attempt(() => api.del(`/documents/senders/${id}`)),
       mergeSender: (from: string, into: string) => attempt(() => api.post("/documents/senders/merge", { from, into })),
-      watch: (folderId: string) => attempt(() => api.post("/documents/watch", { folderId })),
+      watch: (folderId: string, ignore = false) => attempt(() => api.post("/documents/watch", { folderId, ignore })),
       unwatch: (folderId: string) => attempt(() => api.del(`/documents/watch/${folderId}`)),
     }
   }, [api, refresh, queueIt, snack])

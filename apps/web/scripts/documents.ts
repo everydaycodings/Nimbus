@@ -23,15 +23,21 @@ type Row = {
   body: string
 }
 
-// The Documents system folders and watch folders with everything under them, walked once per sweep
+// The Documents system folders and watch folders with everything under them (and the not watched
+// folders with everything under them), walked once per sweep
 // (not once per file). Starts every query that uses candidates().
 const TREE = sql`with recursive tree as (
     select id, owner_id from nodes where system_kind = 'documents' and kind = 'folder' and trashed_at is null
     union
     select n.id, w.owner_id from doc_watch w join nodes n on n.id = w.node_id and n.owner_id = w.owner_id
-      where n.kind = 'folder' and n.trashed_at is null
+      where n.kind = 'folder' and n.trashed_at is null and not w.ignore
     union
     select c.id, t.owner_id from nodes c join tree t on c.parent_id = t.id where c.kind = 'folder' and c.trashed_at is null
+  ), ignored as (
+    select n.id, w.owner_id from doc_watch w join nodes n on n.id = w.node_id and n.owner_id = w.owner_id
+      where n.kind = 'folder' and w.ignore
+    union
+    select c.id, i.owner_id from nodes c join ignored i on c.parent_id = i.id where c.kind = 'folder'
   )`
 
 // Files that count as documents and still need their guesses: no row yet, or a row still in review for an
@@ -45,6 +51,9 @@ const candidates = (skip: string[]) => sql`
   where n.kind = 'file' and n.trashed_at is null and n.vault_id is null
     and (d.node_id is null or (d.status = 'review' and d.version_id is distinct from n.current_version_id))
     ${skip.length ? sql`and n.id not in ${sql(skip)}` : sql``}
+    -- Not watched folders win over everything but a hand mark.
+    and (d.source = 'manual' or not exists (
+      select 1 from ignored i where i.id = n.parent_id and i.owner_id = n.owner_id))
     and (n.mime = 'application/pdf' or n.name ~* '\\.pdf$' or fv.smart && array['documents', 'receipts']
       or d.source = 'manual'
       or (coalesce(n.mime, '') !~ '^(video|audio)/' and exists (

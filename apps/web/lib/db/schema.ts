@@ -1736,7 +1736,7 @@ export const documents = pgTable(
   ]
 )
 
-// Folders whose files all count as documents.
+// Folders whose files all count as documents, or (ignore) whose files never do unless marked by hand.
 export const docWatch = pgTable(
   "doc_watch",
   {
@@ -1746,6 +1746,7 @@ export const docWatch = pgTable(
     nodeId: uuid("node_id")
       .notNull()
       .references(() => nodes.id, { onDelete: "cascade" }),
+    ignore: boolean("ignore").notNull().default(false),
   },
   (t) => [primaryKey({ columns: [t.ownerId, t.nodeId] })]
 )

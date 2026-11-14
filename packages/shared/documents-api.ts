@@ -174,7 +174,8 @@ export type DocSendersResponse = { senders: DocSender[] }
 export type DocSenderPatch = { name?: string; patterns?: string[] }
 export type DocSenderMerge = { from: string; into: string }
 export type DocWatchFolder = { id: string; name: string; path: string }
-export type DocWatchResponse = { folders: DocWatchFolder[] }
+/** folders: everything in them counts; ignored: nothing in them counts unless marked by hand. */
+export type DocWatchResponse = { folders: DocWatchFolder[]; ignored: DocWatchFolder[] }
 
 // ---- POST /documents/upload-target { date? } ----
 /** Documents/<year> (made when missing): upload new documents into it. */

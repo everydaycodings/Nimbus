@@ -1,0 +1,1 @@
+ALTER TABLE "doc_watch" ADD COLUMN "ignore" boolean DEFAULT false NOT NULL;

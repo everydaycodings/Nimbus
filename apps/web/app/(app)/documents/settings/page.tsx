@@ -12,10 +12,11 @@ export const metadata = { title: "Document settings · Nimbus" }
 export default async function DocumentSettingsPage() {
   const me = await requireMember()
   if (!(await getSettings()).documentsEnabled) notFound()
-  const [types, senders, watch] = await Promise.all([
+  const [types, senders, watch, ignored] = await Promise.all([
     docs.listTypes(me),
     docs.listSenders(me),
     docs.listWatch(me),
+    docs.listWatch(me, true),
   ])
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
@@ -34,7 +35,7 @@ export default async function DocumentSettingsPage() {
           How Nimbus sorts and reminds you about your documents.
         </p>
       </div>
-      <DocumentsSettings types={types} senders={senders} watch={watch} />
+      <DocumentsSettings types={types} senders={senders} watch={watch} ignored={ignored} />
     </div>
   )
 }

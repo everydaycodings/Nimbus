@@ -38,15 +38,17 @@ import { cn } from "@/lib/utils"
 
 type Result = { error?: string }
 
-// The user's own document types (with how early to remind), the senders Nimbus learned, and watched folders.
+// The user's own document types (with how early to remind), the senders Nimbus learned, and watched and not watched folders.
 export function DocumentsSettings({
   types,
   senders,
   watch,
+  ignored,
 }: {
   types: DocType[]
   senders: DocSender[]
   watch: DocWatchFolder[]
+  ignored: DocWatchFolder[]
 }) {
   const router = useRouter()
   const notice = useNotice()
@@ -73,6 +75,7 @@ export function DocumentsSettings({
       <TypesCard types={types} act={act} busy={busy} />
       <SendersCard senders={senders} act={act} busy={busy} />
       <WatchCard watch={watch} act={act} busy={busy} />
+      <WatchCard watch={ignored} ignore act={act} busy={busy} />
     </div>
   )
 }
@@ -365,26 +368,51 @@ function SenderRow({
   )
 }
 
+// What each folder list says: watched (everything counts) or not watched (nothing counts).
+const LISTS = {
+  watch: {
+    title: "Watched folders",
+    about:
+      "Everything you put in these folders, or in the Documents folder, counts as a document and lands in Needs review. PDFs count wherever they are.",
+    remove: "Stop watching",
+    removed: "No longer watched.",
+    add: "Watch a folder",
+    pick: "Watch which folder?",
+    action: "Watch this folder",
+    added: (n: string) => `Watching ${n}.`,
+  },
+  ignore: {
+    title: "Not watched",
+    about:
+      "Nothing in these folders, or the folders inside them, is found as a document, not even PDFs. Files you mark as a document by hand still count. Guesses waiting in Needs review leave when you add a folder.",
+    remove: "Watch again",
+    removed: "Files there can be found again.",
+    add: "Add a folder",
+    pick: "Which folder should Documents skip?",
+    action: "Skip this folder",
+    added: (n: string) => `Documents skips ${n}.`,
+  },
+}
+
 function WatchCard({
   watch,
+  ignore = false,
   act,
   busy,
 }: {
   watch: DocWatchFolder[]
+  ignore?: boolean
   act: Act
   busy: boolean
 }) {
   const notice = useNotice()
   const [picking, setPicking] = useState(false)
+  const t = LISTS[ignore ? "ignore" : "watch"]
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Watched folders</CardTitle>
-        <CardDescription>
-          Everything you put in these folders, or in the Documents folder,
-          counts as a document and lands in Needs review. PDFs count wherever
-          they are.
-        </CardDescription>
+        <CardTitle className="text-base">{t.title}</CardTitle>
+        <CardDescription>{t.about}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         {watch.length > 0 && (
@@ -402,11 +430,9 @@ function WatchCard({
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  aria-label={`Stop watching ${w.name}`}
+                  aria-label={`${t.remove} ${w.name}`}
                   disabled={busy}
-                  onClick={() =>
-                    void act(() => removeDocWatch(w.id), "No longer watched.")
-                  }
+                  onClick={() => void act(() => removeDocWatch(w.id), t.removed)}
                 >
                   <TrashIcon />
                 </Button>
@@ -421,23 +447,23 @@ function WatchCard({
           onClick={() => setPicking(true)}
         >
           <FolderSimplePlusIcon />
-          Watch a folder
+          {t.add}
         </Button>
         <MoveDialog
           open={picking}
-          title="Watch which folder?"
-          action="Watch this folder"
+          title={t.pick}
+          action={t.action}
           moving={[]}
           start={[{ id: null, name: "My files" }]}
           onClose={() => setPicking(false)}
           onMove={(to) => {
             if (!to.id)
               return notice({
-                text: "Open a folder first. All of My files can't be watched.",
+                text: "Open a folder first. All of My files can't be picked.",
                 error: true,
               })
             setPicking(false)
-            void act(() => addDocWatch(to.id!), `Watching ${to.name}.`)
+            void act(() => addDocWatch(to.id!, ignore), t.added(to.name))
           }}
         />
       </CardContent>
