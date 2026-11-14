@@ -98,9 +98,9 @@ function TypesCard({
       <CardHeader>
         <CardTitle className="text-base">Types</CardTitle>
         <CardDescription>
-          The days before a document&apos;s expiry or due date that you get a
-          reminder. A single document can use its own number. Leave empty for no
-          reminder.
+          Each type reminds you this many days before a document&apos;s expiry
+          or due date. A single document can use its own number. Leave it empty
+          for no reminder.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">

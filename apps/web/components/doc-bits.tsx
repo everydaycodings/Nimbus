@@ -70,30 +70,42 @@ export function DocChips({
   )
 }
 
-// "In 5 days", "Today", "Expired 3 days ago": warning inside the window, destructive once past.
-export function Expiry({
-  date,
-  daysLeft,
-  remindDays,
-}: {
-  date: string | null
-  daysLeft: number | null
-  remindDays: number | null
-}) {
-  if (!date || daysLeft === null)
-    return <span className="text-muted-foreground">·</span>
-  const past = daysLeft < 0
-  const soon = !past && daysLeft <= (remindDays ?? 30)
-  const text = past
+// "In 5 days", "Today", "Expired 3 days ago".
+export const expiryLabel = (daysLeft: number) =>
+  daysLeft < 0
     ? `Expired ${-daysLeft} ${-daysLeft === 1 ? "day" : "days"} ago`
     : daysLeft === 0
       ? "Today"
       : daysLeft === 1
         ? "Tomorrow"
         : `In ${daysLeft} days`
+
+// The date and its label: warning inside the window, destructive once past.
+export function Expiry({
+  date,
+  daysLeft,
+  remindDays,
+  small,
+}: {
+  date: string | null
+  daysLeft: number | null
+  remindDays: number | null
+  small?: boolean
+}) {
+  if (!date || daysLeft === null)
+    return <span className="text-muted-foreground">·</span>
+  const past = daysLeft < 0
+  const soon = !past && daysLeft <= (remindDays ?? 30)
   return (
     <span className="flex min-w-0 flex-col leading-tight">
-      <span className="truncate text-sm tabular-nums">{day(date)}</span>
+      <span
+        className={cn(
+          "truncate tabular-nums",
+          small ? "text-xs text-muted-foreground" : "text-sm"
+        )}
+      >
+        {day(date)}
+      </span>
       <span
         className={cn(
           "truncate text-xs",
@@ -104,7 +116,7 @@ export function Expiry({
               : "text-muted-foreground"
         )}
       >
-        {text}
+        {expiryLabel(daysLeft)}
       </span>
     </span>
   )

@@ -22,7 +22,6 @@ import {
   markDocs,
   saveDoc,
 } from "@/app/(app)/documents/actions"
-import { day, money } from "@/components/doc-bits"
 import { useNotice } from "@/components/toaster"
 import { SELECT } from "@/components/admin/setting-styles"
 import { Button } from "@/components/ui/button"
@@ -44,7 +43,9 @@ type Draft = {
 const draftOf = (d: DocumentDetail): Draft => ({
   typeId: d.typeId ?? "",
   // A sender that is only guessed (not made yet) is offered in the field; it is made when you save or confirm.
-  sender: d.senderName ?? (d.role === "owner" && d.status === "review" ? (d.guess.sender ?? "") : ""),
+  sender:
+    d.senderName ??
+    (d.role === "owner" && d.status === "review" ? (d.guess.sender ?? "") : ""),
   docDate: d.docDate ?? "",
   amount: d.amount === null ? "" : String(d.amount),
   currency: d.currency ?? "",
@@ -439,7 +440,7 @@ export function DocumentPanel({ id, owner }: { id: string; owner: boolean }) {
             value={d.notes}
             onChange={(e) => set({ notes: e.target.value })}
             rows={3}
-            className="min-h-16 w-full resize-y rounded-md border border-input bg-input/30 px-3 py-2 text-sm shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="min-h-16 w-full resize-y rounded-md border border-input bg-input/30 px-3 py-2 text-sm shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
           />,
           undefined,
           true
@@ -506,18 +507,6 @@ export function DocumentPanel({ id, owner }: { id: string; owner: boolean }) {
           )}
         </div>
       </fieldset>
-      {!owner && (
-        <p className="text-sm text-muted-foreground tabular-nums">
-          {[
-            doc.typeName,
-            doc.senderName,
-            day(doc.docDate),
-            money(doc.amount, doc.currency),
-          ]
-            .filter(Boolean)
-            .join(" · ")}
-        </p>
-      )}
       <details className="group rounded-lg border bg-card/50 text-sm">
         <summary className="flex h-9 cursor-pointer items-center px-3 text-muted-foreground outline-none select-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
           Text read from the file

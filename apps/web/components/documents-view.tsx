@@ -40,7 +40,7 @@ import {
   mergeDocs,
 } from "@/app/(app)/documents/actions"
 import { SELECT } from "@/components/admin/setting-styles"
-import { Expiry, day, money } from "@/components/doc-bits"
+import { Expiry, day, expiryLabel, money } from "@/components/doc-bits"
 import { Previewer } from "@/components/previewer"
 import { Thumb } from "@/components/thumb"
 import { useNotice } from "@/components/toaster"
@@ -87,7 +87,7 @@ const TAB_LABEL: Record<Tab, string> = {
   hidden: "Not documents",
 }
 const COLS =
-  "grid-cols-[2rem_minmax(0,1fr)] sm:grid-cols-[2rem_minmax(0,1fr)_9rem_7rem_7rem_8rem] "
+  "grid-cols-[2rem_minmax(0,1fr)] @4xl:grid-cols-[2rem_minmax(0,1fr)_9rem_7rem_7rem_8rem] "
 
 export function DocumentsView({
   filters,
@@ -383,7 +383,7 @@ export function DocumentsView({
               <span className="truncate text-sm font-medium" title={d.name}>
                 {d.name}
               </span>
-              <span className="flex items-center gap-1.5 max-sm:hidden">
+              <span className="flex items-center gap-1.5 @max-4xl:hidden">
                 {typeChip(d)}
                 {flags(d)}
               </span>
@@ -391,17 +391,17 @@ export function DocumentsView({
                 <span
                   role="img"
                   aria-label="Needs review"
-                  className="size-2 shrink-0 rounded-full bg-warning sm:hidden"
+                  className="size-2 shrink-0 rounded-full bg-warning @4xl:hidden"
                 />
               )}
               {d.dupOf && (
                 <WarningIcon
                   aria-label="Possible duplicate"
-                  className="size-3.5 shrink-0 text-warning sm:hidden"
+                  className="size-3.5 shrink-0 text-warning @4xl:hidden"
                 />
               )}
             </span>
-            <span className="truncate text-xs text-muted-foreground tabular-nums sm:hidden">
+            <span className="truncate text-xs text-muted-foreground tabular-nums @4xl:hidden">
               {[
                 d.typeName,
                 d.senderName,
@@ -414,23 +414,23 @@ export function DocumentsView({
           </span>
         </span>
         <span
-          className="truncate text-sm text-muted-foreground max-sm:hidden"
+          className="truncate text-sm text-muted-foreground @max-4xl:hidden"
           title={d.senderName ?? undefined}
         >
           {d.senderName ?? "·"}
         </span>
         <span
           suppressHydrationWarning
-          className="truncate text-sm text-muted-foreground tabular-nums max-sm:hidden"
+          className="truncate text-sm text-muted-foreground tabular-nums @max-4xl:hidden"
         >
           {day(d.docDate) || "·"}
         </span>
-        <span className="truncate text-right text-sm tabular-nums max-sm:hidden">
+        <span className="truncate text-right text-sm tabular-nums @max-4xl:hidden">
           {money(d.amount, d.currency) || (
             <span className="text-muted-foreground">·</span>
           )}
         </span>
-        <span className="max-sm:hidden" suppressHydrationWarning>
+        <span className="@max-4xl:hidden" suppressHydrationWarning>
           <Expiry
             date={d.expiresAt}
             daysLeft={d.daysLeft}
@@ -499,6 +499,7 @@ export function DocumentsView({
                 date={d.expiresAt}
                 daysLeft={d.daysLeft}
                 remindDays={d.remindDays}
+                small
               />
             </span>
           )}
@@ -509,70 +510,69 @@ export function DocumentsView({
 
   const soon = summary.expiring
   const strip = filters.tab === "all" && (
-    <section
-      aria-label="Summary"
-      className="grid gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]"
-    >
-      <div className="flex min-w-0 flex-col gap-2 rounded-xl border bg-card p-4">
-        <div className="flex items-center gap-2">
-          <HourglassMediumIcon className="size-4 text-muted-foreground" />
-          <h2 className="text-sm font-medium">Expiring soon</h2>
-          {soon.length > 0 && (
-            <Link
-              href={hrefOf({ ...DEFAULT, expiring: "soon" })}
-              className="ml-auto rounded text-xs text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            >
-              Show all
-            </Link>
+    <section aria-label="Summary" className="@container grid gap-3">
+      <div className="flex flex-col gap-3 @3xl:grid @3xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] @3xl:gap-3">
+        <div className="flex min-w-0 flex-col gap-2 rounded-xl border bg-card p-4">
+          <div className="flex items-center gap-2">
+            <HourglassMediumIcon className="size-4 text-muted-foreground" />
+            <h2 className="text-sm font-medium">Expiring soon</h2>
+            {soon.length > 0 && (
+              <Link
+                href={hrefOf({ ...DEFAULT, expiring: "soon" })}
+                className="ml-auto rounded text-xs text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              >
+                Show all
+              </Link>
+            )}
+          </div>
+          {soon.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Nothing is due or about to expire.
+            </p>
+          ) : (
+            <ul className="flex flex-col divide-y">
+              {soon.slice(0, 4).map((d) => (
+                <li key={d.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShown(d.id)
+                      setShownOpen(true)
+                      setOpened(d)
+                    }}
+                    className="flex h-9 w-full items-center gap-3 rounded-md text-left outline-none hover:bg-muted/40 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  >
+                    <span className="min-w-0 flex-1 truncate text-sm">
+                      {d.name}
+                    </span>
+                    <span suppressHydrationWarning className="shrink-0">
+                      <ExpiryText daysLeft={d.daysLeft} />
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
-        {soon.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Nothing is due or about to expire.
-          </p>
-        ) : (
-          <ul className="flex flex-col divide-y">
-            {soon.slice(0, 4).map((d) => (
-              <li key={d.id}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShown(d.id)
-                    setShownOpen(true)
-                    setOpened(d)
-                  }}
-                  className="flex h-9 w-full items-center gap-3 rounded-md text-left outline-none hover:bg-muted/40 focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                >
-                  <span className="min-w-0 flex-1 truncate text-sm">
-                    {d.name}
-                  </span>
-                  <span suppressHydrationWarning className="shrink-0">
-                    <ExpiryText daysLeft={d.daysLeft} />
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-      <div className="flex flex-col justify-between gap-2 rounded-xl border bg-card p-4">
-        <div className="flex items-center gap-2">
-          <CheckCircleIcon className="size-4 text-muted-foreground" />
-          <h2 className="text-sm font-medium">Needs review</h2>
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-3xl font-semibold tracking-tight tabular-nums">
-            {summary.review}
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={summary.review === 0}
-            render={<Link href={hrefOf({ ...DEFAULT, tab: "review" })} />}
-            nativeButton={false}
-          >
-            Review now
-          </Button>
+        <div className="flex flex-col justify-between gap-2 rounded-xl border bg-card p-4">
+          <div className="flex items-center gap-2">
+            <CheckCircleIcon className="size-4 text-muted-foreground" />
+            <h2 className="text-sm font-medium">Needs review</h2>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-3xl font-semibold tracking-tight tabular-nums">
+              {summary.review}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={summary.review === 0}
+              render={<Link href={hrefOf({ ...DEFAULT, tab: "review" })} />}
+              nativeButton={false}
+            >
+              Review now
+            </Button>
+          </div>
         </div>
       </div>
     </section>
@@ -757,7 +757,7 @@ export function DocumentsView({
   const sub =
     filters.tab === "totals"
       ? "What your documents add up to"
-      : `${total.toLocaleString()} ${total === 1 ? "document" : "documents"}${filtering ? " match" : ""}`
+      : `${total.toLocaleString()} ${filters.tab === "hidden" ? (total === 1 ? "file" : "files") : total === 1 ? "document" : "documents"}${filtering ? " match" : ""}`
 
   return (
     <div
@@ -786,7 +786,7 @@ export function DocumentsView({
           <h1 className="text-2xl font-semibold tracking-tight">Documents</h1>
           <p className="text-sm text-muted-foreground tabular-nums">{sub}</p>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="ml-auto flex items-center gap-1">
           {filters.tab !== "totals" && (
             <div role="group" aria-label="Layout" className="flex">
               <Button
@@ -902,7 +902,7 @@ export function DocumentsView({
             {items.length === 0 ? (
               empty
             ) : view === "list" ? (
-              <div className="overflow-hidden rounded-xl border bg-card">
+              <div className="@container overflow-hidden rounded-xl border bg-card">
                 <div
                   className={cn(
                     "grid h-9 items-center gap-3 border-b pr-3 pl-3 text-xs font-medium text-muted-foreground",
@@ -931,10 +931,10 @@ export function DocumentsView({
                     )}
                   </button>
                   {sortHead("name", "Name")}
-                  <span className="max-sm:hidden">Sender</span>
-                  {sortHead("date", "Date", "max-sm:hidden")}
-                  {sortHead("amount", "Amount", "text-right max-sm:hidden")}
-                  {sortHead("expires", "Expires", "max-sm:hidden")}
+                  <span className="@max-4xl:hidden">Sender</span>
+                  {sortHead("date", "Date", "@max-4xl:hidden")}
+                  {sortHead("amount", "Amount", "text-right @max-4xl:hidden")}
+                  {sortHead("expires", "Expires", "@max-4xl:hidden")}
                 </div>
                 <div
                   role="listbox"
@@ -1163,11 +1163,7 @@ function ExpiryText({ daysLeft }: { daysLeft: number | null }) {
         past ? "text-destructive" : "text-warning"
       )}
     >
-      {past
-        ? `Expired ${-daysLeft}d ago`
-        : daysLeft === 0
-          ? "Today"
-          : `In ${daysLeft}d`}
+      {expiryLabel(daysLeft)}
     </span>
   )
 }

@@ -31,7 +31,7 @@ export default async function DocumentsAdminPage() {
   const status = !s.documentsEnabled
     ? "Off. The worker is not filing or reminding."
     : !sweep
-      ? "No sweep from the worker yet. Start `npm run worker`."
+      ? "No sweep from the worker yet. Start the worker with npm run worker."
       : [
           `${sweep.documents.toLocaleString()} documents, ${sweep.review.toLocaleString()} waiting for review`,
           sweep.backlog
