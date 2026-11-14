@@ -4,6 +4,8 @@
 server {
     listen 80;
     server_name ${NTFY_DOMAIN};
+    # The visitor's IP when a trusted proxy (Cloudflare, TRUSTED_PROXIES) is in front; written by setup-nginx.sh.
+    include /etc/nginx/snippets/nimbus-realip.conf;
 
     location / {
         proxy_pass http://127.0.0.1:3405;

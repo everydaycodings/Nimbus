@@ -5,6 +5,8 @@
 server {
     listen 80;
     server_name ${DOMAIN};
+    # The visitor's IP when a trusted proxy (Cloudflare, TRUSTED_PROXIES) is in front; written by setup-nginx.sh.
+    include /etc/nginx/snippets/nimbus-realip.conf;
 
     # Files go through /files/ in resumable chunks; this covers forms and actions.
     client_max_body_size 64m;

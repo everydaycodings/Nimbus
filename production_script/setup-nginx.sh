@@ -23,11 +23,40 @@ export NTFY_DOMAIN=""
 [[ ",$(env_value COMPOSE_PROFILES)," == *",push,"* ]] && NTFY_DOMAIN="ntfy.$DOMAIN" && names+=("$NTFY_DOMAIN")
 site=/etc/nginx/sites-available/nimbus
 cert=/etc/letsencrypt/live/$DOMAIN/fullchain.pem
+realip=/etc/nginx/snippets/nimbus-realip.conf
+
+# The visitor's IP. Behind Cloudflare or another proxy, $remote_addr is the proxy, so nginx
+# takes the address from X-Forwarded-For, but only when the connection comes from a trusted
+# proxy: a visitor connecting directly can't fake it. Skipped trusted entries are walked from
+# the right (real_ip_recursive). The app reads X-Real-IP, which is $remote_addr.
+cidrs() { grep -E '^[0-9A-Fa-f:.]+(/[0-9]{1,3})?$' || true; }
+write_realip() {
+  local cf="" own
+  if [ "$(env_value TRUST_CLOUDFLARE)" != 0 ]; then
+    cf=$( { curl -fsS --max-time 10 https://www.cloudflare.com/ips-v4; echo
+      curl -fsS --max-time 10 https://www.cloudflare.com/ips-v6; } 2>/dev/null | cidrs)
+    [ "$(printf '%s\n' "$cf" | grep -c .)" -ge 10 ] || cf=$(cidrs < nginx/cloudflare-ips.txt)
+  fi
+  own=$(env_value TRUSTED_PROXIES | tr ',' '\n' | cidrs)
+  mkdir -p "$(dirname "$realip")"
+  {
+    echo "# Written by setup-nginx.sh: proxies trusted to name the visitor's IP. Re-run it to refresh."
+    echo "real_ip_header X-Forwarded-For;"
+    echo "real_ip_recursive on;"
+    printf '%s\n' "$cf" "$own" | grep . | sed 's/.*/set_real_ip_from &;/' || true
+  } > "$realip.new"
+  if cmp -s "$realip.new" "$realip"; then rm "$realip.new"; return 1; fi
+  mv "$realip.new" "$realip"
+}
+realip_changed=no
+write_realip && realip_changed=yes
 
 # HTTPS answers through this nginx for every name, with a certificate that
 # covers it and is good for another day.
 working() {
   [ -f "$cert" ] && openssl x509 -in "$cert" -noout -checkend 86400 >/dev/null || return 1
+  # Sites set up before the trusted-proxy file don't include it.
+  grep -q nimbus-realip "$site" || return 1
   local d path code
   for d in "${names[@]}"; do
     openssl x509 -in "$cert" -noout -ext subjectAltName | grep -q "DNS:$d\b" || return 1
@@ -48,7 +77,12 @@ working() {
 }
 
 if command -v nginx >/dev/null && [ -f "$site" ] && working; then
-  echo "nginx already serves ${names[*]} over HTTPS. Nothing to do."
+  if [ "$realip_changed" = yes ]; then
+    nginx -t && systemctl reload nginx
+    echo "nginx already serves ${names[*]} over HTTPS. Updated the trusted proxy list."
+  else
+    echo "nginx already serves ${names[*]} over HTTPS. Nothing to do."
+  fi
   exit 0
 fi
 

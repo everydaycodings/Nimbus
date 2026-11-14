@@ -4,6 +4,8 @@
 server {
     listen 80;
     server_name ${S3_DOMAIN};
+    # The visitor's IP when a trusted proxy (Cloudflare, TRUSTED_PROXIES) is in front; written by setup-nginx.sh.
+    include /etc/nginx/snippets/nimbus-realip.conf;
 
     client_max_body_size 0;
 
