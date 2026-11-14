@@ -44,6 +44,8 @@ export const user = pgTable(
     webdavDisabled: boolean("webdav_disabled").default(false).notNull(),
     // An admin turned the S3 API off for this account.
     s3Disabled: boolean("s3_disabled").default(false).notNull(),
+    // An admin turned the container registry off for this account.
+    registryDisabled: boolean("registry_disabled").default(false).notNull(),
     // Phase 20: face grouping. Null follows settings.faces_default.
     facesOn: boolean("faces_on"),
     // On the chosen list for AI features (used when settings.ai_access is "chosen").

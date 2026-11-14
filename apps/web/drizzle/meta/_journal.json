@@ -386,6 +386,13 @@
       "when": 1796100000000,
       "tag": "0054_s3_api",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1796200000000,
+      "tag": "0055_registry",
+      "breakpoints": true
     }
   ]
 }

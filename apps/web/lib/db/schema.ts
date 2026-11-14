@@ -35,6 +35,7 @@ import type {
 import type { ActivityType } from "../activity-rules"
 import type { Outcome, Service } from "../health-rules"
 import type { PasswordPolicy } from "../password-policy"
+import type { Policy } from "../registry/rules"
 
 export * from "./auth-schema"
 
@@ -801,6 +802,21 @@ export const settings = pgTable(
     s3Api: boolean("s3_api").notNull().default(true),
     // Requests per second each S3 access key may make; null means no limit.
     s3RpsLimit: integer("s3_rps_limit"),
+    // The container registry (scripts/registry.ts, only when setup turned it on: REGISTRY_DOMAIN).
+    registry: boolean("registry").notNull().default(true),
+    // Repos owners may mark public (anonymous pull). Off hides that option server-wide.
+    registryPublic: boolean("registry_public").notNull().default(true),
+    // Blob GETs answer 307 to a presigned URL instead of streaming.
+    registryRedirect: boolean("registry_redirect").notNull().default(false),
+    // Per token: requests per second and bytes per second; null means no limit.
+    registryRpsLimit: integer("registry_rps_limit"),
+    registryBpsLimit: bigint("registry_bps_limit", { mode: "number" }),
+    // Who may create orgs.
+    registryOrgCreate: text("registry_org_create").$type<"anyone" | "admins">().notNull().default("anyone"),
+    // Quota for a namespace with no quota of its own; null means unlimited.
+    registryDefaultQuotaBytes: bigint("registry_default_quota_bytes", { mode: "number" }),
+    // Trivy scanning (needs the scan service from setup).
+    registryScan: boolean("registry_scan").notNull().default(false),
     // Rules for new passwords and vault passphrases. Null: the owner hasn't
     // chosen, so the industry-standard defaults apply (lib/password-policy).
     passwordPolicy: jsonb("password_policy").$type<PasswordPolicy>(),
@@ -922,6 +938,7 @@ export const settings = pgTable(
   ]
 )
 
+const bytea = customType<{ data: Buffer }>({ dataType: () => "bytea" })
 const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" })
 
 // Text found inside a file, for search. Only the current version is indexed: a
@@ -2731,4 +2748,311 @@ export const s3Multipart = pgTable(
     index("s3_multipart_bucket_idx").on(t.bucketId),
     index("s3_multipart_created_idx").on(t.createdAt),
   ]
+)
+
+// Container registry (lib/registry). A namespace is the first path part
+// (cr.example.com/<namespace>/<repo>): one per user (ref_id = user id) or org
+// (ref_id = registry_orgs.id). Its name is unique across both, lowercase.
+export const registryNamespaces = pgTable(
+  "registry_namespaces",
+  {
+    id: id(),
+    name: text("name").notNull(),
+    kind: text("kind").$type<"user" | "org">().notNull(),
+    refId: text("ref_id").notNull(),
+    // Null follows settings.registry_default_quota_bytes.
+    quotaBytes: bigint("quota_bytes", { mode: "number" }),
+    // Cleanup policy for every repo without its own. Null: none.
+    policy: jsonb("policy").$type<Policy>(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("registry_namespaces_name_idx").on(sql`lower(${t.name})`),
+    uniqueIndex("registry_namespaces_ref_idx").on(t.kind, t.refId),
+    check("registry_namespaces_kind_check", sql`${t.kind} in ('user', 'org')`),
+  ]
+)
+
+export const registryOrgs = pgTable("registry_orgs", {
+  id: id(),
+  displayName: text("display_name").notNull(),
+  createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+  createdAt: createdAt(),
+})
+
+export const registryOrgMembers = pgTable(
+  "registry_org_members",
+  {
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => registryOrgs.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    role: text("role").$type<"owner" | "write" | "read">().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.orgId, t.userId] }),
+    index("registry_org_members_user_idx").on(t.userId),
+    check("registry_org_members_role_check", sql`${t.role} in ('owner', 'write', 'read')`),
+  ]
+)
+
+export const registryRepos = pgTable(
+  "registry_repos",
+  {
+    id: id(),
+    namespaceId: uuid("namespace_id")
+      .notNull()
+      .references(() => registryNamespaces.id, { onDelete: "cascade" }),
+    // The part after the namespace, may contain slashes.
+    name: text("name").notNull(),
+    isPublic: boolean("is_public").notNull().default(false),
+    // Glob (e.g. "v*") of tags that can't be overwritten or deleted; null: none.
+    immutablePattern: text("immutable_pattern"),
+    // Null inherits the namespace policy.
+    policy: jsonb("policy").$type<Policy>(),
+    readme: text("readme"),
+    blockCritical: boolean("block_critical").notNull().default(false),
+    createdAt: createdAt(),
+    // Soft delete (registry trash); purged after 7 days.
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [uniqueIndex("registry_repos_ns_name_idx").on(t.namespaceId, t.name)]
+)
+
+// Layers and configs, stored once by digest at registry/b/<uuid> in the main bucket.
+export const registryBlobs = pgTable("registry_blobs", {
+  digest: text("digest").primaryKey(),
+  key: text("key").notNull(),
+  size: bigint("size", { mode: "number" }).notNull(),
+  createdAt: createdAt(),
+})
+
+// Which repos hold a blob: authorizes reads and cross-repo mounts, counts quota.
+export const registryRepoBlobs = pgTable(
+  "registry_repo_blobs",
+  {
+    repoId: uuid("repo_id")
+      .notNull()
+      .references(() => registryRepos.id, { onDelete: "cascade" }),
+    digest: text("digest")
+      .notNull()
+      .references(() => registryBlobs.digest, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.repoId, t.digest] }), index("registry_repo_blobs_digest_idx").on(t.digest)]
+)
+
+export const registryManifests = pgTable(
+  "registry_manifests",
+  {
+    id: id(),
+    repoId: uuid("repo_id")
+      .notNull()
+      .references(() => registryRepos.id, { onDelete: "cascade" }),
+    digest: text("digest").notNull(),
+    mediaType: text("media_type").notNull(),
+    artifactType: text("artifact_type"),
+    // Digest of the manifest this one refers to (referrers API).
+    subject: text("subject"),
+    // The exact bytes pushed (limit 4 MB), so the digest stays valid.
+    bytes: bytea("bytes").notNull(),
+    size: integer("size").notNull(),
+    // Index children's platforms, e.g. ["linux/amd64", "linux/arm64"].
+    platforms: jsonb("platforms").$type<string[]>(),
+    annotations: jsonb("annotations").$type<Record<string, string>>(),
+    createdAt: createdAt(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("registry_manifests_repo_digest_idx").on(t.repoId, t.digest),
+    index("registry_manifests_subject_idx").on(t.repoId, t.subject),
+  ]
+)
+
+// What a manifest names: a blob (config, layer) or a child manifest. GC follows these.
+export const registryManifestRefs = pgTable(
+  "registry_manifest_refs",
+  {
+    manifestId: uuid("manifest_id")
+      .notNull()
+      .references(() => registryManifests.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<"blob" | "manifest">().notNull(),
+    digest: text("digest").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.manifestId, t.kind, t.digest] }),
+    index("registry_manifest_refs_digest_idx").on(t.digest),
+  ]
+)
+
+export const registryTags = pgTable(
+  "registry_tags",
+  {
+    id: id(),
+    repoId: uuid("repo_id")
+      .notNull()
+      .references(() => registryRepos.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    digest: text("digest").notNull(),
+    pushedBy: text("pushed_by").references(() => user.id, { onDelete: "set null" }),
+    pushedAt: timestamp("pushed_at", { withTimezone: true }).notNull().defaultNow(),
+    lastPulledAt: timestamp("last_pulled_at", { withTimezone: true }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("registry_tags_repo_name_idx").on(t.repoId, t.name).where(sql`${t.deletedAt} is null`),
+    index("registry_tags_repo_digest_idx").on(t.repoId, t.digest),
+  ]
+)
+
+// Blob uploads in progress: an S3 multipart upload plus the sha256 state, so
+// PATCH can continue across requests and PUT checks the digest without re-reading.
+export const registryUploads = pgTable(
+  "registry_uploads",
+  {
+    id: id(),
+    repoId: uuid("repo_id")
+      .notNull()
+      .references(() => registryRepos.id, { onDelete: "cascade" }),
+    s3Key: text("s3_key").notNull(),
+    s3UploadId: text("s3_upload_id").notNull(),
+    parts: jsonb("parts").$type<{ n: number; etag: string }[]>().notNull().default([]),
+    offset: bigint("offset", { mode: "number" }).notNull().default(0),
+    // hash-wasm sha256 save() output, base64.
+    hashState: text("hash_state"),
+    // Bytes under 5 MB not yet uploaded as a part, staged as a temp object.
+    tailKey: text("tail_key"),
+    tailSize: integer("tail_size").notNull().default(0),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("registry_uploads_repo_idx").on(t.repoId), index("registry_uploads_updated_idx").on(t.updatedAt)]
+)
+
+// Registry tokens (NMCR…), sent as the Basic password. Sealed with lib/crypto.ts
+// so they can be shown again; the secret is compared after decrypting.
+export const registryTokens = pgTable(
+  "registry_tokens",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    // The NMCR… id part used as the lookup key.
+    prefix: text("prefix").notNull().unique(),
+    secretEnc: text("secret_enc").notNull(),
+    access: text("access").$type<"pull" | "push">().notNull(),
+    // Off: only the repos in registry_token_repos.
+    allRepos: boolean("all_repos").notNull().default(true),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    lastIp: text("last_ip"),
+  },
+  (t) => [
+    index("registry_tokens_user_idx").on(t.userId),
+    check("registry_tokens_access_check", sql`${t.access} in ('pull', 'push')`),
+  ]
+)
+
+export const registryTokenRepos = pgTable(
+  "registry_token_repos",
+  {
+    tokenId: uuid("token_id")
+      .notNull()
+      .references(() => registryTokens.id, { onDelete: "cascade" }),
+    repoId: uuid("repo_id")
+      .notNull()
+      .references(() => registryRepos.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.tokenId, t.repoId] })]
+)
+
+export const registryPullsDaily = pgTable(
+  "registry_pulls_daily",
+  {
+    repoId: uuid("repo_id")
+      .notNull()
+      .references(() => registryRepos.id, { onDelete: "cascade" }),
+    tag: text("tag").notNull(),
+    day: date("day").notNull(),
+    count: integer("count").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.repoId, t.tag, t.day] })]
+)
+
+// Pull-through sources, set by admins. Cached copies live under mirror/<name>/….
+export const registryUpstreams = pgTable("registry_upstreams", {
+  id: id(),
+  // The path part: mirror/<name>/<repo>.
+  name: text("name").notNull().unique(),
+  url: text("url").notNull(),
+  username: text("username"),
+  passwordEnc: text("password_enc"),
+  // Cached tags and blobs expire after this many days without a pull.
+  ttlDays: integer("ttl_days").notNull().default(30),
+  enabled: boolean("enabled").notNull().default(true),
+  createdAt: createdAt(),
+})
+
+export const registryScans = pgTable(
+  "registry_scans",
+  {
+    id: id(),
+    manifestId: uuid("manifest_id")
+      .notNull()
+      .references(() => registryManifests.id, { onDelete: "cascade" }),
+    status: text("status").$type<"pending" | "running" | "done" | "failed">().notNull().default("pending"),
+    critical: integer("critical").notNull().default(0),
+    high: integer("high").notNull().default(0),
+    medium: integer("medium").notNull().default(0),
+    low: integer("low").notNull().default(0),
+    report: jsonb("report"),
+    error: text("error"),
+    scannedAt: timestamp("scanned_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("registry_scans_manifest_idx").on(t.manifestId)]
+)
+
+// Webhooks for a namespace (repoId null) or one repo.
+export const registryHooks = pgTable(
+  "registry_hooks",
+  {
+    id: id(),
+    namespaceId: uuid("namespace_id")
+      .notNull()
+      .references(() => registryNamespaces.id, { onDelete: "cascade" }),
+    repoId: uuid("repo_id").references(() => registryRepos.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    // Sealed with lib/crypto.ts.
+    secretEnc: text("secret_enc").notNull(),
+    events: jsonb("events").$type<("push" | "delete" | "scan")[]>().notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [index("registry_hooks_ns_idx").on(t.namespaceId)]
+)
+
+export const registryHookDeliveries = pgTable(
+  "registry_hook_deliveries",
+  {
+    id: id(),
+    hookId: uuid("hook_id")
+      .notNull()
+      .references(() => registryHooks.id, { onDelete: "cascade" }),
+    event: text("event").notNull(),
+    payload: jsonb("payload").notNull(),
+    status: integer("status"),
+    error: text("error"),
+    attempts: integer("attempts").notNull().default(0),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("registry_hook_deliveries_hook_idx").on(t.hookId, t.createdAt)]
 )
