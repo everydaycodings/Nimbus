@@ -7,6 +7,7 @@ export type WithSystem = { system?: SystemKind }
 const INFO: Record<SystemKind, { label: string; name: string; does: string }> = {
   camera: { label: "Photo backup", name: "Camera", does: "Photo backup puts new photos in Camera." },
   phone_backup: { label: "Contacts and calendar", name: "Phone backup", does: "Phone backup keeps your contacts and calendar in Phone backup." },
+  documents: { label: "Documents", name: "Documents", does: "Documents files new scans and uploads in Documents, by year." },
   partner: { label: "Partner photos", name: "this folder", does: "Partner sharing saves your partner's photos here." },
 }
 

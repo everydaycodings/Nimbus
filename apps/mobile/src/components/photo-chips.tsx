@@ -47,7 +47,8 @@ export function PhotoChips() {
         <Chip key={p.id} label={p.name!} leading={<PersonFace person={p} size={22} />} onPress={() => router.push({ pathname: "/people/[id]", params: { id: p.id, name: p.name! } })} />
       ))}
       {places && <Chip label="Places" icon={MapPin} onPress={() => router.push("/places")} />}
-      {(Object.keys(SMART_LABEL) as SmartGroup[]).map((g) => (
+      {/* Documents and receipts moved to the Documents section. */}
+      {(["screenshots", "videos"] as SmartGroup[]).map((g) => (
         <Chip key={g} label={SMART_LABEL[g]} icon={SMART_ICON[g]} onPress={() => router.push({ pathname: "/smart/[group]", params: { group: g } })} />
       ))}
     </ScrollView>

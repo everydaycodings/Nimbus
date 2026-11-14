@@ -45,8 +45,6 @@ type Page = { items: PhotoItem[]; total: number; nextCursor: string | null }
 
 const GROUPS: { id: SmartGroup; label: string; empty: string }[] = [
   { id: "screenshots", label: "Screenshots", empty: "Screenshots of your screen show up here." },
-  { id: "documents", label: "Documents", empty: "Scans and pictures of pages show up here." },
-  { id: "receipts", label: "Receipts", empty: "Pictures of receipts and invoices show up here." },
   { id: "videos", label: "Videos", empty: "Your videos show up here." },
 ]
 

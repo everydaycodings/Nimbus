@@ -161,7 +161,7 @@ export type Item = {
   system?: SystemKind
 }
 
-export type SystemKind = "camera" | "phone_backup" | "partner"
+export type SystemKind = "camera" | "phone_backup" | "partner" | "documents"
 
 export type TypeKey =
   | "folder"
@@ -629,6 +629,7 @@ export type NotificationKind =
   | "partner"
   | "phone_backup"
   | "secrets"
+  | "document_expiring"
 export type Notification = {
   id: string
   kind: NotificationKind

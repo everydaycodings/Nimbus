@@ -30,6 +30,7 @@ const KIND_LABEL: Record<NotificationKind, string> = {
   app_password: "A new app password is made for my account",
   storage_low: "My storage is nearly full (90%)",
   phone_backup: "My phone hasn't backed up contacts or calendar for 7 days",
+  document_expiring: "A document is about to expire or fall due (Documents)",
   secrets: "Secrets: change and access requests, rotation reminders, expiring tokens, project invites",
 }
 

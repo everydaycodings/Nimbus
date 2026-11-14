@@ -212,6 +212,7 @@ async function describe(userId: string, ids?: string[]) {
           : `${who} wants to share their photos with you`,
       storage_low: `${r.actor ? `${who} reminded you: your` : "Your"} storage is ${d.percent ?? 90}% full. See what's using it.`,
       phone_backup: `${d.device ?? "Your phone"} hasn't backed up contacts or calendar for 7 days`,
+      document_expiring: `“${r.name ?? "A document"}” ${d.what === "expired" ? "has expired" : d.days === "0" ? "expires today" : `expires in ${d.days ?? "a few"} days`}`,
       secrets: d.text ?? "Something needs a look in Secrets",
     }[r.kind]
     const seen = r.nodeId ? access.get(r.nodeId) : undefined
@@ -238,6 +239,8 @@ async function describe(userId: string, ids?: string[]) {
             ? "/storage"
           : r.kind === "phone_backup"
             ? `/account/phone-backup/${d.id}`
+          : r.kind === "document_expiring"
+            ? `/documents?open=${r.nodeId}`
           : r.kind === "transfer_download"
             ? "/transfers"
           : !seen

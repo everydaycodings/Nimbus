@@ -34,6 +34,8 @@ export const workerConnection = () =>
 export const HEALTH_QUEUE = "health"
 export const HEARTBEAT_KEY = "health:heartbeat"
 export const INDEXER_KEY = "health:indexer"
+// The Documents sweep's {at, enabled, backlog, documents, review, lastError} (scripts/documents.ts), for Admin → Health.
+export const DOCS_KEY = "health:documents"
 // The AI service sweep's per-feature backlog, failures and rate (scripts/ml.ts), for Health and Admin → AI features.
 export const ML_KEY = "health:ml"
 export const JOBS_QUEUE = "jobs"

@@ -12,6 +12,7 @@ import {
   HEALTH_QUEUE,
   HEARTBEAT_KEY,
   INDEXER_KEY,
+  DOCS_KEY,
   ML_KEY,
   JOBS_QUEUE,
   redis,
@@ -23,6 +24,7 @@ import {
 import { signToken } from "../lib/upload-rules.ts"
 import { derive, deriveMisses, exifMisses, hashMisses } from "./derive.ts"
 import { fetchLang } from "../lib/extract.ts"
+import { docsStatus, docsSweep } from "./documents.ts"
 import { sql as indexSql, status, sweep } from "./indexer.ts"
 import { faceCluster, mlSweep, mlStatus } from "./ml.ts"
 import { transcode, transcodeMisses } from "./transcode.ts"
@@ -113,12 +115,14 @@ async function index() {
       await deriveMisses()
       await exifMisses()
       await hashMisses()
+      await docsSweep().catch((e: Error) => console.error(`documents sweep: ${e.message}`))
       await transcodeMisses()
       // Admin → System: how many derive jobs run at once.
       const [{ n }] =
         await indexSql`select derive_concurrency as n from settings`
       derives.concurrency = Math.max(1, n)
     })().finally(() => (sweeping = undefined)))
+  await redis.set(DOCS_KEY, JSON.stringify({ at: Date.now(), ...docsStatus }), "PX", 3 * 60_000)
   // Admin → Health shows the indexer as running while this key lives.
   await redis.set(
     INDEXER_KEY,

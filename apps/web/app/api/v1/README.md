@@ -382,3 +382,27 @@ Profile name/email editing doesn't exist on the web either, so there's no route.
 - **Partner:** one outgoing share at a time. A pending invite gives no access until `accept`. `accept` with `shareBack`
   shares mine with them too. `hidden` only hides their photos from my timeline.
 - Notification kinds `album` (shared with you, photos added; adds fold hourly) and `partner` (invite, accepted).
+
+## Documents (`/documents`, types in `@nimbus/shared/documents-api`)
+
+All routes answer 404 `not-found` ("Documents are turned off.") when the admin turns the section off (`settings.documents_enabled`).
+A view over normal files: the worker (`scripts/documents.ts`, after the indexer) files PDFs, scanned pictures the Photos
+rules call documents/receipts, and files in a watch folder or the Documents system folder as `status: "review"`; never
+touching `confirmed` or `dismissed` ones. Ids are file ids. Shared documents (confirmed only) show read-only (`role: "viewer"`).
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/documents` | filters `q type sender status from to year minAmount maxAmount currency expiring missing shared sort order limit cursor` -> `{items, total, nextCursor}` |
+| POST | `/documents` `{ids}` | mark files as documents (also undoes "Not a document") -> `{marked}` |
+| GET | `/documents/{id}` | `DocumentDetail` (adds `text`) |
+| PATCH | `/documents/{id}` | `DocumentPatch`; status `confirmed` / `dismissed` / `review`; -> `{item}`. Owner only |
+| POST | `/documents/bulk` `{ids, typeId?, senderId?, confirm?}` | -> `{updated}` |
+| GET | `/documents/totals?by=sender\|type&period=month\|year&year=` | `{rows}` per period, key, currency |
+| GET | `/documents/summary` | `{review, total, expiring[]}` |
+| GET POST | `/documents/types`, PATCH DELETE `/documents/types/{id}` | presets are read-only |
+| GET POST | `/documents/senders`, PATCH DELETE `/documents/senders/{id}`, POST `/documents/senders/merge` `{from, into}` | |
+| GET POST | `/documents/watch` `{folderId}`, DELETE `/documents/watch/{folderId}` | |
+| POST | `/documents/upload-target` `{date?}` | makes `Documents/<year>`, -> `{folderId, path}` |
+| POST | `/documents/merge` `{ids, name?}` | images and PDFs into one new PDF in `Documents/<year>` -> `{id, name, folderId}` |
+
+Notification kind `document_expiring` (sent by the reminders job, a later phase). System folder kind `documents`.

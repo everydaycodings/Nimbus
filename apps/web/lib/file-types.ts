@@ -6,6 +6,7 @@ import {
   FileCodeIcon,
   FileDocIcon,
   FileIcon,
+  FileTextIcon,
   FileImageIcon,
   FilePdfIcon,
   FileVideoIcon,
@@ -131,6 +132,16 @@ export const SYSTEM: Record<
       rename: "the next backup makes a new Phone backup folder",
       move: "the next backup makes a new Phone backup folder",
       delete: "the next backup makes a new Phone backup folder and the saved copies are gone",
+    },
+  },
+  documents: {
+    icon: FileTextIcon,
+    label: "Auto · Documents",
+    warn: "Documents files new scans and uploads in Documents, by year.",
+    effect: {
+      rename: "the next scan or upload makes a new Documents folder",
+      move: "the next scan or upload makes a new Documents folder",
+      delete: "the next scan or upload makes a new Documents folder",
     },
   },
   partner: {

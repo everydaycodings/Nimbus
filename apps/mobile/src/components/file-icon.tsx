@@ -7,6 +7,7 @@ import {
   FileAudio,
   FileCode,
   FileDoc,
+  FileText,
   FileImage,
   FilePdf,
   FilePpt,
@@ -21,7 +22,7 @@ import {
 import { c } from "@/lib/theme"
 import type { WithSystem } from "@/lib/system-folders"
 
-const SYSTEM_ICON: Record<SystemKind, typeof File> = { camera: Camera, phone_backup: DeviceMobile, partner: UsersThree }
+const SYSTEM_ICON: Record<SystemKind, typeof File> = { camera: Camera, phone_backup: DeviceMobile, partner: UsersThree, documents: FileText }
 
 // The web's fileType(): same icons and hues, so a file looks the same on both.
 export const FILE_TYPES: Record<TypeKey, { label: string; icon: typeof File; color: string }> = {

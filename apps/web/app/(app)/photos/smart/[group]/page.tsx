@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation"
+import { notFound, redirect } from "next/navigation"
 
 import { PhotosTimeline } from "@/components/photos-timeline"
 import { smart } from "@/lib/services/photos"
@@ -10,6 +10,8 @@ export const metadata = { title: "Photos · Nimbus" }
 
 export default async function SmartPage({ params }: { params: Promise<{ group: string }> }) {
   const { group } = await params
+  // Documents and receipts moved to their own section.
+  if (group === "documents" || group === "receipts") redirect("/documents")
   if (!isSmartGroup(group)) notFound()
   const me = await requireMember()
   const [first, settings] = await Promise.all([smart(me, group, 500), getSettings()])

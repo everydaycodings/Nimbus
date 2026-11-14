@@ -15,7 +15,9 @@
     "./pdf-annot": "./pdf-annot.ts",
     "./pdf-editor": "./pdf-editor.ts",
     "./vcard": "./vcard.ts",
-    "./ical": "./ical.ts"
+    "./ical": "./ical.ts",
+    "./documents": "./documents.ts",
+    "./documents-api": "./documents-api.ts"
   },
   "scripts": {
     "test": "node --test *.test.ts"

@@ -4,10 +4,12 @@ import {
   boolean,
   check,
   customType,
+  date,
   doublePrecision,
   index,
   integer,
   jsonb,
+  numeric,
   pgEnum,
   pgTable,
   primaryKey,
@@ -97,7 +99,7 @@ export const nodes = pgTable(
     // Off: people it's shared with as editors can't share it (or anything inside) further.
     allowReshare: boolean("allow_reshare").notNull().default(true),
     trashedAt: timestamp("trashed_at", { withTimezone: true }),
-    // Folders the app makes itself: "camera" | "phone_backup" | "partner". Null for the rest.
+    // Folders the app makes itself: "camera" | "phone_backup" | "partner" | "documents". Null for the rest.
     systemKind: text("system_kind"),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -592,6 +594,8 @@ export const NOTIFICATION_KINDS = [
   "phone_backup",
   // Secrets: change requests, access requests, rotation and token expiry, being added to a project.
   "secrets",
+  // A document's expiry or due date is coming up (Documents).
+  "document_expiring",
 ] as const
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number]
 // Only admins get these, so only admins see their settings.
@@ -768,6 +772,9 @@ export const settings = pgTable(
     secretHibp: boolean("secret_hibp").notNull().default(true),
     // Domain watch may probe loopback, private and link-local addresses (off: public hosts only).
     secretAllowPrivate: boolean("secret_allow_private").notNull().default(false),
+    // Documents section: off hides it; docsMl lets nimbus-ml (CLIP) hint the type of scanned images.
+    documentsEnabled: boolean("documents_enabled").notNull().default(true),
+    docsMl: boolean("docs_ml").notNull().default(true),
     // Where action messages (toasts) appear for everyone.
     toastPosition: text("toast_position")
       .$type<ToastPosition>()
@@ -1648,6 +1655,90 @@ export const phoneBackups = pgTable(
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("phone_backups_user_device_idx").on(t.userId, t.deviceName)]
+)
+
+// ---- Documents ---------------------------------------------------------------
+// A view over normal files (like Photos): PDFs and scans the worker found, or the owner marked,
+// with type, sender, date, amount and expiry. Status: review (guessed), confirmed, dismissed ("Not a document").
+
+// Presets have a null owner and a `key` the extractor guesses; the rest are the member's own.
+export const docTypes = pgTable(
+  "doc_types",
+  {
+    id: id(),
+    ownerId: text("owner_id").references(() => user.id, { onDelete: "cascade" }),
+    key: text("key"),
+    name: text("name").notNull(),
+    // Days before the expiry or due date to remind. Null: no reminder.
+    remindDays: integer("remind_days"),
+  },
+  (t) => [uniqueIndex("doc_types_owner_name_idx").on(sql`coalesce(${t.ownerId}, '')`, sql`lower(${t.name})`)]
+)
+
+export const docSenders = pgTable(
+  "doc_senders",
+  {
+    id: id(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    // Lowercase words that, found in a document's text, mean this sender.
+    patterns: text("patterns").array().notNull().default([]),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("doc_senders_owner_name_idx").on(t.ownerId, sql`lower(${t.name})`)]
+)
+
+export const documents = pgTable(
+  "documents",
+  {
+    nodeId: uuid("node_id")
+      .primaryKey()
+      .references(() => nodes.id, { onDelete: "cascade" }),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    // The file version the guesses came from; null until the worker has read it.
+    versionId: uuid("version_id"),
+    status: text("status").$type<"review" | "confirmed" | "dismissed">().notNull().default("review"),
+    source: text("source").$type<"auto" | "manual">().notNull().default("auto"),
+    typeId: uuid("type_id").references(() => docTypes.id, { onDelete: "set null" }),
+    senderId: uuid("sender_id").references(() => docSenders.id, { onDelete: "set null" }),
+    docDate: date("doc_date", { mode: "string" }),
+    amount: numeric("amount", { precision: 14, scale: 2, mode: "number" }),
+    currency: text("currency"),
+    expiresAt: date("expires_at", { mode: "string" }),
+    // Overrides the type's lead time.
+    remindDays: integer("remind_days"),
+    remindedAt: timestamp("reminded_at", { withTimezone: true }),
+    notes: text("notes"),
+    fields: jsonb("fields").$type<Record<string, string>>().notNull().default({}),
+    // What the extractor and CLIP thought: {type, sender, confidence, clip, ...}.
+    guess: jsonb("guess").$type<Record<string, unknown>>().notNull().default({}),
+    dupOf: uuid("dup_of").references(() => nodes.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("documents_owner_status_idx").on(t.ownerId, t.status),
+    index("documents_owner_expires_idx").on(t.ownerId, t.expiresAt),
+    index("documents_owner_date_idx").on(t.ownerId, t.docDate),
+  ]
+)
+
+// Folders whose files all count as documents.
+export const docWatch = pgTable(
+  "doc_watch",
+  {
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    nodeId: uuid("node_id")
+      .notNull()
+      .references(() => nodes.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.ownerId, t.nodeId] })]
 )
 
 // ---- Secrets -----------------------------------------------------------------
