@@ -96,6 +96,6 @@ export async function versioning(c: C, name: string) {
 export async function putVersioning(c: C, name: string, body: string) {
   await bucketFor(c.who, name)
   if (/<Status>\s*Suspended\s*<\/Status>/.test(body))
-    throw new S3Error("NotImplemented", "Versioning can't be suspended: Nimbus keeps every version.", 501)
+    throw new S3Error("InvalidArgument", "Versioning can't be suspended: Nimbus always keeps every version.", 400)
   return respond(c, 200)
 }

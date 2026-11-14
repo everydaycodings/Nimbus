@@ -3,6 +3,8 @@ import "server-only"
 
 import { Readable } from "node:stream"
 
+import type { ObjectMeta } from "@/lib/store-file"
+
 import type { Who } from "./auth.ts"
 import { chunkDecoder, hashCheck, headerChecksums, SigError, type Checked } from "./sigv4.ts"
 import { S3Error, wrap } from "./xml.ts"
@@ -38,6 +40,33 @@ export function userMeta(c: C) {
   const m: Record<string, string> = {}
   for (const [k, v] of c.req.headers) if (k.startsWith("x-amz-meta-")) m[k.slice(11)] = v
   return Object.keys(m).length ? m : undefined
+}
+
+const STORED_HEADERS = ["cache-control", "content-disposition", "content-encoding", "content-language", "expires"]
+
+// What a PUT, copy-with-REPLACE or multipart start stores beside the bytes:
+// Content-Type, x-amz-meta-* and the caching headers. undefined when none came.
+export function objectMeta(c: C): ObjectMeta | undefined {
+  const contentType = header(c, "content-type")
+  const user = userMeta(c)
+  const headers = Object.fromEntries(STORED_HEADERS.flatMap((h) => (header(c, h) ? [[h, header(c, h)!]] : [])))
+  const any = Object.keys(headers).length > 0
+  return contentType || user || any ? { ...(contentType && { contentType }), ...(user && { user }), ...(any && { headers }) } : undefined
+}
+
+// If-Match, If-None-Match, If-Modified-Since, If-Unmodified-Since in RFC 7232's
+// order, read from headers called `${prefix}if-…`. 412 and 304 are the answers a
+// failed condition gives; null means carry on.
+export function conditions(c: C, prefix: string, etag: string, at: Date): 412 | 304 | null {
+  const h = (n: string) => header(c, prefix + n)
+  const secs = (d: Date | string) => Math.floor((typeof d === "string" ? Date.parse(d) : d.getTime()) / 1000)
+  const same = (list: string) => list.split(",").some((t) => t.trim().replace(/^W\//, "") === etag || t.trim() === "*")
+  const [ifMatch, none, since, unmod] = ["if-match", "if-none-match", "if-modified-since", "if-unmodified-since"].map(h)
+  if (ifMatch && !same(ifMatch)) return 412
+  if (unmod && !ifMatch && secs(at) > secs(unmod)) return 412
+  if (none && same(none)) return 304
+  if (since && !none && secs(at) <= secs(since)) return 304
+  return null
 }
 
 // The request body with its signatures and checksums being checked as it

@@ -10,7 +10,7 @@ import { s3KeyBuckets, s3Keys, settings, user } from "@/lib/db/schema"
 import { redis } from "@/lib/redis"
 
 import { S3Error } from "./xml.ts"
-import { parseAuthorization, verifyHeaderAuth, type Checked, type Signed } from "./sigv4.ts"
+import { parseAuthorization, parsePresigned, verifyHeaderAuth, verifyPresigned, type Checked, type Parsed, type Signed } from "./sigv4.ts"
 
 const TRIES = 20
 const WINDOW = 15 * 60
@@ -49,8 +49,10 @@ export async function s3SignIn(
 ): Promise<{ who: Who; checked: Checked }> {
   if ((await failures(ip)) >= TRIES)
     throw new S3Error("AccessDenied", "Too many failed requests from this address. Try again in 15 minutes.")
-  if (!authorization) throw new S3Error("AccessDenied", "Anonymous access is not allowed. Sign the request with an access key.")
-  const p = parseAuthorization(authorization)
+  // A presigned URL carries its signature in the query instead of a header.
+  const pre = authorization ? null : parsePresigned(new URLSearchParams(req.url.split("?").slice(1).join("?")))
+  if (!authorization && !pre) throw new S3Error("AccessDenied", "Anonymous access is not allowed. Sign the request with an access key.")
+  const p: Parsed | null = pre ? pre.parsed : parseAuthorization(authorization!)
   if (!p) {
     await fail(ip)
     throw new S3Error("AuthorizationHeaderMalformed", "The authorization header is malformed.", 400)
@@ -81,7 +83,7 @@ export async function s3SignIn(
   }
   let checked: Checked
   try {
-    checked = verifyHeaderAuth(req, authorization, secret)
+    checked = pre ? verifyPresigned(req, pre, secret) : verifyHeaderAuth(req, authorization!, secret)
   } catch (e) {
     await fail(ip)
     throw e

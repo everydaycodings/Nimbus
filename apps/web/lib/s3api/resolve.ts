@@ -7,6 +7,7 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm"
 import { accessOne, atLeast, type Access } from "@/lib/access"
 import { db } from "@/lib/db"
 import { fileVersions, nodes, s3Buckets } from "@/lib/db/schema"
+import { trashNodes } from "@/lib/tree"
 
 import type { Who } from "./auth.ts"
 import { S3Error } from "./xml.ts"
@@ -74,6 +75,20 @@ export function splitKey(key: string) {
     if (!p || p === "." || p === ".." || /[\\\0]/.test(p) || p.length > 255)
       throw new S3Error("InvalidArgument", "Keys can't have empty, \".\" or \"..\" parts, backslashes, or parts over 255 characters.", 400)
   return { dir, parts }
+}
+
+// Folders S3 paths created, removed again when they end up empty.
+export async function pruneEmpty(b: Bucket, folderId: string | null) {
+  let id = folderId
+  while (id && id !== b.nodeId) {
+    const [row] = await db
+      .select({ parentId: nodes.parentId, kids: sql<number>`(select count(*) from nodes k where k.parent_id = ${id} and k.trashed_at is null)` })
+      .from(nodes)
+      .where(eq(nodes.id, id))
+    if (!row || Number(row.kids) > 0) return
+    await trashNodes(db, b.ownerId, [id])
+    id = row.parentId
+  }
 }
 
 export type Found = {

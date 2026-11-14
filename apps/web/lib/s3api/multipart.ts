@@ -24,8 +24,8 @@ import { BUCKET, deleteKeys, s3 } from "@/lib/s3"
 import { mimeFor, saveVersion } from "@/lib/store-file"
 import { rejectReason, uploadLimits } from "@/lib/uploads"
 
-import { bodyOf, header, nodeStream, readXml, respond, unwrap, userMeta, xml, type C } from "./http.ts"
-import { copyFrom, storeError } from "./objects.ts"
+import { bodyOf, header, nodeStream, readXml, objectMeta, respond, unwrap, xml, type C } from "./http.ts"
+import { copyFrom, storeError, whenOf } from "./objects.ts"
 import { STALE_MULTIPART_DAYS } from "./rules.ts"
 import { childOf, mustWrite, splitKey, type Bucket } from "./resolve.ts"
 import { encodeKey, inner, isoDate, tag, text, S3Error } from "./xml.ts"
@@ -51,7 +51,6 @@ export async function create(c: C, b: Bucket) {
   mustWrite(b)
   splitKey(c.key!)
   const ct = header(c, "content-type")
-  const user = userMeta(c)
   const backingKey = `s3-${randomBytes(16).toString("hex")}`
   const r = await s3.send(
     new CreateMultipartUploadCommand({ Bucket: BUCKET, Key: backingKey, ContentType: ct?.split(";")[0] || undefined })
@@ -62,7 +61,7 @@ export async function create(c: C, b: Bucket) {
     key: c.key!,
     backingKey,
     backingUploadId: r.UploadId!,
-    meta: ct || user ? { ...(ct && { contentType: ct }), ...(user && { user }) } : null,
+    meta: objectMeta(c) ?? null,
   }).returning({ id: s3Multipart.id })
   return xml(c, "InitiateMultipartUploadResult", `${tag("Bucket", b.name)}${tag("Key", c.key)}${tag("UploadId", row.id)}`)
 }
@@ -256,6 +255,7 @@ export async function complete(c: C, b: Bucket) {
     await deleteKeys([row.backingKey])
     await db.delete(s3Multipart).where(eq(s3Multipart.id, row.id))
   }
+  let versionId = ""
   try {
     // The waiting bytes were already counted; take them out before checking again.
     const left = await spaceLeft(b.ownerId)
@@ -280,13 +280,15 @@ export async function complete(c: C, b: Bucket) {
       etag,
       meta: meta ?? undefined,
       quiet: b.quiet,
+      when: whenOf(c, ""),
     })
     if ("error" in r) throw storeError(r.error)
+    versionId = r.versionId
   } catch (e) {
     await drop()
     throw e
   }
   await db.delete(s3Multipart).where(eq(s3Multipart.id, row.id))
   const loc = `${process.env.S3API_DOMAIN ?? ""}/${b.name}/${c.key}`
-  return xml(c, "CompleteMultipartUploadResult", `${tag("Location", loc)}${tag("Bucket", b.name)}${tag("Key", c.key)}${tag("ETag", `"${etag}"`)}`)
+  return xml(c, "CompleteMultipartUploadResult", `${tag("Location", loc)}${tag("Bucket", b.name)}${tag("Key", c.key)}${tag("ETag", `"${etag}"`)}`, 200, { "x-amz-version-id": versionId })
 }

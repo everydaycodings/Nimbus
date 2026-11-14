@@ -144,7 +144,9 @@ export function DetailsSheet({
                   onChange={(e) => {
                     const quiet = e.target.checked
                     setBucket({ ...isBucket, quiet })
-                    setQuiet(isBucket.id, quiet)
+                    setQuiet(isBucket.id, quiet).then((r) => {
+                      if (r.error) setBucket({ ...isBucket, quiet: !quiet })
+                    })
                   }}
                   className="size-4 accent-primary"
                 />

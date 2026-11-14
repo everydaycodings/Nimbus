@@ -105,7 +105,13 @@ function Confirm({
       <Button variant="destructive" size="sm" disabled={pending} onClick={onYes}>
         {yes}
       </Button>
-      <Button variant="ghost" size="sm" disabled={pending} onClick={() => setSure(false)}>
+      <Button
+        variant="ghost"
+        size="sm"
+        autoFocus
+        disabled={pending}
+        onClick={() => setSure(false)}
+      >
         Keep
       </Button>
     </span>
@@ -299,7 +305,7 @@ function KeyItem({ k }: { k: KeyRow }) {
             <code className="rounded bg-input/20 px-1.5 py-0.5 font-mono text-foreground select-all">
               {k.accessKeyId}
             </code>
-            <span>
+            <span className="min-w-0 break-words">
               {k.allBuckets
                 ? "All buckets"
                 : k.buckets.length
@@ -309,7 +315,7 @@ function KeyItem({ k }: { k: KeyRow }) {
           </p>
           <p
             suppressHydrationWarning
-            className="text-xs text-pretty text-muted-foreground"
+            className="text-xs text-pretty break-words text-muted-foreground"
           >
             {k.expiresAt
               ? `${k.expired ? "Expired" : "Expires"} ${DAY.format(new Date(k.expiresAt))}`
@@ -560,7 +566,7 @@ function NewKey({
   )
 }
 
-const CODE = "block overflow-x-auto rounded-lg bg-input/20 p-3 pr-20 font-mono text-xs leading-relaxed whitespace-pre"
+const CODE = "block overflow-x-auto rounded-lg bg-input/20 p-3 pt-12 font-mono sm:pt-3 sm:pr-20 text-xs leading-relaxed whitespace-pre"
 
 function snippets(url: string, region: string, bucket: string) {
   const host = url.replace(/^https?:\/\//, "")
@@ -697,20 +703,34 @@ function Connect({
               <CopyButton value={url} />
             </dd>
           </div>
-          <div className="grid gap-1.5">
-            <dt className="text-sm font-medium">Region</dt>
-            <dd className="flex h-9 items-center rounded-md border bg-input/20 px-3 font-mono text-sm">
-              {region}
-            </dd>
-          </div>
-          <div className="grid gap-1.5">
-            <dt className="text-sm font-medium">Addressing</dt>
-            <dd className="flex h-9 items-center text-sm text-muted-foreground">Path-style</dd>
+          <div className="grid grid-cols-2 gap-3 sm:contents">
+            <div className="grid min-w-0 gap-1.5">
+              <dt className="text-sm font-medium">Region</dt>
+              <dd className="flex h-9 items-center overflow-x-auto rounded-md border bg-input/20 px-3 font-mono text-sm">
+                {region}
+              </dd>
+            </div>
+            <div className="grid gap-1.5">
+              <dt className="text-sm font-medium">Addressing</dt>
+              <dd className="flex h-9 items-center text-sm text-muted-foreground">Path-style</dd>
+            </div>
           </div>
         </dl>
 
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-          <div role="tablist" aria-label="Clients" className="flex flex-wrap gap-1">
+          <div
+            role="tablist"
+            aria-label="Clients"
+            className="flex flex-wrap gap-1"
+            onKeyDown={(e) => {
+              const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0
+              if (!step) return
+              e.preventDefault()
+              const next = all[(all.findIndex((s) => s.id === tab) + step + all.length) % all.length]
+              setTab(next.id)
+              document.getElementById(`${id}-${next.id}`)?.focus()
+            }}
+          >
             {all.map((s) => (
               <button
                 key={s.id}
@@ -718,6 +738,7 @@ function Connect({
                 role="tab"
                 id={`${id}-${s.id}`}
                 aria-selected={tab === s.id}
+                tabIndex={tab === s.id ? 0 : -1}
                 aria-controls={`${id}-panel`}
                 onClick={() => setTab(s.id)}
                 className="rounded-md px-2.5 py-1 text-sm text-muted-foreground outline-none hover:bg-accent/50 focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-selected:bg-accent aria-selected:text-foreground"

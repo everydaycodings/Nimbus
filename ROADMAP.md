@@ -402,16 +402,22 @@ password accounts must set it up. Google and GitHub sign-ins rely on the provide
   preview, trash + Undo; share a folder with a member who opens it; a public link opened signed
   out; a vault made, filled, locked, unlocked and deleted. Each test cleans up after itself.
 
-## S3 API a: Folders as S3 buckets (in progress)
+## S3 API a: Folders as S3 buckets (done)
 - Optional `s3api` compose profile (`scripts/s3.ts`, port 3407) on its own subdomain
-  (`S3API_DOMAIN`, asked by `setup.sh`, served by `setup-nginx.sh`). Signed requests (SigV4) from
-  aws cli, rclone, restic and Terraform reach the app the way WebDAV's do.
-- Members make access keys and buckets on the Buckets page, or "Use as S3 bucket" on a folder.
+  (`S3API_DOMAIN`, asked by `setup.sh`, served by `setup-nginx.sh`). Signed requests (SigV4, all
+  aws-chunked payload modes) reach the app the way WebDAV's do.
+- Access keys per member (bucket scope, read only or read and write, expiry), buckets from marked
+  folders (own or shared with me, never vaults), CreateBucket/DeleteBucket, objects as real
+  folders, multipart, MD5 ETags, quota and upload rules, S3 buckets page, admin page and member panel.
+- Tested with aws cli, boto3, rclone and restic.
 
-## S3 API b: Polish and docs (in progress)
-- README section with aws cli, rclone, restic and Terraform backend examples and the known
-  limits (bucket names unique per account and case-insensitive, deletes go to the trash,
-  versioning always on, vault folders can't be buckets).
+## S3 API b: Versions, presign, conditions (done)
+- Full versioning API: a trashed file is a delete marker, deleting the marker restores it,
+  deleting a version removes only that version. Presigned URLs, If-Match/If-None-Match (Terraform
+  `use_lockfile`), stored Content-Type, x-amz-meta and other object headers, Quiet buckets.
+- Tested with Terraform (state locking), mc, s3fs, aws cli, boto3, rclone and restic.
+- Open: CopyObject from a specific version, folder markers in version listings, crc32c/crc64nvme
+  trailers accepted unverified, marker restore remakes folders instead of untrashing them.
 
 ## Phase 8: Ship
 - Production Dockerfile and compose, Vercel guide, backups

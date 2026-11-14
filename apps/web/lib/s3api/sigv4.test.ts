@@ -9,7 +9,9 @@ import {
   EMPTY_SHA256,
   SigError,
   signingKey,
+  parsePresigned,
   verifyHeaderAuth,
+  verifyPresigned,
 } from "./sigv4.ts"
 
 // The examples in AWS's SigV4 docs for S3.
@@ -141,4 +143,26 @@ test("signed chunks with a signed trailer chain through the trailer", async () =
 
 test("a body that stops early is an error", async () => {
   await assert.rejects(run(Buffer.from("5\r\nhel"), {}), { code: "IncompleteBody" })
+})
+
+// AWS's presigned GET example: https://examplebucket.s3.amazonaws.com/test.txt, valid 24 hours.
+const presignedQuery =
+  "X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F20130524%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20130524T000000Z&X-Amz-Expires=86400&X-Amz-SignedHeaders=host&X-Amz-Signature=aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404"
+const presigned = (q = presignedQuery) => ({
+  req: { method: "GET", url: "/test.txt?" + q, headers: { host: "examplebucket.s3.amazonaws.com" }, payload: "UNSIGNED-PAYLOAD" },
+  p: parsePresigned(new URLSearchParams(q))!,
+})
+
+test("AWS presigned GET example verifies, and expires", () => {
+  const { req, p } = presigned()
+  verifyPresigned(req, p, SECRET, NOW + 60_000)
+  verifyPresigned(req, p, SECRET, NOW + 86_400_000)
+  assert.throws(() => verifyPresigned(req, p, SECRET, NOW + 86_400_001), { code: "AccessDenied", message: "Request has expired." })
+  assert.throws(() => verifyPresigned(req, p, SECRET, NOW - 20 * 60_000), { code: "AccessDenied" })
+  assert.throws(() => verifyPresigned(req, p, SECRET + "x", NOW), { code: "SignatureDoesNotMatch" })
+  assert.throws(() => verifyPresigned({ ...req, url: "/other.txt?" + presignedQuery }, p, SECRET, NOW), { code: "SignatureDoesNotMatch" })
+})
+
+test("presigned expiry over a week is refused", () => {
+  assert.throws(() => presigned(presignedQuery.replace("86400", "604801")), { code: "AuthorizationQueryParametersError" })
 })

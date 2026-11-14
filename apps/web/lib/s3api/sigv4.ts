@@ -11,10 +11,13 @@ export const EMPTY_SHA256 = createHash("sha256").digest("hex")
 export class SigError extends Error {
   code: string
   status: number
-  constructor(code: string, message: string, status = 403) {
+  // Extra response headers (x-amz-delete-marker on a marker's 404 and 405).
+  headers?: Record<string, string>
+  constructor(code: string, message: string, status = 403, headers?: Record<string, string>) {
     super(message)
     this.code = code
     this.status = status
+    this.headers = headers
   }
 }
 
@@ -145,6 +148,38 @@ export function verifyParsed(r: Signed, p: Parsed, secret: string, amzDate: stri
     if (same(sig, p.signature)) return { key, scope, amzDate, seed: p.signature }
   }
   throw new SigError("SignatureDoesNotMatch", "The request signature we calculated does not match the signature you provided. Check your key and signing method.")
+}
+
+// Query auth (presigned URLs): the same signature carried in X-Amz-* query
+// parameters, valid for X-Amz-Expires seconds from X-Amz-Date, body unsigned.
+export const MAX_EXPIRES = 604800
+
+export function parsePresigned(q: URLSearchParams): { parsed: Parsed; amzDate: string; expires: number } | null {
+  const sig = q.get("X-Amz-Signature")
+  if (!sig) return null
+  const bad = (m: string) => new SigError("AuthorizationQueryParametersError", m, 400)
+  if (q.get("X-Amz-Algorithm") !== "AWS4-HMAC-SHA256") throw bad("X-Amz-Algorithm only supports \"AWS4-HMAC-SHA256\".")
+  const [accessKeyId, date, region, service, term] = (q.get("X-Amz-Credential") ?? "").split("/")
+  const signed = q.get("X-Amz-SignedHeaders")
+  const expires = Number(q.get("X-Amz-Expires"))
+  if (!accessKeyId || !date || !region || !service || term !== "aws4_request" || !signed) throw bad("The X-Amz-Credential or X-Amz-SignedHeaders parameter is malformed.")
+  if (!Number.isInteger(expires) || expires < 1) throw bad("X-Amz-Expires must be a number of seconds.")
+  if (expires > MAX_EXPIRES) throw bad("X-Amz-Expires must be less than a week (in seconds); that is, the given X-Amz-Expires must be less than 604800 seconds.")
+  return {
+    parsed: { accessKeyId, date, region, service, signedHeaders: signed.split(";"), signature: sig },
+    amzDate: q.get("X-Amz-Date") ?? "",
+    expires,
+  }
+}
+
+export function verifyPresigned(r: Signed, p: NonNullable<ReturnType<typeof parsePresigned>>, secret: string, now = Date.now()): Checked {
+  const t = p.amzDate.match(/^(\d{4})(\d\d)(\d\d)T(\d\d)(\d\d)(\d\d)Z$/)
+  if (!t) throw new SigError("AuthorizationQueryParametersError", "X-Amz-Date must be in the ISO8601 Long Format \"yyyyMMdd'T'HHmmss'Z'\".", 400)
+  const sent = Date.UTC(+t[1], +t[2] - 1, +t[3], +t[4], +t[5], +t[6])
+  if (sent - now > SKEW_MS) throw new SigError("AccessDenied", "Request is not yet valid.")
+  if (now > sent + p.expires * 1000) throw new SigError("AccessDenied", "Request has expired.")
+  // The expiry window replaces the clock-skew rule, so the signature check is told it is "now".
+  return verifyParsed({ ...r, payload: "UNSIGNED-PAYLOAD" }, p.parsed, secret, p.amzDate, sent, "X-Amz-Signature")
 }
 
 // ---- aws-chunked bodies ---------------------------------------------------

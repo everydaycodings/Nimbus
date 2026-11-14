@@ -180,8 +180,9 @@ export const fileVersions = pgTable(
     // S3 ETag without quotes: the MD5 (hex) of the bytes, or "<md5>-<parts>" for
     // a multipart upload. Null until known (the worker fills it for bucket files).
     etag: text("etag"),
-    // S3 object metadata: the Content-Type the client sent and its x-amz-meta-* headers.
-    meta: jsonb("meta").$type<{ contentType?: string; user?: Record<string, string> }>(),
+    // S3 object metadata: the Content-Type the client sent, its x-amz-meta-* headers, and
+    // Cache-Control, Content-Disposition, Content-Encoding, Content-Language, Expires.
+    meta: jsonb("meta").$type<{ contentType?: string; user?: Record<string, string>; headers?: Record<string, string> }>(),
     // Photos and videos: when it was taken (EXIF), else its upload time. The
     // worker fills it in; null means not looked at yet (the timeline then uses createdAt).
     takenAt: timestamp("taken_at", { withTimezone: true }),
@@ -2723,7 +2724,7 @@ export const s3Multipart = pgTable(
     backingUploadId: text("backing_upload_id").notNull(),
     // Bytes of the parts so far, counted against the folder owner's quota.
     bytes: bigint("bytes", { mode: "number" }).notNull().default(0),
-    meta: jsonb("meta").$type<{ contentType?: string; user?: Record<string, string> }>(),
+    meta: jsonb("meta").$type<{ contentType?: string; user?: Record<string, string>; headers?: Record<string, string> }>(),
     createdAt: createdAt(),
   },
   (t) => [

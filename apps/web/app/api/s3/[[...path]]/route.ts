@@ -10,6 +10,7 @@ import { list } from "@/lib/s3api/list"
 import { header, readXml, unwrap, type C } from "@/lib/s3api/http"
 import * as mp from "@/lib/s3api/multipart"
 import * as objects from "@/lib/s3api/objects"
+import { listVersions } from "@/lib/s3api/versions"
 import { bucketFor } from "@/lib/s3api/resolve"
 import { endpoint } from "@/lib/s3api/rules"
 import { S3Error, errorXml } from "@/lib/s3api/xml"
@@ -37,7 +38,7 @@ export async function POST(req: Request) {
     const body = errorXml(s?.code ?? "InternalError", s?.message ?? "We encountered an internal error. Please try again.", resource, rid)
     return new Response(method === "HEAD" ? null : body, {
       status,
-      headers: { "Content-Type": "application/xml", "x-amz-request-id": rid, "x-amz-id-2": rid, ...(status === 503 && { "Retry-After": "1" }) },
+      headers: { "Content-Type": "application/xml", ...s?.headers, "x-amz-request-id": rid, "x-amz-id-2": rid, ...(status === 503 && { "Retry-After": "1" }) },
     })
   }
 
@@ -86,6 +87,7 @@ export async function POST(req: Request) {
       if (method === "GET" && q.has("versioning")) return buckets.versioning(c, name)
       const b = await bucketFor(who, name)
       if (method === "GET" && q.has("uploads")) return mp.listUploads(c, b)
+      if (method === "GET" && q.has("versions")) return listVersions(c, b)
       if (method === "GET") return list(c, b, q.get("list-type") === "2")
       if (method === "POST" && q.has("delete")) return objects.removeMany(c, b, await readXml(c))
       throw notImplemented("That bucket operation")

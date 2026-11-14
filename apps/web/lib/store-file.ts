@@ -5,7 +5,7 @@ import "server-only"
 
 import { createHash, randomBytes } from "node:crypto"
 
-import { and, eq, ne } from "drizzle-orm"
+import { and, eq, ne, sql } from "drizzle-orm"
 import { lookup } from "mime-types"
 
 import { recordSaved } from "@/lib/activity"
@@ -29,10 +29,16 @@ export const mimeFor = (name: string) => lookup(name) || "application/octet-stre
 
 // `code` says what went wrong; `status` is the WebDAV answer.
 export type StoreError = {
-  status: 403 | 409 | 413 | 507
-  code: "rejected" | "tooBig" | "full" | "conflict" | "check"
+  status: 403 | 404 | 409 | 412 | 413 | 507
+  code: "rejected" | "tooBig" | "full" | "conflict" | "check" | "precondition" | "noKey"
   message?: string
 }
+
+export type ObjectMeta = { contentType?: string; user?: Record<string, string>; headers?: Record<string, string> }
+
+// S3 conditional writes, checked inside the save's transaction: `none` is
+// If-None-Match: * (nothing may be there), `match` the ETags If-Match allows.
+export type When = { none?: boolean; match?: string[] }
 
 export type Stored = { nodeId: string; versionId: string; etag: string; created: boolean }
 
@@ -76,8 +82,9 @@ export async function storeFile(o: {
   declared: number | null
   mime?: string
   prefix?: string
-  meta?: { contentType?: string; user?: Record<string, string> }
+  meta?: ObjectMeta
   quiet?: boolean
+  when?: When
   check?: (got: { md5: string; size: number }) => string | null
 }): Promise<{ error: StoreError } | Stored> {
   const { at, name } = o
@@ -117,7 +124,32 @@ export async function storeFile(o: {
     await deleteKeys([key])
     return { error: { status: 403, code: "check", message: bad } }
   }
-  return saveVersion({ ...o, key, size, mime, etag: md5 })
+  const saved = await saveVersion({ ...o, key, size, mime, etag: md5 })
+  // The object is new, so nothing else points at it.
+  if ("error" in saved) await deleteKeys([key])
+  return saved
+}
+
+const failed = (message: string): StoreError => ({ status: 412, code: "precondition", message })
+
+// If-None-Match / If-Match for a write. The live file's row is locked until the
+// transaction ends, so a second writer waits and then sees what the first left.
+// Nothing there yet has no row to lock, so same-name writers queue on an
+// advisory lock instead.
+async function checkWhen(tx: Pick<typeof db, "execute">, at: Where, name: string, w: When) {
+  const place = `${at.ownerId}/${at.parentId ?? ""}/${name.toLowerCase()}`
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${place}, 0))`)
+  const [row] = await tx.execute<{ etag: string | null; id: string }>(sql`
+    select v.etag, v.id from nodes n join file_versions v on v.id = n.current_version_id
+    where n.owner_id = ${at.ownerId} and n.parent_id is not distinct from ${at.parentId}
+      and lower(n.name) = lower(${name}) and n.trashed_at is null and n.kind = 'file' for update of n`)
+  if (w.none && row) return failed("At least one of the pre-conditions you specified did not hold.")
+  if (w.match) {
+    if (!row) return { status: 404, code: "noKey", message: "The specified key does not exist." } as StoreError
+    const tag = row.etag ?? row.id.replace(/-/g, "")
+    if (!w.match.includes("*") && !w.match.includes(tag)) return failed("At least one of the pre-conditions you specified did not hold.")
+  }
+  return null
 }
 
 // The object at `key` (already in the bucket) becomes the file's newest version.
@@ -130,8 +162,9 @@ export async function saveVersion(o: {
   size: number
   mime: string
   etag: string | null
-  meta?: { contentType?: string; user?: Record<string, string> }
+  meta?: ObjectMeta
   quiet?: boolean
+  when?: When
 }): Promise<{ error: StoreError } | Stored> {
   const { at, name, key, size, mime } = o
   const before = o.existing?.currentVersionId
@@ -142,15 +175,20 @@ export async function saveVersion(o: {
           .where(eq(fileVersions.id, o.existing.currentVersionId))
       )[0]
     : undefined
-  const saved = await db.transaction((tx) =>
-    saveUploaded(tx, {
+  const saved = await db.transaction(async (tx) => {
+    if (o.when) {
+      const bad = await checkWhen(tx, at, name, o.when)
+      if (bad) return { error: bad.message, bad }
+    }
+    return saveUploaded(tx, {
       ownerId: at.ownerId,
       parentId: at.parentId,
       name,
       version: { s3Key: key, size, mime, uploadedBy: o.me, etag: o.etag, meta: o.meta ?? null },
       onConflict: "version",
     })
-  )
+  })
+  if ("bad" in saved) return { error: saved.bad }
   if (saved.error || !saved.nodeId)
     return { error: { status: 409, code: "conflict", message: saved.error } }
   if (before && before.size === 0 && !before.keep) {
