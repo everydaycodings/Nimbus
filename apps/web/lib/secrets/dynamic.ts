@@ -45,10 +45,11 @@ const clean = (e: unknown, ...hide: string[]) => {
 // ---- Connections --------------------------------------------------------------
 
 type Conn = typeof secretDbConnections.$inferSelect
-type Admin = { username: string; password: string }
+// `ca`: PEM that signs the database's certificate, for servers on a private CA. Sealed with the login.
+type Admin = { username: string; password: string; ca?: string }
 
 const adminOf = (c: Ctx, conn: Conn) => JSON.parse(unseal(c, conn.adminEnc)) as Admin
-const targetOf = (conn: Conn, a: Admin): Target => ({ engine: conn.engine, host: conn.host, port: conn.port, database: conn.database, tls: conn.tls, username: a.username, password: a.password })
+const targetOf = (conn: Conn, a: Admin): Target => ({ engine: conn.engine, host: conn.host, port: conn.port, database: conn.database, tls: conn.tls, ca: a.ca || undefined, username: a.username, password: a.password })
 const adminTarget = (c: Ctx, conn: Conn) => targetOf(conn, adminOf(c, conn))
 
 async function loadConn(c: Ctx, id: string) {
@@ -59,7 +60,7 @@ async function loadConn(c: Ctx, id: string) {
   return conn
 }
 
-const shapeConn = (r: Conn, adminUser: string) => ({
+const shapeConn = (r: Conn, adminUser: string, ca = "") => ({
   id: r.id,
   name: r.name,
   engine: r.engine,
@@ -67,6 +68,7 @@ const shapeConn = (r: Conn, adminUser: string) => ({
   port: r.port,
   database: r.database,
   tls: r.tls,
+  ca,
   adminUser,
   createSql: r.createSql,
   revokeSql: r.revokeSql,
@@ -81,6 +83,7 @@ export type ConnInput = {
   port?: number
   database?: string
   tls?: boolean
+  ca?: string
   adminUser?: string
   adminPassword?: string
   createSql?: string
@@ -114,6 +117,7 @@ function connFields(input: ConnInput, engine: DbEngine, fresh: boolean) {
     else out.database = engine === "redis" ? "" : d
   } else if (fresh) out.database = engine === "redis" ? "" : engine === "mongodb" ? "admin" : ""
   if (input.tls !== undefined) out.tls = Boolean(input.tls)
+  if (input.ca?.trim() && !/-----BEGIN CERTIFICATE-----[\s\S]+-----END CERTIFICATE-----/.test(input.ca)) errors.ca = "Paste a PEM certificate (-----BEGIN CERTIFICATE-----)."
   for (const [k, col, kind] of [["createSql", "createSql", "create"], ["revokeSql", "revokeSql", "revoke"]] as const) {
     const v = input[k] ?? (fresh ? DEFAULT_TEMPLATE[engine][kind] : undefined)
     if (v === undefined) continue
@@ -146,7 +150,10 @@ function connFields(input: ConnInput, engine: DbEngine, fresh: boolean) {
 
 export async function listConnections(c: Ctx) {
   const rows = await db.select().from(secretDbConnections).where(eq(secretDbConnections.projectId, c.projectId)).orderBy(secretDbConnections.name)
-  return rows.map((r) => shapeConn(r, c.role === "admin" ? adminOf(c, r).username : ""))
+  return rows.map((r) => {
+    const a = c.role === "admin" ? adminOf(c, r) : null
+    return shapeConn(r, a?.username ?? "", a?.ca ?? "")
+  })
 }
 
 export async function createConnection(c: Ctx, input: ConnInput, log: Log) {
@@ -163,17 +170,17 @@ export async function createConnection(c: Ctx, input: ConnInput, log: Log) {
   if (dup) throw bad("A connection with that name exists.", 409, { name: "A connection with that name exists." })
   const [row] = await db
     .insert(secretDbConnections)
-    .values({ ...(fields as Required<Pick<typeof fields, "name" | "host" | "port" | "createSql" | "revokeSql" | "defaultTtl" | "maxTtl">>), database: fields.database ?? "", tls: fields.tls ?? false, projectId: c.projectId, engine, adminEnc: seal(c, JSON.stringify({ username: user, password: pw })), createdBy: c.userId || null })
+    .values({ ...(fields as Required<Pick<typeof fields, "name" | "host" | "port" | "createSql" | "revokeSql" | "defaultTtl" | "maxTtl">>), database: fields.database ?? "", tls: fields.tls ?? false, projectId: c.projectId, engine, adminEnc: seal(c, JSON.stringify({ username: user, password: pw, ca: input.ca?.trim() || undefined })), createdBy: c.userId || null })
     .returning()
   await log("secrets_dyn_conn_save", `${row.name} (${engine}, ${row.host}:${row.port}): added`)
-  return shapeConn(row, user)
+  return shapeConn(row, user, input.ca?.trim() ?? "")
 }
 
 export async function updateConnection(c: Ctx, id: string, input: ConnInput, log: Log) {
   const conn = await loadConn(c, id)
   const fields = connFields(input, conn.engine, false)
   const a = adminOf(c, conn)
-  const next: Admin = { username: input.adminUser?.trim() || a.username, password: input.adminPassword || a.password }
+  const next: Admin = { username: input.adminUser?.trim() || a.username, password: input.adminPassword || a.password, ca: input.ca === undefined ? a.ca : input.ca.trim() || undefined }
   if (fields.name && fields.name !== conn.name) {
     const [dup] = await db.select({ id: secretDbConnections.id }).from(secretDbConnections).where(and(eq(secretDbConnections.projectId, c.projectId), eq(secretDbConnections.name, fields.name)))
     if (dup) throw bad("A connection with that name exists.", 409, { name: "A connection with that name exists." })
@@ -184,7 +191,7 @@ export async function updateConnection(c: Ctx, id: string, input: ConnInput, log
     .where(eq(secretDbConnections.id, conn.id))
     .returning()
   await log("secrets_dyn_conn_save", `${row.name}: edited${input.adminPassword ? " (new admin password)" : ""}`)
-  return shapeConn(row, next.username)
+  return shapeConn(row, next.username, next.ca ?? "")
 }
 
 export async function deleteConnection(c: Ctx, id: string, log: Log) {

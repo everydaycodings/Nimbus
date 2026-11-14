@@ -57,8 +57,18 @@ const help = `nimbus <command>
   agent --out FILE [--on-change CMD] [--interval SECONDS] [--format F] [--once]
   ssh cert --project P --principal deploy[,root] [--ttl HOURS] [--key PUBKEY_FILE] [--out FILE]
                          ask the project's SSH CA for a 1-8 hour certificate (no --key: new key pair)
+  dynamic get NAME [--project P] [--ttl 1h] [--format env|json|url] [--prefix DB_]
+                         issue a short-lived database user on connection NAME (env lines by default)
+  dynamic list | dynamic revoke LEASE_ID [--project P]
   kms encrypt|decrypt|sign|verify --key K [--project P] [--in FILE | --text S | stdin] [--context S]
                          [--signature SIG (verify)] [--out FILE]; kms keys lists the project's keys
+  share ["TEXT" | stdin] [--expires 1d] [--views 1] [--password[=PW]] [--label L]
+                         one-time link (1h-30d, 1-100 views); bare --password makes one up
+  share list | share revoke ID
+  webhooks [list] | webhooks add URL | webhooks remove ID | webhooks test ID   (--env E)
+  push list | push run --env E | push remove --env E
+  push set --env E --host H --user U --path FILE [--port 22] [--key FILE | --key-id ID]
+                         [--command CMD] [--auto]   write the env's .env to a server over SSH
 Common: --project P --env E --path /   Env: NIMBUS_TOKEN NIMBUS_SERVER`
 
 var boolFlags = map[string]bool{"plain": true, "once": true, "help": true}
@@ -683,6 +693,110 @@ func kmsCmd(flags map[string]string, pos []string) error {
 	return nil
 }
 
+// Short-lived database users (CONTRACT.md "Dynamic database credentials").
+func dynamicCmd(flags map[string]string, pos []string) error {
+	c, err := getCtx(flags)
+	if err != nil {
+		return err
+	}
+	proj, _, _ := target(flags)
+	sub, name := "", ""
+	if len(pos) > 1 {
+		sub = pos[1]
+	}
+	if len(pos) > 2 {
+		name = pos[2]
+	}
+	pq := ""
+	if proj != "" {
+		pq = "project=" + url.QueryEscape(proj)
+	}
+	switch sub {
+	case "list":
+		_, b, _, err := call(c, "GET", "/dynamic?"+pq, nil, true, nil)
+		if err != nil {
+			return err
+		}
+		var r struct {
+			Connections []struct {
+				Name       string `json:"name"`
+				Engine     string `json:"engine"`
+				DefaultTtl int    `json:"defaultTtl"`
+				MaxTtl     int    `json:"maxTtl"`
+			} `json:"connections"`
+		}
+		if err := json.Unmarshal(b, &r); err != nil {
+			return failf(1, "bad response: %v", err)
+		}
+		for _, x := range r.Connections {
+			fmt.Printf("%s\t%s\tdefault %ds\tmax %ds\n", x.Name, x.Engine, x.DefaultTtl, x.MaxTtl)
+		}
+		return nil
+	case "revoke":
+		if name == "" {
+			return failf(2, "Usage: nimbus dynamic revoke LEASE_ID")
+		}
+		path := "/dynamic?lease=" + url.QueryEscape(name)
+		if pq != "" {
+			path += "&" + pq
+		}
+		if _, _, _, err := call(c, "DELETE", path, nil, true, nil); err != nil {
+			return err
+		}
+		fmt.Fprintln(os.Stderr, "Revoked.")
+		return nil
+	}
+	if sub != "get" || name == "" {
+		return failf(2, "Usage: nimbus dynamic get NAME [--ttl 1h] [--format env|json|url]\n%s", help)
+	}
+	body := map[string]any{"connection": name}
+	if proj != "" {
+		body["project"] = proj
+	}
+	if flags["ttl"] != "" {
+		body["ttl"] = flags["ttl"]
+	}
+	_, b, _, err := call(c, "POST", "/dynamic", body, true, nil)
+	if err != nil {
+		return err
+	}
+	var r struct {
+		LeaseID   string `json:"leaseId"`
+		Engine    string `json:"engine"`
+		Host      string `json:"host"`
+		Port      int    `json:"port"`
+		Database  string `json:"database"`
+		Username  string `json:"username"`
+		Password  string `json:"password"`
+		URL       string `json:"url"`
+		ExpiresAt string `json:"expiresAt"`
+	}
+	if err := json.Unmarshal(b, &r); err != nil {
+		return failf(1, "bad response: %v", err)
+	}
+	switch f := first(flags["format"], "env"); f {
+	case "json":
+		out, _ := json.MarshalIndent(r, "", "  ")
+		fmt.Println(string(out))
+	case "url":
+		fmt.Println(r.URL)
+	case "env":
+		p, ok := flags["prefix"]
+		if !ok {
+			p = "DB_"
+		}
+		for _, kv := range [][2]string{{"HOST", r.Host}, {"PORT", strconv.Itoa(r.Port)}, {"NAME", r.Database}, {"USER", r.Username}, {"PASSWORD", r.Password}, {"URL", r.URL}, {"LEASE_ID", r.LeaseID}, {"EXPIRES_AT", r.ExpiresAt}} {
+			if kv[1] != "" {
+				fmt.Printf("%s%s=%s\n", p, kv[0], quote(kv[1]))
+			}
+		}
+		fmt.Fprintf(os.Stderr, "nimbus: lease %s ends %s\n", r.LeaseID, r.ExpiresAt)
+	default:
+		return failf(2, "Unknown format %q (env, json, url)", f)
+	}
+	return nil
+}
+
 func main() {
 	flags, pos, rest := parse(os.Args[1:])
 	if len(pos) == 0 || flags["help"] != "" {
@@ -713,8 +827,16 @@ func main() {
 		} else {
 			err = sshCert(flags)
 		}
+	case "dynamic":
+		err = dynamicCmd(flags, pos)
 	case "kms":
 		err = kmsCmd(flags, pos)
+	case "share":
+		err = shareCmd(flags, pos)
+	case "webhooks":
+		err = webhooksCmd(flags, pos)
+	case "push":
+		err = pushCmd(flags, pos)
 	case "run":
 		var code int
 		code, err = runCmd(flags, rest)

@@ -1,20 +1,19 @@
 import { z } from "zod"
 
-import { fail, json } from "@/lib/api"
-import { audit } from "@/lib/audit"
-import { projectRoute } from "@/lib/secrets/guard"
+import { json } from "@/lib/api"
+import { envApi } from "@/lib/secrets/env-route"
 import { deletePush, getPush, runPush, savePush } from "@/lib/secrets/push"
-import { requireEnv } from "@/lib/secrets/service"
+import { SecretsError } from "@/lib/secrets/service"
 
-type P = { envId: string }
+type P = { id: string; envId: string }
 
-export const GET = projectRoute<P>("admin", async (c, _req, p) => {
-  await requireEnv(c, p.envId)
+export const GET = envApi<P>("admin", async (_c, _req, p, log, t) => {
+  if (t) await log("secrets_push_list")
   return Response.json({ push: await getPush(p.envId) })
 })
 
 // Saves the target. Leave privateKey out to keep the one already stored.
-export const PUT = projectRoute<P>("admin", async (c, req, p) => {
+export const PUT = envApi<P>("admin", async (c, req, p, log) => {
   const b = await json(
     req,
     z.object({
@@ -30,23 +29,26 @@ export const PUT = projectRoute<P>("admin", async (c, req, p) => {
     })
   )
   if (b instanceof Response) return b
-  await requireEnv(c, p.envId)
   await savePush(c, p.envId, b)
-  await audit("secrets_push_save", { detail: `${b.username}@${b.host}:${b.path}` })
+  await log("secrets_push_save", `${b.username}@${b.host}:${b.path}`)
   return Response.json({ ok: true })
 })
 
-// Push now.
-export const POST = projectRoute<P>("admin", async (c, _req, p) => {
-  await requireEnv(c, p.envId)
-  const r = await runPush(p.envId).catch((e: Error) => ({ ok: false, message: e.message }))
-  await audit("secrets_push_run", { detail: r.ok ? "pushed" : `failed: ${r.message.slice(0, 120)}` })
-  return r.ok ? Response.json(r) : fail(502, "push-failed", r.message)
-})
+// Push now. The one call a read-write machine token with this env may make (a deploy step):
+// it runs the stored target and can't change it or read anything back.
+export const POST = envApi<P>(
+  "admin",
+  async (_c, _req, p, log) => {
+    const r = await runPush(p.envId).catch((e: Error) => ({ ok: false, message: e.message }))
+    await log("secrets_push_run", r.ok ? "pushed" : `failed: ${r.message.slice(0, 120)}`)
+    if (!r.ok) throw new SecretsError(502, r.message)
+    return Response.json(r)
+  },
+  { machine: true }
+)
 
-export const DELETE = projectRoute<P>("admin", async (c, _req, p) => {
-  await requireEnv(c, p.envId)
+export const DELETE = envApi<P>("admin", async (_c, _req, p, log) => {
   await deletePush(p.envId)
-  await audit("secrets_push_remove")
+  await log("secrets_push_remove")
   return Response.json({ ok: true })
 })

@@ -44,6 +44,7 @@ import { CHECKBOX, Confirm, MenuButton, Modal, SELECT } from "@/components/secre
 import { SubmitButton } from "@/components/submit-button"
 import { useNotice } from "@/components/toaster"
 import { Button } from "@/components/ui/button"
+import { GuideLink } from "@/components/secrets/guide-link"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { SECRET_TYPES } from "@/lib/secrets/consts"
@@ -460,6 +461,7 @@ export function SecretsTable({
               ? "Add one, or paste a .env anywhere on this page to import it."
               : "Nothing has been added here."}
           </p>
+          <GuideLink to="cli">Use your secrets in an app</GuideLink>
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border">

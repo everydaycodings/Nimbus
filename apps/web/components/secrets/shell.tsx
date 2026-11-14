@@ -70,9 +70,9 @@ export function SecretsShell({
           <ShieldWarningIcon />
           Leaks
         </Button>
-        <Button variant="ghost" size="xs" render={<Link href="/secrets/cli" />}>
+        <Button variant="ghost" size="xs" render={<Link href="/secrets/connect" />}>
           <TerminalWindowIcon />
-          CLI
+          Connect<span className="max-sm:hidden"> apps</span>
         </Button>
         <Button variant="ghost" size="xs" onClick={() => setSettings(true)}>
           <SlidersHorizontalIcon />

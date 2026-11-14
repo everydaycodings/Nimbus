@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
+    "cli:build": "npm run build -w @nimbus/cli && docker run --rm -u \"$(id -u):$(id -g)\" -e HOME=/tmp -v \"$PWD/packages/cli-go:/src\" -w /src golang:1.23 make",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "format": "npm run format -w web",

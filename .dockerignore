@@ -9,3 +9,6 @@ production_script
 .playwright-mcp
 graphify-out
 **/tsconfig.tsbuildinfo
+packages/cli/dist
+packages/cli/release
+packages/cli-go/dist

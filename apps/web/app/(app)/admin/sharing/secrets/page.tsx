@@ -171,6 +171,26 @@ export default async function SecretsPage() {
           />
         </SettingRow>
         <SettingRow
+          id="secrets-allow-private"
+          label="Allow private addresses in domain watch"
+          htmlFor="secret-allow-private"
+          hint="Off: domain watch only checks public hosts. On: it may also connect to loopback, private-network and link-local addresses."
+          tip={{
+            does: "Lets project admins watch certificates on internal hosts. The cloud metadata address (169.254.169.254) is only reachable with this on.",
+            affects: "This server's outgoing connections from domain watch.",
+            default: "Off",
+          }}
+          reset={reset("secretAllowPrivate")}
+        >
+          <input
+            type="checkbox"
+            id="secret-allow-private"
+            name="allowPrivate"
+            defaultChecked={s.secretAllowPrivate}
+            className="size-4 shrink-0 self-start accent-primary sm:self-end"
+          />
+        </SettingRow>
+        <SettingRow
           id="secrets-require-2fa"
           label="Require two-factor for Secrets"
           htmlFor="secret-2fa"

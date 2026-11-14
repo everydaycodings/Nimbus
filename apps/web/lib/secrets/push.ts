@@ -169,3 +169,24 @@ export async function runPush(envId: string): Promise<{ ok: boolean; message: st
     conn.end()
   }
 }
+
+// Every environment's target in a project, for the CLI's `push list` (never the key).
+export async function listPushes(projectId: string) {
+  const rows = await db
+    .select({ t: secretPushTargets, slug: secretEnvs.slug })
+    .from(secretPushTargets)
+    .innerJoin(secretEnvs, eq(secretEnvs.id, secretPushTargets.envId))
+    .where(eq(secretEnvs.projectId, projectId))
+    .orderBy(secretEnvs.position)
+  return rows.map(({ t, slug }) => ({
+    env: slug,
+    host: t.host,
+    port: t.port,
+    username: t.username,
+    path: t.path,
+    auto: t.auto,
+    lastAt: t.lastAt?.toISOString() ?? null,
+    lastOk: t.lastOk,
+    lastMessage: t.lastMessage,
+  }))
+}

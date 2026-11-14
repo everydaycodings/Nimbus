@@ -10,6 +10,7 @@ import { Confirm, MenuButton, Modal, SELECT } from "@/components/secrets/ui"
 import { SubmitButton } from "@/components/submit-button"
 import { useNotice } from "@/components/toaster"
 import { Button } from "@/components/ui/button"
+import { GuideLink } from "@/components/secrets/guide-link"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
@@ -74,7 +75,8 @@ export function KmsView({ projectId, role }: { projectId: string; role: string }
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : data.keys.length === 0 ? (
         <Empty icon={<KeyIcon />} title="No KMS keys yet">
-          {admin ? "Make a key, then try it below." : "A project admin can make keys here."}
+          {admin ? "Make a key, then try it below." : "A project admin can make keys here."}{" "}
+          <GuideLink to="kms">Use it from your apps</GuideLink>
         </Empty>
       ) : (
         <ul className="flex flex-col divide-y rounded-xl border">

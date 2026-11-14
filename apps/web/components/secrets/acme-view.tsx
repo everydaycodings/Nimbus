@@ -318,7 +318,7 @@ export function WatchTab({ projectId, role }: { projectId: string; role: string 
       <p className="max-w-prose text-sm text-pretty text-muted-foreground">
         Watch a live site&apos;s certificate. Nimbus connects every hour, shows its expiry and issuer, and warns project admins at 30, 7 and 1 day.
       </p>
-      {canWrite && (
+      {role === "admin" && (
         <form
           className="flex flex-wrap gap-2"
           onSubmit={async (e) => {

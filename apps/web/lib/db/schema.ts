@@ -766,6 +766,8 @@ export const settings = pgTable(
     // Secrets S6b: scan uploaded text files for leaked keys; check passwords against Have I Been Pwned.
     secretLeakScan: boolean("secret_leak_scan").notNull().default(true),
     secretHibp: boolean("secret_hibp").notNull().default(true),
+    // Domain watch may probe loopback, private and link-local addresses (off: public hosts only).
+    secretAllowPrivate: boolean("secret_allow_private").notNull().default(false),
     // Where action messages (toasts) appear for everyone.
     toastPosition: text("toast_position")
       .$type<ToastPosition>()

@@ -10,6 +10,7 @@ import { DIALOG_BACKDROP, DIALOG_POPUP } from "@/components/overlay-styles"
 import { api, errorText } from "@/components/secrets/client"
 import { SubmitButton } from "@/components/submit-button"
 import { Button } from "@/components/ui/button"
+import { GuideLink } from "@/components/secrets/guide-link"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import type { ProjectCard } from "@/lib/secrets/service"
@@ -81,6 +82,7 @@ export function ProjectGrid({
             A project holds the secrets for one app, with Development, Staging and
             Production ready to fill.
           </p>
+          <GuideLink to="overview">How apps and servers read them</GuideLink>
           {limit === null && (
             <Button onClick={() => setCreating(true)}>
               <PlusIcon />

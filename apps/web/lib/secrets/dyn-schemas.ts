@@ -8,6 +8,7 @@ export const connSchema = z.object({
   port: z.number().optional(),
   database: z.string().max(63).optional(),
   tls: z.boolean().optional(),
+  ca: z.string().max(20000).optional(),
   adminUser: z.string().max(100).optional(),
   adminPassword: z.string().max(500).optional(),
   createSql: z.string().max(5000).optional(),

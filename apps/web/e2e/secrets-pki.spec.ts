@@ -289,6 +289,14 @@ test("certificates: upload, parse, downloads, private CA, CRL, watch, notices", 
   await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r))
   const port = (srv.address() as { port: number }).port
   await page.getByRole("tab", { name: "Domain watch" }).click()
+  // Private addresses are refused unless an admin allows them (SSRF guard); only project admins can add.
+  db("update settings set secret_allow_private = false")
+  for (const bad of ["169.254.169.254", "127.0.0.1", "localhost"]) {
+    const r = await page.request.post(`${API}/projects/${id}/watches`, { data: { host: bad, port: 443 } })
+    expect(r.status(), bad).toBe(422)
+    expect((await r.json()).message).toMatch(/private/)
+  }
+  db("update settings set secret_allow_private = true")
   await page.getByLabel("Host", { exact: true }).fill("127.0.0.1")
   await page.getByLabel("Port").fill(String(port))
   await page.getByRole("button", { name: "Watch" }).click()
@@ -321,6 +329,7 @@ test("certificates: upload, parse, downloads, private CA, CRL, watch, notices", 
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.getByRole("tab", { name: "Private CA" }).click()
   await page.screenshot({ path: join(dir, "ca-1440.png") })
+  db("update settings set secret_allow_private = false")
   console.log("screenshots in", dir)
 })
 

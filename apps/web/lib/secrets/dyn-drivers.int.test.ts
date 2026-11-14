@@ -12,13 +12,15 @@ const ADMIN: Record<Engine, Target> = {
   redis: { engine: "redis", host: "127.0.0.1", port: 63410, database: "", tls: false, username: "", password: "adminpw" },
   mongodb: { engine: "mongodb", host: "127.0.0.1", port: 27410, database: "admin", tls: false, username: "root", password: "adminpw" },
 }
+// MariaDB speaks the mysql driver: DYN_MARIA=1 also runs it (mariadb:11 on 33430, same password and database).
+const MARIA: Target = { ...ADMIN.mysql, port: 33430 }
 const login = (a: Target, username: string, password: string) => ping({ ...a, username, password })
 const works = (a: Target, u: string, p: string) => login(a, u, p).then(() => true, () => false)
 const exp = () => new Date(Date.now() + 3600_000).toISOString().replace(/\.\d+Z$/, "Z")
 
-for (const engine of Object.keys(ADMIN_KEYS()) as Engine[]) {
-  test(`${engine}: lease user logs in, revoke locks it out`, { skip: !on }, async () => {
-    const a = ADMIN[engine]
+const CASES: [string, Engine, Target][] = [...(Object.keys(ADMIN_KEYS()) as Engine[]).map((e): [string, Engine, Target] => [e, e, ADMIN[e]]), ...(process.env.DYN_MARIA === "1" ? [["mariadb", "mysql", MARIA] as [string, Engine, Target]] : [])]
+for (const [label, engine, a] of CASES) {
+  test(`${label}: lease user logs in, revoke locks it out`, { skip: !on }, async () => {
     await ping(a)
     const username = newUsername()
     const password = newPassword()
@@ -32,9 +34,8 @@ for (const engine of Object.keys(ADMIN_KEYS()) as Engine[]) {
     assert.ok(!(await works(a, username, password)), "after revoke")
   })
 
-  test(`${engine}: rotation changes the password, old fails and new works`, { skip: !on }, async () => {
-    const a = ADMIN[engine]
-    const username = `app_${engine}`
+  test(`${label}: rotation changes the password, old fails and new works`, { skip: !on }, async () => {
+    const username = `app_${label}`
     const old = newPassword()
     await execute(a, render(DEFAULT_TEMPLATE[engine].revoke, { username })).catch(() => {})
     await execute(a, render(DEFAULT_TEMPLATE[engine].create, { username, password: old, expiry: exp() }))

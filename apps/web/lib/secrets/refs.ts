@@ -59,3 +59,31 @@ export function expand(value: string, scope: Scope, lookup: Lookup, self?: strin
 }
 
 export const selfId = (s: Scope, key: string) => label({ ...s, key })
+
+// env slug -> the other env slugs its values reference. Built from plaintext at write
+// time; only slugs leave here, never values.
+export function refGraph(items: { scope: Scope; value: string }[]) {
+  const g = new Map<string, Set<string>>()
+  for (const i of items)
+    for (const r of findRefs(i.value, i.scope)) {
+      if (r.env === i.scope.env) continue
+      if (!g.has(i.scope.env)) g.set(i.scope.env, new Set())
+      g.get(i.scope.env)!.add(r.env)
+    }
+  return g
+}
+
+// Envs that reference any of `changed`, directly or through others (not `changed`
+// itself). Grows a visited set to a fixpoint, so cycles end.
+export function dependents(g: Map<string, Set<string>>, changed: string[]) {
+  const hit = new Set(changed)
+  for (let grew = true; grew; ) {
+    grew = false
+    for (const [env, refs] of g)
+      if (!hit.has(env) && [...refs].some((r) => hit.has(r))) {
+        hit.add(env)
+        grew = true
+      }
+  }
+  return [...hit].filter((e) => !changed.includes(e))
+}

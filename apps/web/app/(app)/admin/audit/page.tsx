@@ -133,6 +133,16 @@ function sentence(e: typeof auditEvents.$inferSelect, who: string) {
       return `added the Secrets webhook ${d}`
     case "secrets_webhook_remove":
       return "removed a Secrets webhook"
+    case "secrets_webhook_edit":
+      return `changed a Secrets webhook: ${d}`
+    case "secrets_webhook_test":
+      return `tested a Secrets webhook: ${d}`
+    case "secrets_push_list":
+      return "listed the Secrets server pushes"
+    case "secrets_webhook_list":
+      return "listed the Secrets webhooks"
+    case "secrets_share_list":
+      return "listed their share links"
     case "secrets_cert_upload":
       return `uploaded the certificate ${d}`
     case "secrets_cert_delete":

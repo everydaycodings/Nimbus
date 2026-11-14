@@ -9,6 +9,7 @@ import type { Detail } from "@/components/secrets/project-view"
 import { CHECKBOX, Confirm, Modal, SELECT } from "@/components/secrets/ui"
 import { SubmitButton } from "@/components/submit-button"
 import { Button } from "@/components/ui/button"
+import { GuideLink } from "@/components/secrets/guide-link"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
@@ -24,7 +25,8 @@ export function IntegrationsView({ detail, kind }: { detail: Detail; kind: "push
         <p className="max-w-prose flex-1 text-sm text-pretty text-muted-foreground">
           {kind === "push"
             ? "Writes this environment's .env to a server over SSH (owner-only file, replaced in one step) and can run a command after, like restarting the app. Pushes happen on demand and again whenever a secret here changes."
-            : "Sends a signed POST when a secret here changes. It names the project, the environment and the keys that changed, never their values."}
+            : "Sends a signed POST when a secret here changes. It names the project, the environment and the keys that changed, never their values."}{" "}
+          <GuideLink to={kind === "push" ? "server-push-over-ssh" : "webhooks"}>{kind === "push" ? "How server push works" : "Verify the signature"}</GuideLink>
         </p>
         <div className="grid gap-1">
           <Label htmlFor="int-env" className="text-xs text-muted-foreground">Environment</Label>
@@ -278,7 +280,7 @@ function Webhooks({ detail, envId }: { detail: Detail; envId: string }) {
           </li>
         ))}
       </ul>
-      {data && !data.hooks.length && <p className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">No webhooks for this environment.</p>}
+      {data && !data.hooks.length && <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground"><p>No webhooks for this environment.</p><GuideLink to="webhooks">Payload and signature check</GuideLink></div>}
       {data && data.deliveries.length > 0 && (
         <div className="flex flex-col gap-2">
           <h3 className="text-sm font-medium">Delivery log</h3>

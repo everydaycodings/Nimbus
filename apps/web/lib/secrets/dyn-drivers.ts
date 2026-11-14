@@ -2,6 +2,7 @@
 // One short-lived connection per call, closed in `finally`. Relative imports only so
 // node --test (the Docker integration test) can load it.
 import { Redis } from "ioredis"
+import tls from "node:tls"
 import { MongoClient } from "mongodb"
 import mysql from "mysql2/promise"
 import postgres from "postgres"
@@ -14,11 +15,28 @@ export type Target = {
   port: number
   database: string
   tls: boolean
+  // PEM of the CA that signed the server certificate (private CAs); default roots otherwise.
+  ca?: string
   username: string
   password: string
 }
 
 const TIMEOUT = 10_000
+
+// TLS options: the connection's CA (or the default roots) and a name check against the host we
+// dialled. Drivers that hand tls a bare socket would otherwise check "localhost" for an IP host.
+const tlsOpts = (t: Target) => ({ ...(t.ca ? { ca: t.ca } : {}), checkServerIdentity: (_: string, cert: tls.PeerCertificate) => tls.checkServerIdentity(t.host, cert) })
+
+// Turns a certificate verification failure into something an admin can act on.
+export function tlsError(e: unknown, t: Pick<Target, "host" | "ca">): unknown {
+  const code = (e as { code?: string })?.code ?? ""
+  const msg = e instanceof Error ? e.message : ""
+  const fix = t.ca ? "Check the CA certificate on this connection." : "If it uses a private CA, paste that CA's certificate (PEM) into “CA certificate” on this connection."
+  if (/SELF_SIGNED|UNABLE_TO_VERIFY|UNABLE_TO_GET_ISSUER|self.signed|unable to verify/i.test(code + msg)) return new Error(`The database's certificate isn't trusted (${(msg || code).replace(/;\s*if the root CA.*$/i, "")}). ${fix}`)
+  if (code === "CERT_HAS_EXPIRED" || /certificate has expired/i.test(msg)) return new Error(`The database's certificate has expired. ${fix}`)
+  if (code === "ERR_TLS_CERT_ALTNAME_INVALID" || /altnames|does not match|hostname/i.test(msg) && /cert/i.test(msg)) return new Error(`The database's certificate doesn't match the host “${t.host}” (${msg}).`)
+  return e
+}
 
 async function withPg<T>(t: Target, fn: (sql: ReturnType<typeof postgres>) => Promise<T>) {
   const sql = postgres({
@@ -27,28 +45,35 @@ async function withPg<T>(t: Target, fn: (sql: ReturnType<typeof postgres>) => Pr
     database: t.database || "postgres",
     username: t.username,
     password: t.password,
-    ssl: t.tls,
+    ssl: t.tls ? tlsOpts(t) : false,
     max: 1,
     connect_timeout: TIMEOUT / 1000,
     onnotice: () => {},
   })
   try {
     return await fn(sql)
+  } catch (e) {
+    throw tlsError(e, t)
   } finally {
     await sql.end({ timeout: 2 })
   }
 }
 
 async function withMysql<T>(t: Target, fn: (c: mysql.Connection) => Promise<T>) {
-  const c = await mysql.createConnection({
-    host: t.host,
-    port: t.port,
-    user: t.username,
-    password: t.password,
-    database: t.database || undefined,
-    ssl: t.tls ? {} : undefined,
-    connectTimeout: TIMEOUT,
-  })
+  const c = await mysql
+    .createConnection({
+      host: t.host,
+      port: t.port,
+      user: t.username,
+      password: t.password,
+      database: t.database || undefined,
+      // mysql2 checks the name only for host names, and only with verifyIdentity (not for IPs: the CA still pins the chain).
+      ssl: t.tls ? { ...(t.ca ? { ca: t.ca } : {}), verifyIdentity: true } : undefined,
+      connectTimeout: TIMEOUT,
+    })
+    .catch((e) => {
+      throw tlsError(e, t)
+    })
   try {
     return await fn(c)
   } finally {
@@ -62,17 +87,23 @@ async function withRedis<T>(t: Target, fn: (r: Redis) => Promise<T>) {
     port: t.port,
     username: t.username || undefined,
     password: t.password || undefined,
-    tls: t.tls ? {} : undefined,
+    tls: t.tls ? tlsOpts(t) : undefined,
     connectTimeout: TIMEOUT,
     lazyConnect: true,
     enableReadyCheck: false,
     maxRetriesPerRequest: 0,
     retryStrategy: () => null,
   })
-  r.on("error", () => {})
+  // ioredis only says "Connection is closed"; the TLS reason arrives as an error event.
+  let reason: unknown
+  r.on("error", (e) => (reason ??= e))
   try {
     await r.connect()
     return await fn(r)
+  } catch (e) {
+    // The error event can land just after connect() rejects.
+    if (!reason) await new Promise((r) => setTimeout(r, 100))
+    throw tlsError(reason ?? e, t)
   } finally {
     r.disconnect()
   }
@@ -83,6 +114,7 @@ async function withMongo<T>(t: Target, fn: (db: ReturnType<MongoClient["db"]>) =
     auth: { username: t.username, password: t.password },
     authSource: t.database || "admin",
     tls: t.tls,
+    ...(t.tls && t.ca ? { ca: t.ca } : {}),
     directConnection: true,
     serverSelectionTimeoutMS: TIMEOUT,
     connectTimeoutMS: TIMEOUT,
@@ -90,6 +122,8 @@ async function withMongo<T>(t: Target, fn: (db: ReturnType<MongoClient["db"]>) =
   try {
     await c.connect()
     return await fn(c.db(t.database || "admin"))
+  } catch (e) {
+    throw tlsError(e, t)
   } finally {
     await c.close().catch(() => {})
   }

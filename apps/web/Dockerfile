@@ -6,6 +6,18 @@ COPY . .
 # Only web and what it depends on: other apps' changes don't rebuild this image.
 RUN npx -y turbo@2.11.10 prune web --docker
 
+# The Secrets CLIs this server hands out (lib/secrets/cli-files.ts): Go binaries for
+# Linux, macOS and Windows on amd64 and arm64, and the Node CLI as one file and a tarball.
+FROM golang:1.23 AS cli-go
+WORKDIR /src
+COPY packages/cli-go/ ./
+RUN make
+
+FROM node:24-slim AS cli-node
+WORKDIR /cli
+COPY packages/cli/ ./
+RUN npm install --no-audit --no-fund && npm run build
+
 FROM node:24-slim AS build
 WORKDIR /app
 COPY --from=prune /app/out/json/ ./
@@ -30,6 +42,11 @@ RUN mkdir -p /data/tessdata && chown -R node:node /data
 COPY --from=build --chown=node:node /app ./
 # Bundled Android APKs (gitignored; the folder keeps a .gitkeep so this never fails).
 COPY --from=prune --chown=node:node /app/apps/web/android/ ./apps/web/android/
+ENV SECRETS_CLI_DIR=/opt/nimbus-cli
+COPY --from=cli-go /src/dist/ /opt/nimbus-cli/cli-go/dist/
+COPY --from=cli-node /cli/dist/ /opt/nimbus-cli/cli/dist/
+COPY --from=cli-node /cli/release/ /opt/nimbus-cli/cli/release/
+COPY packages/cli/nimbus.sh /opt/nimbus-cli/cli/nimbus.sh
 WORKDIR /app/apps/web
 USER node
 EXPOSE 3000

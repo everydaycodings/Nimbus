@@ -50,7 +50,7 @@ import {
 import { checkSchema, type SchemaKind } from "./gov-rules"
 import { notifyChange } from "./hooks"
 import { newProjectKey, openValue, sealValue, unwrapProjectKey } from "./kms"
-import { expand, hasRefs, selfId, type Scope } from "./refs"
+import { dependents, expand, hasRefs, refGraph, selfId, type Scope } from "./refs"
 
 export type Role = "admin" | "developer" | "viewer"
 export type Ctx = {
@@ -759,10 +759,32 @@ async function bump(envIds: string[]) {
 }
 export async function changed(c: Ctx, envIds: string[], keys: string[], quiet = false) {
   const ids = [...new Set(envIds)]
-  await bump(ids)
+  // Envs whose ${env.KEY} references reach these now expand differently: their version,
+  // agents, pushes and webhooks move too (webhooks with no keys). Overrides are personal.
+  const deps = quiet ? [] : await dependentEnvs(c.projectId, ids)
+  await bump([...ids, ...deps])
   if (!quiet) {
     await notifyChange(c.projectId, ids, keys)
+    if (deps.length) await notifyChange(c.projectId, deps, [])
     await (await import("./notices")).envChanged(c, ids, keys)
+  }
+}
+
+// The reference graph is rebuilt from the decrypted project on each write (reads decrypt it
+// too), so it can't go stale on renames or deletes. Only env ids come out.
+// ponytail: whole-project decrypt per write; cache per-env refs in a column if projects get big.
+async function dependentEnvs(projectId: string, ids: string[]) {
+  try {
+    const sys = ids.length ? await systemCtx(projectId) : null
+    if (!sys) return []
+    const all = await loadAll(sys)
+    const slug = new Map(all.envs.map((e) => [e.id, e.slug]))
+    const id = new Map(all.envs.map((e) => [e.slug, e.id]))
+    return dependents(refGraph(all.items), ids.flatMap((i) => slug.get(i) ?? [])).flatMap((s) => id.get(s) ?? [])
+  } catch (e) {
+    // The save already landed; dependents just miss this bump.
+    console.error("secrets dependents:", e)
+    return []
   }
 }
 

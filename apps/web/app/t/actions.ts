@@ -3,7 +3,8 @@
 import { db } from "@/lib/db"
 import { formatBytes } from "@/lib/file-rules"
 import { checkStorage, spaceLeft } from "@/lib/quota"
-import { enqueueDerive } from "@/lib/redis"
+import { enqueue, enqueueDerive } from "@/lib/redis"
+import { scannable } from "@/lib/secrets/leak-rules"
 import { copyObject, deleteKeys, presignGet, thumbKey } from "@/lib/s3"
 import { newKey } from "@/lib/services/transfers"
 import { getSession } from "@/lib/session"
@@ -58,6 +59,7 @@ export async function saveTransfer(
       error: `This needs ${formatBytes(need)}, but only ${formatBytes(left)} is left in your storage.`,
     }
   const copies: { key: string; file: (typeof files)[number] }[] = []
+  const scans: string[] = []
   try {
     for (const file of files) {
       const key = newKey()
@@ -69,6 +71,7 @@ export async function saveTransfer(
     const versions = await db.transaction(async (tx) => {
       const cache = new Map<string, string>()
       const ids: string[] = []
+      scans.length = 0
       for (const { key, file } of copies) {
         const names = file.name.split("/")
         const name = names.pop()!
@@ -83,12 +86,14 @@ export async function saveTransfer(
         })
         if (r.error) throw new Error(r.error)
         if (r.versionId) ids.push(r.versionId)
+        if (r.nodeId && scannable(name, file.mime, file.size)) scans.push(r.nodeId)
       }
       return ids
     })
     await logEvent(t.recipientId, "save", `${files.length} files`)
     await checkStorage(me)
     for (const v of versions) await enqueueDerive(v).catch(() => {})
+    for (const nodeId of scans) await enqueue("leak-scan", { nodeId }).catch(() => {})
     return { saved: files.length }
   } catch (e) {
     console.error("[transfer] save failed", e)

@@ -1,0 +1,1 @@
+ALTER TABLE "settings" ADD COLUMN "secret_allow_private" boolean DEFAULT false NOT NULL;

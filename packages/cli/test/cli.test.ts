@@ -9,6 +9,9 @@ import { after, before, test } from "node:test"
 import { startMock } from "./mock.mjs"
 
 const CLI = new URL("../src/cli.ts", import.meta.url).pathname
+// NIMBUS_CLI_BIN=<path> runs the same suite against the Go binary.
+const BIN = process.env.NIMBUS_CLI_BIN
+const cmd = (args: string[]): [string, string[]] => (BIN ? [BIN, args] : [process.execPath, [CLI, ...args]])
 let mock: any
 let home: string
 before(async () => {
@@ -18,11 +21,11 @@ before(async () => {
 after(() => mock.close())
 
 const env = () => ({ ...process.env, NIMBUS_SERVER: mock.url, NIMBUS_TOKEN: "nms_test", NIMBUS_CONFIG_DIR: join(home, "cfg") })
-const nimbus = (args: string[]) => spawn(process.execPath, [CLI, ...args], { env: env(), cwd: home })
+const nimbus = (args: string[]) => spawn(...cmd(args), { env: env(), cwd: home })
 // Async (not spawnSync): the mock server shares this event loop.
 const exec = (args: string[], e: NodeJS.ProcessEnv = env()) =>
   new Promise<{ stdout: string; stderr: string; status: number | null }>((resolve) => {
-    const c = spawn(process.execPath, [CLI, ...args], { env: e, cwd: home })
+    const c = spawn(...cmd(args), { env: e, cwd: home })
     let stdout = "", stderr = ""
     c.stdout.on("data", (d) => (stdout += d))
     c.stderr.on("data", (d) => (stderr += d))

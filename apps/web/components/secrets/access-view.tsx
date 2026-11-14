@@ -9,6 +9,7 @@ import type { Detail } from "@/components/secrets/project-view"
 import { CHECKBOX, Confirm, Modal, SELECT } from "@/components/secrets/ui"
 import { SubmitButton } from "@/components/submit-button"
 import { Button } from "@/components/ui/button"
+import { GuideLink } from "@/components/secrets/guide-link"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
@@ -266,7 +267,7 @@ function Tokens({ detail }: { detail: Detail }) {
     <section className="flex flex-col gap-3" aria-label="Machine tokens">
       <div className="flex flex-wrap items-center gap-3">
         <p className="max-w-prose flex-1 text-sm text-pretty text-muted-foreground">
-          For servers, CI and scripts: <code className="font-mono">NIMBUS_TOKEN=nms_…</code> with the CLI or the REST API. A token sees only the environments and folder you choose, and never needs the unlock.
+          For servers, CI and scripts: <code className="font-mono">NIMBUS_TOKEN=nms_…</code> with the CLI or the REST API. A token sees only the environments and folder you choose, and never needs the unlock. <GuideLink to="machine-tokens">Using tokens in your apps</GuideLink>
         </p>
         <Button onClick={() => setMaking(true)}>
           <PlusIcon />
@@ -274,7 +275,7 @@ function Tokens({ detail }: { detail: Detail }) {
         </Button>
       </div>
       <p role="alert" className="text-sm text-destructive empty:hidden">{error}</p>
-      {data && !data.tokens.length && <p className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">No tokens yet.</p>}
+      {data && !data.tokens.length && <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground"><p>No tokens yet.</p><GuideLink to="cli">See how servers and CI use them</GuideLink></div>}
       <ul className="flex flex-col divide-y rounded-xl border empty:hidden">
         {data?.tokens.map((t) => {
           const expired = t.expiresAt && new Date(t.expiresAt) < new Date()
@@ -367,6 +368,7 @@ function TokenDialog({ detail, onClose, onMade }: { detail: Detail; onClose: () 
           }
         }}
       >
+        <GuideLink to="machine-tokens">What each setting does</GuideLink>
         <div className="grid gap-2">
           <Label htmlFor="token-name">Name</Label>
           <Input id="token-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. prod web server" maxLength={60} required autoFocus />

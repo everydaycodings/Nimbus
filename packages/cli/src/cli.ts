@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process"
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
+import { randomBytes } from "node:crypto"
 import { homedir, hostname, platform } from "node:os"
 import { dirname, join } from "node:path"
 
@@ -30,6 +31,13 @@ const HELP = `nimbus <command>
   dynamic list | dynamic revoke LEASE_ID [--project P]
   kms encrypt|decrypt|sign|verify --key K [--project P] [--in FILE | --text S | stdin] [--context S]
                          [--signature SIG (verify)] [--out FILE]; kms keys lists the project's keys
+  share ["TEXT" | stdin] [--expires 1d] [--views 1] [--password[=PW]] [--label L]
+                         one-time link (1h-30d, 1-100 views); bare --password makes one up
+  share list | share revoke ID
+  webhooks [list] | webhooks add URL | webhooks remove ID | webhooks test ID   (--env E)
+  push list | push run --env E | push remove --env E
+  push set --env E --host H --user U --path FILE [--port 22] [--key FILE | --key-id ID]
+                         [--command CMD] [--auto]   write the env's .env to a server over SSH
 Common: --project P --env E --path /   Env: NIMBUS_TOKEN NIMBUS_SERVER`
 
 // ---- config -----------------------------------------------------------------
@@ -53,7 +61,7 @@ function saveConfig(c: Config) {
 const projectFile = ".nimbus.json"
 
 // ---- args -------------------------------------------------------------------
-const BOOL = new Set(["plain", "once", "help"])
+const BOOL = new Set(["plain", "once", "help", "password", "auto"])
 function parse(argv: string[]) {
   const flags: Record<string, string> = {}
   const pos: string[] = []
@@ -347,6 +355,94 @@ async function dynamic(flags: Record<string, string>, pos: string[]) {
   console.error(`nimbus: lease ${r.leaseId} ends ${r.expiresAt}`)
 }
 
+const enc = encodeURIComponent
+
+// One-time share links (CONTRACT.md "Share links"). A member's sign-in only: links belong to a person.
+async function share(flags: Record<string, string>, pos: string[]) {
+  const c = ctx(flags)
+  if (pos[1] === "list") {
+    const r = (await (await call(c, "GET", "/shares")).json()) as { shares: { id: string; state: string; views: number; maxViews: number; expiresAt: string; label: string | null }[] }
+    for (const s of r.shares) console.log(`${s.id}\t${s.state}\t${s.views}/${s.maxViews}\t${s.expiresAt}\t${s.label ?? ""}`)
+    return
+  }
+  if (pos[1] === "revoke") {
+    if (!pos[2]) throw new Fail("Usage: nimbus share revoke ID", 2)
+    await call(c, "DELETE", `/shares?id=${enc(pos[2])}`)
+    return void console.error("Revoked.")
+  }
+  // A stray word means `--password secret "text"`: refuse rather than share the password.
+  if (pos.length > 2) throw new Fail("Quote the text (or pipe it in), and use --password=VALUE for your own password.", 2)
+  const text = pos[1] ?? readFileSync(0, "utf8")
+  const m = (flags.expires || "1d").match(/^(\d+)([mhd]?)$/)
+  if (!m) throw new Fail("--expires is like 90m, 12h or 7d.", 2)
+  const minutes = Number(m[1]) * ({ m: 1, h: 60, d: 1440 } as Record<string, number>)[m[2] || "h"]
+  const password = flags.password === "true" ? randomBytes(12).toString("base64url") : flags.password
+  const body = { text, minutes, maxViews: Number(flags.views || 1), password, label: flags.label }
+  const r = (await (await call(c, "POST", "/shares", { body })).json()) as { url: string }
+  console.log(r.url)
+  if (flags.password === "true") console.error(`Password: ${password}  (send it another way)`)
+}
+
+function envTarget(flags: Record<string, string>, needEnv = true) {
+  const t = target(flags)
+  if (!t.project || (needEnv && !t.env)) throw new Fail(`Pass --project${needEnv ? " and --env" : ""} (or run nimbus init).`, 2)
+  return { ...t, base: `/projects/${enc(t.project)}/envs/${enc(t.env)}` }
+}
+
+// Per-environment webhooks (CONTRACT.md "Webhooks and server push"). Project admins only.
+async function webhooks(flags: Record<string, string>, pos: string[]) {
+  const c = ctx(flags)
+  const base = `${envTarget(flags).base}/webhooks`
+  const [, sub = "list", arg] = pos
+  if (sub === "list") {
+    const r = (await (await call(c, "GET", base)).json()) as { hooks: { id: string; url: string; enabled: boolean }[] }
+    for (const h of r.hooks) console.log(`${h.id}\t${h.enabled ? "on" : "off"}\t${h.url}`)
+    return
+  }
+  if (!arg || !["add", "remove", "test"].includes(sub)) throw new Fail(`Usage: nimbus webhooks list|add URL|remove ID|test ID --env E\n${HELP}`, 2)
+  if (sub === "add") {
+    const r = (await (await call(c, "POST", base, { body: { url: arg } })).json()) as { id: string; secret: string }
+    return void console.log(`${r.id}\nSigning secret (shown once): ${r.secret}`)
+  }
+  if (sub === "remove") {
+    await call(c, "DELETE", `${base}/${enc(arg)}`)
+    return void console.error("Removed.")
+  }
+  const r = (await (await call(c, "POST", `${base}/${enc(arg)}/test`)).json()) as { status: string; httpStatus: number | null; message: string | null }
+  console.log(r.status === "delivered" ? `delivered (${r.httpStatus})` : `failed: ${r.message ?? r.httpStatus}`)
+  if (r.status !== "delivered") process.exitCode = 1
+}
+
+// Server push over SSH. Admins set it up; `run` also takes a read-write machine token (a deploy step).
+async function push(flags: Record<string, string>, pos: string[]) {
+  const c = ctx(flags)
+  const sub = pos[1] ?? "list"
+  if (sub === "list") {
+    const t = envTarget(flags, false)
+    const r = (await (await call(c, "GET", `/projects/${enc(t.project)}/push`)).json()) as { targets: { env: string; host: string; port: number; username: string; path: string; auto: boolean; lastOk: boolean | null; lastMessage: string | null }[] }
+    for (const x of r.targets)
+      console.log(`${x.env}\t${x.username}@${x.host}:${x.port}\t${x.path}\t${x.auto ? "auto" : "manual"}\t${x.lastOk === null ? "never" : x.lastOk ? "ok" : "failed"}\t${x.lastMessage ?? ""}`)
+    return
+  }
+  const base = `${envTarget(flags).base}/push`
+  if (sub === "run") return void console.log(((await (await call(c, "POST", base)).json()) as { message: string }).message)
+  if (sub === "remove") return void (await call(c, "DELETE", base), console.error("Removed."))
+  if (sub !== "set") throw new Fail(`Usage: nimbus push list|set|run|remove --env E\n${HELP}`, 2)
+  if (!flags.host || !flags.user || !flags.path) throw new Fail("push set needs --host, --user and --path.", 2)
+  const body = {
+    host: flags.host,
+    port: Number(flags.port || 22),
+    username: flags.user,
+    path: flags.path,
+    ...(flags.key && { privateKey: readFileSync(flags.key, "utf8") }),
+    ...(flags["key-id"] && { keyId: flags["key-id"] }),
+    postCommand: flags.command || "",
+    auto: flags.auto === "true",
+  }
+  await call(c, "PUT", base, { body })
+  console.error("Saved. Run `nimbus push run` to push now.")
+}
+
 async function main() {
   const { flags, pos, rest } = parse(process.argv.slice(2))
   const cmd = pos[0]
@@ -364,6 +460,9 @@ async function main() {
       return sshCert(flags)
     case "dynamic": return dynamic(flags, pos)
     case "kms": return kms(flags, pos)
+    case "share": return share(flags, pos)
+    case "webhooks": return webhooks(flags, pos)
+    case "push": return push(flags, pos)
     case "run": process.exitCode = await run(flags, rest); return
     default: throw new Fail(`Unknown command "${cmd}"\n${HELP}`, 2)
   }

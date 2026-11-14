@@ -7,7 +7,7 @@
   "files": ["dist", "nimbus.sh", "CONTRACT.md"],
   "engines": { "node": ">=20" },
   "scripts": {
-    "build": "tsc -p .",
+    "build": "tsc -p . && rm -rf release && mkdir release && npm pack --silent --pack-destination release >/dev/null && mv release/*.tgz release/nimbus-cli.tgz",
     "typecheck": "tsc -p . --noEmit",
     "test": "node --test test/*.test.ts"
   },

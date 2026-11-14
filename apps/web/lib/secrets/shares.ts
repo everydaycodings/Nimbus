@@ -20,6 +20,9 @@ const MAX_FAILS = 10
 const scryptAsync = promisify(scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>
 const hashToken = (t: string) => createHash("sha256").update(t).digest("hex")
 const bad = (m: string, status = 400) => new SecretsError(status, m)
+// The CLI passes its own (token name and IP); the web's comes from the session.
+type Log = (action: string, detail: string) => Promise<unknown>
+const sessionLog: Log = (action, detail) => audit(action, { detail })
 
 async function hashPassword(pw: string) {
   const salt = randomBytes(16)
@@ -34,7 +37,8 @@ async function checkPassword(pw: string, stored: string) {
 
 export async function createShare(
   userId: string,
-  i: { text: string; minutes: unknown; maxViews: unknown; password?: string; label?: string }
+  i: { text: string; minutes: unknown; maxViews: unknown; password?: string; label?: string },
+  log = sessionLog
 ) {
   if (!(await policy()).sharesEnabled) throw bad("An admin turned share links off on this server.", 403)
   if (!i.text) throw bad("There's nothing to share.")
@@ -53,7 +57,7 @@ export async function createShare(
     maxViews: views,
     passwordHash: i.password ? await hashPassword(i.password) : null,
   })
-  await audit("secrets_share_create", { detail: `${i.label?.trim() || "a text"}: ${views} view${views === 1 ? "" : "s"}, ${mins} minutes${i.password ? ", password" : ""}` })
+  await log("secrets_share_create", `${i.label?.trim() || "a text"}: ${views} view${views === 1 ? "" : "s"}, ${mins} minutes${i.password ? ", password" : ""}`)
   return token
 }
 
@@ -81,7 +85,7 @@ export async function listShares(userId: string) {
   }))
 }
 
-export async function revokeShare(userId: string, id: string) {
+export async function revokeShare(userId: string, id: string, log = sessionLog) {
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw bad("That link isn't here.", 404)
   const [r] = await db
     .update(secretShares)
@@ -89,7 +93,7 @@ export async function revokeShare(userId: string, id: string) {
     .where(and(eq(secretShares.id, id), eq(secretShares.createdBy, userId), isNull(secretShares.revokedAt)))
     .returning({ label: secretShares.label })
   if (!r) throw bad("That link isn't here, or is already revoked.", 404)
-  await audit("secrets_share_revoke", { detail: r.label ?? "a text" })
+  await log("secrets_share_revoke", r.label ?? "a text")
 }
 
 // What a visitor may know before clicking: whether it works and if it wants a password.

@@ -35,7 +35,7 @@ export function cliFail(status: number, code: string, message: string, extra: Re
   return Response.json({ error: { code, message }, ...extra }, { status, headers })
 }
 
-const CODE: Record<number, string> = { 400: "bad_request", 401: "unauthorized", 403: "forbidden", 404: "not_found", 422: "bad_request", 423: "locked", 429: "rate_limited" }
+const CODE: Record<number, string> = { 400: "bad_request", 401: "unauthorized", 403: "forbidden", 404: "not_found", 422: "bad_request", 409: "conflict", 423: "locked", 429: "rate_limited", 502: "bad_gateway" }
 
 export async function cliGuard(req: Request, fn: () => Promise<Response>) {
   try {
@@ -114,7 +114,7 @@ export const auditToken = (
   p: Principal,
   action: string,
   detail: string,
-  at?: { projectId: string; env: string }
+  at?: { projectId: string; env?: string }
 ) =>
   auditAs(actorOf(p), action, `${detail} (${p.type === "machine" ? "machine token" : "CLI"}, ${p.ip ?? "?"})`, {
     ...at,

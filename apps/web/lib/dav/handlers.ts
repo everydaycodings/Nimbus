@@ -38,7 +38,8 @@ import { fileVersions, nodes } from "@/lib/db/schema"
 import { isDropped, isJunk, mimeOf } from "@/lib/file-rules"
 import { notifyEdit } from "@/lib/notify"
 import { checkStorage, getUsage, spaceLeft } from "@/lib/quota"
-import { enqueueDerive } from "@/lib/redis"
+import { enqueue, enqueueDerive } from "@/lib/redis"
+import { scannable } from "@/lib/secrets/leak-rules"
 import { getRange, putObject, putStream } from "@/lib/s3"
 import {
   CLASH,
@@ -296,6 +297,8 @@ async function store(
     await recordSaved(saved.nodeId, saved.versionId!, c.me.id)
     if (at.ownerId !== c.me.id) await notifyEdit(c.me.id, saved.nodeId)
     await enqueueDerive(saved.versionId!)
+    // The worker checks text and code files for leaked keys (if an admin left that on).
+    if (scannable(name, mime, size)) await enqueue("leak-scan", { nodeId: saved.nodeId }).catch(() => {})
   }
   await checkStorage(at.ownerId)
   return say(existing ? 204 : 201, undefined, { ETag: `"${saved.versionId}"` })

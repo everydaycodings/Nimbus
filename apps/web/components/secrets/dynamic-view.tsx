@@ -10,12 +10,13 @@ import { Confirm, Modal, SELECT, CHECKBOX } from "@/components/secrets/ui"
 import { SubmitButton } from "@/components/submit-button"
 import { useNotice } from "@/components/toaster"
 import { Button } from "@/components/ui/button"
+import { GuideLink } from "@/components/secrets/guide-link"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { DEFAULT_PORT, DEFAULT_TEMPLATE, ENGINES, ENGINE_LABEL, fmtTtl, type Engine } from "@/lib/secrets/dyn-consts"
 import { cn } from "@/lib/utils"
 
-type Conn = { id: string; name: string; engine: Engine; host: string; port: number; database: string; tls: boolean; adminUser: string; createSql: string; revokeSql: string; defaultTtl: number; maxTtl: number }
+type Conn = { id: string; name: string; engine: Engine; host: string; port: number; database: string; tls: boolean; ca: string; adminUser: string; createSql: string; revokeSql: string; defaultTtl: number; maxTtl: number }
 type Lease = { id: string; connection: string; engine: Engine; username: string; issuedBy: string; createdAt: string; expiresAt: string; state: "active" | "expired" | "revoked" | "failed"; error: string | null }
 type Rotation = { id: string; key: string; env: string; connection: string; engine: Engine; username: string; usernameB: string | null; usernameKey: string | null; mode: "single" | "alternate"; active: string | null; intervalDays: number | null; nextAt: string | null; lastAt: string | null; error: string | null; connectionId: string; secretId: string }
 type Data = { connections: Conn[]; leases: Lease[]; rotations: Rotation[] }
@@ -93,7 +94,8 @@ export function DynamicView({ projectId, role }: { projectId: string; role: stri
       {tab === "connections" &&
         (data?.connections.length === 0 ? (
           <Empty icon={<DatabaseIcon />} title="No database connections">
-            {admin ? "Add a PostgreSQL, MySQL, Redis or MongoDB server and the admin login Nimbus uses to create users on it." : "A project admin adds the databases people can ask for credentials on."}
+            {admin ? "Add a PostgreSQL, MySQL, Redis or MongoDB server and the admin login Nimbus uses to create users on it." : "A project admin adds the databases people can ask for credentials on."}{" "}
+            <GuideLink to="dynamic-database-credentials-and-rotation">Ask for credentials from the CLI or API</GuideLink>
           </Empty>
         ) : (
           <ul className="flex flex-col divide-y rounded-xl border">
@@ -309,6 +311,7 @@ function ConnDialog({ base, conn, onClose, onDone }: { base: string; conn?: Conn
               port: Number(port),
               database: String(f.get("database") ?? ""),
               tls,
+              ca: String(f.get("ca") ?? ""),
               adminUser: String(f.get("adminUser") ?? ""),
               ...(f.get("adminPassword") ? { adminPassword: String(f.get("adminPassword")) } : {}),
               createSql: create,
@@ -360,6 +363,14 @@ function ConnDialog({ base, conn, onClose, onDone }: { base: string; conn?: Conn
             <input type="checkbox" className={CHECKBOX} checked={tls} onChange={(e) => setTls(e.target.checked)} />
             Connect with TLS (certificate checked)
           </label>
+          {tls && (
+            <div className="grid gap-2 sm:col-span-2">
+              <Label htmlFor="dc-ca">CA certificate (PEM, optional)</Label>
+              <textarea id="dc-ca" name="ca" className={TEXTAREA} rows={4} spellCheck={false} defaultValue={conn?.ca} placeholder="-----BEGIN CERTIFICATE-----" aria-invalid={Boolean(err("ca"))} />
+              <p className="text-xs text-muted-foreground">Only for a server on a private CA or a self-signed certificate. Leave empty to trust the usual public roots.</p>
+              <FieldError text={err("ca")} />
+            </div>
+          )}
           <div className="grid gap-2">
             <Label htmlFor="dc-au">Admin user{redis ? " (optional)" : ""}</Label>
             <Input id="dc-au" name="adminUser" required={!redis} defaultValue={conn?.adminUser} autoComplete="off" aria-invalid={Boolean(err("adminUser"))} />

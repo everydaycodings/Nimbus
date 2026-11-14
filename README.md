@@ -50,6 +50,22 @@ links to an existing account only when that account's email is confirmed.
 - **Keycloak:** create a client in your realm with Client authentication on. The
   issuer is `https://<keycloak>/realms/<realm>`.
 
+## Secrets
+
+Secrets is a place for the keys, passwords and certificates your apps need. A project holds the
+secrets for one app, split into environments (Development, Staging and Production to start), with
+folders, history and rollback, change requests for protected environments, and an audit log. Values
+are sealed with a key per project, which is itself wrapped by `SECRETS_ROOT_KEY` (see
+[Credentials](#credentials)); the section also locks after a period of
+inactivity and needs unlocking again. Besides plain secrets a project can run an SSH certificate authority and browser
+terminal, a private CA and Let's Encrypt orders, short-lived database logins with password
+rotation, KMS keys, webhooks and one-time share links.
+
+Programs get their secrets with the `nimbus` command (Node, a single Go binary, or a bash script),
+with machine tokens and a small REST API, by having the server write a `.env` for them, or from
+webhooks. **[Connect your apps](docs/secrets.md)** covers every way, with Docker, systemd, GitHub
+Actions, GitLab CI and Kubernetes examples. It is also in the app, under Secrets, Connect apps.
+
 ## What a vault protects
 
 Vault files are encrypted in the browser before upload, names included, with a passphrase the
@@ -410,6 +426,8 @@ up. Turn it off for everyone in **Admin → System → WebDAV**, or for one memb
 davfs2 can't list folders on Linux 7 kernels; use rclone there to mount it as a folder.
 
 ### SSH keys, CA and browser terminal (Secrets → SSH)
+
+How members use the SSH CA and certificates: [docs/secrets.md](docs/secrets.md#ssh).
 
 Each Secrets project can store SSH keys and hosts, run an SSH certificate authority and open a
 terminal to a saved host in the browser. The terminal needs the `ssh-terminal` service (it ships

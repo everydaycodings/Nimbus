@@ -5,9 +5,9 @@ import { and, asc, eq } from "drizzle-orm"
 
 import { audit } from "@/lib/audit"
 import { db } from "@/lib/db"
-import { secretWatches } from "@/lib/db/schema"
+import { secretWatches, settings } from "@/lib/db/schema"
 import { SecretsError, type Ctx } from "./service"
-import { liveCert } from "./tls-watch"
+import { liveCert, publicAddress } from "./tls-watch"
 
 const bad = (m: string, status = 400) => new SecretsError(status, m)
 const HOST = /^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$|^[0-9a-f:.]+$/i
@@ -33,7 +33,8 @@ export async function checkWatch(id: string) {
   const [w] = await db.select().from(secretWatches).where(eq(secretWatches.id, id))
   if (!w) return null
   try {
-    const i = await liveCert(w.host, w.port)
+    const [s] = await db.select({ on: settings.secretAllowPrivate }).from(settings)
+    const i = await liveCert(w.host, w.port, undefined, await publicAddress(w.host, Boolean(s?.on)))
     const changed = !w.notAfter || w.notAfter.getTime() !== i.notAfter.getTime()
     const [r] = await db
       .update(secretWatches)
@@ -51,6 +52,10 @@ export async function addWatch(c: Ctx, hostRaw: string, port: number) {
   const host = hostRaw.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "")
   if (!host || host.length > 253 || !HOST.test(host)) throw bad("Enter a host name, like example.com.")
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw bad("Port must be 1 to 65535.")
+  const [s] = await db.select({ on: settings.secretAllowPrivate }).from(settings)
+  await publicAddress(host, Boolean(s?.on)).catch((e) => {
+    throw bad(e.message, 422)
+  })
   const [dup] = await db.select({ id: secretWatches.id }).from(secretWatches).where(and(eq(secretWatches.projectId, c.projectId), eq(secretWatches.host, host), eq(secretWatches.port, port)))
   if (dup) throw bad("Already watching that.", 409)
   const [w] = await db.insert(secretWatches).values({ projectId: c.projectId, host, port }).returning({ id: secretWatches.id })
