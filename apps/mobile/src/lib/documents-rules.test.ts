@@ -23,6 +23,7 @@ test("filters become the API's query, leaving empty ones out", () => {
 test("amounts accept both decimal marks", () => {
   assert.equal(parseAmount("1,234.50"), 1234.5)
   assert.equal(parseAmount("12,5"), 12.5)
+  assert.equal(parseAmount("1.234,50"), 1234.5)
   assert.equal(parseAmount(""), null)
   assert.equal(parseAmount("-3"), null)
   assert.equal(parseAmount("x"), null)

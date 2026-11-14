@@ -20,7 +20,7 @@ export function DocumentRows({ items }: { items: Item[] }) {
   const doc = useDocument(one?.id ?? "", ok && !!one)
   if (!ok) return null
   const ids = items.map((i) => i.id)
-  const say = (p: Promise<string | void>) => void p
+  const say = actions.say
   if (!one)
     return <SheetRow label="Mark as documents" icon={<FileText size={24} color={mute} />} onPress={() => say(actions.mark(ids, true))} />
   const d = doc.data?.item

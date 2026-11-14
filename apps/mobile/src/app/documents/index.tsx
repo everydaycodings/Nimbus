@@ -301,7 +301,7 @@ export default function Documents() {
             <Action label="Type" icon={Tag} onPress={() => need() && setBulk("type")} />
             <Action label="Sender" icon={UserCircle} onPress={() => need() && setBulk("sender")} />
             <Action label="Confirm" icon={CheckCircle} busy={busy} onPress={() => need() && run(() => actions.bulk({ ids, confirm: true }), `Confirmed ${ids.length}.`)} />
-            <Action label="Merge to PDF" icon={FilePlus} onPress={() => selected.length > 1 ? setNaming(true) : snack({ text: "Pick two or more files to merge.", error: true })} />
+            <Action label="Merge to PDF" icon={FilePlus} onPress={() => selected.filter((d) => d.role === "owner").length > 1 ? setNaming(true) : snack({ text: "Pick two or more files to merge.", error: true })} />
             <Action label="Download" icon={DownloadSimple} onPress={() => { transfers.download(selected.map(toItem)); setSelected([]) }} />
             <Action label="More" icon={GearSix} onPress={() => setBulk("more")} />
           </ScrollView>
@@ -344,7 +344,7 @@ export default function Documents() {
           onClose={() => setNaming(false)}
           onSubmit={async (name) => {
             try {
-              const r = await actions.merge(selected.map((d) => d.id), name || undefined)
+              const r = await actions.merge(selected.filter((d) => d.role === "owner").map((d) => d.id), name || undefined)
               actions.refresh()
               done(`Made ${r.name} in Documents.`)
             } catch (e) {

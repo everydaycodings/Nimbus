@@ -9,7 +9,7 @@ import { DateField, TONE } from "@/components/documents-ui"
 import { Sheet, SheetRow } from "@/components/sheet"
 import { useSnack } from "@/components/snackbar"
 import { Bar, Button, Field, IconButton, Spinner, Text } from "@/components/ui"
-import { useDocActions, useDocSenders, useDocTypes, useDocument } from "@/lib/documents"
+import { useDocActions, useDocSenders, useDocSummary, useDocTypes, useDocument } from "@/lib/documents"
 import { dayText, expiryInfo, formFrom, money, patchFrom, toItem, type Form } from "@/lib/documents-rules"
 import { openPreview } from "@/lib/preview-session"
 import { c, radius } from "@/lib/theme"
@@ -19,6 +19,7 @@ export default function DocumentScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
   const q = useDocument(id)
   const actions = useDocActions()
+  const summary = useDocSummary()
   const d = q.data?.item
   return (
     <View style={{ flex: 1, backgroundColor: c.background }}>
@@ -41,9 +42,11 @@ export default function DocumentScreen() {
         </View>
       ) : (
         <View style={{ padding: 24, gap: 12, alignItems: "flex-start" }}>
+          {summary.off ? <Text color={c.mutedForeground}>Documents is turned off.</Text> : <>
           <Text variant="titleSmall">This file isn&apos;t a document</Text>
           <Text color={c.mutedForeground}>Mark it as one to give it a type, sender, date and amount.</Text>
-          <Button label="Mark as document" onPress={async () => void (await actions.mark([id], true), q.refetch())} />
+          <Button label="Mark as document" onPress={async () => { const e = await actions.mark([id], true); if (e) actions.say(Promise.resolve(e)); else void q.refetch() }} />
+          </>}
         </View>
       )}
     </View>

@@ -1,5 +1,6 @@
 // The rules behind the Documents screens: filters to a query, expiry wording, the editor's form to a patch,
 // and what a waiting change does to a list. No React or native imports, so node --test can run them.
+import { parseAmount as sharedParseAmount } from "@nimbus/shared/documents"
 import type { Item } from "@nimbus/shared/api"
 import type { DocField, DocStatus, DocumentItem, DocumentPatch } from "@nimbus/shared/documents-api"
 
@@ -29,12 +30,10 @@ export const MISSING_LABEL: Record<DocField, string> = { type: "Type", sender: "
 export const EXPIRING_LABEL = { soon: "Expiring soon", expired: "Expired", any: "Has an expiry" } as const
 export const SORT_LABEL: Record<DocSort, string> = { date: "Document date", name: "Name", amount: "Amount", expires: "Expiry", added: "Date added" }
 
-// A typed amount: "1,234.50" or "1234,5" both work. null for empty or not a number.
+// A typed amount: "1,234.50", "1.234,50" or "1234,5" all work. null for empty, negative or not a number.
 export function parseAmount(text: string): number | null {
-  const t = text.trim().replace(/\s/g, "")
-  if (!t) return null
-  const n = Number(/,\d{1,2}$/.test(t) && !t.includes(".") ? t.replace(",", ".") : t.replace(/,/g, ""))
-  return Number.isFinite(n) && n >= 0 ? n : null
+  const n = text.trim() ? sharedParseAmount(text) : null
+  return n !== null && n >= 0 ? n : null
 }
 
 // How many chips are lit: one per kind of filter, not per value.

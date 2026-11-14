@@ -2,11 +2,14 @@
 // dehydrate/hydrate, one SQLite row per query, so a list is written once when it changes.
 import { dehydrate, hydrate, type Query, type QueryClient } from "@tanstack/react-query"
 
+import { NO_FILTERS } from "./documents-rules"
 import { db } from "./offline-db"
 
 const KEPT = new Set(["list", "item", "counts", "tags", "docs"])
 const SKIP_LISTS = ["/trash", "/search", "/tags/"]
 const MAX_PER_ACCOUNT = 300
+
+const isPlain = (f: unknown) => JSON.stringify(f) === JSON.stringify(NO_FILTERS)
 
 // What's worth keeping: Files, folders, Recent, Starred, Shared, an item's details, the counts, tags and me.
 function keep(q: Query) {
@@ -14,6 +17,8 @@ function keep(q: Query) {
   if (q.state.status !== "success") return null
   if (a === "me") return b
   if (!KEPT.has(b)) return null
+  // Documents: only the unfiltered list and the summary; filtered lists, OCR text and the rest are not saved.
+  if (b === "docs" && !(c === "summary" || (c === "list" && isPlain(q.queryKey[3])))) return null
   if (b === "list" && SKIP_LISTS.some((p) => String(c).startsWith(p))) return null
   return a
 }

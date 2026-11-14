@@ -141,6 +141,7 @@ export function useDocActions() {
 
     return {
       refresh,
+      say,
       mark,
       // Edited fields, or Confirm (patch.status "confirmed"). `names` only labels the change until it syncs.
       patch: (id: string, patch: DocumentPatch, label: string, typeName?: string | null, text?: string) =>
