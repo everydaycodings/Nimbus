@@ -183,7 +183,9 @@ export function TwoFactorSetup({
           onClick={async () => {
             if (password) return setStarted(true)
             setBusy(true)
-            setError(await enable())
+            const problem = await enable()
+            setError(problem)
+            if (!problem) setStarted(true)
             setBusy(false)
           }}
           className="self-start"

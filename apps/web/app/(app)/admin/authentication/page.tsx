@@ -17,7 +17,7 @@ import { appUrl } from "@/lib/email"
 import { passkeyHost } from "@/lib/passkey-rules"
 import { OIDC_ID, getOidcConfig, oidcReady, type OidcConfig } from "@/lib/oidc"
 import { POLICY_MAX, POLICY_MIN } from "@/lib/password-policy"
-import { hasPassword, requireAdmin } from "@/lib/session"
+import { requireAdmin } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
 import { MAX_SESSIONS } from "@/lib/accounts"
 import {
@@ -71,7 +71,7 @@ function OidcEnv({ c }: { c: OidcConfig }) {
 export default async function AuthenticationPage() {
   const me = await requireAdmin()
   // Mirrors setRequire2fa: you can't require what you don't use yourself.
-  const needsOwn2fa = !me.twoFactorEnabled && (await hasPassword(me.id))
+  const needsOwn2fa = !me.twoFactorEnabled
   const s = await getSettings()
   const reset = resettable(s)
   const blocked = needsOwn2fa && !s.require2fa
@@ -94,7 +94,7 @@ export default async function AuthenticationPage() {
       <SettingsForm
         action={setRequire2fa}
         title="Two-factor"
-        description="A code from an authenticator app after the password. It works without email."
+        description="A code from an authenticator app after signing in. It works without email."
         disabled={blocked}
         note={
           blocked && (
@@ -115,7 +115,7 @@ export default async function AuthenticationPage() {
             name: "require2fa",
             when: "checked",
             message:
-              "Everyone with a password and no two-factor, admins included, is stopped the next time they open Nimbus until they set it up.",
+              "Everyone without two-factor, admins included, is stopped the next time they open Nimbus until they set it up.",
           },
         ]}
       >
@@ -123,11 +123,11 @@ export default async function AuthenticationPage() {
           id="require-2fa"
           label="Require two-factor"
           htmlFor="require2fa"
-          hint="Password accounts must set it up before they can use Nimbus. Nobody can turn it off while this is on."
+          hint="Everyone must set it up before they can use Nimbus. Nobody can turn it off while this is on."
           tip={{
-            does: "Adds a one-time code from an authenticator app to every password sign-in.",
+            does: "Adds a one-time code from an authenticator app to every sign-in.",
             affects:
-              "All members and admins who sign in with a password. Google, GitHub and OIDC sign-ins ask for the code too, unless the OIDC switch below trusts the provider.",
+              "All members and admins, whether they sign in with a password, Google, GitHub or OIDC. OIDC sign-ins skip the code when the switch below trusts the provider.",
             default: "Off",
           }}
           reset={reset("require2fa")}

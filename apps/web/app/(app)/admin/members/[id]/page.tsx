@@ -348,11 +348,9 @@ export default async function MemberPage({
             <Row label="Two-factor" on={Boolean(p.twoFactorEnabled)}>
               {p.twoFactorEnabled
                 ? "On"
-                : password
-                  ? settings.require2fa
-                    ? "Off, they'll be asked to set it up"
-                    : "Off"
-                  : "Not used, signs in with a provider"}
+                : settings.require2fa
+                  ? "Off, they'll be asked to set it up"
+                  : "Off"}
             </Row>
             <Row label="Email confirmed" on={p.emailVerified}>
               {p.emailVerified ? "Yes" : "Not yet"}

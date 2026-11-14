@@ -229,12 +229,12 @@ export default async function AppLayout({
         wide
       >
         <p>
-          Your admin requires two-factor authentication on this Nimbus. After
-          your password, you&apos;ll also enter a code from an authenticator app
+          Your admin requires two-factor authentication on this Nimbus. When
+          you sign in, you&apos;ll also enter a code from an authenticator app
           on your phone.
         </p>
         <div className="pt-2 text-foreground">
-          <TwoFactorSetup autoStart />
+          <TwoFactorSetup autoStart password={password} />
         </div>
       </StatusScreen>
     )

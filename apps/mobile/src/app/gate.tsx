@@ -50,7 +50,7 @@ function TemporaryPassword({ account, refetch }: { account: Account; refetch: ()
 
 // A QR code is no use on the phone that holds the authenticator, so this hands
 // the secret straight to the app, with the key to copy as the fallback.
-function TwoFactorSetup({ refetch }: { refetch: () => void }) {
+function TwoFactorSetup({ refetch, hasPassword }: { refetch: () => void; hasPassword: boolean }) {
   const auth = useAuthCall()
   const [password, setPassword] = useState("")
   const [uri, setUri] = useState<string | null>(null)
@@ -65,9 +65,13 @@ function TwoFactorSetup({ refetch }: { refetch: () => void }) {
   if (!uri)
     return (
       <>
-        <Field label="Your password" value={password} onChangeText={setPassword} secret autoComplete="current-password" error={error} />
-        <Button label="Continue" busy={busy} disabled={!password} onPress={() => run(async () => {
-          const r = await auth<{ totpURI: string; backupCodes: string[] }>("/api/auth/two-factor/enable", { password })
+        {hasPassword ? (
+          <Field label="Your password" value={password} onChangeText={setPassword} secret autoComplete="current-password" error={error} />
+        ) : (
+          error && <ErrorText>{error}</ErrorText>
+        )}
+        <Button label={hasPassword ? "Continue" : "Set up two-factor"} busy={busy} disabled={hasPassword && !password} onPress={() => run(async () => {
+          const r = await auth<{ totpURI: string; backupCodes: string[] }>("/api/auth/two-factor/enable", hasPassword ? { password } : {})
           setUri(r.totpURI); setCodes(r.backupCodes)
         })} />
       </>
@@ -139,8 +143,8 @@ export default function Gate() {
       {gate === "temporary-password" && <TemporaryPassword account={active} refetch={refetch} />}
       {gate === "two-factor" && (
         <>
-          <Text color={c.mutedForeground}>Your admin requires two-factor on this Nimbus. After your password, you'll also enter a code from an authenticator app.</Text>
-          <TwoFactorSetup refetch={refetch} />
+          <Text color={c.mutedForeground}>Your admin requires two-factor on this Nimbus. When you sign in, you'll also enter a code from an authenticator app.</Text>
+          <TwoFactorSetup refetch={refetch} hasPassword={me.data.hasPassword} />
         </>
       )}
       {gate === "passkey" && (

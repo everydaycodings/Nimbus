@@ -28,7 +28,7 @@ import { passkeyHost } from "@/lib/passkey-rules"
 import { POLICY_MAX, POLICY_MIN } from "@/lib/password-policy"
 import { turnCopiesOffAndDelete } from "@/lib/video-copies"
 import { enqueue, scheduleBackups, scheduleHealth } from "@/lib/redis"
-import { hasPassword, requireAdmin } from "@/lib/session"
+import { requireAdmin } from "@/lib/session"
 import { getSettings, settingDefault, type SettingKey } from "@/lib/signup"
 
 const DOMAIN = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/
@@ -46,7 +46,7 @@ export async function setSignupMode(form: FormData) {
 export async function setRequire2fa(form: FormData) {
   const actor = await requireAdmin()
   const on = form.get("require2fa") === "on"
-  if (on && !actor.twoFactorEnabled && (await hasPassword(actor.id))) return
+  if (on && !actor.twoFactorEnabled) return
   await saveSettings({ require2fa: on, updatedAt: new Date() })
   revalidatePath("/", "layout")
 }

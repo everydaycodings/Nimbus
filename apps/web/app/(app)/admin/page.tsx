@@ -149,7 +149,7 @@ export default async function OverviewPage() {
       ? {
           state: "ok",
           label: "Two-factor required",
-          detail: "Every password account uses it.",
+          detail: "Every account uses it.",
           href: "/admin/authentication",
         }
       : {

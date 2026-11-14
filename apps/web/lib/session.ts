@@ -56,7 +56,7 @@ export async function gateOf(
   if (me.status === "pending") return "pending" as const
   if (me.status === "rejected") return "rejected" as const
   const { require2fa, requirePasskey } = await getSettings()
-  if (require2fa && !me.twoFactorEnabled && (await hasPassword(me.id)))
+  if (require2fa && !me.twoFactorEnabled)
     return "two-factor" as const
   if (requirePasskey && (await passkeyStatus()).available) {
     const [{ n }] = await db
