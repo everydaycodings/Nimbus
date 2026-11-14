@@ -12,10 +12,10 @@ export const PATCH = projectRoute<P>("developer", async (c, req, p) => {
   if (b instanceof Response) return b
   await renameFolder(c, p.folderId, b.name)
   return Response.json({ ok: true })
-})
+}, { grant: true })
 
 export const DELETE = projectRoute<P>("developer", async (c, _, p) => {
   const path = await deleteFolder(c, p.folderId)
   await audit("secrets_folder_delete", { detail: path })
   return Response.json({ ok: true })
-})
+}, { grant: true })

@@ -6,7 +6,7 @@ import { useEffect, useState } from "react"
 
 import { useLoad } from "@/components/secrets/access-view"
 import { api, errorText } from "@/components/secrets/client"
-import { CHECKBOX, Modal, SELECT } from "@/components/secrets/ui"
+import { CHECKBOX, Loading, Modal, SELECT } from "@/components/secrets/ui"
 import { Empty, Tabs, useBusy } from "@/components/secrets/pki-ui"
 import { SubmitButton } from "@/components/submit-button"
 import { useNotice } from "@/components/toaster"
@@ -33,11 +33,11 @@ export function LeaksView({ projects }: { projects: Project[] }) {
       .catch((e) => notify({ text: errorText(e) }))
   return (
     <div className="flex flex-col gap-5">
+      <Link href="/secrets" className="-mb-2 flex w-fit items-center gap-1.5 rounded text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50">
+        <ArrowLeftIcon className="size-3.5" />
+        All projects
+      </Link>
       <div className="flex flex-wrap items-center gap-3">
-        <Button variant="ghost" size="sm" render={<Link href="/secrets" />}>
-          <ArrowLeftIcon />
-          Projects
-        </Button>
         <h1 className="text-2xl font-semibold tracking-tight">Leaks</h1>
         {data?.enabled !== false && (
           <Button
@@ -68,7 +68,7 @@ export function LeaksView({ projects }: { projects: Project[] }) {
       <Tabs label="Findings" tabs={[["open", "Open"], ["closed", "Closed"]] as const} value={tab} onChange={setTab} />
       <p role="alert" className="text-sm text-destructive empty:hidden">{error}</p>
       {!data ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <Loading />
       ) : data.leaks.length === 0 ? (
         <Empty icon={<ShieldCheckIcon />} title={tab === "open" ? "Nothing found" : "Nothing closed yet"}>
           {tab === "open" ? "No possible secrets in your files. New uploads are checked as they arrive." : undefined}

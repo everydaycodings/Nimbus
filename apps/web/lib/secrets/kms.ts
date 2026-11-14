@@ -99,6 +99,9 @@ export const sealValue = (key: Buffer, projectId: string, plain: string) =>
 export const openValue = (key: Buffer, projectId: string, sealed: string) =>
   open(key, sealed, `value:${projectId}`).toString("utf8")
 
+export const TICKET_AAD = "ssh-ticket"
+
 // Share links aren't tied to a project, so their text is sealed with the root key itself.
-export const sealServer = (plain: string) => seal(rootKey(), Buffer.from(plain, "utf8"), "share")
-export const openServer = (sealed: string) => openRoot(sealed, "share").toString("utf8")
+// `aad` keeps each use apart: an SSH terminal ticket can't pass for a share link's text.
+export const sealServer = (plain: string, aad = SHARE_AAD) => seal(rootKey(), Buffer.from(plain, "utf8"), aad)
+export const openServer = (sealed: string, aad = SHARE_AAD) => openRoot(sealed, aad).toString("utf8")

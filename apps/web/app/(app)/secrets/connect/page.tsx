@@ -35,7 +35,7 @@ export default async function ConnectPage({ searchParams }: { searchParams: Prom
   return (
     <div className="mx-auto flex w-full min-w-0 max-w-6xl flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <Link href="/secrets" className="flex w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
+        <Link href="/secrets" className="flex w-fit items-center gap-1.5 rounded text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50">
           <ArrowLeftIcon className="size-3.5" />
           All projects
         </Link>
@@ -77,8 +77,8 @@ function Toc({ toc, className }: { toc: ReturnType<typeof headings>; className: 
             href={`#${t.id}`}
             className={
               t.depth === 2
-                ? "block rounded px-2 py-1 font-medium hover:bg-muted"
-                : "block rounded py-0.5 pr-2 pl-5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                ? "block rounded px-2 py-1 font-medium outline-none hover:bg-muted focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                : "block rounded py-0.5 pr-2 pl-5 text-xs text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
             }
           >
             {t.text}

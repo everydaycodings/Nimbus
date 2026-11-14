@@ -24,4 +24,4 @@ export const POST = projectRoute("developer", async (c, req) => {
   const keys = await purgeIds(c, b.ids)
   await audit("secrets_write", { detail: `permanently deleted ${names(keys)}` })
   return Response.json({ count: keys.length })
-})
+}, { grant: true })

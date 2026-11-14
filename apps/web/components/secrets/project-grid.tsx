@@ -1,7 +1,7 @@
 "use client"
 
 import { Dialog } from "@base-ui/react/dialog"
-import { KeyIcon, PlusIcon, StackIcon } from "@phosphor-icons/react"
+import { KeyIcon, MagnifyingGlassIcon, PlusIcon, StackIcon } from "@phosphor-icons/react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
@@ -25,6 +25,9 @@ export function ProjectGrid({
   limit: number | null
 }) {
   const [creating, setCreating] = useState(false)
+  const [q, setQ] = useState("")
+  const term = q.trim().toLowerCase()
+  const shown = term ? projects.filter((p) => `${p.name} ${p.description ?? ""}`.toLowerCase().includes(term)) : projects
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start gap-3">
@@ -48,15 +51,24 @@ export function ProjectGrid({
         </p>
       )}
 
-      {projects.length ? (
+      {projects.length > 8 && (
+        <div className="relative w-full sm:w-72">
+          <MagnifyingGlassIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input aria-label="Filter projects" placeholder="Filter projects" value={q} onChange={(e) => setQ(e.target.value)} className="pl-8" />
+        </div>
+      )}
+
+      {projects.length && !shown.length ? (
+        <p className="text-sm text-muted-foreground" role="status">No projects match “{q.trim()}”.</p>
+      ) : projects.length ? (
         <ul className="grid gap-gap-ui sm:grid-cols-[repeat(auto-fill,minmax(16rem,1fr))]">
-          {projects.map((p) => (
+          {shown.map((p) => (
             <li key={p.id}>
               <Link
                 href={`/secrets/${p.id}`}
                 className="flex h-full items-start gap-3 rounded-xl border p-4 transition-colors outline-none hover:bg-muted/40 focus-visible:ring-[3px] focus-visible:ring-ring/50"
               >
-                <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-brand/10 text-brand">
+                <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
                   <StackIcon className="size-5" />
                 </span>
                 <span className="grid min-w-0 gap-0.5">

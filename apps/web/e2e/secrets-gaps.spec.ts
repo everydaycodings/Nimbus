@@ -50,6 +50,7 @@ test("changing a referenced environment moves every dependent's version, through
   await signIn(page)
   await unlock(page)
   const p = await seed(page)
+  db("update settings set secret_allow_private = true") // the webhook below is on 127.0.0.1
   try {
     const { development: dev, staging, production: prod } = p.envs
     await put(page, p, "production", "API_KEY", "one")
@@ -83,6 +84,7 @@ test("changing a referenced environment moves every dependent's version, through
     expect(await version("production")).toBe(before.prod + 3) // two, LOOP, and staging's KEY through LOOP
     await m.dispose()
   } finally {
+    db("update settings set secret_allow_private = false")
     await page.request.delete(`${API}/projects/${p.id}`)
   }
 })
@@ -91,6 +93,7 @@ test("share links, webhooks and server push over the API with CLI and machine to
   await signIn(page)
   await unlock(page)
   const p = await seed(page)
+  db("update settings set secret_allow_private = true") // the receiver is on 127.0.0.1
   const got: { sig: string; body: string }[] = []
   const recv = createServer((req, res) => {
     let body = ""
@@ -174,6 +177,7 @@ test("share links, webhooks and server push over the API with CLI and machine to
     expect(db(`select count(*) from audit_events where action in ('secrets_share_create','secrets_share_revoke') and detail like '%${label}%(CLI,%'`)).toBe("2")
     await member.post(`${API}/auth/logout`)
   } finally {
+    db("update settings set secret_allow_private = false")
     recv.close()
     await member?.dispose()
     await page.request.delete(`${API}/projects/${p.id}`)

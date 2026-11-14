@@ -7,7 +7,7 @@ import { useLoad } from "@/components/secrets/access-view"
 import { api, copySecret, errorText } from "@/components/secrets/client"
 import { PwnedHint } from "@/components/secrets/pwned-hint"
 import { Empty, Expiry, TEXTAREA, readB64, useBusy } from "@/components/secrets/pki-ui"
-import { Confirm, Modal, SELECT } from "@/components/secrets/ui"
+import { Confirm, Loading, Modal, SELECT } from "@/components/secrets/ui"
 import { SubmitButton } from "@/components/submit-button"
 import { useNotice } from "@/components/toaster"
 import { Button } from "@/components/ui/button"
@@ -68,7 +68,7 @@ export function ItemsView({ projectId, role }: { projectId: string; role: string
       </div>
       <p role="alert" className="text-sm text-destructive empty:hidden">{error}</p>
       {!data ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <Loading />
       ) : shown.length === 0 ? (
         <Empty icon={<KeyIcon />} title={data.items.length ? "Nothing matches" : "No items yet"}>
           {data.items.length ? undefined : "Keep the logins, keys and notes your team needs next to its secrets."}

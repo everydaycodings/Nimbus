@@ -51,6 +51,7 @@ import { checkSchema, type SchemaKind } from "./gov-rules"
 import { notifyChange } from "./hooks"
 import { newProjectKey, openValue, sealValue, unwrapProjectKey } from "./kms"
 import { dependents, expand, hasRefs, refGraph, selfId, type Scope } from "./refs"
+import { pathInScope } from "./token-rules"
 
 export type Role = "admin" | "developer" | "viewer"
 export type Ctx = {
@@ -65,6 +66,8 @@ export type Ctx = {
   writeEnvs?: string[] | null
   // Who to name on a change request when it isn't the member (a machine token).
   actor?: { id: string | null; name: string }
+  // A machine token's folder scope: reads (references included) stay inside it.
+  path?: string
 }
 
 export class SecretsError extends Error {
@@ -83,6 +86,8 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 type Q = typeof db | Tx
 
 const LIMIT_NAME = 80
+// The routes' cap too; the token API's writes only meet this one.
+const MAX_VALUE = 100_000
 const clean = (s: unknown, max = LIMIT_NAME) => String(s ?? "").trim().slice(0, max)
 const slugify = (name: string) =>
   name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "env"
@@ -475,6 +480,8 @@ export async function renameFolder(c: Ctx, folderId: string, name: string) {
   if (sibs.some((s) => s.id !== f.id && s.name.toLowerCase() === n.toLowerCase()))
     throw bad("A folder with that name is already here.")
   await db.update(secretFolders).set({ name: n }).where(eq(secretFolders.id, folderId))
+  // Paths and ${env.folder.KEY} references through it change: agents and dependents must notice.
+  await changed(c, [f.envId], [])
 }
 
 // The folder and everything in it. Its secrets go to the project's trash (they
@@ -551,7 +558,7 @@ export async function ensurePath(c: Ctx, envId: string, path: string, tx: Q) {
 
 type Row = typeof secrets.$inferSelect
 
-// Every live secret of the project, decrypted, with a lookup for references.
+// Every live secret of the project, decrypted on first read, with a lookup for references.
 // Only used server-side to expand references and answer exports.
 export async function loadAll(c: Ctx, q: Q = db) {
   const envs = (await q.select().from(secretEnvs).where(eq(secretEnvs.projectId, c.projectId))).filter((e) =>
@@ -566,13 +573,24 @@ export async function loadAll(c: Ctx, q: Q = db) {
   ).filter((r) => allowed(c, r.envId))
   const envSlug = new Map(envs.map((e) => [e.id, e.slug]))
   const pathOf = new Map(folders.map((f) => [f.id, f.path]))
-  const items = rows.map((r) => ({
-    row: r,
-    scope: { env: envSlug.get(r.envId)!, folder: r.folderId ? (pathOf.get(r.folderId) ?? "") : "" } as Scope,
-    value: unseal(c, r.valueEnc),
-  }))
-  const map = new Map(items.map((i) => [`${i.scope.env}\0${i.scope.folder}\0${i.row.key}`, i.value]))
-  const lookup = (e: string, f: string, k: string) => map.get(`${e}\0${f}\0${k}`)
+  const plain = new Map<string, string>()
+  const open = (r: Row) => plain.get(r.id) ?? plain.set(r.id, unseal(c, r.valueEnc)).get(r.id)!
+  const items = rows
+    .map((r) => ({ row: r, scope: { env: envSlug.get(r.envId)!, folder: r.folderId ? (pathOf.get(r.folderId) ?? "") : "" } as Scope }))
+    .filter((i) => c.path === undefined || pathInScope(c.path, i.scope.folder))
+    // Values decrypt on first read, so a reveal or a one-folder export of a big project
+    // only opens what it shows and what that references.
+    .map((i) => ({
+      ...i,
+      get value() {
+        return open(i.row)
+      },
+    }))
+  const map = new Map(items.map((i) => [`${i.scope.env}\0${i.scope.folder}\0${i.row.key}`, i.row]))
+  const lookup = (e: string, f: string, k: string) => {
+    const r = map.get(`${e}\0${f}\0${k}`)
+    return r && open(r)
+  }
   return { items, lookup, envs, folders }
 }
 
@@ -935,6 +953,15 @@ async function version(
   })
 }
 
+// Live secrets in the project, for its limit.
+async function liveCount(c: Ctx, q: Q) {
+  const [{ n }] = await q
+    .select({ n: count() })
+    .from(secrets)
+    .where(and(eq(secrets.projectId, c.projectId), isNull(secrets.deletedAt)))
+  return n
+}
+
 // Thrown inside a dry run's transaction so nothing is kept.
 class DryRun extends Error {}
 
@@ -1005,6 +1032,7 @@ export async function applyOps(
     }
 
     let added = 0
+    let live: number | undefined
     for (const [i, op] of ops.entries()) {
       const at = String(i)
       const key = op.key?.trim()
@@ -1038,6 +1066,10 @@ export async function applyOps(
         continue
       }
       const value = op.value
+      if (value !== undefined && value.length > MAX_VALUE) {
+        errors[at] = `${key}: values are at most 100,000 characters.`
+        continue
+      }
       const effType = type === undefined ? (target?.type ?? null) : type
       const check = value !== undefined ? value : target ? unseal(c, target.valueEnc) : ""
       const typeError = validateType(effType, check)
@@ -1054,12 +1086,10 @@ export async function applyOps(
       const comment = op.comment === undefined ? undefined : clean(op.comment, 1000) || null
 
       if (!target) {
+        // Counted once: rows this save already inserted would be counted again.
         if (pol.maxSecrets !== null) {
-          const [{ n }] = await tx
-            .select({ n: count() })
-            .from(secrets)
-            .where(and(eq(secrets.projectId, c.projectId), isNull(secrets.deletedAt)))
-          if (n + added >= pol.maxSecrets) {
+          live ??= await liveCount(c, tx)
+          if (live + added >= pol.maxSecrets) {
             errors[at] = `This project is at its limit of ${pol.maxSecrets} secrets.`
             continue
           }
@@ -1133,7 +1163,7 @@ export async function applyOps(
       for (const i of all.items) {
         if (!touched.includes(i.row.id) || !hasRefs(i.value)) continue
         const r = expand(i.value, i.scope, all.lookup, selfId(i.scope, i.row.key))
-        const cycle = r.errors.find((x) => x.kind === "cycle")
+        const cycle = r.errors.find((x) => x.kind !== "missing")
         if (cycle)
           throw bad(`${i.row.key}: ${cycle.message}`, 422, {
             [String(ops.findIndex((o) => o.key === i.row.key))]: cycle.message,
@@ -1219,6 +1249,7 @@ export async function moveIds(c: Ctx, ids: string[], folderId: string | null) {
   if (envIds.size !== 1) throw bad("Move secrets from one environment at a time.")
   const [envId] = envIds
   mustWrite(c, envIds)
+  if (new Set(rows.map((r) => r.key)).size < rows.length) throw bad("Two of those secrets have the same key.")
   await refuseProtected(envId, "Moving secrets isn't done through change requests.", c)
   await folder(c, folderId, envId)
   await db.transaction(async (tx) => {
@@ -1258,7 +1289,9 @@ export async function copyIds(c: Ctx, ids: string[], toEnvId: string, overwrite:
     ? await db.select().from(secretTagLinks).where(inArray(secretTagLinks.secretId, rows.map((r) => r.id)))
     : []
   const done = { copied: 0, skipped: 0, request: undefined as { id: string } | undefined }
+  const { maxSecrets } = await policy()
   await db.transaction(async (tx) => {
+    let room = maxSecrets === null ? Infinity : maxSecrets - (await liveCount(c, tx))
     for (const r of rows) {
       const path = all.find((f) => f.id === r.folderId)?.path ?? ""
       const folderId = await ensurePath(c, toEnvId, path, tx)
@@ -1287,6 +1320,7 @@ export async function copyIds(c: Ctx, ids: string[], toEnvId: string, overwrite:
           .returning()
         await version(tx, c, target, "update")
       } else {
+        if (room-- <= 0) throw bad(`This project is at its limit of ${maxSecrets} secrets.`, 422)
         ;[target] = await tx
           .insert(secrets)
           .values({ ...vals, projectId: c.projectId, envId: toEnvId, folderId, key: r.key, createdBy: c.userId, updatedBy: c.userId })
@@ -1430,6 +1464,9 @@ export async function restoreIds(c: Ctx, ids: string[]) {
   const skipped: string[] = []
   mustWrite(c, rows.map((r) => r.envId))
   for (const e of new Set(rows.map((r) => r.envId))) await refuseProtected(e, "Restore secrets there through a change request.", c)
+  const { maxSecrets } = await policy()
+  if (maxSecrets !== null && rows.length > maxSecrets - (await liveCount(c, db)))
+    throw bad(`This project is at its limit of ${maxSecrets} secrets.`, 422)
   for (const r of rows) {
     // A live secret with the same key in the same place keeps the spot.
     const [live] = await db

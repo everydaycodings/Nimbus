@@ -1,6 +1,7 @@
 // Pure rules for Secrets tokens: generating, hashing, IP allowlists and folder scope.
 // Run: node --test lib/secrets/token-rules.test.ts
 import { createHash, randomBytes } from "node:crypto"
+import { ipFrom } from "../client-ip.ts"
 
 export const MACHINE_PREFIX = "nms_"
 export const CLI_PREFIX = "nmu_"
@@ -46,3 +47,8 @@ export function ipAllowed(list: string[] | null, ip: string | null) {
     return ((v4(base)! & mask) >>> 0) === ((n & mask) >>> 0)
   })
 }
+
+// The address the nearest proxy saw. nginx (production_script) sets X-Real-IP to it and
+// appends it to X-Forwarded-For, so the first XFF entry is whatever the caller sent and
+// can't gate an IP allowlist; the last one is the proxy's.
+export const clientIp = (req: Request) => ipFrom(req.headers)

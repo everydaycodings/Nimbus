@@ -20,6 +20,7 @@ import { notify } from "@/lib/notify"
 import { deleteObject, putObject } from "@/lib/s3"
 import { UUID } from "@/lib/file-rules"
 import { isAdmin, type Me } from "@/lib/session"
+import { ipFrom } from "@/lib/client-ip"
 
 export type FormState = { ok?: boolean; error?: string } | null
 
@@ -153,7 +154,7 @@ export async function createAppPassword(
   await notify(me.id, "app_password", {
     data: {
       name,
-      ip: h.get("x-forwarded-for")?.split(",")[0].trim() || h.get("x-real-ip") || "",
+      ip: ipFrom(h) || "",
     },
   })
   return { password }

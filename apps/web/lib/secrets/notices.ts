@@ -126,11 +126,11 @@ export async function sweep() {
     out.access++
   }
 
-  // Rotation reminders, once per due date.
+  // Rotation reminders, once per due date. Claimed before anyone is told, so two sweeps
+  // at once (or a retry) can't send the same reminder twice.
   const due = await db
-    .select({ id: secrets.id, key: secrets.key, projectId: secrets.projectId, env: secretEnvs.name, slug: secretEnvs.slug, at: secrets.rotationAt })
-    .from(secrets)
-    .innerJoin(secretEnvs, eq(secretEnvs.id, secrets.envId))
+    .update(secrets)
+    .set({ rotationNotifiedFor: sql`${secrets.rotationAt}` })
     .where(
       and(
         isNull(secrets.deletedAt),
@@ -139,18 +139,19 @@ export async function sweep() {
         sql`${secrets.rotationNotifiedFor} is distinct from ${secrets.rotationAt}`
       )
     )
+    .returning({ key: secrets.key, projectId: secrets.projectId, envId: secrets.envId })
   for (const d of due) {
+    const [e] = await db.select({ name: secretEnvs.name, slug: secretEnvs.slug }).from(secretEnvs).where(eq(secretEnvs.id, d.envId))
     const name = await projectName(d.projectId)
-    await tell(await admins(d.projectId), null, `Time to rotate ${d.key} in ${name} / ${d.env}.`, link(d.projectId, d.slug))
-    await db.update(secrets).set({ rotationNotifiedFor: d.at }).where(eq(secrets.id, d.id))
+    await tell(await admins(d.projectId), null, `Time to rotate ${d.key} in ${name} / ${e?.name ?? "an environment"}.`, link(d.projectId, e?.slug ?? ""))
     out.rotation++
   }
 
-  // Machine tokens expiring in 7 days, then in 1.
+  // Machine tokens expiring in 7 days, then in 1 (claimed the same way).
   for (const days of [1, 7] as const) {
     const soon = await db
-      .select()
-      .from(secretTokens)
+      .update(secretTokens)
+      .set({ warnedDays: days })
       .where(
         and(
           isNull(secretTokens.revokedAt),
@@ -160,10 +161,11 @@ export async function sweep() {
           sql`coalesce(${secretTokens.warnedDays}, 99) > ${days}`
         )
       )
+      .returning()
     for (const t of soon) {
       const name = await projectName(t.projectId)
-      await tell(await admins(t.projectId), null, `The token “${t.name}” in ${name} expires in ${days === 1 ? "a day" : "7 days"}.`, link(t.projectId, "access"))
-      await db.update(secretTokens).set({ warnedDays: days }).where(eq(secretTokens.id, t.id))
+      const left = Math.max(1, Math.ceil((t.expiresAt!.getTime() - now.getTime()) / 86_400_000))
+      await tell(await admins(t.projectId), null, `The token “${t.name}” in ${name} expires in ${left === 1 ? "a day" : `${left} days`}.`, link(t.projectId, "access"))
       out.tokens++
     }
   }

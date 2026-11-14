@@ -57,4 +57,4 @@ export const POST = projectRoute("developer", async (c, req) => {
       return Response.json({ count: r.created.length, requests: "request" in r && r.request ? 1 : 0 })
     }
   }
-})
+}, { grant: true })

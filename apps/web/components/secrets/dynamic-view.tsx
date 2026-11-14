@@ -202,7 +202,7 @@ export function DynamicView({ projectId, role }: { projectId: string; role: stri
 
       {tab === "rotations" && admin && (
         <>
-          <p className="max-w-prose text-xs text-pretty text-muted-foreground">
+          <p className="max-w-prose text-sm text-pretty text-muted-foreground">
             Nimbus sets a new password on the database user, then saves it to the secret as a new version (see its history). A protected environment doesn&apos;t ask for a change request for this; its admins are told. If it fails, the secret keeps its old value and the admins are told.
           </p>
           {data?.rotations.length === 0 ? (

@@ -64,7 +64,7 @@ export function HealthView({ projectId, onOpen }: { projectId: string; onOpen: (
             {data.sections
               .filter((s) => s.total > 0)
               .map((s) => (
-                <section key={s.id} aria-label={s.title} className="flex flex-col gap-2 rounded-xl border p-4">
+                <section key={s.id} aria-label={s.title} className="flex min-w-0 flex-col gap-2 rounded-xl border p-4">
                   <div className="flex items-center gap-2">
                     <WarningCircleIcon className="size-4 shrink-0 text-warning" />
                     <h3 className="text-sm font-semibold">{s.title}</h3>
@@ -75,11 +75,11 @@ export function HealthView({ projectId, onOpen }: { projectId: string; onOpen: (
                     {s.items.map((f, i) => {
                       const body = (
                         <>
-                          <span className="min-w-0 truncate font-mono text-sm">{f.label}</span>
+                          <span className="w-full min-w-0 truncate font-mono text-sm" title={f.label}>{f.label}</span>
                           <span className="min-w-0 text-xs text-pretty text-muted-foreground">{f.detail}</span>
                         </>
                       )
-                      const cls = "flex w-full flex-col items-start gap-0.5 py-2 text-left outline-none hover:bg-muted/40 focus-visible:bg-muted/40"
+                      const cls = "-mx-2 flex w-[calc(100%+1rem)] min-w-0 flex-col items-start gap-0.5 rounded-md px-2 py-2 text-left outline-none hover:bg-muted/40 focus-visible:ring-[3px] focus-visible:ring-ring/50"
                       return (
                         <li key={i}>
                           {f.href ? (

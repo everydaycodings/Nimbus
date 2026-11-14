@@ -124,11 +124,7 @@ func saveConfig(c config) error {
 		return err
 	}
 	b, _ := json.MarshalIndent(c, "", "  ")
-	f := filepath.Join(configDir(), "config.json")
-	if err := os.WriteFile(f, b, 0o600); err != nil {
-		return err
-	}
-	return os.Chmod(f, 0o600)
+	return writeAtomic(filepath.Join(configDir(), "config.json"), string(b))
 }
 
 const projectFile = ".nimbus.json"
@@ -144,7 +140,14 @@ func getCtx(flags map[string]string) (ctx, error) {
 	if server == "" {
 		return ctx{}, failf(2, "No server. Run `nimbus login --server URL` or set NIMBUS_SERVER.")
 	}
-	return ctx{strings.TrimRight(server, "/"), first(os.Getenv("NIMBUS_TOKEN"), cfg.Token)}, nil
+	server = strings.TrimRight(server, "/")
+	// The saved sign-in only goes to the server it came from, never to one a cloned
+	// repo's .nimbus.json (or a stray --server) points at.
+	saved := ""
+	if strings.TrimRight(cfg.Server, "/") == server {
+		saved = cfg.Token
+	}
+	return ctx{server, first(os.Getenv("NIMBUS_TOKEN"), saved)}, nil
 }
 
 func first(s ...string) string {
@@ -200,7 +203,7 @@ func call(c ctx, method, path string, body any, auth bool, hdr map[string]string
 		}
 		return 0, nil, nil, fail{s, 3}
 	case 401:
-		return 0, nil, nil, failf(4, "Unauthorized: %s. Run `nimbus login`.", msg)
+		return 0, nil, nil, failf(4, "Unauthorized: %s. Run `nimbus login`.", strings.TrimSuffix(msg, "."))
 	}
 	return 0, nil, nil, failf(1, "%d: %s", res.StatusCode, msg)
 }
@@ -241,8 +244,9 @@ func fetchSecrets(c ctx, flags map[string]string, etag string) ([]secret, string
 	return s, h.Get("ETag"), nil
 }
 
+// Always double-quoted; $ and ` are escaped too, so sourcing the file (or eval) never runs a value.
 func quote(v string) string {
-	v = strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`).Replace(v)
+	v = strings.NewReplacer(`\`, `\\`, `"`, `\"`, "$", `\$`, "`", "\\`", "\n", `\n`).Replace(v)
 	return `"` + v + `"`
 }
 
@@ -281,13 +285,23 @@ func format(secrets []secret, fmtName string) (string, error) {
 	return sb.String(), nil
 }
 
+// A fresh 0600 temp file (CreateTemp: O_EXCL, never through a planted symlink), then renamed over.
 func writeAtomic(file, data string) error {
-	tmp := fmt.Sprintf("%s.%d.tmp", file, os.Getpid())
-	if err := os.WriteFile(tmp, []byte(data), 0o600); err != nil {
+	f, err := os.CreateTemp(filepath.Dir(file), filepath.Base(file)+".*.tmp")
+	if err != nil {
 		return err
 	}
-	_ = os.Chmod(tmp, 0o600)
-	return os.Rename(tmp, file)
+	_, err = f.WriteString(data)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Rename(f.Name(), file)
+	}
+	if err != nil {
+		_ = os.Remove(f.Name())
+	}
+	return err
 }
 
 func login(flags map[string]string) error {
@@ -457,7 +471,7 @@ func runCmd(flags map[string]string, args []string) (int, error) {
 		return 127, nil
 	}
 	sigs := make(chan os.Signal, 4)
-	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	go func() {
 		for sig := range sigs {
 			_ = cmd.Process.Signal(sig)

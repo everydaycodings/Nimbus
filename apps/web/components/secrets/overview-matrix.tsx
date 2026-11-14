@@ -1,10 +1,12 @@
 "use client"
 
-import { CheckIcon, FolderSimpleIcon, MinusIcon, PlusIcon, WarningIcon } from "@phosphor-icons/react"
+import { CheckIcon, FolderSimpleIcon, MinusIcon, PlusIcon, RowsIcon, WarningIcon } from "@phosphor-icons/react"
 import { useEffect, useState } from "react"
 
 import { api, errorText } from "@/components/secrets/client"
+import { Loading } from "@/components/secrets/ui"
 import { FolderBar } from "@/components/secrets/folder-bar"
+import { Empty } from "@/components/secrets/pki-ui"
 import type { Detail } from "@/components/secrets/project-view"
 import { cn } from "@/lib/utils"
 
@@ -47,7 +49,7 @@ export function OverviewMatrix({
   }, [detail.id, folder, detail.trash, detail.envs])
 
   if (error) return <p role="alert" className="text-sm text-destructive">{error}</p>
-  if (!m) return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (!m) return <Loading rows={8} />
 
   const missing = m.rows.reduce((n, r) => n + m.envs.filter((e) => !r.cells[e.id]).length, 0)
   const invalid = m.rows.reduce((n, r) => n + m.envs.filter((e) => r.cells[e.id]?.invalid).length, 0)
@@ -71,13 +73,10 @@ export function OverviewMatrix({
         </ul>
       )}
       {m.rows.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed px-6 py-14 text-center">
-          <p className="font-medium">Nothing here yet</p>
-          <p className="max-w-sm text-sm text-pretty text-muted-foreground">
-            Open an environment to add secrets, paste a .env or import a file.
-            They&apos;ll line up here across environments.
-          </p>
-        </div>
+        <Empty icon={<RowsIcon />} title="Nothing here yet">
+          Open an environment to add secrets, paste a .env or import a file.
+          They&apos;ll line up here across environments.
+        </Empty>
       ) : (
         <>
           <p className="text-sm text-muted-foreground" role="status">
@@ -86,13 +85,14 @@ export function OverviewMatrix({
               : "Every key exists in every environment."}
             {invalid > 0 && ` ${invalid} ${invalid === 1 ? "doesn't" : "don't"} fit the required format.`}
           </p>
-          <div className="overflow-x-auto rounded-xl border">
-            <table className="w-full min-w-max border-collapse text-sm">
+          {/* Scrolls inside itself, so the header row and the key column stay put with many keys or environments. */}
+          <div className="max-h-[max(24rem,calc(100dvh-18rem))] overflow-auto rounded-xl border bg-card">
+            <table className="w-full min-w-max border-separate border-spacing-0 text-sm">
               <thead>
-                <tr className="border-b bg-muted/30 text-left text-xs text-muted-foreground">
-                  <th scope="col" className="sticky left-0 z-10 bg-card px-4 py-2.5 font-medium">Key</th>
+                <tr className="text-left text-xs text-muted-foreground">
+                  <th scope="col" className="sticky top-0 left-0 z-20 border-b bg-card px-4 py-2.5 font-medium">Key</th>
                   {m.envs.map((e) => (
-                    <th key={e.id} scope="col" className="px-4 py-2.5 text-center font-medium">
+                    <th key={e.id} scope="col" className="sticky top-0 z-10 border-b bg-card px-3 py-2.5 text-center font-medium whitespace-nowrap">
                       {e.name}
                     </th>
                   ))}
@@ -100,19 +100,22 @@ export function OverviewMatrix({
               </thead>
               <tbody>
                 {m.rows.map((r) => (
-                  <tr key={r.key} className="border-b last:border-0">
-                    <th scope="row" className="sticky left-0 z-10 bg-card px-4 py-2 text-left font-mono text-sm font-normal">
-                      {r.key}
-                      {r.required && (
-                        <span className="ml-2 rounded bg-muted px-1.5 py-0.5 font-sans text-xs text-muted-foreground" title="Required in every environment">
-                          required
-                        </span>
-                      )}
+                  <tr key={r.key} className="[&:not(:last-child)>*]:border-b">
+                    <th scope="row" className="sticky left-0 z-10 bg-card px-4 py-1 text-left font-mono text-sm font-normal">
+                      {/* Long keys cut off (full name on hover) so the environments stay on screen. */}
+                      <span className="flex max-w-[min(22rem,45vw)] items-center gap-2">
+                        <span className="truncate" title={r.key}>{r.key}</span>
+                        {r.required && (
+                          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-sans text-xs text-muted-foreground" title="Required in every environment">
+                            required
+                          </span>
+                        )}
+                      </span>
                     </th>
                     {m.envs.map((e) => {
                       const c = r.cells[e.id]
                       return (
-                        <td key={e.id} className={cn("p-1 text-center", (!c || c.invalid) && "bg-destructive/10")}>
+                        <td key={e.id} className={cn("px-1 py-0.5 text-center", (!c || c.invalid) && "bg-destructive/10")}>
                           <button
                             onClick={() => onOpen(e.slug, c ? null : r.key)}
                             disabled={!c && !canWrite}
@@ -123,7 +126,7 @@ export function OverviewMatrix({
                                 : `${r.key} is missing in ${e.name}. ${canWrite ? "Add it" : ""}`
                             }
                             className={cn(
-                              "mx-auto flex h-8 min-w-16 items-center justify-center gap-1 rounded-md px-2 text-xs outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                              "mx-auto flex h-7 min-w-16 items-center justify-center gap-1 rounded-md px-2 text-xs outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50",
                               c
                                 ? c.invalid
                                   ? "font-medium text-destructive hover:bg-destructive/15"

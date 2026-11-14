@@ -201,6 +201,8 @@ const unxml = (s: string) =>
     e[0] === "#" ? String.fromCodePoint(e[1].toLowerCase() === "x" ? parseInt(e.slice(2), 16) : Number(e.slice(1))) : ({ amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" } as Record<string, string>)[e.toLowerCase()]
   )
 
+const GROUP_NAME = /\s*(?:<UUID>[^<]*<\/UUID>\s*)?<Name>([^<]*)<\/Name>/y
+
 function keepass(text: string): Imported {
   if (!/<KeePassFile[\s>]/.test(text)) throw new Error("That isn't a KeePass XML export (File → Export → KeePass XML 2.x).")
   const out = empty()
@@ -214,7 +216,9 @@ function keepass(text: string): Imported {
     if (tag === "Group" && history === 0 && entryAt < 0) {
       if (close) groups.pop()
       else {
-        const name = /^\s*(?:<UUID>[^<]*<\/UUID>\s*)?<Name>([^<]*)<\/Name>/.exec(text.slice(m.index + whole.length))?.[1] ?? ""
+        // Sticky at the tag's end: slicing the rest of the text per group was quadratic.
+        GROUP_NAME.lastIndex = m.index + whole.length
+        const name = GROUP_NAME.exec(text)?.[1] ?? ""
         groups.push({ name: unxml(name), bin: /recycle bin/i.test(name) })
       }
     } else if (tag === "History") history += close ? -1 : 1
@@ -225,8 +229,9 @@ function keepass(text: string): Imported {
         const body = text.slice(entryAt, m.index).replace(/<History>[\s\S]*?<\/History>/g, "")
         entryAt = -1
         if (groups.some((g) => g.bin)) continue
-        const f: Record<string, string> = {}
-        for (const s of body.matchAll(/<String>\s*<Key>([\s\S]*?)<\/Key>\s*<Value[^>]*?(?:\/>|>([\s\S]*?)<\/Value>)\s*<\/String>/g)) f[unxml(s[1])] = unxml(s[2] ?? "")
+        // Escaped XML text holds no "<", so [^<]* can't backtrack across the entry.
+        const f: Record<string, string> = Object.create(null)
+        for (const s of body.matchAll(/<String>\s*<Key>([^<]*)<\/Key>\s*<Value[^>]*?(?:\/>|>([^<]*)<\/Value>)\s*<\/String>/g)) f[unxml(s[1])] = unxml(s[2] ?? "")
         add(out, { title: f.Title ?? "", username: f.UserName, password: f.Password, url: f.URL, totp: f.otp || f.TOTP || f.TimeOtp || "", notes: f.Notes })
       }
     }

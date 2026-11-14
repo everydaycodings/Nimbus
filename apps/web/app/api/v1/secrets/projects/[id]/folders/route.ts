@@ -11,4 +11,4 @@ export const POST = projectRoute("developer", async (c, req) => {
   )
   if (b instanceof Response) return b
   return Response.json({ id: await createFolder(c, b.envId, b.parentId, b.name) })
-})
+}, { grant: true })

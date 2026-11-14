@@ -5,7 +5,7 @@ import { useEffect, useState } from "react"
 
 import { Comments } from "@/components/secrets/comments-thread"
 import { api, errorText } from "@/components/secrets/client"
-import { Confirm, Modal } from "@/components/secrets/ui"
+import { Confirm, Loading, Modal } from "@/components/secrets/ui"
 import { useNotice } from "@/components/toaster"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -86,7 +86,7 @@ export function HistoryDialog({
     <Modal title={`History of ${keyName}`} description={h ? `${h.versions.length} version${h.versions.length === 1 ? "" : "s"}. Values stay hidden until you reveal them, and revealing is logged.` : undefined} wide onClose={onClose}>
       <p role="alert" className="text-sm text-destructive empty:hidden">{error}</p>
       {!h ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <Loading />
       ) : (
         <ul className="flex flex-col divide-y rounded-lg border">
           {h.versions.map((v, i) => (

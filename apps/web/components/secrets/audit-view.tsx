@@ -1,10 +1,12 @@
 "use client"
 
+import { ScrollIcon } from "@phosphor-icons/react"
 import { useCallback, useEffect, useState } from "react"
 
 import { api, errorText } from "@/components/secrets/client"
+import { Empty } from "@/components/secrets/pki-ui"
 import type { Detail } from "@/components/secrets/project-view"
-import { SELECT } from "@/components/secrets/ui"
+import { Loading, SELECT } from "@/components/secrets/ui"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -77,9 +79,11 @@ export function AuditView({ detail }: { detail: Detail }) {
       </div>
       <p role="alert" className="text-sm text-destructive empty:hidden">{error}</p>
       {rows === null ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <Loading rows={8} />
       ) : rows.length === 0 ? (
-        <div className="rounded-xl border border-dashed px-6 py-12 text-center text-sm text-muted-foreground">No events match.</div>
+        <Empty icon={<ScrollIcon />} title="No events match">
+          Try another person, action or date range.
+        </Empty>
       ) : (
         <div className="overflow-x-auto rounded-xl border">
           <table className="w-full min-w-176 border-collapse text-sm">
@@ -88,14 +92,14 @@ export function AuditView({ detail }: { detail: Detail }) {
                 <th className="px-3 py-2 font-medium">When</th>
                 <th className="px-3 py-2 font-medium">Who</th>
                 <th className="px-3 py-2 font-medium">What</th>
-                <th className="px-3 py-2 font-medium">Where from</th>
+                <th className="px-3 py-2 font-medium whitespace-nowrap">Where from</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id} className="border-b align-top last:border-0">
                   <td className="px-3 py-2 whitespace-nowrap text-muted-foreground tabular-nums">{stamp.format(new Date(r.at))}</td>
-                  <td className="px-3 py-2">{r.actor}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">{r.actor}</td>
                   <td className="px-3 py-2">
                     <span className="rounded bg-muted px-1.5 py-0.5 text-xs">{label(r.action)}</span>
                     {r.env && <span className="ml-1.5 text-xs text-muted-foreground">{r.env}</span>}

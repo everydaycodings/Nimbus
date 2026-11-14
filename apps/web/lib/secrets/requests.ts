@@ -298,16 +298,18 @@ export async function reviewRequest(c: Ctx, id: string, decision: "approve" | "r
   const set = await approverSet(e)
   if (r.authorId === c.userId) throw bad("You can't review your own request.", 403)
   if (!set.has(c.userId)) throw bad("You aren't one of this environment's approvers.", 403)
+  const before = reviewState(e.approvalsRequired, set, r.authorId, await db.select().from(secretReviews).where(eq(secretReviews.requestId, id)))
   await db
     .insert(secretReviews)
     .values({ requestId: id, userId: c.userId, decision })
     .onConflictDoUpdate({ target: [secretReviews.requestId, secretReviews.userId], set: { decision, createdAt: new Date() } })
   const reviews = await db.select().from(secretReviews).where(eq(secretReviews.requestId, id))
   const state = reviewState(e.approvalsRequired, set, r.authorId, reviews)
+  // The author hears of an approval once, when it turns approved, not for each later one.
   if (state === "rejected") {
     await db.update(secretChangeRequests).set({ status: "rejected", resolvedAt: new Date(), resolvedBy: c.userId }).where(eq(secretChangeRequests.id, id))
     await requestResult(r, e.name, "rejected", c.userId)
-  } else if (state === "approved") await requestResult(r, e.name, "approved", c.userId)
+  } else if (state === "approved" && before !== "approved") await requestResult(r, e.name, "approved", c.userId)
   await audit("secrets_review", { detail: `${e.name}: ${decision === "approve" ? "approved" : "rejected"} ${r.authorName}'s request`, env: e.name })
   return state
 }
@@ -335,6 +337,13 @@ export async function mergeRequest(c: Ctx, id: string) {
   for (const ch of r.changes) groups.set(ch.folder, [...(groups.get(ch.folder) ?? []), ch])
   try {
     await db.transaction(async (tx) => {
+      // Claimed first: a second merge of the same request waits on this row, then finds it merged.
+      const [won] = await tx
+        .update(secretChangeRequests)
+        .set({ status: "merged", resolvedAt: new Date(), resolvedBy: c.userId })
+        .where(and(eq(secretChangeRequests.id, id), eq(secretChangeRequests.status, "open")))
+        .returning({ id: secretChangeRequests.id })
+      if (!won) throw bad("That request is already closed.", 409)
       for (const [path, list] of groups) {
         const folderId = await ensurePath(m, e.id, path, tx)
         const ops: Op[] = []
@@ -359,10 +368,6 @@ export async function mergeRequest(c: Ctx, id: string) {
         }
         await applyOps(m, e.id, folderId, ops, deletes, "merge", { direct: true, tx })
       }
-      await tx
-        .update(secretChangeRequests)
-        .set({ status: "merged", resolvedAt: new Date(), resolvedBy: c.userId })
-        .where(eq(secretChangeRequests.id, id))
     })
   } catch (err) {
     if (err instanceof SecretsError && err.fields)

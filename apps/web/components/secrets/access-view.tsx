@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react"
 
 import { api, copySecret, errorText } from "@/components/secrets/client"
 import { IntegrationsView } from "@/components/secrets/integrations-view"
+import { Empty } from "@/components/secrets/pki-ui"
 import type { Detail } from "@/components/secrets/project-view"
 import { CHECKBOX, Confirm, Modal, SELECT } from "@/components/secrets/ui"
 import { SubmitButton } from "@/components/submit-button"
@@ -42,7 +43,8 @@ export function useLoad<T>(path: string) {
 export function AccessView({ detail, initialTab }: { detail: Detail; initialTab?: "tokens" }) {
   const [tab, setTab] = useState<Tab>(initialTab ?? "members")
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-4">
+      <h2 className="text-lg font-semibold tracking-tight">Access</h2>
       <div role="tablist" aria-label="Access" className="flex gap-1 overflow-x-auto border-b">
         {TABS.map(([id, label]) => (
           <button
@@ -122,7 +124,7 @@ function Members({ detail }: { detail: Detail }) {
   return (
     <section className="flex flex-col gap-3" aria-label="Members">
       <div className="flex flex-wrap items-center gap-3">
-        <p className="max-w-prose flex-1 text-sm text-pretty text-muted-foreground">
+        <p className="max-w-prose flex-1 basis-72 text-sm text-pretty text-muted-foreground">
           Only people with a Nimbus account can join. Give a developer or viewer just the environments they need, say everything except Production.
         </p>
         <Button onClick={() => setEdit("new")}>
@@ -266,7 +268,7 @@ function Tokens({ detail }: { detail: Detail }) {
   return (
     <section className="flex flex-col gap-3" aria-label="Machine tokens">
       <div className="flex flex-wrap items-center gap-3">
-        <p className="max-w-prose flex-1 text-sm text-pretty text-muted-foreground">
+        <p className="max-w-prose flex-1 basis-72 text-sm text-pretty text-muted-foreground">
           For servers, CI and scripts: <code className="font-mono">NIMBUS_TOKEN=nms_…</code> with the CLI or the REST API. A token sees only the environments and folder you choose, and never needs the unlock. <GuideLink to="machine-tokens">Using tokens in your apps</GuideLink>
         </p>
         <Button onClick={() => setMaking(true)}>
@@ -275,7 +277,11 @@ function Tokens({ detail }: { detail: Detail }) {
         </Button>
       </div>
       <p role="alert" className="text-sm text-destructive empty:hidden">{error}</p>
-      {data && !data.tokens.length && <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground"><p>No tokens yet.</p><GuideLink to="cli">See how servers and CI use them</GuideLink></div>}
+      {data && !data.tokens.length && (
+        <Empty icon={<KeyIcon />} title="No tokens yet">
+          <GuideLink to="cli">See how servers and CI use them</GuideLink>
+        </Empty>
+      )}
       <ul className="flex flex-col divide-y rounded-xl border empty:hidden">
         {data?.tokens.map((t) => {
           const expired = t.expiresAt && new Date(t.expiresAt) < new Date()

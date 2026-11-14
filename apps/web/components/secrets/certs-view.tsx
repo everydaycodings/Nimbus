@@ -8,7 +8,7 @@ import { AcmeTab, WatchTab } from "@/components/secrets/acme-view"
 import { CaTab } from "@/components/secrets/ca-view"
 import { api, downloadPost, errorText } from "@/components/secrets/client"
 import { Empty, Expiry, Row, Tabs, readB64, stamp, useBusy } from "@/components/secrets/pki-ui"
-import { Confirm, Modal, SELECT } from "@/components/secrets/ui"
+import { Confirm, Loading, Modal, SELECT } from "@/components/secrets/ui"
 import { SubmitButton } from "@/components/submit-button"
 import { useNotice } from "@/components/toaster"
 import { Button } from "@/components/ui/button"
@@ -44,7 +44,7 @@ function StoreTab({ projectId, role }: { projectId: string; role: string }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
-        <p className="max-w-prose flex-1 text-sm text-pretty text-muted-foreground">
+        <p className="max-w-prose flex-1 basis-72 text-sm text-pretty text-muted-foreground">
           Certificates and their private keys, sealed with the project key. Expiry warnings go to project admins at 30, 7 and 1 day.
         </p>
         {canWrite && (
@@ -56,7 +56,7 @@ function StoreTab({ projectId, role }: { projectId: string; role: string }) {
       </div>
       <p role="alert" className="text-sm text-destructive empty:hidden">{error}</p>
       {!data ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <Loading />
       ) : data.certs.length === 0 ? (
         <Empty icon={<CertificateIcon />} title="No certificates yet">
           Upload PEM, DER or PFX files, issue one from a private CA, or get one from Let&apos;s Encrypt.

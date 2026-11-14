@@ -21,16 +21,20 @@ import {
   user,
 } from "@/lib/db/schema"
 import { KMS_SCOPES } from "./kms-core"
+import { unlockPolicy } from "./unlock"
 import { formatCode, hashSecret, newCode, normalizeCode } from "@/lib/device-link-rules"
 import {
   CLI_PREFIX,
   MACHINE_PREFIX,
+  clientIp,
   hashToken,
   ipAllowed,
   newToken,
   normPath,
   validIpEntry,
 } from "./token-rules"
+
+export { clientIp }
 
 export const DEVICE_TTL_S = 120
 
@@ -59,14 +63,6 @@ export class TokenError extends Error {
   }
 }
 
-export function clientIp(req: Request) {
-  return (
-    req.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
-    req.headers.get("x-real-ip") ||
-    null
-  )
-}
-
 export async function tokenPolicy() {
   const [row] = await db
     .select({ tokens: settings.secretTokensEnabled, cli: settings.secretCliEnabled })
@@ -87,7 +83,9 @@ export async function userUnlocked(userId: string) {
     .select({ m: secretSettings.lockMinutes })
     .from(secretSettings)
     .where(eq(secretSettings.userId, userId))
-  const minutes = p?.m ?? 15
+  // The admin's caps apply here too, as they do to the browser (unlock.unlockState).
+  const { maxIdle, maxAgeMs } = await unlockPolicy()
+  const minutes = maxIdle ? Math.min(p?.m ?? 15, maxIdle) : (p?.m ?? 15)
   const [row] = await db
     .select({ id: secretUnlocks.sessionId })
     .from(secretUnlocks)
@@ -95,7 +93,7 @@ export async function userUnlocked(userId: string) {
       and(
         eq(secretUnlocks.userId, userId),
         gt(secretUnlocks.lastActiveAt, new Date(Date.now() - minutes * 60_000)),
-        gt(secretUnlocks.unlockedAt, new Date(Date.now() - 12 * 3600_000))
+        gt(secretUnlocks.unlockedAt, new Date(Date.now() - maxAgeMs))
       )
     )
     .limit(1)

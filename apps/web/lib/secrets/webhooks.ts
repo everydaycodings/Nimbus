@@ -3,11 +3,15 @@
 import "server-only"
 
 import { createHmac, randomBytes } from "node:crypto"
+import http from "node:http"
+import https from "node:https"
 
 import { and, desc, eq, inArray } from "drizzle-orm"
 
 import { db } from "@/lib/db"
-import { secretEnvs, secretWebhookDeliveries, secretWebhooks } from "@/lib/db/schema"
+import { secretEnvs, secretWebhookDeliveries, secretWebhooks, settings } from "@/lib/db/schema"
+import { pinnedLookup } from "@/lib/push-rules"
+import { checkAddress } from "./egress"
 import { hookPayload } from "./hooks"
 import { openValue, sealValue } from "./kms"
 import { SecretsError, systemCtx, type Ctx } from "./service"
@@ -24,14 +28,46 @@ const checkUrl = (raw: string) => {
   }
   if (!/^https?:$/.test(u.protocol) || raw.length > 500)
     throw new SecretsError(400, "The URL must start with http:// or https://.")
+  if (u.username || u.password) throw new SecretsError(400, "Leave the login out of the URL.")
+  return u
+}
+
+const allowPrivate = async () => Boolean((await db.select({ on: settings.secretAllowPrivate }).from(settings))[0]?.on)
+
+// Where a delivery may go: public addresses unless an admin allows private ones (lib/secrets/egress.ts).
+async function dialable(u: URL) {
+  return checkAddress(u.hostname, Number(u.port) || (u.protocol === "https:" ? 443 : 80), await allowPrivate())
+}
+
+async function checkHookUrl(raw: string) {
+  const u = checkUrl(raw)
+  await dialable(u).catch((e: Error) => {
+    throw new SecretsError(422, /private/.test(e.message) ? `${e.message} An admin can allow private addresses in Admin → Sharing → Secrets.` : e.message)
+  })
   return u.toString()
+}
+
+// One POST to the checked address (no second DNS lookup), no redirects, the answer's body thrown away.
+function post(u: URL, ip: string, headers: Record<string, string>, body: string) {
+  return new Promise<number>((resolve, reject) => {
+    const req = (u.protocol === "https:" ? https : http).request(
+      u,
+      { method: "POST", headers: { ...headers, "content-length": String(Buffer.byteLength(body)) }, lookup: pinnedLookup(ip) as never, signal: AbortSignal.timeout(10_000) },
+      (res) => {
+        res.resume()
+        resolve(res.statusCode ?? 0)
+      }
+    )
+    req.on("error", reject)
+    req.end(body)
+  })
 }
 
 export async function createHook(c: Ctx, envId: string, url: string) {
   const secret = `whsec_${randomBytes(24).toString("base64url")}`
   const [h] = await db
     .insert(secretWebhooks)
-    .values({ envId, url: checkUrl(url), secretEnc: sealValue(c.key, c.projectId, secret) })
+    .values({ envId, url: await checkHookUrl(url), secretEnc: sealValue(c.key, c.projectId, secret) })
     .returning({ id: secretWebhooks.id })
   return { id: h.id, secret }
 }
@@ -64,9 +100,10 @@ export async function listHooks(envId: string) {
 }
 
 export async function updateHook(envId: string, hookId: string, v: { url?: string; enabled?: boolean }) {
+  const url = v.url !== undefined ? await checkHookUrl(v.url) : undefined
   const [h] = await db
     .update(secretWebhooks)
-    .set({ ...(v.url !== undefined && { url: checkUrl(v.url) }), ...(v.enabled !== undefined && { enabled: v.enabled }) })
+    .set({ ...(url !== undefined && { url }), ...(v.enabled !== undefined && { enabled: v.enabled }) })
     .where(and(eq(secretWebhooks.id, hookId), eq(secretWebhooks.envId, envId)))
     .returning({ id: secretWebhooks.id })
   if (!h) throw new SecretsError(404, "That webhook isn't here.")
@@ -91,23 +128,23 @@ export async function deliver(deliveryId: string) {
   let httpStatus: number | null = null
   let message = ""
   try {
-    const res = await fetch(row.h.url, {
-      method: "POST",
-      redirect: "manual",
-      signal: AbortSignal.timeout(10_000),
-      headers: {
+    const u = new URL(row.h.url)
+    httpStatus = await post(
+      u,
+      await dialable(u),
+      {
         "content-type": "application/json",
         "user-agent": "Nimbus-Secrets",
         "x-nimbus-event": row.d.event,
         "x-nimbus-delivery": row.d.id,
         "x-nimbus-signature": sign(secret, row.d.payload),
       },
-      body: row.d.payload,
-    })
-    httpStatus = res.status
-    if (!res.ok) message = `The receiver answered ${res.status}.`
+      row.d.payload
+    )
+    if (httpStatus < 200 || httpStatus > 299) message = `The receiver answered ${httpStatus}.`
   } catch (e) {
-    message = (e as Error).name === "TimeoutError" ? "No answer in 10 seconds." : `Couldn't reach it: ${(e as Error).message}`
+    const err = e as Error
+    message = err.name === "TimeoutError" || err.name === "AbortError" ? "No answer in 10 seconds." : `Couldn't reach it: ${err.message}`
   }
   const ok = !message
   await db

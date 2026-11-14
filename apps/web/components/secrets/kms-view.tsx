@@ -6,7 +6,7 @@ import { useState } from "react"
 import { useLoad } from "@/components/secrets/access-view"
 import { api, errorText } from "@/components/secrets/client"
 import { Empty, TEXTAREA, stamp, useBusy } from "@/components/secrets/pki-ui"
-import { Confirm, MenuButton, Modal, SELECT } from "@/components/secrets/ui"
+import { Confirm, Loading, MenuButton, Modal, SELECT } from "@/components/secrets/ui"
 import { SubmitButton } from "@/components/submit-button"
 import { useNotice } from "@/components/toaster"
 import { Button } from "@/components/ui/button"
@@ -72,7 +72,7 @@ export function KmsView({ projectId, role }: { projectId: string; role: string }
       </p>
       <p role="alert" className="text-sm text-destructive empty:hidden">{error}</p>
       {!data ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <Loading />
       ) : data.keys.length === 0 ? (
         <Empty icon={<KeyIcon />} title="No KMS keys yet">
           {admin ? "Make a key, then try it below." : "A project admin can make keys here."}{" "}

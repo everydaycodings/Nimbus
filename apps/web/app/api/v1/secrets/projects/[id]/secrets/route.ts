@@ -63,4 +63,4 @@ export const POST = projectRoute("developer", async (c, req) => {
   ].filter(Boolean)
   if (parts.length) await audit("secrets_write", { detail: `${r.env}: ${parts.join("; ")}`, env: r.env })
   return Response.json(r)
-})
+}, { grant: true })

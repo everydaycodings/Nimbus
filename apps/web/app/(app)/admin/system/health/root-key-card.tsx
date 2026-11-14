@@ -39,7 +39,7 @@ export async function RootKeyCard() {
             </div>
             <div className="grid gap-0.5">
               <dt className="text-xs text-muted-foreground">Fingerprint</dt>
-              <dd className="font-mono">{st.fingerprint}</dd>
+              <dd className="font-mono break-all">{st.fingerprint}</dd>
             </div>
             <div className="grid gap-0.5">
               <dt className="text-xs text-muted-foreground">In use for</dt>
@@ -78,7 +78,7 @@ export async function RootKeyCard() {
             </div>
           ) : (
             <details className="group rounded-lg border px-4 py-3">
-              <summary className="cursor-pointer text-sm font-medium">Rotate the root key</summary>
+              <summary className="cursor-pointer rounded text-sm font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">Rotate the root key</summary>
               <ol className="mt-3 grid list-decimal gap-2 pl-5 text-sm text-pretty text-muted-foreground">
                 <li>Make a new key and keep a copy offline.</li>
                 <li>

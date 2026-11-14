@@ -14,6 +14,7 @@ import { requestFromChanges } from "./requests"
 import {
   SecretsError,
   applyOps,
+  canWrite,
   changed,
   ensurePath,
   foldersOf,
@@ -146,6 +147,8 @@ export async function timeline(c: Ctx, envId: string, folderId: string | null) {
 
 export async function rollback(c: Ctx, envId: string, folderId: string | null, at: string, apply: boolean) {
   const e = await envOf(c, envId)
+  // A protected environment's path below writes a change request without applyOps' check.
+  if (apply && !canWrite(c, envId)) throw bad("Your access to that environment is read-only.", 403)
   const when = new Date(at)
   if (isNaN(+when)) throw bad("Pick a moment from the timeline.")
   const until = new Date(when.getTime() + 1)
@@ -165,9 +168,12 @@ export async function rollback(c: Ctx, envId: string, folderId: string | null, a
   const then = new Map<string, Shape | null>()
   const now = new Map<string, Shape>()
   const rowById = new Map(all.map((s) => [s.id, s]))
+  // Each secret's versions, newest first (the query's order).
+  const bySecret = new Map<string, typeof versions>()
+  for (const v of versions) (bySecret.get(v.secretId) ?? bySecret.set(v.secretId, []).get(v.secretId)!).push(v)
   for (const s of all) {
     // The last version written at or before the moment.
-    const v = versions.find((x) => x.secretId === s.id && x.createdAt < until)
+    const v = bySecret.get(s.id)?.find((x) => x.createdAt < until)
     const folderAtThen = v ? (v.folderId ?? s.folderId) : s.folderId
     const live = !s.deletedAt
     const inScope = !scope || (folderAtThen && scope.has(folderAtThen)) || (live && s.folderId && scope.has(s.folderId))

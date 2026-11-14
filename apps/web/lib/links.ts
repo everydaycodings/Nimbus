@@ -13,6 +13,7 @@ import { linkEvents, nodes, settings, shares, user } from "@/lib/db/schema"
 import { UUID } from "@/lib/file-rules"
 import { readToken, signToken } from "@/lib/upload-rules"
 import { isInside } from "@/lib/uploads"
+import { ipFrom } from "@/lib/client-ip"
 
 const scryptAsync = promisify(scrypt) as (
   pw: string,
@@ -139,7 +140,7 @@ export async function unlock(link: Link, pw: string) {
 export async function clientIp() {
   const h = await headers()
   return (
-    h.get("x-forwarded-for")?.split(",")[0].trim() || h.get("x-real-ip") || null
+    ipFrom(h)
   )
 }
 

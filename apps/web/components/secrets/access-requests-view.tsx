@@ -6,7 +6,8 @@ import { useState } from "react"
 import { useLoad } from "@/components/secrets/access-view"
 import { api, errorText } from "@/components/secrets/client"
 import type { Detail } from "@/components/secrets/project-view"
-import { Modal, SELECT } from "@/components/secrets/ui"
+import { Empty } from "@/components/secrets/pki-ui"
+import { Loading, Modal, SELECT } from "@/components/secrets/ui"
 import { SubmitButton } from "@/components/submit-button"
 import { useNotice } from "@/components/toaster"
 import { Button } from "@/components/ui/button"
@@ -64,9 +65,11 @@ export function AccessRequestsView({ detail }: { detail: Detail }) {
       </p>
       <p role="alert" className="text-sm text-destructive empty:hidden">{error ?? err}</p>
       {!data ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <Loading />
       ) : data.requests.length === 0 ? (
-        <div className="rounded-xl border border-dashed px-6 py-12 text-center text-sm text-muted-foreground">No requests yet.</div>
+        <Empty icon={<HourglassMediumIcon />} title="No requests yet">
+          {admin ? "Requests from members show up here for you to answer." : "Your requests and their answers show up here."}
+        </Empty>
       ) : (
         <ul className="flex flex-col divide-y rounded-xl border">
           {data.requests.map((r) => (

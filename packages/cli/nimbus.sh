@@ -42,7 +42,7 @@ cfg=${NIMBUS_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/nimbus}/config.json
 json() { # json <filter-name> ; reads stdin
   if command -v jq >/dev/null; then
     case $1 in
-      pairs) jq -r '.[] | [.key, .value] | @json' ;;
+      pairs) jq -r 'sort_by(.key)[] | [.key, .value] | @json' ;;
       error) jq -r '.error.message // empty' ;;
       unlock) jq -r '.unlockUrl // empty' ;;
       cfgtoken) jq -r '.token // empty' ;;
@@ -54,7 +54,7 @@ json() { # json <filter-name> ; reads stdin
     local py='import sys,json
 d=json.load(sys.stdin); k=sys.argv[1]
 if k=="pairs":
-    [print(json.dumps([s["key"],s["value"]])) for s in d]
+    [print(json.dumps([s["key"],s["value"]])) for s in sorted(d,key=lambda s:s["key"])]
 elif k=="error": print((d.get("error") or {}).get("message",""))
 elif k=="unlock": print(d.get("unlockUrl",""))
 elif k=="cfgtoken": print(d.get("token",""))
@@ -94,8 +94,15 @@ for a in sys.argv[1:]:
 print(json.dumps(o))' "$@"; fi
 }
 uri() { if command -v jq >/dev/null; then jq -rn --arg v "$1" '$v | @uri'; else python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1],safe=""))' "$1"; fi; }
-# Shell- and dotenv-safe: always double-quoted, \ " and newlines escaped.
-q() { local v=$1; v=${v//\\/\\\\}; v=${v//\"/\\\"}; v=${v//$'\n'/\\n}; printf '"%s"' "$v"; }
+# Shell- and dotenv-safe: always double-quoted, \ " $ ` and newlines escaped.
+q() { local v=$1; v=${v//\\/\\\\}; v=${v//\"/\\\"}; v=${v//\$/\\\$}; v=${v//\`/\\\`}; v=${v//$'\n'/\\n}; printf '"%s"' "$v"; }
+# kv LINE: k and v from one ["key","value"] line of `json pairs`. The x keeps the
+# value's trailing newlines, which $(...) would strip.
+kv() {
+  if command -v jq >/dev/null; then k=$(jq -r '.[0]' <<<"$1"); v=$(jq -j '.[1]' <<<"$1"; printf x)
+  else k=$(python3 -c 'import sys,json;print(json.loads(sys.stdin.read())[0])' <<<"$1"); v=$(python3 -c 'import sys,json;sys.stdout.write(json.loads(sys.stdin.read())[1])' <<<"$1"; printf x); fi
+  v=${v%x}
+}
 
 # .nimbus.json fills what flags and the environment left out.
 if [ -f .nimbus.json ]; then
@@ -107,8 +114,13 @@ if [ -f .nimbus.json ]; then
 fi
 path=${path:-/}
 
-token=${NIMBUS_TOKEN:-$(cfgval cfgtoken)}
 server=${server_flag:-${NIMBUS_SERVER:-$(cfgval cfgserver)}}
+server=${server%/}
+# The saved sign-in only goes to the server it came from, never to one a cloned
+# repo's .nimbus.json (or a stray --server) points at.
+saved=$(cfgval cfgserver)
+token=${NIMBUS_TOKEN:-}
+if [ -z "$token" ] && [ "${saved%/}" = "$server" ]; then token=$(cfgval cfgtoken); fi
 [ -n "$token" ] || die "no token: set NIMBUS_TOKEN or run 'nimbus login'" 4
 [ -n "$server" ] || die "no server: set NIMBUS_SERVER" 2
 
@@ -126,7 +138,7 @@ fail_on() { # fail_on CODE: exits with the CLI's code for an error answer
   case $1 in
     000) die "cannot reach $server" ;;
     423) die "Secrets are locked. Unlock in the web app: $(json unlock <"$body")" 3 ;;
-    401) die "unauthorized: $(json error <"$body")" 4 ;;
+    401) msg=$(json error <"$body"); die "Unauthorized: ${msg%.}. Run \`nimbus login\`." 4 ;;
     *) die "$1: $(json error <"$body")" ;;
   esac
 }
@@ -139,13 +151,9 @@ api() {
 }
 pq() { [ -n "$project" ] && printf '%s=%s' "$1" "$(uri "$project")" || true; }
 
-# Values are JSON strings: decode to bash with jq/python for run, and quote for dotenv.
+# Values are JSON strings: decoded one pair at a time, then quoted with q.
 dotenv() {
-  json pairs <"$body" | while IFS= read -r line; do
-    python3 -c 'import sys,json
-k,v=json.loads(sys.stdin.read()); print(k+"=\""+v.replace("\\","\\\\").replace("\"","\\\"").replace("\n","\\n")+"\"")' <<<"$line" 2>/dev/null ||
-      jq -r '"\(.[0])=\"" + (.[1] | gsub("\\\\";"\\\\\\\\") | gsub("\"";"\\\"") | gsub("\n";"\\n")) + "\""' <<<"$line"
-  done
+  json pairs <"$body" | while IFS= read -r line; do kv "$line"; printf '%s=%s\n' "$k" "$(q "$v")"; done
 }
 render() {
   case ${fmt:-dotenv} in
@@ -166,9 +174,9 @@ agent() {
     case $code in
       200)
         etag=$(sed -n 's/^[Ee][Tt][Aa][Gg]: *//p' "$hdrs" | tr -d '\r' | head -n 1)
-        tmp="$out.$$.tmp"
-        (umask 077; render >"$tmp")
-        chmod 600 "$tmp"
+        # mktemp: a fresh 0600 file, never a planted symlink.
+        tmp=$(mktemp "$out.XXXXXX")
+        render >"$tmp"
         if [ -f "$out" ] && cmp -s "$tmp" "$out"; then rm -f "$tmp"
         else
           mv -f "$tmp" "$out"
@@ -197,7 +205,7 @@ ssh_cert() {
   certfile=$keyfile-cert.pub
   mkdir -p "$(dirname "$keyfile")"
   pk=$(jget privateKey <"$body")
-  if [ -n "$pk" ]; then (umask 077; printf '%s\n' "$pk" >"$keyfile.tmp") && mv -f "$keyfile.tmp" "$keyfile"; fi
+  if [ -n "$pk" ]; then tmp=$(mktemp "$keyfile.XXXXXX"); printf '%s\n' "$pk" >"$tmp"; mv -f "$tmp" "$keyfile"; fi
   printf '%s\n' "$(jget certificate <"$body")" >"$certfile"
   chmod 644 "$certfile"
   echo "Certificate valid until $(jget expiresAt <"$body"): $certfile"
@@ -280,12 +288,8 @@ case $cmd in
     get_secrets
     [ "$code" = 200 ] || fail_on "$code"
     # exec replaces this shell, so signals and the exit code pass straight through.
-    # Each pair is exported via `printf %q`-safe eval of a single decoded value.
-    while IFS= read -r line; do
-      if command -v jq >/dev/null; then k=$(jq -r '.[0]' <<<"$line"); v=$(jq -r '.[1]' <<<"$line")
-      else k=$(python3 -c 'import sys,json;print(json.loads(sys.stdin.read())[0])' <<<"$line"); v=$(python3 -c 'import sys,json;sys.stdout.write(json.loads(sys.stdin.read())[1])' <<<"$line"); fi
-      export "$k=$v"
-    done < <(json pairs <"$body")
+    # Values are exported as data (no eval), trailing newlines and all.
+    while IFS= read -r line; do kv "$line"; export "$k=$v"; done < <(json pairs <"$body")
     exec "$@" ;;
   agent) agent ;;
   ssh) ssh_cert ;;

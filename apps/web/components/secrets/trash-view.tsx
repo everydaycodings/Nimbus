@@ -5,7 +5,8 @@ import { useCallback, useEffect, useState } from "react"
 
 import { api, errorText } from "@/components/secrets/client"
 import type { Detail } from "@/components/secrets/project-view"
-import { Confirm } from "@/components/secrets/ui"
+import { Empty } from "@/components/secrets/pki-ui"
+import { Confirm, Loading } from "@/components/secrets/ui"
 import { CHECKBOX } from "@/components/secrets/ui"
 import { useNotice } from "@/components/toaster"
 import { Button } from "@/components/ui/button"
@@ -55,20 +56,20 @@ export function TrashView({
   }
 
   if (error) return <p role="alert" className="text-sm text-destructive">{error}</p>
-  if (!items) return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (!items) return <Loading />
   if (!items.length)
     return (
-      <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed px-6 py-14 text-center">
-        <TrashIcon weight="light" className="size-10 text-muted-foreground" />
-        <p className="font-medium">Trash is empty</p>
-        <p className="max-w-sm text-sm text-pretty text-muted-foreground">
+      <div className="flex flex-col gap-3">
+        <h2 className="text-lg font-semibold tracking-tight">Trash</h2>
+        <Empty icon={<TrashIcon />} title="Trash is empty">
           Deleted secrets wait here until you restore them or delete them for good.
-        </p>
+        </Empty>
       </div>
     )
 
   return (
     <div className="flex flex-col gap-3">
+      <h2 className="text-lg font-semibold tracking-tight">Trash</h2>
       <div className="flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-2 text-sm">
           <input

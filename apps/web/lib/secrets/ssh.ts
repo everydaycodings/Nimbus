@@ -12,8 +12,10 @@ import { z } from "zod"
 import { db } from "@/lib/db"
 import { secretSshCas, secretSshCerts, secretSshHosts, secretSshKeys, user } from "@/lib/db/schema"
 import { redis } from "@/lib/redis"
-import { openServer, openValue, sealServer, sealValue } from "./kms"
+import { TICKET_AAD, openServer, openValue, sealServer, sealValue } from "./kms"
+import { blockPrivateHosts, checkAddress } from "./egress"
 import { SecretsError, type Ctx } from "./service"
+import type { Hop } from "./ssh-cert-auth"
 import {
   CERT_MAX_HOURS,
   CERT_MIN_HOURS,
@@ -202,6 +204,9 @@ export async function saveHost(c: Ctx, i: HostInput, id?: string) {
       .where(and(eq(secretSshHosts.id, i.jumpHostId), eq(secretSshHosts.projectId, c.projectId)))
     if (!j) throw bad("That jump host isn't here.", 404)
     if (j.jumpHostId) throw bad("Jump hosts can't chain (one hop only).")
+    // ...from this side too: a host others jump through can't get a jump host of its own.
+    const [used] = id ? await db.select({ id: secretSshHosts.id }).from(secretSshHosts).where(eq(secretSshHosts.jumpHostId, id)).limit(1) : []
+    if (used) throw bad("Other hosts use this one as their jump host, so it can't have one itself (one hop only).")
   }
   const [old] = id
     ? await db
@@ -370,19 +375,10 @@ export const HOURS = { min: CERT_MIN_HOURS, max: CERT_MAX_HOURS }
 
 // ---------- terminal ----------
 
-export type Hop = {
-  host: string
-  port: number
-  username: string
-  hostId: string
-  hostKey: string | null
-  privateKey: string
-  passphrase?: string
-  certificate?: string
-}
 export type Ticket = { userId: string; projectId: string; label: string; target: Hop; jump?: Hop }
 
-async function hop(c: Ctx, userId: string, h: typeof secretSshHosts.$inferSelect): Promise<Hop> {
+// Login material for one host entry (a stored key, or a fresh certificate from the CA).
+export async function hop(c: Ctx, userId: string, h: typeof secretSshHosts.$inferSelect): Promise<Hop> {
   const base = { host: h.host, port: h.port, username: h.username, hostId: h.id, hostKey: h.hostKey }
   if (h.useCa) {
     // A throwaway key and a one-hour certificate for the user name on this host.
@@ -403,24 +399,34 @@ export async function terminalTicket(c: Ctx, userId: string, hostId: string) {
     .from(secretSshHosts)
     .where(and(eq(secretSshHosts.id, hostId), eq(secretSshHosts.projectId, c.projectId)))
   if (!h) throw bad("That host isn't here.", 404)
-  const [j] = h.jumpHostId ? await db.select().from(secretSshHosts).where(eq(secretSshHosts.id, h.jumpHostId)) : []
+  const [j] = h.jumpHostId
+    ? await db.select().from(secretSshHosts).where(and(eq(secretSshHosts.id, h.jumpHostId), eq(secretSshHosts.projectId, c.projectId)))
+    : []
+  // The first hop is dialled from this server, so it's checked (lib/secrets/egress.ts); a
+  // target behind a jump host is on that host's network.
+  const first = j ?? h
+  const dial = await checkAddress(first.host, first.port, !blockPrivateHosts()).catch((e: Error) => {
+    throw bad(e.message, 422)
+  })
+  const target = await hop(c, userId, h)
+  const jump = j && { ...(await hop(c, userId, j)), dial }
   const t: Ticket = {
     userId,
     projectId: c.projectId,
     label: `${h.username}@${h.host}:${h.port}`,
-    target: await hop(c, userId, h),
-    ...(j && { jump: await hop(c, userId, j) }),
+    target: jump ? target : { ...target, dial },
+    ...(jump && { jump }),
   }
   const id = randomBytes(24).toString("base64url")
   try {
-    await redis.set(`ssh:ticket:${id}`, sealServer(JSON.stringify(t)), "EX", 60)
+    await redis.set(`ssh:ticket:${id}`, sealServer(JSON.stringify(t), TICKET_AAD), "EX", 60)
   } catch {
     throw new SecretsError(503, "Redis isn't reachable, so the terminal can't start.")
   }
   return { ticket: id, label: t.label, host: h.name }
 }
 
-export const openTicket = (sealed: string) => JSON.parse(openServer(sealed)) as Ticket
+export const openTicket = (sealed: string) => JSON.parse(openServer(sealed, TICKET_AAD)) as Ticket
 
 // The sidecar learned a host key: pin it (first connection only).
 export async function pinHostKey(projectId: string, hostId: string, key: string) {

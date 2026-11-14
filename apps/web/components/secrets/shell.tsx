@@ -7,10 +7,14 @@ import { useRouter } from "next/navigation"
 import { useEffect, useRef, useState } from "react"
 
 import { api, errorText } from "@/components/secrets/client"
+import { SELECT } from "@/components/secrets/ui"
 import { DIALOG_BACKDROP, DIALOG_POPUP } from "@/components/overlay-styles"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+
+// 32px touch targets on phones, where these are icon-only.
+const BAR_BUTTON = "max-sm:size-8 max-sm:px-0 max-sm:[&_svg]:size-4"
 
 type Status = { lockMinutes: number; lockChoices: number[]; hasPin: boolean; methods: string[] }
 
@@ -61,33 +65,37 @@ export function SecretsShell({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="-mb-2 flex items-center justify-end gap-1 text-xs text-muted-foreground">
-        <span className="mr-1 flex items-center gap-1.5">
-          <span className="size-1.5 rounded-full bg-brand" aria-hidden />
-          Unlocked, locks after {mins} min idle
+      {/* Phones: the status shrinks to "Unlocked" and the actions to icons (names stay for screen readers). */}
+      <div className="-mb-2 flex items-center gap-1 text-xs text-muted-foreground">
+        <span className="mr-auto flex min-w-0 items-center gap-1.5 sm:mr-1 sm:ml-auto" title={`Locks after ${mins} minutes with no activity`}>
+          <span className="size-1.5 shrink-0 rounded-full bg-brand" aria-hidden />
+          <span className="truncate">
+            Unlocked<span className="max-sm:sr-only">, locks after {mins} min idle</span>
+          </span>
         </span>
-        <Button variant="ghost" size="xs" render={<Link href="/secrets/leaks" />}>
+        <Button variant="ghost" size="xs" className={BAR_BUTTON} render={<Link href="/secrets/leaks" />}>
           <ShieldWarningIcon />
-          Leaks
+          <span className="max-sm:sr-only">Leaks</span>
         </Button>
-        <Button variant="ghost" size="xs" render={<Link href="/secrets/connect" />}>
+        <Button variant="ghost" size="xs" className={BAR_BUTTON} render={<Link href="/secrets/connect" />}>
           <TerminalWindowIcon />
-          Connect<span className="max-sm:hidden"> apps</span>
+          <span className="max-sm:sr-only">Connect apps</span>
         </Button>
-        <Button variant="ghost" size="xs" onClick={() => setSettings(true)}>
+        <Button variant="ghost" size="xs" className={BAR_BUTTON} onClick={() => setSettings(true)}>
           <SlidersHorizontalIcon />
-          Lock settings
+          <span className="max-sm:sr-only">Lock settings</span>
         </Button>
         <Button
           variant="ghost"
           size="xs"
+          className={BAR_BUTTON}
           onClick={async () => {
             await api("/lock", "POST").catch(() => {})
             router.refresh()
           }}
         >
           <LockSimpleIcon />
-          Lock now
+          <span className="max-sm:sr-only">Lock now</span>
         </Button>
       </div>
       {children}
@@ -155,7 +163,7 @@ function LockSettings({
                     onMinutes(m)
                     save({ lockMinutes: m }, "Saved.")
                   }}
-                  className="h-9 rounded-md border border-input bg-transparent px-3 text-sm dark:bg-input/30"
+                  className={SELECT}
                 >
                   {st.lockChoices.map((m) => (
                     <option key={m} value={m}>

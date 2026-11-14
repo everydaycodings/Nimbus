@@ -1,4 +1,4 @@
-import { Parser, marked, type Token, type Tokens } from "marked"
+import { Parser, Renderer, marked, type Token, type Tokens } from "marked"
 import { Fragment } from "react"
 
 import { CodeBlock } from "@/components/secrets/code-block"
@@ -21,8 +21,12 @@ export function headings(md: string) {
     })
 }
 
+// Raw HTML in the text comes out escaped: the page swaps the server's address (from the
+// Host header when BETTER_AUTH_URL is unset) into the markdown before it renders.
+const renderer = new Renderer()
+renderer.html = ({ text }) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
 const inline = (tokens: Token[] | undefined) => (
-  <span dangerouslySetInnerHTML={{ __html: Parser.parseInline(tokens ?? []) }} />
+  <span dangerouslySetInnerHTML={{ __html: Parser.parseInline(tokens ?? [], { renderer }) }} />
 )
 
 const HEAD = {

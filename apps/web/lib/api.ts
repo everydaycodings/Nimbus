@@ -6,6 +6,7 @@ import { TYPE_KEYS, UUID, typeKeyOf } from "@/lib/file-rules"
 import { listTags, type Item } from "@/lib/files"
 import { gateOf, getSession, type Me } from "@/lib/session"
 import { NOT_ALLOWED } from "@/lib/tree-ops"
+import { ipFrom } from "@/lib/client-ip"
 
 // Bumped when a change would break older Android apps. The app refuses servers
 // outside the range it knows and says which side needs updating.
@@ -43,7 +44,7 @@ const rateLimited = () =>
 export async function limitIp(name: string) {
   const h = await headers()
   const ip =
-    h.get("x-forwarded-for")?.split(",")[0].trim() || h.get("x-real-ip") || "?"
+    ipFrom(h) || "?"
   return (await overLimit(`rl:ip:${name}:${ip}`, INSTANCE_IP_LIMIT, 60)) ? rateLimited() : null
 }
 

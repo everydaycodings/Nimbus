@@ -180,6 +180,10 @@ export async function updateConnection(c: Ctx, id: string, input: ConnInput, log
   const conn = await loadConn(c, id)
   const fields = connFields(input, conn.engine, false)
   const a = adminOf(c, conn)
+  // The stored admin password only ever goes to the server it was typed for.
+  const moved = (fields.host !== undefined && fields.host !== conn.host) || (fields.port !== undefined && fields.port !== conn.port)
+  if (moved && !input.adminPassword)
+    throw bad("Enter the admin password again: the host or port changed.", 422, { adminPassword: "Enter it again for the new host." })
   const next: Admin = { username: input.adminUser?.trim() || a.username, password: input.adminPassword || a.password, ca: input.ca === undefined ? a.ca : input.ca.trim() || undefined }
   if (fields.name && fields.name !== conn.name) {
     const [dup] = await db.select({ id: secretDbConnections.id }).from(secretDbConnections).where(and(eq(secretDbConnections.projectId, c.projectId), eq(secretDbConnections.name, fields.name)))
@@ -276,8 +280,8 @@ export async function generate(c: Ctx, connectionId: string, ttlIn: unknown, iss
     // Part of the template may have run: take back whatever exists.
     await execute(target, render(conn.revokeSql, { username })).catch(() => {})
     await db.delete(secretDbLeases).where(eq(secretDbLeases.id, lease.id))
-    await log("secrets_dyn_lease", `${conn.name}: couldn't create a user (${clean(e, password)})`)
-    throw bad(`The database refused: ${clean(e, password)}`, 502)
+    await log("secrets_dyn_lease", `${conn.name}: couldn't create a user (${clean(e, password, target.password)})`)
+    throw bad(`The database refused: ${clean(e, password, target.password)}`, 502)
   }
   await scheduleExpiry(lease)
   await log("secrets_dyn_lease", `${conn.name}: issued ${username} for ${fmtTtl(ttl)}, to ${issuedBy}`)
@@ -348,10 +352,11 @@ async function endLease(c: Ctx, conn: Conn, l: Lease, why: string, log: Log) {
     await endSessions(target, l.username).catch(() => {})
   } catch (e) {
     const first = !l.error
-    await db.update(secretDbLeases).set({ error: clean(e) }).where(eq(secretDbLeases.id, l.id))
-    await log("secrets_dyn_revoke", `${conn.name}: couldn't revoke ${l.username} (${clean(e)})`)
-    if (first) await warnAdmins(c.projectId, `Couldn't revoke the database user ${l.username} (${conn.name}): ${clean(e)}`)
-    throw bad(`The database refused: ${clean(e)}`, 502)
+    const why = clean(e, target.password)
+    await db.update(secretDbLeases).set({ error: why }).where(eq(secretDbLeases.id, l.id))
+    await log("secrets_dyn_revoke", `${conn.name}: couldn't revoke ${l.username} (${why})`)
+    if (first) await warnAdmins(c.projectId, `Couldn't revoke the database user ${l.username} (${conn.name}): ${why}`)
+    throw bad(`The database refused: ${why}`, 502)
   }
   await db.update(secretDbLeases).set({ revokedAt: new Date(), error: null }).where(eq(secretDbLeases.id, l.id))
   await log("secrets_dyn_revoke", `${conn.name}: ${l.username} revoked (${why})`)
@@ -519,7 +524,7 @@ export async function rotate(id: string, log: Log) {
   } catch (e) {
     // The database has the new password but the secret doesn't: put the old one back where that's the same user.
     if (!r.usernameB && old) await setPassword(target, next, old).catch(() => {})
-    return fail(`the new value couldn't be saved (${clean(e, password)})`)
+    return fail(`the new value couldn't be saved (${clean(e, password, a.password)})`)
   }
   await db
     .update(secretRotations)

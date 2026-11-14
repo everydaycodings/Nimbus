@@ -303,6 +303,7 @@ test("webhooks are signed, name keys only and log deliveries", async ({ page }) 
   })
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r))
   const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/hook`
+  db("update settings set secret_allow_private = true") // webhooks reach private addresses only when allowed
   try {
     await page.goto(`/secrets/${p.id}?view=access`)
     await page.getByRole("tab", { name: "Webhooks" }).click()
@@ -328,6 +329,7 @@ test("webhooks are signed, name keys only and log deliveries", async ({ page }) 
     await page.getByRole("button", { name: "Set up push" }).click()
     await expect(page.getByText("That isn't a private key we can read.")).toBeVisible()
   } finally {
+    db("update settings set secret_allow_private = false")
     server.close()
     await page.request.delete(`${API}/projects/${p.id}`)
   }

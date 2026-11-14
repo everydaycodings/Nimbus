@@ -8,6 +8,7 @@ import { db } from "@/lib/db"
 import { auditEvents, settings, user } from "@/lib/db/schema"
 import { getSession } from "@/lib/session"
 import { auditScope } from "@/lib/secrets/audit-ctx"
+import { ipFrom } from "@/lib/client-ip"
 
 type Settings = typeof settings.$inferSelect
 
@@ -15,7 +16,7 @@ type Settings = typeof settings.$inferSelect
 export async function origin() {
   try {
     const h = await headers()
-    const ip = h.get("x-forwarded-for")?.split(",")[0].trim() || h.get("x-real-ip") || null
+    const ip = ipFrom(h)
     const ua = h.get("user-agent") ?? ""
     const browser = /Edg\//.test(ua) ? "Edge" : /Chrome\//.test(ua) ? "Chrome" : /Firefox\//.test(ua) ? "Firefox" : /Safari\//.test(ua) ? "Safari" : /curl|node|undici|python|go-http/i.test(ua) ? ua.split(/[ /]/)[0] : ua ? "Other" : ""
     const os = /Android/.test(ua) ? "Android" : /iPhone|iPad/.test(ua) ? "iOS" : /Windows/.test(ua) ? "Windows" : /Mac OS X/.test(ua) ? "macOS" : /Linux/.test(ua) ? "Linux" : ""

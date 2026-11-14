@@ -27,3 +27,11 @@ test("rejects tampering, other projects, other keys and a bad root key", () => {
   assert.equal(k.kmsConfigured(), false)
   assert.throws(() => k.newProjectKey("p1"))
 })
+
+test("root-sealed text is bound to its use: an SSH ticket isn't a share link", () => {
+  process.env.SECRETS_ROOT_KEY = Buffer.alloc(32, 1).toString("base64")
+  const ticket = k.sealServer('{"userId":"u"}', k.TICKET_AAD)
+  assert.equal(k.openServer(ticket, k.TICKET_AAD), '{"userId":"u"}')
+  assert.throws(() => k.openServer(ticket))
+  assert.throws(() => k.openServer(k.sealServer("shared text"), k.TICKET_AAD))
+})

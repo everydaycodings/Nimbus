@@ -153,3 +153,17 @@ export const SELECT =
   "h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
 
 export const CHECKBOX = "size-4 shrink-0 accent-primary"
+
+// Placeholder rows while a list loads, shaped like the bordered lists they stand in for.
+export function Loading({ rows = 3, label = "Loading" }: { rows?: number; label?: string }) {
+  return (
+    <div role="status" aria-label={label} className="flex flex-col divide-y rounded-xl border">
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="flex items-center gap-3 px-4 py-3.5">
+          <span className="h-3.5 w-1/3 max-w-56 rounded bg-muted motion-safe:animate-pulse" />
+          <span className="h-3 w-1/5 max-w-32 rounded bg-muted/60 motion-safe:animate-pulse" />
+        </div>
+      ))}
+    </div>
+  )
+}

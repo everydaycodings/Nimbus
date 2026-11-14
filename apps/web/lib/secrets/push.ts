@@ -1,18 +1,21 @@
 // Server push: writes an environment's .env to a host over SSH (a temp file, 0600, then
 // a rename, so a reader never sees half a file), then runs an optional command. The
 // private key is sealed with the project key, or comes from a stored SSH key (keyId).
+// When the SSH tab has an entry for the same host and port with a jump host, the push goes
+// through that jump host (its own key or CA certificate, its pinned host key).
+// The command runs on the target server as the push's SSH user, never on Nimbus.
 import "server-only"
 
-import { createHash } from "node:crypto"
-
-import { eq } from "drizzle-orm"
-import { Client, utils } from "ssh2"
+import { and, eq, isNotNull } from "drizzle-orm"
+import { type Client, utils } from "ssh2"
 
 import { db } from "@/lib/db"
-import { secretEnvs, secretPushTargets } from "@/lib/db/schema"
+import { secretEnvs, secretPushTargets, secretSshHosts } from "@/lib/db/schema"
+import { blockPrivateHosts, checkAddress } from "./egress"
 import { serialize } from "./format"
 import { openValue, sealValue } from "./kms"
-import { openKey } from "./ssh"
+import { hop, openKey, pinHostKey } from "./ssh"
+import { connectHop, forward, type Seen } from "./ssh-cert-auth"
 import { SecretsError, exportPairs, systemCtx, type Ctx } from "./service"
 
 export type PushInput = {
@@ -29,10 +32,25 @@ export type PushInput = {
   forgetHostKey?: boolean
 }
 
+// The SSH tab's jump host for host:port in this project, if an entry there has one.
+async function jumpFor(projectId: string, host: string, port: number) {
+  const [h] = await db
+    .select({ j: secretSshHosts.jumpHostId })
+    .from(secretSshHosts)
+    .where(and(eq(secretSshHosts.projectId, projectId), eq(secretSshHosts.host, host), eq(secretSshHosts.port, port), isNotNull(secretSshHosts.jumpHostId)))
+    .limit(1)
+  if (!h?.j) return null
+  const [j] = await db.select().from(secretSshHosts).where(and(eq(secretSshHosts.id, h.j), eq(secretSshHosts.projectId, projectId)))
+  return j ?? null
+}
+
 export async function getPush(envId: string) {
   const [t] = await db.select().from(secretPushTargets).where(eq(secretPushTargets.envId, envId))
   if (!t) return null
+  const [e] = await db.select({ p: secretEnvs.projectId }).from(secretEnvs).where(eq(secretEnvs.id, envId))
+  const via = e ? await jumpFor(e.p, t.host, t.port) : null
   return {
+    via: via?.name ?? null,
     host: t.host,
     port: t.port,
     username: t.username,
@@ -92,14 +110,26 @@ const sh = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`
 // "~/app/.env" must still expand on the server.
 const remotePath = (p: string) => (p.startsWith("~/") ? `"$HOME"/${sh(p.slice(2))}` : sh(p))
 
+const RUN_MS = 120_000
+const KEEP = 4096
+
+// Runs one command: its last 4 KB of output kept, stopped after two minutes.
 function run(conn: Client, cmd: string, stdin?: string) {
   return new Promise<{ code: number; out: string }>((resolve, reject) => {
     conn.exec(cmd, (err, stream) => {
       if (err) return reject(err)
       let out = ""
-      stream.on("data", (d: Buffer) => (out += d))
-      stream.stderr.on("data", (d: Buffer) => (out += d))
-      stream.on("close", (code: number | null) => resolve({ code: code ?? 1, out: out.trim() }))
+      const keep = (d: Buffer) => void (out = (out + d).slice(-KEEP))
+      const timer = setTimeout(() => {
+        stream.close()
+        reject(new Error(`It didn't finish in ${RUN_MS / 1000} seconds.`))
+      }, RUN_MS)
+      stream.on("data", keep)
+      stream.stderr.on("data", keep)
+      stream.on("close", (code: number | null) => {
+        clearTimeout(timer)
+        resolve({ code: code ?? 1, out: out.trim() })
+      })
       stream.end(stdin)
     })
   })
@@ -125,27 +155,30 @@ export async function runPush(envId: string): Promise<{ ok: boolean; message: st
   const stored = t.keyId ? await openKey(c, t.keyId) : null
   const privateKey = stored ? stored.privateKey : openValue(c.key, c.projectId, t.keyEnc!)
   const passphrase = stored?.passphrase ?? undefined
-  let seen: string | undefined
-  let mismatch = false
-  const conn = new Client()
+  const seen: Seen = {}
+  const seenJ: Seen = {}
+  const conns: Client[] = []
   try {
-    await new Promise<void>((resolve, reject) => {
-      conn.on("ready", resolve).on("error", reject)
-      conn.connect({
-        host: t.host,
-        port: t.port,
-        username: t.username,
-        privateKey,
-        passphrase,
-        readyTimeout: 15_000,
-        // First connection pins the host key; a different one later is refused.
-        hostVerifier: (key: Buffer) => {
-          seen = createHash("sha256").update(key).digest("base64")
-          if (t.hostKey && t.hostKey !== seen) return (mismatch = true), false
-          return true
-        },
+    const j = await jumpFor(c.projectId, t.host, t.port)
+    // The first hop is dialled from here, so it's checked (lib/secrets/egress.ts).
+    const first = j ?? t
+    const dial = await checkAddress(first.host, first.port, !blockPrivateHosts())
+    let sock: Awaited<ReturnType<typeof forward>> | undefined
+    if (j) {
+      const via = await connectHop({ ...(await hop(c, c.userId, j)), dial }, undefined, seenJ).catch((e: Error) => {
+        throw new Error(seenJ.mismatch ? `The jump host ${j.name}'s host key changed. If that's expected, edit it on the SSH tab and tick “Trust a new host key”.` : `Jump host ${j.name}: ${e.message}`)
       })
-    })
+      conns.push(via)
+      if (!j.hostKey && seenJ.key) await pinHostKey(c.projectId, j.id, seenJ.key)
+      sock = await forward(via, t.host, t.port)
+    }
+    // First connection pins the host key; a different one later is refused.
+    const conn = await connectHop(
+      { host: t.host, dial: j ? undefined : dial, port: t.port, username: t.username, hostId: "", hostKey: t.hostKey, privateKey, passphrase },
+      sock,
+      seen
+    )
+    conns.push(conn)
     const w = await run(
       conn,
       `umask 077; f=${remotePath(t.path)}; tmp="$f.nimbus.$$"; cat > "$tmp" && chmod 600 "$tmp" && mv -f "$tmp" "$f" || { rm -f "$tmp"; exit 1; }`,
@@ -158,15 +191,15 @@ export async function runPush(envId: string): Promise<{ ok: boolean; message: st
       if (r.code) throw new Error(`${message}, but the command exited ${r.code}: ${r.out.slice(-300)}`)
       message += ", ran the command"
     }
-    return await record(true, message, t.hostKey ? undefined : seen)
+    return await record(true, message, t.hostKey ? undefined : seen.key)
   } catch (err) {
-    const message = mismatch
+    const message = seen.mismatch
       ? "The server's host key changed. If that's expected, edit the push and tick “Trust a new host key”."
       : (err as Error).message
     await record(false, message)
     throw new Error(message)
   } finally {
-    conn.end()
+    for (const x of conns) x.end()
   }
 }
 

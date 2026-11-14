@@ -2,8 +2,11 @@
 // plain key login in two ways: the key algorithm name is the "-cert-v01@openssh.com" one
 // and the public key is the certificate blob, while the signature still names the plain
 // algorithm ("ssh-ed25519"). makeCertKey wraps a parsed private key, and authPK is
-// patched (once) to send that variant. Relative-import only: the terminal sidecar loads it.
+// patched (once) to send that variant. connectHop opens one SSH hop with a pinned host key
+// (the terminal sidecar and server push both use it). Relative-import only: the sidecar loads it.
+import { createHash } from "node:crypto"
 import { createRequire } from "node:module"
+import type { Duplex } from "node:stream"
 
 import ssh2 from "ssh2"
 
@@ -67,3 +70,46 @@ export function makeCertKey(privateKey: string, passphrase: string | undefined, 
   const mark: CertMark = { algo, sigName: "ssh-ed25519" }
   return Object.assign(Object.create(k), { getPublicSSH: () => blob, nimbusCert: mark }) as ssh2.ParsedKey
 }
+
+// One SSH hop. `dial`: the checked address to connect to (lib/secrets/egress.ts), else `host`.
+export type Hop = {
+  host: string
+  dial?: string
+  port: number
+  username: string
+  hostId: string
+  hostKey: string | null
+  privateKey: string
+  passphrase?: string
+  certificate?: string
+}
+export type Seen = { key?: string; mismatch?: boolean }
+
+// Connects one hop (over `sock`, a channel through a jump host, when given). A pinned host
+// key must match; the key seen is left in `seen` so a first one can be pinned.
+export function connectHop(h: Hop, sock: Duplex | undefined, seen: Seen) {
+  return new Promise<ssh2.Client>((resolve, reject) => {
+    const c = new ssh2.Client()
+    c.on("ready", () => resolve(c)).on("error", reject)
+    c.connect({
+      host: h.dial ?? h.host,
+      port: h.port,
+      username: h.username,
+      sock,
+      readyTimeout: 15_000,
+      keepaliveInterval: 20_000,
+      ...(h.certificate
+        ? { authHandler: [{ type: "publickey" as const, username: h.username, key: makeCertKey(h.privateKey, h.passphrase, h.certificate) }] as unknown as ssh2.AuthenticationType[] }
+        : { privateKey: h.privateKey, passphrase: h.passphrase }),
+      hostVerifier: (key: Buffer) => {
+        seen.key = createHash("sha256").update(key).digest("base64")
+        if (h.hostKey && h.hostKey !== seen.key) return (seen.mismatch = true), false
+        return true
+      },
+    })
+  })
+}
+
+// A channel from `via` to host:port, to run the next hop over.
+export const forward = (via: ssh2.Client, host: string, port: number) =>
+  new Promise<Duplex>((res, rej) => via.forwardOut("127.0.0.1", 0, host, port, (e, s) => (e ? rej(e) : res(s))))

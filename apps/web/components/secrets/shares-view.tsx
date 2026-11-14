@@ -5,8 +5,9 @@ import { useState } from "react"
 
 import { useLoad } from "@/components/secrets/access-view"
 import { api } from "@/components/secrets/client"
+import { Empty } from "@/components/secrets/pki-ui"
 import { ShareDialog } from "@/components/secrets/share-dialog"
-import { Confirm } from "@/components/secrets/ui"
+import { Confirm, Loading } from "@/components/secrets/ui"
 import { useNotice } from "@/components/toaster"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -37,12 +38,11 @@ export function SharesView() {
       {data?.enabled === false && <p className="rounded-xl border bg-muted/30 px-4 py-3 text-sm">An admin turned share links off on this server.</p>}
       <p role="alert" className="text-sm text-destructive empty:hidden">{error}</p>
       {!data ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <Loading />
       ) : data.shares.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed px-6 py-14 text-center">
-          <LinkIcon className="size-6 text-muted-foreground" />
-          <p className="font-medium">No links yet</p>
-        </div>
+        <Empty icon={<LinkIcon />} title="No links yet">
+          Make one with Share text, or from a secret&apos;s Details panel.
+        </Empty>
       ) : (
         <ul className="flex flex-col divide-y rounded-xl border">
           {data.shares.map((s) => (

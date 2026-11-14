@@ -4,18 +4,12 @@ import { lookup } from "node:dns/promises"
 import { isIP } from "node:net"
 import tls from "node:tls"
 
+import { isPrivateIp } from "../push-rules.ts"
 import { certInfo } from "./pki-core.ts"
 
-// Loopback, private, link-local (cloud metadata), CGNAT, unspecified and multicast addresses.
-export function isPrivateAddress(ip: string): boolean {
-  const v6 = ip.toLowerCase().match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)
-  if (v6) ip = v6[1]
-  if (isIP(ip) === 4) {
-    const [a, b] = ip.split(".").map(Number)
-    return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || a >= 224
-  }
-  return /^(::1?|f[cd]|fe[89ab]|ff)/i.test(ip)
-}
+// Loopback, private, link-local (cloud metadata), CGNAT, unspecified and multicast addresses,
+// including IPv6 forms that carry one of those (::ffff:7f00:1, 64:ff9b::a9fe:a9fe, 2002:…).
+export const isPrivateAddress = isPrivateIp
 
 // Resolves the host and refuses private answers (unless allowed). Returns the address to dial,
 // so the check and the connection use the same one (no DNS rebinding between them).

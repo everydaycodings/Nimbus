@@ -172,12 +172,12 @@ export default async function SecretsPage() {
         </SettingRow>
         <SettingRow
           id="secrets-allow-private"
-          label="Allow private addresses in domain watch"
+          label="Allow private addresses in domain watch and webhooks"
           htmlFor="secret-allow-private"
-          hint="Off: domain watch only checks public hosts. On: it may also connect to loopback, private-network and link-local addresses."
+          hint="Off: domain watch and webhooks only reach public hosts. On: they may also connect to loopback, private-network and link-local addresses."
           tip={{
-            does: "Lets project admins watch certificates on internal hosts. The cloud metadata address (169.254.169.254) is only reachable with this on.",
-            affects: "This server's outgoing connections from domain watch.",
+            does: "Lets project admins watch certificates on internal hosts and send webhooks to internal services. The cloud metadata address (169.254.169.254) is only reachable with this on. Database connections, server push and the SSH terminal may reach private addresses unless the server sets SECRETS_BLOCK_PRIVATE=1; they never reach Nimbus's own database or Redis.",
+            affects: "This server's outgoing connections from domain watch and webhooks.",
             default: "Off",
           }}
           reset={reset("secretAllowPrivate")}

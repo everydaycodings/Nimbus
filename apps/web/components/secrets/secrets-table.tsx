@@ -12,6 +12,7 @@ import {
   ClockCounterClockwiseIcon,
   FolderPlusIcon,
   FolderSimpleIcon,
+  KeyIcon,
   PencilSimpleIcon,
   ShareNetworkIcon,
   ShieldCheckIcon,
@@ -30,17 +31,18 @@ import {
   ApiError,
   api,
   copySecret,
-  download,
+  downloadPost,
   errorText,
   generateValue,
   type CharSet,
 } from "@/components/secrets/client"
 import { FolderBar } from "@/components/secrets/folder-bar"
+import { Empty } from "@/components/secrets/pki-ui"
 import { HistoryDialog } from "@/components/secrets/history-dialog"
 import { ShareDialog } from "@/components/secrets/share-dialog"
 import { ImportDialog } from "@/components/secrets/import-dialog"
 import type { Detail } from "@/components/secrets/project-view"
-import { CHECKBOX, Confirm, MenuButton, Modal, SELECT } from "@/components/secrets/ui"
+import { CHECKBOX, Confirm, Loading, MenuButton, Modal, SELECT } from "@/components/secrets/ui"
 import { SubmitButton } from "@/components/submit-button"
 import { useNotice } from "@/components/toaster"
 import { Button } from "@/components/ui/button"
@@ -132,28 +134,32 @@ export function SecretsTable({
   >(null)
   const nextId = useRef(1)
 
-  const load = useCallback(async () => {
+  // keep: refresh the rows but leave unsaved edits alone (after an override).
+  const load = useCallback(async (keep = false) => {
     try {
       const r = await api<{ secrets: SecretRow[] }>(
         `${base}/secrets?env=${env.slug}&folder=${encodeURIComponent(folder)}`
       )
       setRows(r.secrets)
       setLoadError(null)
+      api<{ tags: string[] }>(`${base}/tags`).then((t) => setTags(t.tags)).catch(() => {})
+      if (keep) return
       setEdits({})
       setRemoved(new Set())
       setErrors({})
       setShown({})
       setSel(new Set())
       setFresh([])
-      api<{ tags: string[] }>(`${base}/tags`).then((t) => setTags(t.tags)).catch(() => {})
     } catch (e) {
       setLoadError(errorText(e))
     }
   }, [base, env.slug, folder])
 
   useEffect(() => {
+    // The table remounts per env and folder, so the first load has nothing to reset: keep
+    // rows added while it was in flight (clicking "Add secret" before it finished).
     // eslint-disable-next-line react-hooks/set-state-in-effect -- loads once per env and folder
-    load().then(() => addKey && setFresh([{ tid: "n0", draft: blank(addKey) }]))
+    load(true).then(() => addKey && setFresh((f) => [{ tid: "n0", draft: blank(addKey) }, ...f]))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load])
 
@@ -276,14 +282,8 @@ export function SecretsTable({
 
   async function exportSecrets(format: "env" | "json" | "yaml", ids?: string[]) {
     try {
-      const res = await fetch(`/api/v1/secrets${base}/secrets/export`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(ids ? { format, ids } : { format, envId: env.id, folderId }),
-      })
-      if (!res.ok) throw new Error(((await res.json()) as { message?: string }).message ?? "Couldn't export.")
-      const ext = format === "env" ? "env" : format
-      download(`${detail.name}-${env.slug}${folder ? `-${folder.replace(/\//g, "-")}` : ""}.${format === "env" ? "env" : ext}`.replace(/\s+/g, "-"), await res.text(), res.headers.get("content-type") ?? "text/plain")
+      const name = `${detail.name}-${env.slug}${folder ? `-${folder.replace(/\//g, "-")}` : ""}.${format}`.replace(/\s+/g, "-")
+      await downloadPost(`${base}/secrets/export`, ids ? { format, ids } : { format, envId: env.id, folderId }, name)
     } catch (e) {
       notify({ text: errorText(e), error: true })
     }
@@ -313,42 +313,44 @@ export function SecretsTable({
         }
       }}
     >
+      {/* Phones: one row of actions, the secondary ones as icons (their names stay for screen readers). */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="mr-auto flex min-w-0 items-center gap-2">
-          <h2 className="text-lg font-semibold tracking-tight">{env.name}</h2>
+        <div className="mr-auto flex min-w-0 items-center gap-2 max-sm:w-full">
+          <h2 className="truncate text-lg font-semibold tracking-tight">{env.name}</h2>
           <FolderBar root="Top level" path={folder} onOpen={onFolder} />
         </div>
         {canWrite && (
           <>
-            <Button onClick={addRow}>
+            <Button onClick={addRow} className="max-sm:mr-auto">
               <PlusIcon />
               Add secret
             </Button>
-            <Button variant="outline" onClick={() => setDialog({ kind: "import", text: "" })}>
+            <Button variant="outline" title="Import" onClick={() => setDialog({ kind: "import", text: "" })}>
               <UploadSimpleIcon />
-              Import
+              <span className="max-sm:sr-only">Import</span>
             </Button>
-            <Button variant="outline" onClick={() => setDialog({ kind: "folder" })}>
+            <Button variant="outline" title="New folder" onClick={() => setDialog({ kind: "folder" })}>
               <FolderPlusIcon />
-              New folder
+              <span className="max-sm:sr-only">New folder</span>
             </Button>
           </>
         )}
         <Button
           variant="outline"
+          title={Object.keys(shown).length ? "Hide all" : "Reveal all"}
           onClick={() => (Object.keys(shown).length ? setShown({}) : revealAll())}
           disabled={!visible.length}
         >
           {Object.keys(shown).length ? <EyeSlashIcon /> : <EyeIcon />}
-          {Object.keys(shown).length ? "Hide all" : "Reveal all"}
+          <span className="max-sm:sr-only">{Object.keys(shown).length ? "Hide all" : "Reveal all"}</span>
         </Button>
         <MenuButton
           label="Export this folder"
-          className="h-9 border px-3"
+          className="h-9 border border-input bg-input/30 px-3 font-medium hover:bg-input/50"
           trigger={
             <>
               <DownloadSimpleIcon />
-              Export
+              <span className="max-sm:sr-only">Export</span>
               <CaretDownIcon className="size-3" />
             </>
           }
@@ -394,7 +396,7 @@ export function SecretsTable({
           )}
           <MenuButton
             label="Export selected"
-            className="h-7 border px-2.5"
+            className="h-7 border border-input bg-input/30 px-2.5 text-xs font-medium hover:bg-input/50"
             trigger={
               <>
                 <DownloadSimpleIcon className="size-3.5" />
@@ -452,18 +454,15 @@ export function SecretsTable({
       )}
 
       {rows === null ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <Loading rows={8} />
       ) : visible.length === 0 && fresh.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed px-6 py-14 text-center">
-          <p className="font-medium">No secrets in {folder ? folder : env.name} yet</p>
-          <p className="max-w-sm text-sm text-pretty text-muted-foreground">
-            {canWrite
-              ? "Add one, or paste a .env anywhere on this page to import it."
-              : "Nothing has been added here."}
-          </p>
+        <Empty icon={<KeyIcon />} title={`No secrets in ${folder ? folder : env.name} yet`}>
+          {canWrite ? "Add one, or paste a .env anywhere on this page to import it." : "Nothing has been added here."}{" "}
           <GuideLink to="cli">Use your secrets in an app</GuideLink>
-        </div>
+        </Empty>
       ) : (
+        // Disabled while saving, so nothing typed then is wiped by the reload after it.
+        <fieldset disabled={saving} className="contents">
         <div className="overflow-hidden rounded-xl border">
           <div className="hidden grid-cols-[auto_minmax(9rem,16rem)_minmax(0,1fr)_auto] items-center gap-x-3 border-b bg-muted/30 px-3 py-2 text-xs text-muted-foreground sm:grid">
             <input
@@ -473,8 +472,8 @@ export function SecretsTable({
               checked={allSelected}
               onChange={(e) => setSel(e.target.checked ? new Set(visible.map((r) => r.id)) : new Set())}
             />
-            <span>Key</span>
-            <span>Value</span>
+            <span className="pl-2">Key</span>
+            <span className="pl-2.5">Value</span>
             <span className="w-36" />
           </div>
           <ul>
@@ -561,7 +560,7 @@ export function SecretsTable({
                     try {
                       await api(`${base}/secrets/override`, "PUT", { id: r.id, value })
                       notify({ text: value === null ? "Removed your override." : "Saved your own value." })
-                      await load()
+                      await load(true)
                       await revealRow(r.id)
                     } catch (err) {
                       notify({ text: errorText(err), error: true })
@@ -572,6 +571,7 @@ export function SecretsTable({
             })}
           </ul>
         </div>
+        </fieldset>
       )}
 
       {changes > 0 && (
@@ -584,7 +584,7 @@ export function SecretsTable({
             <span className="font-medium tabular-nums">{changes}</span> unsaved change{changes === 1 ? "" : "s"}
             {saveError && <span className="ml-2 text-destructive">{saveError}</span>}
           </p>
-          <Button variant="outline" onClick={load} disabled={saving}>
+          <Button variant="outline" onClick={() => load()} disabled={saving}>
             Discard
           </Button>
           <SubmitButton type="button" pending={saving} onClick={save}>
@@ -874,8 +874,8 @@ function Line(p: LineProps) {
 
   return (
     <li className={cn("border-b last:border-0", p.expanded && "bg-muted/20", p.removed && "opacity-60")}>
-      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2 px-3 py-2.5 sm:grid-cols-[auto_minmax(9rem,16rem)_minmax(0,1fr)_auto]">
-        <div className="col-start-1 row-start-1 flex h-9 items-center">
+      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1.5 px-3 py-1.5 sm:grid-cols-[auto_minmax(9rem,18rem)_minmax(0,1fr)_auto]">
+        <div className="col-start-1 row-start-1 flex h-8 items-center">
           {p.isNew ? (
             <span className="size-4" />
           ) : (
@@ -889,7 +889,7 @@ function Line(p: LineProps) {
           )}
         </div>
 
-        <div className="col-start-2 row-start-1 grid min-w-0 gap-1">
+        <div className="col-start-2 row-start-1 grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1">
           <div className="relative">
             <input
               aria-label={p.isNew ? "New secret key" : `Key of ${base?.key}`}
@@ -904,7 +904,7 @@ function Line(p: LineProps) {
                 if (p.onKeyPaste(e.clipboardData.getData("text"))) e.preventDefault()
               }}
               className={cn(
-                "h-9 w-full min-w-0 rounded-md border border-transparent bg-transparent px-2 font-mono text-sm outline-none read-only:cursor-default",
+                "h-8 w-full min-w-0 truncate rounded-md border border-transparent bg-transparent px-2 font-mono text-sm outline-none read-only:cursor-default",
                 editable && "hover:border-input focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
                 p.removed && "line-through",
                 p.error && "border-destructive"
@@ -914,7 +914,7 @@ function Line(p: LineProps) {
               <span className="absolute top-1/2 -left-1.5 size-1.5 -translate-y-1/2 rounded-full bg-brand" title="Unsaved change" />
             )}
           </div>
-          <div className="flex min-h-0 flex-wrap items-center gap-1 px-2 text-xs text-muted-foreground empty:hidden">
+          <div className="flex min-h-0 flex-wrap items-center gap-1 px-2 pb-1 text-xs text-muted-foreground empty:hidden">
             {d.type && <span className="rounded bg-muted px-1.5 py-0.5 font-mono">{d.type}</span>}
             {d.tags.map((t) => (
               <span key={t} className="rounded bg-muted px-1.5 py-0.5">{t}</span>
@@ -947,7 +947,7 @@ function Line(p: LineProps) {
               placeholder="Value"
               onChange={(e) => p.onPatch({ value: e.target.value })}
               className={cn(
-                "field-sizing-content block max-h-60 min-h-9 w-full resize-none rounded-md border border-input bg-transparent px-2.5 py-1.5 font-mono text-sm break-all outline-none read-only:cursor-default focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30",
+                "field-sizing-content block max-h-60 min-h-8 w-full resize-none rounded-md border border-input bg-transparent px-2.5 py-1 font-mono text-sm break-all outline-none read-only:cursor-default focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30",
                 p.removed && "line-through",
                 p.error && "border-destructive"
               )}
@@ -957,16 +957,16 @@ function Line(p: LineProps) {
               type="button"
               onClick={p.onReveal}
               aria-label={`Reveal value of ${base?.key}`}
-              className="flex h-9 w-full items-center gap-2 rounded-md border border-input px-2.5 text-left font-mono text-sm text-muted-foreground outline-none hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+              className="group/reveal flex h-8 w-full items-center gap-2 rounded-md border border-transparent px-2.5 text-left font-mono text-sm text-muted-foreground outline-none hover:border-input max-sm:border-input hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
             >
-              <span aria-hidden>{MASK}</span>
-              <span className="ml-auto font-sans text-xs">Click to reveal</span>
+              <span aria-hidden className="tracking-widest">{MASK}</span>
+              <span className="ml-auto font-sans text-xs opacity-0 transition-opacity group-hover/reveal:opacity-100 group-focus-visible/reveal:opacity-100 max-sm:opacity-100">Click to reveal</span>
             </button>
           )}
           {valueVisible && editable && (p.isNew || dirty) && looksLikePassword(d.key) && <PwnedHint value={d.value} />}
         </div>
 
-        <div className="col-start-3 row-start-1 flex items-center gap-0.5 sm:col-start-4">
+        <div className="col-start-3 row-start-1 flex h-8 items-center gap-0.5 sm:col-start-4">
           {p.removed ? (
             <Button variant="ghost" size="sm" onClick={p.onUndo}>
               <ArrowArcLeftIcon />
@@ -1045,7 +1045,7 @@ function Line(p: LineProps) {
             <div className="grid gap-2 sm:col-span-2">
               <Label htmlFor={`gen-${p.id}`}>Generate a random value</Label>
               <div className="flex flex-wrap items-center gap-2">
-                <select aria-label="Length" id={`gen-${p.id}`} className={cn(SELECT, "w-24")} value={len} onChange={(e) => setLen(Number(e.target.value))}>
+                <select aria-label="Length" id={`gen-${p.id}`} className={cn(SELECT, "w-28")} value={len} onChange={(e) => setLen(Number(e.target.value))}>
                   {[16, 24, 32, 48, 64, 128].map((n) => (
                     <option key={n} value={n}>{n} chars</option>
                   ))}

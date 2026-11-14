@@ -16,6 +16,7 @@ import { useState } from "react"
 
 import { useLoad } from "@/components/secrets/access-view"
 import { api, copySecret, download, errorText } from "@/components/secrets/client"
+import { Empty } from "@/components/secrets/pki-ui"
 import type { Detail } from "@/components/secrets/project-view"
 import { CHECKBOX, Confirm, Modal, SELECT } from "@/components/secrets/ui"
 import { SubmitButton } from "@/components/submit-button"
@@ -44,7 +45,8 @@ const TEXTAREA =
 export function SshView({ detail }: { detail: Detail }) {
   const [tab, setTab] = useState<(typeof TABS)[number][0]>("keys")
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-4">
+      <h2 className="text-lg font-semibold tracking-tight">SSH</h2>
       <div role="tablist" aria-label="SSH" className="flex gap-1 overflow-x-auto border-b">
         {TABS.map(([id, label]) => (
           <button
@@ -71,7 +73,7 @@ export function SshView({ detail }: { detail: Detail }) {
 }
 
 const Intro = ({ children }: { children: React.ReactNode }) => (
-  <p className="max-w-prose flex-1 text-sm text-pretty text-muted-foreground">{children}</p>
+  <p className="max-w-prose flex-1 basis-72 text-sm text-pretty text-muted-foreground">{children}</p>
 )
 
 // ---------- keys ----------
@@ -101,7 +103,9 @@ function Keys({ detail }: { detail: Detail }) {
       </div>
       <p role="status" className="text-sm text-muted-foreground empty:hidden">{note}</p>
       {data.keys.length === 0 ? (
-        <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">No keys yet. Generate one here or import one you already use.</p>
+        <Empty icon={<KeyIcon />} title="No keys yet">
+          Generate one here or import one you already use.
+        </Empty>
       ) : (
         <ul className="divide-y rounded-xl border" data-testid="ssh-keys">
           {data.keys.map((k) => (
@@ -384,7 +388,9 @@ function Hosts({ detail }: { detail: Detail }) {
       </div>
       <p role="status" className={cn("text-sm empty:hidden", note?.error ? "text-destructive" : "text-muted-foreground")}>{note?.text}</p>
       {hosts.data.hosts.length === 0 ? (
-        <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">No hosts yet.</p>
+        <Empty icon={<TerminalWindowIcon />} title="No hosts yet">
+          Add a server to open a terminal to it here or export it to ~/.ssh/config.
+        </Empty>
       ) : (
         <ul className="divide-y rounded-xl border" data-testid="ssh-hosts">
           {hosts.data.hosts.map((h) => (

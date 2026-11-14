@@ -6,7 +6,7 @@ import { useState } from "react"
 import { useLoad } from "@/components/secrets/access-view"
 import { api, errorText } from "@/components/secrets/client"
 import { Empty, Expiry, TEXTAREA, useBusy } from "@/components/secrets/pki-ui"
-import { Confirm, Modal, SELECT } from "@/components/secrets/ui"
+import { Confirm, Loading, Modal, SELECT } from "@/components/secrets/ui"
 import { SubmitButton } from "@/components/submit-button"
 import { useNotice } from "@/components/toaster"
 import { Button } from "@/components/ui/button"
@@ -27,7 +27,7 @@ export function CaTab({ projectId, role, onIssued }: { projectId: string; role: 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
-        <p className="max-w-prose flex-1 text-sm text-pretty text-muted-foreground">
+        <p className="max-w-prose flex-1 basis-72 text-sm text-pretty text-muted-foreground">
           Your own certificate authority. Keys are sealed with the project key and signing happens on the server. Issued certificates land in the Store.
         </p>
         {admin && (
@@ -39,7 +39,7 @@ export function CaTab({ projectId, role, onIssued }: { projectId: string; role: 
       </div>
       <p role="alert" className="text-sm text-destructive empty:hidden">{error}</p>
       {!data ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <Loading />
       ) : data.cas.length === 0 ? (
         <Empty icon={<CertificateIcon />} title="No certificate authority">
           Create a root CA, then an intermediate under it to sign with.

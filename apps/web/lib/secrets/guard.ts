@@ -44,18 +44,20 @@ export const withSecrets = (fn: (me: Me) => Promise<Response>, o: Opts = {}) =>
     })
   )
 
-// A project the member belongs to, with at least the role `need`.
+// A project the member belongs to, with at least the role `need`. `grant`: the route
+// only writes secrets through the service's per-environment checks, so a temporary
+// developer grant on some environment may open it. Project-wide routes (items, PKI,
+// leases…) leave it off, or a grant on one environment would act as Developer there.
 export const withProject = (
   projectId: string,
   need: Role,
-  fn: (c: Ctx, me: Me) => Promise<Response>
+  fn: (c: Ctx, me: Me) => Promise<Response>,
+  grant = false
 ) =>
   withSecrets(async (me) => {
     const c = await projectCtx(me.id, projectId)
     if (!c) return fail(404, "not-found", "That project isn't here, or you can't open it.")
-    // A temporary developer grant on some environment opens the writing routes; the
-    // service then checks the environment each write touches.
-    const granted = need === "developer" && Boolean(c.writeEnvs?.length)
+    const granted = grant && need === "developer" && Boolean(c.writeEnvs?.length)
     if (RANK[c.role] < RANK[need] && !granted)
       return fail(403, "forbidden", "Your role in this project can't do that.")
     return auditScope.run({ projectId }, () => fn(c, me))
@@ -65,9 +67,10 @@ export const withProject = (
 export const projectRoute =
   <P extends Record<string, string> = Record<never, string>>(
     need: Role,
-    h: (c: Ctx, req: Request, p: P & { id: string }) => Promise<Response>
+    h: (c: Ctx, req: Request, p: P & { id: string }) => Promise<Response>,
+    o: { grant?: boolean } = {}
   ) =>
   async (req: Request, ctx: { params: Promise<P & { id: string }> }) => {
     const p = await ctx.params
-    return withProject(p.id, need, (c) => h(c, req, p))
+    return withProject(p.id, need, (c) => h(c, req, p), o.grant)
   }

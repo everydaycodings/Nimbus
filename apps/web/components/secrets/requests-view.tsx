@@ -1,12 +1,13 @@
 "use client"
 
-import { CheckCircleIcon, EyeIcon, GitPullRequestIcon, MinusCircleIcon, PlusCircleIcon, PencilSimpleIcon, WarningIcon, XCircleIcon } from "@phosphor-icons/react"
+import { ArrowLeftIcon, CheckCircleIcon, EyeIcon, GitPullRequestIcon, MinusCircleIcon, PlusCircleIcon, PencilSimpleIcon, WarningIcon, XCircleIcon } from "@phosphor-icons/react"
 import { useCallback, useEffect, useState } from "react"
 
 import { api, errorText } from "@/components/secrets/client"
 import { Comments } from "@/components/secrets/comments-thread"
+import { Empty } from "@/components/secrets/pki-ui"
 import type { Detail } from "@/components/secrets/project-view"
-import { Confirm } from "@/components/secrets/ui"
+import { Confirm, Loading } from "@/components/secrets/ui"
 import { useNotice } from "@/components/toaster"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -75,15 +76,11 @@ export function RequestsView({ detail, initial }: { detail: Detail; initial: str
       </p>
       <p role="alert" className="text-sm text-destructive empty:hidden">{error}</p>
       {items === null ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <Loading />
       ) : items.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed px-6 py-14 text-center">
-          <GitPullRequestIcon className="size-6 text-muted-foreground" />
-          <p className="font-medium">{all ? "No change requests yet" : "Nothing waiting for review"}</p>
-          <p className="max-w-sm text-sm text-pretty text-muted-foreground">
-            {detail.role === "admin" ? "Protect an environment under Policies to start requiring review." : "Edits to protected environments will show up here."}
-          </p>
-        </div>
+        <Empty icon={<GitPullRequestIcon />} title={all ? "No change requests yet" : "Nothing waiting for review"}>
+          {detail.role === "admin" ? "Protect an environment under Policies to start requiring review." : "Edits to protected environments will show up here."}
+        </Empty>
       ) : (
         <ul className="flex flex-col divide-y rounded-xl border">
           {items.map((r) => (
@@ -148,12 +145,13 @@ function RequestDetail({ detail, id, onBack }: { detail: Detail; id: string; onB
     }
   }
 
-  if (!r) return error ? <p role="alert" className="text-sm text-destructive">{error}</p> : <p className="text-sm text-muted-foreground">Loading…</p>
+  if (!r) return error ? <p role="alert" className="text-sm text-destructive">{error}</p> : <Loading />
   const need = Math.max(0, r.required - r.reviews.filter((v) => v.decision === "approve").length)
 
   return (
     <div className="flex flex-col gap-5">
-      <Button variant="ghost" size="sm" className="w-fit" onClick={onBack}>
+      <Button variant="ghost" size="sm" className="-ml-2 w-fit text-muted-foreground" onClick={onBack}>
+        <ArrowLeftIcon />
         Back to requests
       </Button>
       <div className="grid gap-1">

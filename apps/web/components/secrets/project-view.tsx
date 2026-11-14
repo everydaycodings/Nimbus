@@ -30,7 +30,7 @@ import {
 } from "@phosphor-icons/react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import { AccessRequestsView } from "@/components/secrets/access-requests-view"
 import { AccessView } from "@/components/secrets/access-view"
@@ -58,6 +58,10 @@ import type { projectDetail } from "@/lib/secrets/service"
 import { cn } from "@/lib/utils"
 
 export type Detail = Awaited<ReturnType<typeof projectDetail>>
+
+// A sidebar group: inline in the phone strip (a hairline before each group), a column from lg.
+const GROUP = "flex shrink-0 gap-1 max-lg:border-l max-lg:pl-1 max-lg:first:border-l-0 max-lg:first:pl-0 lg:flex-col"
+const GROUP_LABEL = "flex h-8 items-center gap-2 px-2.5 text-xs font-medium text-muted-foreground max-lg:hidden"
 
 type Hit = {
   id: string
@@ -104,6 +108,7 @@ export function ProjectView({
   const [accessTab, setAccessTab] = useState<"tokens" | undefined>(undefined)
   const admin = detail.role === "admin"
   const canWrite = detail.writableEnvs.length > 0
+  const strip = useRef<HTMLDivElement>(null)
 
   function go(next: string, path = "", key: string | null = null) {
     setView(next)
@@ -120,6 +125,13 @@ export function ProjectView({
     window.addEventListener("secrets-changed", again)
     return () => window.removeEventListener("secrets-changed", again)
   }, [router])
+
+  // In the phone strip, keep the current page in sight.
+  useEffect(() => {
+    const el = strip.current
+    if (!el || el.scrollWidth <= el.clientWidth) return
+    el.querySelector<HTMLElement>("[aria-current=page]")?.scrollIntoView({ block: "nearest", inline: "nearest" })
+  }, [view])
 
   useEffect(() => {
     const u = new URL(window.location.href)
@@ -152,7 +164,7 @@ export function ProjectView({
 
   const nav = (active: boolean) =>
     cn(
-      "flex h-8 shrink-0 items-center gap-2 rounded-md px-2.5 text-sm whitespace-nowrap outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50 lg:w-full",
+      "flex h-8 shrink-0 items-center gap-2 rounded-md px-2.5 text-sm whitespace-nowrap outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-inset lg:w-full",
       active ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"
     )
 
@@ -166,12 +178,14 @@ export function ProjectView({
           <ArrowLeftIcon className="size-3.5" />
           All projects
         </Link>
-        <nav aria-label="Project" className="flex flex-col gap-1">
-          <p className="flex h-8 items-center gap-2 px-2.5 text-xs font-medium text-muted-foreground">
+        {/* Phones and tablets: every group in one sideways strip. lg: the grouped sidebar. */}
+        <div ref={strip} className="-mx-4 flex gap-1 overflow-x-auto px-4 pb-1 [scrollbar-width:thin] lg:mx-0 lg:flex-col lg:gap-4 lg:overflow-visible lg:px-0 lg:pb-0">
+        <nav aria-label="Project" className={GROUP}>
+          <p className={GROUP_LABEL}>
             <KeyIcon className="size-3.5" />
             Secrets
           </p>
-          <div className="-mx-4 flex gap-1 overflow-x-auto px-4 pb-1 lg:mx-0 lg:flex-col lg:overflow-visible lg:px-0 lg:pb-0">
+          <div className="contents lg:flex lg:flex-col lg:gap-1">
             <button className={nav(view === "overview")} aria-current={view === "overview" ? "page" : undefined} onClick={() => go("overview")}>
               <RowsIcon className="size-4" />
               Overview
@@ -198,7 +212,7 @@ export function ProjectView({
               )}
             </button>
             {admin && (
-              <button className={cn(nav(false), "lg:mt-2")} onClick={() => setDialog("envs")}>
+              <button className={cn(nav(false), "lg:mt-1")} onClick={() => setDialog("envs")}>
                 <GearSixIcon className="size-4" />
                 Environments
               </button>
@@ -211,13 +225,13 @@ export function ProjectView({
             )}
           </div>
         </nav>
-        <nav aria-label="SSH" className="flex flex-col gap-1">
+        <nav aria-label="SSH" className={GROUP}>
           <button className={nav(view === "ssh")} aria-current={view === "ssh" ? "page" : undefined} onClick={() => go("ssh")}>
             <TerminalWindowIcon className="size-4" />
             SSH
           </button>
         </nav>
-        <nav aria-label="Certificates and items" className="flex flex-col gap-1">
+        <nav aria-label="Certificates and items" className={GROUP}>
           <button className={nav(view === "certs")} aria-current={view === "certs" ? "page" : undefined} onClick={() => go("certs")}>
             <CertificateIcon className="size-4" />
             Certificates
@@ -231,7 +245,7 @@ export function ProjectView({
             Dynamic secrets
           </button>
         </nav>
-        <nav aria-label="Security" className="flex flex-col gap-1">
+        <nav aria-label="Security" className={GROUP}>
           <button className={nav(view === "health")} aria-current={view === "health" ? "page" : undefined} onClick={() => go("health")}>
             <HeartbeatIcon className="size-4" />
             Health
@@ -241,12 +255,12 @@ export function ProjectView({
             KMS
           </button>
         </nav>
-        <nav aria-label="Governance" className="flex flex-col gap-1">
-          <p className="flex h-8 items-center gap-2 px-2.5 text-xs font-medium text-muted-foreground">
+        <nav aria-label="Governance" className={GROUP}>
+          <p className={GROUP_LABEL}>
             <ShieldCheckIcon className="size-3.5" />
             Governance
           </p>
-          <div className="-mx-4 flex gap-1 overflow-x-auto px-4 pb-1 lg:mx-0 lg:flex-col lg:overflow-visible lg:px-0 lg:pb-0">
+          <div className="contents lg:flex lg:flex-col lg:gap-1">
             {(
               [
                 ["requests", "Change requests", GitPullRequestIcon, detail.openRequests, true],
@@ -271,17 +285,18 @@ export function ProjectView({
               ))}
           </div>
         </nav>
+        </div>
       </aside>
 
       <section className="flex min-w-0 flex-col gap-5">
         <div className="flex flex-wrap items-start gap-3">
-          <div className="flex min-w-0 flex-auto flex-col gap-1">
+          <div className="flex min-w-0 flex-auto flex-col gap-1 max-sm:basis-0">
             <h1 className="truncate text-2xl font-semibold tracking-tight">{detail.name}</h1>
             {detail.description && (
               <p className="max-w-prose text-sm text-pretty text-muted-foreground">{detail.description}</p>
             )}
           </div>
-          <div className="relative w-full sm:w-64">
+          <div className="relative w-full max-sm:order-last sm:w-64">
             <MagnifyingGlassIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               aria-label="Search key names, comments and tags"
@@ -580,7 +595,7 @@ function EnvManager({
                 onBlur={(ev) => ev.currentTarget.form?.requestSubmit()}
               />
             </form>
-            <span className="hidden font-mono text-xs text-muted-foreground sm:block" title="Used in ${env.KEY} references">{e.slug}</span>
+            <span className="hidden w-28 truncate font-mono text-xs text-muted-foreground sm:block" title="Used in ${env.KEY} references">{e.slug}</span>
             <Button variant="ghost" size="icon-sm" aria-label={`Move ${e.name} up`} disabled={i === 0} onClick={() => move(i, -1)}>
               <ArrowUpIcon />
             </Button>

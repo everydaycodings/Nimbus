@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react"
 import { useLoad } from "@/components/secrets/access-view"
 import { api, errorText } from "@/components/secrets/client"
 import { Empty, Expiry, TEXTAREA, useBusy } from "@/components/secrets/pki-ui"
-import { Modal, SELECT } from "@/components/secrets/ui"
+import { Loading, Modal, SELECT } from "@/components/secrets/ui"
 import { SubmitButton } from "@/components/submit-button"
 import { useNotice } from "@/components/toaster"
 import { Button } from "@/components/ui/button"
@@ -62,7 +62,7 @@ export function AcmeTab({ projectId, role, onIssued }: { projectId: string; role
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center gap-3">
-        <p className="max-w-prose flex-1 text-sm text-pretty text-muted-foreground">
+        <p className="max-w-prose flex-1 basis-72 text-sm text-pretty text-muted-foreground">
           Free certificates from Let&apos;s Encrypt (or another ACME server), renewed by the worker 30 days before they expire. Choose how to prove you own the name.
         </p>
         {role !== "viewer" && (
@@ -344,7 +344,7 @@ export function WatchTab({ projectId, role }: { projectId: string; role: string 
       )}
       <p role="alert" className="text-sm text-destructive empty:hidden">{error ?? addError}</p>
       {!data ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <Loading />
       ) : data.watches.length === 0 ? (
         <Empty icon={<GlobeIcon />} title="No domains watched">Enter a host and port, like example.com and 443.</Empty>
       ) : (

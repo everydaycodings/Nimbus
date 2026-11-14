@@ -55,6 +55,8 @@ export const POST = projectRoute("developer", async (c, req) => {
       entries: imported.entries.map((e) => ({ ...e, status: have.some((i) => i.kind === e.kind && i.name === e.name) ? "exists" : "new" })),
     })
   }
+  // Items are project-wide: a temporary grant on one environment doesn't reach them.
+  if (b.entries.length && c.role === "viewer") return fail(403, "forbidden", "Your role in this project can't add items.")
   const r = b.items.length
     ? await applyOps(c, b.envId, b.folderId, b.items, [], "merge", { via: "import" })
     : { created: [] as string[], updated: [] as string[], deleted: [] as string[], env: "", request: undefined }
@@ -84,4 +86,4 @@ export const POST = projectRoute("developer", async (c, req) => {
     await audit("secrets_import", { detail: `items: ${made.created.length} new, ${made.updated.length} changed${made.failed.length ? `, ${made.failed.length} failed` : ""}` })
   }
   return Response.json({ ...r, entries: made })
-})
+}, { grant: true })

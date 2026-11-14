@@ -7,6 +7,7 @@ import { MongoClient } from "mongodb"
 import mysql from "mysql2/promise"
 import postgres from "postgres"
 
+import { blockPrivateHosts, checkAddress } from "./egress.ts"
 import { parseMongo, quoteIdent, quoteLiteral, splitRedis, splitSql, type Engine } from "./dyn-rules.ts"
 
 export type Target = {
@@ -22,6 +23,15 @@ export type Target = {
 }
 
 const TIMEOUT = 10_000
+
+// Where to dial (lib/secrets/egress.ts): never Nimbus's own Postgres or Redis. Without TLS
+// the checked address is dialled, so DNS can't swap it afterwards. With TLS the name is
+// dialled (SNI and the certificate check need it); a swapped address would then also need
+// a certificate for that name, and Nimbus's own services don't speak TLS at all.
+async function dialHost(t: Target) {
+  const ip = await checkAddress(t.host, t.port, !blockPrivateHosts())
+  return t.tls ? t.host : ip
+}
 
 // TLS options: the connection's CA (or the default roots) and a name check against the host we
 // dialled. Drivers that hand tls a bare socket would otherwise check "localhost" for an IP host.
@@ -40,7 +50,7 @@ export function tlsError(e: unknown, t: Pick<Target, "host" | "ca">): unknown {
 
 async function withPg<T>(t: Target, fn: (sql: ReturnType<typeof postgres>) => Promise<T>) {
   const sql = postgres({
-    host: t.host,
+    host: await dialHost(t),
     port: t.port,
     database: t.database || "postgres",
     username: t.username,
@@ -62,7 +72,7 @@ async function withPg<T>(t: Target, fn: (sql: ReturnType<typeof postgres>) => Pr
 async function withMysql<T>(t: Target, fn: (c: mysql.Connection) => Promise<T>) {
   const c = await mysql
     .createConnection({
-      host: t.host,
+      host: await dialHost(t),
       port: t.port,
       user: t.username,
       password: t.password,
@@ -83,7 +93,7 @@ async function withMysql<T>(t: Target, fn: (c: mysql.Connection) => Promise<T>) 
 
 async function withRedis<T>(t: Target, fn: (r: Redis) => Promise<T>) {
   const r = new Redis({
-    host: t.host,
+    host: await dialHost(t),
     port: t.port,
     username: t.username || undefined,
     password: t.password || undefined,
@@ -110,7 +120,8 @@ async function withRedis<T>(t: Target, fn: (r: Redis) => Promise<T>) {
 }
 
 async function withMongo<T>(t: Target, fn: (db: ReturnType<MongoClient["db"]>) => Promise<T>) {
-  const c = new MongoClient(`mongodb://${t.host.includes(":") ? `[${t.host}]` : t.host}:${t.port}`, {
+  const h = await dialHost(t)
+  const c = new MongoClient(`mongodb://${h.includes(":") ? `[${h}]` : h}:${t.port}`, {
     auth: { username: t.username, password: t.password },
     authSource: t.database || "admin",
     tls: t.tls,

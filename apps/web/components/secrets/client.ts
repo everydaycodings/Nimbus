@@ -69,8 +69,8 @@ export function generateValue(length: number, set: CharSet = "alnum") {
   return out
 }
 
-export function download(name: string, text: string, type = "text/plain") {
-  const url = URL.createObjectURL(new Blob([text], { type }))
+export function download(name: string, data: string | Blob, type = "text/plain") {
+  const url = URL.createObjectURL(typeof data === "string" ? new Blob([data], { type }) : data)
   const a = document.createElement("a")
   a.href = url
   a.download = name
@@ -85,11 +85,5 @@ export async function downloadPost(path: string, body: unknown, fallback: string
     if (res.status === 423) window.dispatchEvent(new Event("secrets-locked"))
     throw new ApiError(((await res.json().catch(() => ({}))) as { message?: string }).message ?? "Something went wrong. Try again.", res.status)
   }
-  const name = /filename="([^"]+)"/.exec(res.headers.get("content-disposition") ?? "")?.[1] ?? fallback
-  const url = URL.createObjectURL(await res.blob())
-  const a = document.createElement("a")
-  a.href = url
-  a.download = name
-  a.click()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  download(/filename="([^"]+)"/.exec(res.headers.get("content-disposition") ?? "")?.[1] ?? fallback, await res.blob())
 }

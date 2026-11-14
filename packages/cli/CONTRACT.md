@@ -150,3 +150,5 @@ Non-2xx bodies: `{ "error": { "code": "<machine_code>", "message": "<human text>
 | 5xx | `server_error` | retry |
 
 CLI exit codes: 0 ok, 1 error, 2 usage, 3 locked, 4 not signed in / unauthorized. `run` returns the child's code (128+n for signal n).
+
+All three CLIs print the same bytes. `dotenv` output (export, agent) is sorted by key in code-point order. Its lines and those of `dynamic get` are `KEY="value"`, with `\` `"` `$` and `` ` `` backslash-escaped and newlines written as `\n`, so `. file` or `eval` in a shell never runs a value. The token saved by `nimbus login` is only sent to the server it was saved for; pointing at another server (`--server`, `NIMBUS_SERVER`, `.nimbus.json`) needs `NIMBUS_TOKEN`.

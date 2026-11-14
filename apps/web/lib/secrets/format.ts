@@ -26,17 +26,29 @@ export function parseEnv(text: string): Parsed {
     let rest = m[2]
     let value: string
     if (rest.startsWith('"')) {
-      // Runs to the next unescaped quote, which may be on a later line.
-      let body = rest.slice(1)
-      let end = closing(body)
-      while (end < 0 && i + 1 < lines.length) {
-        body += "\n" + lines[++i]
-        end = closing(body)
+      // Runs to the next unescaped quote, which may be on a later line. Each line is
+      // scanned once (no growing string to rescan), so an unclosed quote is one pass.
+      const parts: string[] = []
+      let part = rest.slice(1)
+      let esc = false
+      let end = -1
+      for (;;) {
+        for (let j = 0; j < part.length && end < 0; j++) {
+          if (esc) esc = false
+          else if (part[j] === "\\") esc = true
+          else if (part[j] === '"') end = j
+        }
+        if (end >= 0 || i + 1 >= lines.length) break
+        parts.push(part)
+        part = lines[++i]
+        esc = false // the line break was the escaped character
       }
       if (end < 0) {
         errors.push(`Line ${i + 1}: unclosed quote.`)
         continue
       }
+      const body = [...parts, part].join("\n")
+      end += body.length - part.length
       value = body
         .slice(0, end)
         .replace(/\\(.)/g, (_, c) => (c === "n" ? "\n" : c === "r" ? "\r" : c === "t" ? "\t" : c))
@@ -52,19 +64,18 @@ export function parseEnv(text: string): Parsed {
   return { pairs, errors }
 }
 
-function closing(s: string) {
-  for (let i = 0; i < s.length; i++) {
-    if (s[i] === "\\") i++
-    else if (s[i] === '"') return i
-  }
-  return -1
-}
-
 // Nested objects become KEY_SUB_KEY; arrays and everything else become strings.
-export function flatten(obj: unknown, prefix = ""): Pair[] {
+// YAML aliases (*a) share one object: refused, since a few lines of them can stand
+// for billions of values.
+export function flatten(obj: unknown, prefix = "", seen = new Set<object>()): Pair[] {
+  if (obj && typeof obj === "object") {
+    if (seen.has(obj)) throw new Error("Aliases (*name) aren't supported in imports.")
+    seen.add(obj)
+    if (Array.isArray(obj)) obj.forEach((v) => flatten(v, "", seen))
+  }
   if (obj && typeof obj === "object" && !Array.isArray(obj))
     return Object.entries(obj).flatMap(([k, v]) =>
-      flatten(v, prefix ? `${prefix}_${k}` : k)
+      flatten(v, prefix ? `${prefix}_${k}` : k, seen)
     )
   const value =
     obj === null || obj === undefined
@@ -77,16 +88,18 @@ export function flatten(obj: unknown, prefix = ""): Pair[] {
 
 function structured(text: string, parse: (t: string) => unknown): Parsed {
   let data: unknown
+  let flat: Pair[]
   try {
     data = parse(text)
+    if (!data || typeof data !== "object" || Array.isArray(data))
+      return { pairs: [], errors: ["Expected an object of KEY: value."] }
+    flat = flatten(data)
   } catch (e) {
     return { pairs: [], errors: [(e as Error).message.split("\n")[0]] }
   }
-  if (!data || typeof data !== "object" || Array.isArray(data))
-    return { pairs: [], errors: ["Expected an object of KEY: value."] }
   const pairs: Pair[] = []
   const errors: string[] = []
-  for (const p of flatten(data))
+  for (const p of flat)
     if (KEY_RE.test(p.key)) pairs.push(p)
     else errors.push(`"${p.key}" isn't a valid key (letters, digits, underscore).`)
   return { pairs, errors }
@@ -117,7 +130,7 @@ export function parseAny(text: string, name?: string): Parsed {
 const quoteEnv = (v: string) =>
   /^[A-Za-z0-9_./:@%+,=-]*$/.test(v)
     ? v
-    : `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r")}"`
+    : `"${v.replace(/[\\"$`]/g, "\\$&").replace(/\n/g, "\\n").replace(/\r/g, "\\r")}"`
 
 export function serialize(pairs: Pair[], format: Format) {
   if (format === "json")

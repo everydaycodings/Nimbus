@@ -211,7 +211,7 @@ Good habits:
 
 - One token per app and environment, read only unless the app must write.
 - Set an expiry and rotate before it. Put the token in your platform's secret store (GitHub secret, Kubernetes Secret, systemd credential), never in the repository.
-- Set Allowed IPs for servers with fixed addresses. Behind a proxy, Nimbus reads the client address from `X-Forwarded-For`.
+- Set Allowed IPs for servers with fixed addresses. Behind a proxy, Nimbus reads the client address from `X-Real-IP`, or else the last `X-Forwarded-For` entry (the one your proxy added), so set one of them in the proxy as the bundled nginx does.
 - A token cannot create SSH certificates, and cannot reach another project.
 
 An admin can turn machine tokens off for the server. Existing tokens then answer `403`.
@@ -606,6 +606,10 @@ If you would rather not install anything on the server, let Nimbus copy the file
 
 Nimbus writes the `.env` to a temporary file with mode 600, renames it into place so readers never see half a file, and then runs your command. It pushes when you press Push and again whenever a secret in that environment changes, if you tick the automatic option. The first host key it sees is remembered and checked on later pushes. Use a key that can only write that one file. The last result is shown on the tab. Nothing needs to reach Nimbus from the server, but Nimbus must reach the server's SSH port, which needs the worker to be running.
 
+The command runs on your server, as the SSH user you entered, never on the Nimbus server. It may take up to two minutes; Nimbus keeps the last 4 KB of its output for the error message.
+
+If the server is only reachable through a bastion, add both on the **SSH** tab: the bastion as a host, and the server as a host with the bastion as its jump host. A push whose host and port match that entry goes through the same jump host, with the jump host's own key or CA certificate and its pinned host key. The tab shows "Goes through the jump host …" when that's the case. The jump host must allow TCP forwarding (`AllowTcpForwarding yes`, OpenSSH's default).
+
 The same from the command line, as a project admin (`--key` reads a private key file; `--key-id` picks a stored one):
 
 ```bash
@@ -743,6 +747,8 @@ Notes:
 
 A webhook calls your URL when a secret changes. It names the keys that changed, never the values, so use it as a signal to fetch again or to roll a deployment.
 
+Webhooks go to public addresses only, unless a Nimbus admin turns on **Allow private addresses in domain watch and webhooks** (Admin → Sharing → Secrets). Redirects aren't followed, and the receiver has 10 seconds to answer.
+
 Make one in the project: **Access**, **Webhooks**. Pick the environment, enter an `https://` URL and create it. The signing secret (`whsec_…`) is shown once. Press Test to send a `test` event. The tab keeps a delivery log.
 
 Project admins can do the same from the command line, or with the [API](#other-endpoints) and their CLI sign-in (machine tokens can't manage webhooks):
@@ -865,7 +871,7 @@ In the web app press **Issue certificate** on the SSH CA tab. The tab lists ever
 
 ### Browser terminal and saved hosts
 
-On the **SSH** tab, hosts store a name, address, user and a key or a certificate from the CA. **Open terminal** starts a shell in the browser (xterm.js). It needs an unlocked Secrets session and the Developer or Admin role. Start, end, host and duration are audited, and the host key seen first is pinned. **Export** gives a `~/.ssh/config` block. Self-hosters: the terminal needs the `ssh-terminal` service from `docker-compose.yml` and the `/ssh-ws` block in nginx (see the README).
+On the **SSH** tab, hosts store a name, address, user and a key or a certificate from the CA. **Open terminal** starts a shell in the browser (xterm.js). It needs an unlocked Secrets session and the Developer or Admin role. Start, end, host and duration are audited, and the host key seen first is pinned. A host can have a jump host (one hop): Nimbus connects to the jump host and opens the shell on the target through it, so the target only needs to be reachable from the jump host. **Export** gives a `~/.ssh/config` block, with `ProxyJump` for such hosts, so `ssh <name>` works the same way from a laptop. Self-hosters: the terminal needs the `ssh-terminal` service from `docker-compose.yml` and the `/ssh-ws` block in nginx (see the README).
 
 ## Certificates
 

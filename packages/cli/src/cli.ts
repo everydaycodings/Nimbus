@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process"
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { randomBytes } from "node:crypto"
 import { homedir, hostname, platform } from "node:os"
 import { dirname, join } from "node:path"
@@ -55,8 +55,7 @@ function readJson<T>(file: string): T {
 }
 function saveConfig(c: Config) {
   mkdirSync(configDir(), { recursive: true, mode: 0o700 })
-  writeFileSync(configFile(), JSON.stringify(c, null, 2), { mode: 0o600 })
-  chmodSync(configFile(), 0o600)
+  writeAtomic(configFile(), JSON.stringify(c, null, 2))
 }
 const projectFile = ".nimbus.json"
 
@@ -92,7 +91,10 @@ function ctx(flags: Record<string, string>): Ctx {
   const proj = readJson<Project>(projectFile)
   const server = (flags.server || process.env.NIMBUS_SERVER || proj.server || cfg.server || "").replace(/\/+$/, "")
   if (!server) throw new Fail("No server. Run `nimbus login --server URL` or set NIMBUS_SERVER.", 2)
-  return { server, token: process.env.NIMBUS_TOKEN || cfg.token }
+  // The saved sign-in only goes to the server it came from, never to one a cloned
+  // repo's .nimbus.json (or a stray --server) points at.
+  const saved = cfg.server?.replace(/\/+$/, "") === server ? cfg.token : undefined
+  return { server, token: process.env.NIMBUS_TOKEN || saved }
 }
 
 async function call(c: Ctx, method: string, path: string, opts: { body?: unknown; headers?: Record<string, string>; auth?: boolean } = {}) {
@@ -117,7 +119,7 @@ async function call(c: Ctx, method: string, path: string, opts: { body?: unknown
   const msg = j.error?.message || res.statusText
   if (res.status === 423)
     throw new Fail(`Secrets are locked. Unlock them in the web app${j.unlockUrl ? `: ${j.unlockUrl}` : ""}`, 3)
-  if (res.status === 401) throw new Fail(`Unauthorized: ${msg}. Run \`nimbus login\`.`, 4)
+  if (res.status === 401) throw new Fail(`Unauthorized: ${msg.replace(/\.$/, "")}. Run \`nimbus login\`.`, 4)
   throw new Fail(`${res.status}: ${msg}`)
 }
 
@@ -141,21 +143,28 @@ async function fetchSecrets(c: Ctx, flags: Record<string, string>, etag?: string
   return { secrets: (await res.json()) as Secret[], etag: res.headers.get("etag") ?? "" }
 }
 
-// Always quoted so values with spaces, #, quotes or newlines survive any dotenv parser.
-const q = (v: string) => `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n")}"`
+// Always quoted so values with spaces, #, quotes or newlines survive any dotenv parser;
+// $ and ` are escaped too, so sourcing the file (or eval) never runs a value.
+const q = (v: string) => `"${v.replace(/[\\"$`]/g, "\\$&").replace(/\n/g, "\\n")}"`
 function format(secrets: Secret[], fmt: string): string {
-  const sorted = [...secrets].sort((a, b) => a.key.localeCompare(b.key))
+  // Code-point order, the same as the Go binary and the bash script.
+  const sorted = [...secrets].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
   if (fmt === "json") return JSON.stringify(Object.fromEntries(sorted.map((s) => [s.key, s.value])), null, 2) + "\n"
   if (fmt === "yaml") return sorted.map((s) => `${s.key}: ${JSON.stringify(s.value)}\n`).join("")
   if (fmt === "dotenv") return sorted.map((s) => `${s.key}=${q(s.value)}\n`).join("")
   throw new Fail(`Unknown format "${fmt}" (dotenv, json, yaml)`, 2)
 }
 
+// A fresh 0600 file (wx: never through a planted symlink or someone else's file), then renamed over.
 function writeAtomic(file: string, data: string) {
-  const tmp = `${file}.${process.pid}.tmp`
-  writeFileSync(tmp, data, { mode: 0o600 })
-  chmodSync(tmp, 0o600)
-  renameSync(tmp, file)
+  const tmp = `${file}.${randomBytes(6).toString("hex")}.tmp`
+  writeFileSync(tmp, data, { mode: 0o600, flag: "wx" })
+  try {
+    renameSync(tmp, file)
+  } catch (e) {
+    rmSync(tmp, { force: true })
+    throw e
+  }
 }
 
 // ---- commands ---------------------------------------------------------------

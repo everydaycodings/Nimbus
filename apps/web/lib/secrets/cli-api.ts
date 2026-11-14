@@ -73,7 +73,8 @@ export async function principalCtx(p: Principal, ref: string | null): Promise<Ct
       throw new TokenError(403, "forbidden", "This token belongs to a different project.")
     const c = await systemCtx(p.projectId)
     if (!c) throw new TokenError(404, "not_found", "That project is gone.")
-    return { ...c, role: p.access === "rw" ? "developer" : "viewer", envs: p.envIds, actor: { id: null, name: `token: ${p.name}` } }
+    // The token's maker authors its change requests, so they can't approve their own edit.
+    return { ...c, role: p.access === "rw" ? "developer" : "viewer", envs: p.envIds, path: p.path, actor: { id: p.createdBy, name: `token: ${p.name}` } }
   }
   if (!ref) throw new TokenError(400, "bad_request", "Say which project (project=…).")
   const id = await memberProjectId(p.userId, ref)

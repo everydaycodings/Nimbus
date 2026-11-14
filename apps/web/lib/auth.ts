@@ -65,6 +65,7 @@ import {
   isTrustedEmail,
   readShareInvite,
 } from "./signup"
+import { ipFrom } from "@/lib/client-ip"
 
 // A provider is offered only when both of its keys are set.
 function provider(id: "GOOGLE" | "GITHUB") {
@@ -110,7 +111,7 @@ const onlyOidcError = (c: OidcConfig) =>
 // account added on top of another. Listed after twoFactor, whose hook clears
 // newSession while a sign-in still waits for its code.
 const requestIp = (h: Headers | undefined) =>
-  h?.get("x-forwarded-for")?.split(",")[0].trim() || h?.get("x-real-ip") || null
+  ipFrom(h)
 
 async function logEvent(
   h: Headers | undefined,
@@ -674,6 +675,9 @@ const options = {
   database: drizzleAdapter(db, { provider: "pg", schema }),
   // The Android app's scheme, for its OAuth return and the origin it sends.
   trustedOrigins: ["nimbus://"],
+  // Sign-in rate limits key on the IP nginx saw ($remote_addr), not the client-set
+  // first X-Forwarded-For entry (better-auth's default).
+  advanced: { ipAddress: { ipAddressHeaders: ["x-real-ip"] } },
   emailAndPassword: {
     enabled: true,
     // The floor an owner can choose; the before-hook applies their actual policy.

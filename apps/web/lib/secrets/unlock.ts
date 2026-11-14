@@ -129,19 +129,20 @@ async function open(sessionId: string, userId: string) {
     .where(eq(secretSettings.userId, userId))
 }
 
-async function fail(userId: string, message: string) {
-  // Counted in SQL so parallel guesses can't skip the limit.
+// Takes one try before checking anything, in SQL, so parallel guesses can't all slip in
+// before the count moves. Null while locked out. The try that reaches MAX_FAILS starts
+// the lockout; a right answer clears it again (open()).
+async function claimTry(userId: string) {
+  const expired = sql`${secretSettings.lockedUntil} is not null and ${secretSettings.lockedUntil} <= now()`
   const [r] = await db
     .update(secretSettings)
     .set({
-      fails: sql`${secretSettings.fails} + 1`,
-      lockedUntil: sql`case when ${secretSettings.fails} + 1 >= ${MAX_FAILS} then now() + ${`${LOCKOUT_MS / 1000} seconds`}::interval else ${secretSettings.lockedUntil} end`,
+      fails: sql`case when ${expired} then 1 else ${secretSettings.fails} + 1 end`,
+      lockedUntil: sql`case when (case when ${expired} then 1 else ${secretSettings.fails} + 1 end) >= ${MAX_FAILS} then now() + ${`${LOCKOUT_MS / 1000} seconds`}::interval else null end`,
     })
-    .where(eq(secretSettings.userId, userId))
+    .where(and(eq(secretSettings.userId, userId), sql`(${secretSettings.lockedUntil} is null or ${secretSettings.lockedUntil} <= now())`))
     .returning({ fails: secretSettings.fails })
-  return r && r.fails >= MAX_FAILS
-    ? "Too many wrong tries. Wait 5 minutes and try again."
-    : message
+  return r ?? null
 }
 
 const hashPin = async (pin: string) => {
@@ -252,12 +253,12 @@ export async function unlockWith(method: Method, input: unknown) {
   const s = await getSession()
   if (!s) return "Sign in first."
   const p = await prefs(s.user.id)
-  if (p.lockedUntil && p.lockedUntil > new Date())
-    return "Too many wrong tries. Wait a few minutes and try again."
   const { methods } = await methodsFor(s.user)
   if (!methods.includes(method)) return "That way of unlocking isn't available."
   const text = typeof input === "string" ? input.trim() : ""
   if (method !== "passkey" && !text) return "Enter it first."
+  const tried = await claimTry(s.user.id)
+  if (!tried) return "Too many wrong tries. Wait a few minutes and try again."
 
   let ok = false
   let wrong = "That isn't right."
@@ -277,7 +278,7 @@ export async function unlockWith(method: Method, input: unknown) {
     ok = await checkPasskey(s.session.id, s.user.id, input)
     wrong = "That passkey didn't work."
   }
-  if (!ok) return fail(s.user.id, wrong)
+  if (!ok) return tried.fails >= MAX_FAILS ? "Too many wrong tries. Wait 5 minutes and try again." : wrong
   await open(s.session.id, s.user.id)
   return null
 }

@@ -5,7 +5,8 @@ import { useCallback, useEffect, useState } from "react"
 
 import { api, errorText } from "@/components/secrets/client"
 import type { Detail } from "@/components/secrets/project-view"
-import { Confirm, Modal, SELECT } from "@/components/secrets/ui"
+import { Empty } from "@/components/secrets/pki-ui"
+import { Confirm, Loading, Modal, SELECT } from "@/components/secrets/ui"
 import { useNotice } from "@/components/toaster"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -82,17 +83,16 @@ export function SnapshotsView({ detail }: { detail: Detail }) {
       </div>
       <p role="alert" className="text-sm text-destructive empty:hidden">{error}</p>
       {moments === null ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <Loading />
       ) : moments.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed px-6 py-14 text-center">
-          <ClockCounterClockwiseIcon className="size-6 text-muted-foreground" />
-          <p className="font-medium">No changes here yet</p>
-        </div>
+        <Empty icon={<ClockCounterClockwiseIcon />} title="No changes here yet">
+          Each save shows up here as a moment you can go back to.
+        </Empty>
       ) : (
         <ol className="flex flex-col divide-y rounded-xl border" aria-label="Timeline">
           {moments.map((m, i) => (
             <li key={m.at} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-sm">
-              <span className="w-44 shrink-0 text-muted-foreground tabular-nums">{stamp.format(new Date(m.at))}</span>
+              <span className="w-48 shrink-0 whitespace-nowrap text-muted-foreground tabular-nums">{stamp.format(new Date(m.at))}</span>
               <span className="font-medium">{m.by}</span>
               <span>{summary(m.counts)}</span>
               <span className="font-mono text-xs text-muted-foreground">{m.keys.join(", ")}{m.more ? ` and ${m.more} more` : ""}</span>

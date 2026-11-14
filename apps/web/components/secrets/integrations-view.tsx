@@ -5,6 +5,7 @@ import { useState } from "react"
 
 import { useLoad } from "@/components/secrets/access-view"
 import { api, copySecret, errorText } from "@/components/secrets/client"
+import { Empty } from "@/components/secrets/pki-ui"
 import type { Detail } from "@/components/secrets/project-view"
 import { CHECKBOX, Confirm, Modal, SELECT } from "@/components/secrets/ui"
 import { SubmitButton } from "@/components/submit-button"
@@ -22,7 +23,7 @@ export function IntegrationsView({ detail, kind }: { detail: Detail; kind: "push
   return (
     <section className="flex flex-col gap-4" aria-label={kind === "push" ? "Server push" : "Webhooks"}>
       <div className="flex flex-wrap items-center gap-3">
-        <p className="max-w-prose flex-1 text-sm text-pretty text-muted-foreground">
+        <p className="max-w-prose flex-1 basis-72 text-sm text-pretty text-muted-foreground">
           {kind === "push"
             ? "Writes this environment's .env to a server over SSH (owner-only file, replaced in one step) and can run a command after, like restarting the app. Pushes happen on demand and again whenever a secret here changes."
             : "Sends a signed POST when a secret here changes. It names the project, the environment and the keys that changed, never their values."}{" "}
@@ -51,6 +52,7 @@ type PushCfg = {
   postCommand: string
   auto: boolean
   hostKey: string | null
+  via: string | null
   lastAt: string | null
   lastOk: boolean | null
   lastMessage: string | null
@@ -185,6 +187,11 @@ function Push({ detail, envId }: { detail: Detail; envId: string }) {
           <p role="status" className={cn("text-sm", note?.error ? "text-destructive" : "text-muted-foreground")}>{note?.text}</p>
         </div>
       </form>
+      {p?.via && (
+        <p className="text-sm text-muted-foreground" data-testid="push-via">
+          Goes through the jump host {p.via}, set on this host&rsquo;s entry in the SSH tab.
+        </p>
+      )}
       {p?.lastAt && (
         <p className="text-sm text-muted-foreground" data-testid="push-last">
           Last push {when(p.lastAt)}: <span className={p.lastOk ? undefined : "text-destructive"}>{p.lastMessage}</span>
@@ -280,7 +287,11 @@ function Webhooks({ detail, envId }: { detail: Detail; envId: string }) {
           </li>
         ))}
       </ul>
-      {data && !data.hooks.length && <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground"><p>No webhooks for this environment.</p><GuideLink to="webhooks">Payload and signature check</GuideLink></div>}
+      {data && !data.hooks.length && (
+        <Empty icon={<PaperPlaneTiltIcon />} title="No webhooks for this environment">
+          <GuideLink to="webhooks">Payload and signature check</GuideLink>
+        </Empty>
+      )}
       {data && data.deliveries.length > 0 && (
         <div className="flex flex-col gap-2">
           <h3 className="text-sm font-medium">Delivery log</h3>

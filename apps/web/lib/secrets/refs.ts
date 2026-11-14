@@ -4,7 +4,7 @@
 
 export type Scope = { env: string; folder: string } // folder is "a/b" or "" for the root
 export type Lookup = (env: string, folder: string, key: string) => string | undefined
-export type RefError = { kind: "cycle" | "missing"; message: string }
+export type RefError = { kind: "cycle" | "missing" | "limit"; message: string }
 
 const RE = /(\\)?\$\{([^}]*)\}/g
 
@@ -35,11 +35,22 @@ export const hasRefs = (value: string) => findRefs(value, { env: "", folder: "" 
 
 // `self` is "env.folder.KEY" of the secret being expanded, so a value that
 // loops back to itself is a cycle. Unresolvable references stay as written.
+// Each reference resolves once per call (memo), nesting stops at MAX_DEPTH and the
+// text built stops at MAX_EXPANDED, so ${A}${A} chains can't blow up time or memory.
+export const MAX_DEPTH = 32
+export const MAX_EXPANDED = 256 * 1024
 export function expand(value: string, scope: Scope, lookup: Lookup, self?: string) {
   const errors: RefError[] = []
+  const memo = new Map<string, string>()
+  let spent = 0
+  const limit = (message: string) => {
+    if (!errors.some((e) => e.kind === "limit")) errors.push({ kind: "limit", message })
+    spent = Infinity
+  }
   const walk = (v: string, at: Scope, stack: string[]): string =>
     v.replace(RE, (whole, esc: string | undefined, inner: string) => {
       if (esc) return whole.slice(1)
+      if (spent > MAX_EXPANDED) return whole
       const r = parseRef(inner, at)
       if (!r) return whole
       const id = label(r)
@@ -47,12 +58,26 @@ export function expand(value: string, scope: Scope, lookup: Lookup, self?: strin
         errors.push({ kind: "cycle", message: `Circular reference: ${[...stack, id].join(" → ")}` })
         return whole
       }
-      const found = lookup(r.env, r.folder, r.key)
-      if (found === undefined) {
-        errors.push({ kind: "missing", message: `No secret named ${id}` })
+      let out = memo.get(id)
+      if (out === undefined) {
+        const found = lookup(r.env, r.folder, r.key)
+        if (found === undefined) {
+          errors.push({ kind: "missing", message: `No secret named ${id}` })
+          return whole
+        }
+        if (stack.length >= MAX_DEPTH) {
+          limit(`References nest more than ${MAX_DEPTH} deep at ${id}`)
+          return whole
+        }
+        out = walk(found, { env: r.env, folder: r.folder }, [...stack, id])
+        memo.set(id, out)
+      }
+      spent += out.length
+      if (spent > MAX_EXPANDED) {
+        limit(`References expand to more than ${MAX_EXPANDED / 1024} KB`)
         return whole
       }
-      return walk(found, { env: r.env, folder: r.folder }, [...stack, id])
+      return out
     })
   const out = walk(value, scope, self ? [self] : [])
   return { value: out, errors }
