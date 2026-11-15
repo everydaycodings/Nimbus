@@ -2,7 +2,7 @@
 
 import { Menu } from "@base-ui/react/menu"
 import { CheckCircleIcon, DotsThreeIcon } from "@phosphor-icons/react"
-import { useEffect, useId, useState } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 
 import { MENU_POPUP } from "@/components/overlay-styles"
 import { Button } from "@/components/ui/button"
@@ -95,7 +95,7 @@ export function Empty({
   return (
     <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed px-4 py-12 text-center">
       <Icon className="size-8 text-muted-foreground" />
-      <p className="font-medium">{title}</p>
+      <h2 className="font-medium">{title}</h2>
       <div className="flex w-full max-w-lg flex-col items-center gap-3 text-sm text-pretty text-muted-foreground">{children}</div>
     </div>
   )
@@ -216,7 +216,8 @@ export function NameStatus({ id, check }: { id: string; check: NameCheck }) {
 }
 
 
-// The pill-shaped either/or switch used for tabs and "Pull by".
+// The pill-shaped either/or switch used for tabs and "Pull by". A radio group: one stop in the tab order,
+// arrow keys move the choice (and focus) like native radios.
 export function Segmented<T extends string>({
   label,
   value,
@@ -230,16 +231,28 @@ export function Segmented<T extends string>({
   onChange: (v: T) => void
   disabled?: boolean
 }) {
+  const group = useRef<HTMLDivElement>(null)
+  const step = (e: React.KeyboardEvent, i: number) => {
+    const to = { ArrowRight: i + 1, ArrowDown: i + 1, ArrowLeft: i - 1, ArrowUp: i - 1, Home: 0, End: options.length - 1 }[e.key]
+    if (to === undefined || disabled) return
+    e.preventDefault()
+    const next = (to + options.length) % options.length
+    onChange(options[next][0])
+    group.current?.querySelectorAll<HTMLElement>('[role="radio"]')[next]?.focus()
+  }
+  const current = Math.max(0, options.findIndex(([v]) => v === value))
   return (
-    <div role="radiogroup" aria-label={label} className="flex w-fit max-w-full rounded-lg bg-muted p-[3px]">
-      {options.map(([v, text]) => (
+    <div ref={group} role="radiogroup" aria-label={label} className="flex w-fit max-w-full rounded-lg bg-muted p-[3px]">
+      {options.map(([v, text], i) => (
         <button
           key={v}
           type="button"
           role="radio"
           aria-checked={value === v}
+          tabIndex={i === current ? 0 : -1}
           disabled={disabled}
           onClick={() => onChange(v)}
+          onKeyDown={(e) => step(e, i)}
           className="flex h-7 items-center rounded-md border border-transparent px-3 text-sm whitespace-nowrap text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50 pointer-coarse:h-11 aria-checked:border-input aria-checked:bg-input/30 aria-checked:text-foreground"
         >
           {text}

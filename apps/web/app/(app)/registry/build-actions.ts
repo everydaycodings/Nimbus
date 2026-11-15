@@ -59,6 +59,13 @@ export async function cancelBuild(id: string) {
   const me = await member()
   return me ? done(await builds.cancelBuild(me.id, id)) : NOT_ON
 }
+export async function newBadgeToken(repoId: string) {
+  const me = await member()
+  return me ? done(await builds.newBadgeToken(me.id, repoId)) : NOT_ON
+}
+export async function buildOutlook() {
+  return (await member()) ? builds.buildOutlook() : null
+}
 export async function retryBuild(id: string) {
   const me = await member()
   return me ? done(await builds.retryBuild(me.id, id)) : NOT_ON

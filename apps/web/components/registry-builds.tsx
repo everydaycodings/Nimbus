@@ -11,6 +11,7 @@ import {
   SpinnerGapIcon,
   StopCircleIcon,
   UploadSimpleIcon,
+  WarningIcon,
   XCircleIcon,
 } from "@phosphor-icons/react"
 import Link from "next/link"
@@ -18,6 +19,8 @@ import { useRouter } from "next/navigation"
 import { useEffect, useId, useRef, useState, useTransition } from "react"
 
 import { buildPage, startBuild } from "@/app/(app)/registry/build-actions"
+import { StatusBadge } from "@/components/registry-badge"
+import { SafetyLine, useOutlook } from "@/components/registry-build-safety"
 import { RuleSection, type PresetView, type RuleView } from "@/components/registry-build-rules"
 import { ConnectSources, SourceRow, type SourceView } from "@/components/registry-build-sources"
 import { DIALOG_BACKDROP, DIALOG_POPUP } from "@/components/overlay-styles"
@@ -30,11 +33,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
-import { TRIGGER_LABEL, ago, buildMs, duration, isActive, type BuildItem } from "@/lib/registry/build-view"
+import { TRIGGER_LABEL, ago, buildMs, duration, isActive, since, type BuildItem } from "@/lib/registry/build-view"
 
 // ---- status ------------------------------------------------------------------------------------
 
-const STATUS = {
+export const STATUS = {
   queued: { icon: ClockIcon, tone: "text-muted-foreground", label: "Queued" },
   waiting: { icon: HourglassMediumIcon, tone: "text-warning", label: "Waiting" },
   running: { icon: SpinnerGapIcon, tone: "text-brand", label: "Running" },
@@ -44,28 +47,34 @@ const STATUS = {
   stopped: { icon: StopCircleIcon, tone: "text-warning", label: "Stopped" },
 } as const
 
-// Ticks once a second while `on`.
+// Ticks once a second while `on`. Null until the page is on screen, so server and browser render the same text.
 export function useNow(on: boolean) {
-  const [now, setNow] = useState(() => Date.now())
+  const [now, setNow] = useState<number | null>(null)
   useEffect(() => {
     if (!on) return
+    const first = setTimeout(() => setNow(Date.now()), 0)
     const t = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(t)
+    return () => {
+      clearTimeout(first)
+      clearInterval(t)
+    }
   }, [on])
   return now
 }
 
-export function StatusChip({ status, startedAt, reason }: Pick<BuildItem, "status" | "startedAt"> & { reason?: string | null }) {
+// Running shows how long it has been going; waiting or queued shows how long it has stood in line.
+export function StatusChip({ status, startedAt, createdAt }: Pick<BuildItem, "status" | "startedAt" | "createdAt">) {
   const s = STATUS[status]
-  const now = useNow(status === "running")
+  const now = useNow(isActive(status))
   const Icon = s.icon
-  const ms = status === "running" ? buildMs({ startedAt, finishedAt: null }, now) : null
+  const ms = status === "running" && now !== null ? buildMs({ startedAt, finishedAt: null }, now) : null
+  const waited = (status === "waiting" || status === "queued") && now !== null ? since(now - Date.parse(createdAt)) : null
   return (
     <Badge variant="outline" className="py-1 pointer-coarse:py-1.5">
       <Icon aria-hidden weight={status === "running" ? "bold" : "fill"} className={cn(s.tone, status === "running" && "animate-spin motion-reduce:animate-none")} />
       {s.label}
       {ms !== null && <span className="text-muted-foreground tabular-nums">{duration(ms)}</span>}
-      {reason && status === "waiting" && <span className="sr-only">: {reason}</span>}
+      {waited !== null && <span className="text-muted-foreground tabular-nums">{waited}</span>}
     </Badge>
   )
 }
@@ -85,7 +94,7 @@ export function LatestBuild({ name, b }: { name: string; b: BuildItem }) {
   return (
     <div className="relative flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border bg-card px-4 py-3 hover:bg-accent/30 focus-within:bg-accent/30">
       <span className="text-sm font-medium">Latest build</span>
-      <StatusChip status={b.status} startedAt={b.startedAt} reason={b.reason} />
+      <StatusChip status={b.status} startedAt={b.startedAt} createdAt={b.createdAt} />
       <Link
         href={detailHref(name, b.id)}
         className="min-w-0 rounded-sm font-mono text-sm break-all outline-none after:absolute after:inset-0 focus-visible:ring-[3px] focus-visible:ring-ring/50"
@@ -100,8 +109,8 @@ export function LatestBuild({ name, b }: { name: string; b: BuildItem }) {
 }
 
 // Settings: how to check that an image really came from this server's builds.
-export function SigningSection({ host, name, publicKey }: { host: string; name: string; publicKey: string | null }) {
-  const command = `cosign verify --key nimbus.pub ${host}/${name}:latest`
+export function SigningSection({ host, name, publicKey, signedTag }: { host: string; name: string; publicKey: string | null; signedTag: string | null }) {
+  const command = `cosign verify --key nimbus.pub ${host}/${name}:${signedTag}`
   const download = () => {
     const url = URL.createObjectURL(new Blob([publicKey ?? ""], { type: "text/plain" }))
     const a = document.createElement("a")
@@ -111,19 +120,23 @@ export function SigningSection({ host, name, publicKey }: { host: string; name: 
     URL.revokeObjectURL(url)
   }
   return (
-    <section className={SECTION} aria-labelledby="signing-heading">
+    <section id="signing" className={cn(SECTION, "scroll-mt-20")} aria-labelledby="signing-heading">
       <Heading id="signing-heading" title="Image signing" hint="Images built here are signed with this server's key, so anyone can check where an image came from." />
       <div className="grid gap-3 rounded-xl border bg-card p-4">
         {publicKey ? (
           <>
             <div className="grid gap-1.5">
               <span className="text-sm font-medium">Check an image</span>
-              <div className="relative">
-                <Code copy>{command}</Code>
-                <div className="absolute top-2 right-2">
-                  <CopyButton value={command} label="Copy the verify command" className={TOUCH} />
+              {signedTag ? (
+                <div className="relative">
+                  <Code copy>{command}</Code>
+                  <div className="absolute top-2 right-2">
+                    <CopyButton value={command} label="Copy the verify command" className={TOUCH} />
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <p className="text-sm text-pretty text-muted-foreground">Nothing is signed yet. Once a build has finished, a command that checks its image shows here.</p>
+              )}
             </div>
             <div className="grid gap-1.5">
               <span className="text-sm font-medium">Public key (nimbus.pub)</span>
@@ -149,7 +162,7 @@ export function SigningSection({ host, name, publicKey }: { host: string; name: 
 // ---- the tab ----------------------------------------------------------------------------------
 
 export type BuildsTabProps = {
-  repo: { id: string; fullName: string; canAdmin: boolean; archived: boolean }
+  repo: { id: string; fullName: string; canAdmin: boolean; archived: boolean; isPublic: boolean }
   source: SourceView | null
   rules: RuleView[]
   presets: PresetView[]
@@ -157,18 +170,21 @@ export type BuildsTabProps = {
   initial: { rows: BuildItem[]; more: boolean }
   scanOn: boolean
   arch: string
+  badge: { base: string; token: string | null }
 }
 
-export function BuildsTab({ repo, source, rules, presets, platforms, initial, scanOn, arch }: BuildsTabProps) {
+export function BuildsTab({ repo, source, rules, presets, platforms, initial, scanOn, arch, badge }: BuildsTabProps) {
   if (!source)
     return repo.canAdmin ? (
-      <ConnectSources repoId={repo.id} fullName={repo.fullName} />
+      <ConnectSources repoId={repo.id} fullName={repo.fullName} scanOn={scanOn} />
     ) : (
       <Empty icon={HammerIcon} title="No build source yet">
         <p>A repository admin can connect GitHub, a git URL or uploads here. You can still build once it is set up.</p>
       </Empty>
     )
   const suggestions = rules.filter((r) => r.enabled && !/^re:|[*?,]/.test(r.pattern)).map((r) => ({ type: r.sourceType, name: r.pattern }))
+  // The tags each rule produces, to warn before an upload replaces one of them.
+  const produced = rules.filter((r) => r.enabled).map((r) => ({ pattern: r.pattern, tags: [...new Set([...r.tags, ...r.preview])] }))
   return (
     <div className="flex flex-col gap-8">
       <SourceRow repoId={repo.id} source={source} canAdmin={repo.canAdmin} />
@@ -179,11 +195,12 @@ export function BuildsTab({ repo, source, rules, presets, platforms, initial, sc
         <Heading id="history-heading" title="Build history" hint="The last 50 builds. Open one to read its log.">
           <div className="flex flex-wrap gap-2">
             {source.kind !== "upload" && <BuildNow repoId={repo.id} suggestions={suggestions} disabled={repo.archived} />}
-            <UploadBuild repoId={repo.id} primary={source.kind === "upload"} disabled={repo.archived} />
+            <UploadBuild repoId={repo.id} fullName={repo.fullName} primary={source.kind === "upload"} disabled={repo.archived} datedTag={source.kind !== "upload"} produced={produced} />
           </div>
         </Heading>
         <History name={repo.fullName} initial={initial} />
       </section>
+      <StatusBadge repoId={repo.id} base={badge.base} name={repo.fullName} isPublic={repo.isPublic} token={badge.token} canAdmin={repo.canAdmin} />
     </div>
   )
 }
@@ -211,7 +228,7 @@ function History({ name, initial }: { name: string; initial: { rows: BuildItem[]
   if (rows.length === 0)
     return (
       <p className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
-        No builds yet. They show up here when a push matches a rule, or when you press Build now.
+        No builds yet. They show up here when a push matches a rule, or when you press Build now or upload an archive.
       </p>
     )
   return (
@@ -242,16 +259,18 @@ function History({ name, initial }: { name: string; initial: { rows: BuildItem[]
 }
 
 function BuildRowItem({ name, b }: { name: string; b: BuildItem }) {
-  const now = useNow(isActive(b.status))
-  const ms = buildMs(b, now)
-  const what = b.ref ?? (b.trigger === "cli" || b.trigger === "upload" ? "Uploaded folder" : "Build")
+  const now = useNow(b.status === "running")
+  const ms = b.status === "running" ? (now === null ? null : buildMs(b, now)) : isActive(b.status) ? null : buildMs(b)
+  const what = b.ref ?? (b.trigger === "cli" || b.trigger === "upload" ? "Uploaded archive" : "Build")
   return (
     <li className="relative flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 hover:bg-accent/30 focus-within:bg-accent/30">
       <div className="grid min-w-0 flex-1 basis-56 gap-1.5">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <StatusChip status={b.status} startedAt={b.startedAt} reason={b.reason} />
+          <StatusChip status={b.status} startedAt={b.startedAt} createdAt={b.createdAt} />
           <Link
             href={detailHref(name, b.id)}
+            aria-label={`Build of ${what}, ${STATUS[b.status].label.toLowerCase()}, ${ago(b.createdAt)}`}
+            suppressHydrationWarning
             className="min-w-0 rounded-sm font-mono text-sm font-medium break-all outline-none after:absolute after:inset-0 focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
             {what}
@@ -281,7 +300,7 @@ function BuildRowItem({ name, b }: { name: string; b: BuildItem }) {
         </div>
       )}
       <div className="grid w-full justify-items-start gap-0.5 text-xs text-muted-foreground tabular-nums sm:w-auto sm:min-w-24 sm:justify-items-end">
-        <span>{ms === null ? "Not started" : duration(ms)}</span>
+        <span>{ms !== null ? duration(ms) : b.status === "running" ? "Running" : isActive(b.status) ? "Not started" : "No time recorded"}</span>
         <span suppressHydrationWarning>{ago(b.createdAt)}</span>
       </div>
     </li>
@@ -298,6 +317,8 @@ function BuildNow({ repoId, suggestions, disabled }: { repoId: string; suggestio
   const [name, setName] = useState(suggestions[0]?.name ?? "")
   const [error, setError] = useState<string>()
   const [pending, start] = useTransition()
+  const outlook = useOutlook(open)
+  const queued = Boolean(outlook && (outlook.wait || outlook.ahead > 0))
   const go = () =>
     start(async () => {
       setError(undefined)
@@ -307,100 +328,131 @@ function BuildNow({ repoId, suggestions, disabled }: { repoId: string; suggestio
       router.push(`?tab=builds&build=${r.id}`)
     })
   return (
-    <>
-      <Button className={TOUCH} disabled={disabled} onClick={() => setOpen(true)}>
+    <Dialog.Root open={open} onOpenChange={(o) => !pending && setOpen(o)}>
+      <Dialog.Trigger render={<Button className={TOUCH} disabled={disabled} />}>
         <PlayIcon weight="fill" />
         Build now
-      </Button>
-      <Dialog.Root open={open} onOpenChange={(o) => !pending && setOpen(o)}>
-        <Dialog.Portal>
-          <Dialog.Backdrop className={DIALOG_BACKDROP} />
-          <Dialog.Popup className={DIALOG_POPUP}>
+      </Dialog.Trigger>
+      <Dialog.Portal>
+        <Dialog.Backdrop className={DIALOG_BACKDROP} />
+        <Dialog.Popup className={DIALOG_POPUP}>
+          <div className="grid gap-1.5">
+            <Dialog.Title className="text-base font-semibold">Build now</Dialog.Title>
+            <Dialog.Description className="text-sm text-pretty text-muted-foreground">
+              Builds the newest commit of a branch or tag, with the first rule that matches it.
+            </Dialog.Description>
+          </div>
+          <form
+            className="grid gap-4"
+            onSubmit={(e) => {
+              e.preventDefault()
+              go()
+            }}
+          >
+            <Segmented
+              label="Build a"
+              value={type}
+              options={[
+                ["branch", "Branch"],
+                ["tag", "Tag"],
+              ]}
+              onChange={setType}
+            />
             <div className="grid gap-1.5">
-              <Dialog.Title className="text-base font-semibold">Build now</Dialog.Title>
-              <Dialog.Description className="text-sm text-pretty text-muted-foreground">
-                Builds the newest commit of a branch or tag, with the first rule that matches it.
-              </Dialog.Description>
-            </div>
-            <form
-              className="grid gap-4"
-              onSubmit={(e) => {
-                e.preventDefault()
-                go()
-              }}
-            >
-              <Segmented
-                label="Build a"
-                value={type}
-                options={[
-                  ["branch", "Branch"],
-                  ["tag", "Tag"],
-                ]}
-                onChange={setType}
+              <Label htmlFor={`${id}-ref`}>{type === "branch" ? "Branch name" : "Tag name"}</Label>
+              <Input
+                id={`${id}-ref`}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder={type === "branch" ? "main" : "v1.2.3"}
+                className="font-mono pointer-coarse:h-11"
+                autoComplete="off"
+                spellCheck={false}
+                autoFocus
               />
-              <div className="grid gap-1.5">
-                <Label htmlFor={`${id}-ref`}>{type === "branch" ? "Branch name" : "Tag name"}</Label>
-                <Input
-                  id={`${id}-ref`}
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder={type === "branch" ? "main" : "v1.2.3"}
-                  className="font-mono pointer-coarse:h-11"
-                  autoComplete="off"
-                  spellCheck={false}
-                  autoFocus
-                />
-                {suggestions.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-xs text-muted-foreground">From your rules:</span>
-                    {suggestions.map((s) => (
-                      <button
-                        key={`${s.type}:${s.name}`}
-                        type="button"
-                        onClick={() => (setType(s.type), setName(s.name))}
-                        className="rounded-md outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:min-h-11"
-                      >
-                        <Badge variant="outline" className="font-mono hover:bg-accent">
-                          {s.name}
-                        </Badge>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <FormError>{error}</FormError>
-              <div className="flex justify-end gap-2">
-                <Dialog.Close disabled={pending} render={<Button type="button" variant="outline" className={TOUCH} />}>
-                  Cancel
-                </Dialog.Close>
-                <SubmitButton pending={pending} disabled={!name.trim()} className={TOUCH}>
-                  Start build
-                </SubmitButton>
-              </div>
-            </form>
-          </Dialog.Popup>
-        </Dialog.Portal>
-      </Dialog.Root>
-    </>
+              {suggestions.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs text-muted-foreground">From your rules:</span>
+                  {suggestions.map((s) => (
+                    <button
+                      key={`${s.type}:${s.name}`}
+                      type="button"
+                      onClick={() => (setType(s.type), setName(s.name))}
+                      className="rounded-md outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:min-h-11"
+                    >
+                      <Badge variant="outline" className="font-mono hover:bg-accent">
+                        {s.name}
+                      </Badge>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="grid gap-1.5">
+              {outlook && queued && (
+                <p role="status" className="flex items-start gap-2 text-sm text-pretty">
+                  <HourglassMediumIcon aria-hidden weight="fill" className="mt-0.5 size-4 shrink-0 text-warning" />
+                  <span>
+                    {outlook.wait ? `This will wait: server busy (${outlook.wait}).` : `${outlook.ahead} ${outlook.ahead === 1 ? "build is" : "builds are"} ahead of you.`}{" "}
+                    <span className="text-muted-foreground">It starts by itself when there is room.</span>
+                  </span>
+                </p>
+              )}
+              <SafetyLine o={outlook} />
+            </div>
+            <FormError>{error}</FormError>
+            <div className="flex justify-end gap-2">
+              <Dialog.Close disabled={pending} render={<Button type="button" variant="outline" className={TOUCH} />}>
+                Cancel
+              </Dialog.Close>
+              <SubmitButton pending={pending} disabled={!name.trim()} className={TOUCH}>
+                {queued ? "Queue build" : "Start build"}
+              </SubmitButton>
+            </div>
+          </form>
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
   )
 }
 
-// ---- Upload a folder ------------------------------------------------------------------------------------
+// ---- Build from an archive ------------------------------------------------------------------------------
 
 const ACCEPT = ".zip,.tar,.tar.gz,.tgz"
+const today = () => new Date().toLocaleDateString("sv")
 
-export function UploadBuild({ repoId, primary, disabled, inline }: { repoId: string; primary?: boolean; disabled?: boolean; inline?: boolean }) {
+// `datedTag`: the repository builds from git, so an upload must not take over `latest`; it defaults to upload-<date>.
+// `produced`: what each rule tags, to warn when a typed tag is one of them.
+export function UploadBuild({
+  repoId,
+  fullName,
+  primary,
+  disabled,
+  datedTag,
+  produced,
+}: {
+  repoId: string
+  fullName: string
+  primary?: boolean
+  disabled?: boolean
+  datedTag?: boolean
+  produced: { pattern: string; tags: string[] }[]
+}) {
   const router = useRouter()
   const id = useId()
   const input = useRef<HTMLInputElement>(null)
   const [open, setOpen] = useState(false)
   const [file, setFile] = useState<File | null>(null)
-  const [tags, setTags] = useState("latest")
+  const [tags, setTags] = useState(() => (datedTag ? `upload-${today()}` : "latest"))
   const [dockerfile, setDockerfile] = useState("")
   const [over, setOver] = useState(false)
   const [progress, setProgress] = useState<number | null>(null)
   const [error, setError] = useState<string>()
   const xhr = useRef<XMLHttpRequest | null>(null)
+
+  const typed = tags.split(",").map((t) => t.trim()).filter(Boolean)
+  const clash = produced.find((r) => r.tags.some((t) => typed.includes(t)))
+  const command = `nimbus registry build . -t ${fullName}:${typed[0] ?? "latest"}`
 
   const pick = (f: File | undefined | null) => {
     if (!f) return
@@ -434,84 +486,100 @@ export function UploadBuild({ repoId, primary, disabled, inline }: { repoId: str
   }
   const busy = progress !== null
   return (
-    <>
-      <Button variant={primary ? "default" : "outline"} className={cn(TOUCH, inline && "w-fit")} disabled={disabled} onClick={() => setOpen(true)}>
+    <Dialog.Root
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) xhr.current?.abort()
+        setOpen(o)
+      }}
+    >
+      <Dialog.Trigger render={<Button variant={primary ? "default" : "outline"} className={TOUCH} disabled={disabled} />}>
         <UploadSimpleIcon />
-        Upload a folder
-      </Button>
-      <Dialog.Root
-        open={open}
-        onOpenChange={(o) => {
-          if (!o) xhr.current?.abort()
-          setOpen(o)
-        }}
-      >
-        <Dialog.Portal>
-          <Dialog.Backdrop className={DIALOG_BACKDROP} />
-          <Dialog.Popup className={DIALOG_POPUP}>
-            <div className="grid gap-1.5">
-              <Dialog.Title className="text-base font-semibold">Build from a folder</Dialog.Title>
-              <Dialog.Description className="text-sm text-pretty text-muted-foreground">
-                Upload your project as a .zip or .tar, with its Dockerfile inside. Up to 2 GB.
-              </Dialog.Description>
-            </div>
-            <form
-              className="grid gap-4"
-              onSubmit={(e) => {
+        Build from an archive
+      </Dialog.Trigger>
+      <Dialog.Portal>
+        <Dialog.Backdrop className={DIALOG_BACKDROP} />
+        <Dialog.Popup className={DIALOG_POPUP}>
+          <div className="grid gap-1.5">
+            <Dialog.Title className="text-base font-semibold">Build from an archive (.zip or .tar)</Dialog.Title>
+            <Dialog.Description className="text-sm text-pretty text-muted-foreground">
+              Upload your project as a .zip or .tar with its Dockerfile inside. Up to 2 GB.
+            </Dialog.Description>
+          </div>
+          <form
+            className="grid grid-cols-[minmax(0,1fr)] gap-4"
+            onSubmit={(e) => {
+              e.preventDefault()
+              send()
+            }}
+          >
+            <label
+              htmlFor={`${id}-file`}
+              onDragOver={(e) => (e.preventDefault(), setOver(true))}
+              onDragLeave={() => setOver(false)}
+              onDrop={(e) => {
                 e.preventDefault()
-                send()
+                setOver(false)
+                pick(e.dataTransfer.files[0])
               }}
-            >
-              <label
-                htmlFor={`${id}-file`}
-                onDragOver={(e) => (e.preventDefault(), setOver(true))}
-                onDragLeave={() => setOver(false)}
-                onDrop={(e) => {
-                  e.preventDefault()
-                  setOver(false)
-                  pick(e.dataTransfer.files[0])
-                }}
-                className={cn(
-                  "flex min-h-28 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-dashed px-4 py-6 text-center text-sm has-focus-visible:ring-[3px] has-focus-visible:ring-ring/50",
-                  over && "border-ring bg-input/30"
-                )}
-              >
-                <UploadSimpleIcon aria-hidden className="size-6 text-muted-foreground" />
-                {file ? (
-                  <span className="font-medium break-all">{file.name}</span>
-                ) : (
-                  <span>
-                    Drop a file here, or <span className="underline underline-offset-4">choose one</span>
-                  </span>
-                )}
-                <input id={`${id}-file`} ref={input} type="file" accept={ACCEPT} className="sr-only" onChange={(e) => pick(e.target.files?.[0])} />
-              </label>
-              <div className="grid gap-1.5">
-                <Label htmlFor={`${id}-tags`}>Image tags</Label>
-                <Input id={`${id}-tags`} value={tags} onChange={(e) => setTags(e.target.value)} className="font-mono pointer-coarse:h-11" spellCheck={false} autoComplete="off" />
-                <p className="text-xs text-muted-foreground">Separate several with commas.</p>
-              </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor={`${id}-df`}>Dockerfile path (optional)</Label>
-                <Input id={`${id}-df`} value={dockerfile} onChange={(e) => setDockerfile(e.target.value)} placeholder="Dockerfile" className="font-mono pointer-coarse:h-11" spellCheck={false} autoComplete="off" />
-              </div>
-              {busy && (
-                <div role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} aria-label="Uploading" className="h-1.5 overflow-hidden rounded-full bg-muted">
-                  <div className="h-full bg-primary transition-[width]" style={{ width: `${progress}%` }} />
-                </div>
+              className={cn(
+                "flex min-h-28 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-dashed px-4 py-6 text-center text-sm has-focus-visible:ring-[3px] has-focus-visible:ring-ring/50",
+                over && "border-ring bg-input/30"
               )}
-              <FormError>{error}</FormError>
-              <div className="flex justify-end gap-2">
-                <Dialog.Close render={<Button type="button" variant="outline" className={TOUCH} />}>Cancel</Dialog.Close>
-                <SubmitButton pending={busy} disabled={!file || !tags.trim()} className={TOUCH}>
-                  Upload and build
-                </SubmitButton>
+            >
+              <UploadSimpleIcon aria-hidden className="size-6 text-muted-foreground" />
+              {file ? (
+                <span className="font-medium break-all">{file.name}</span>
+              ) : (
+                <span>
+                  Drop a file here, or <span className="underline underline-offset-4">choose one</span>
+                </span>
+              )}
+              <input id={`${id}-file`} ref={input} type="file" accept={ACCEPT} className="sr-only" onChange={(e) => pick(e.target.files?.[0])} />
+            </label>
+            <div className="grid gap-1.5">
+              <Label htmlFor={`${id}-tags`}>Image tags</Label>
+              <Input id={`${id}-tags`} value={tags} onChange={(e) => setTags(e.target.value)} className="font-mono pointer-coarse:h-11" spellCheck={false} autoComplete="off" aria-describedby={`${id}-tags-help`} />
+              <p id={`${id}-tags-help`} className="text-xs text-muted-foreground">
+                Separate several with commas.{datedTag ? " A dated tag keeps this upload apart from what your rules build." : ""}
+              </p>
+              {clash && (
+                <p role="status" className="flex items-start gap-2 text-sm text-pretty">
+                  <WarningIcon aria-hidden weight="fill" className="mt-0.5 size-4 shrink-0 text-warning" />
+                  <span>
+                    This replaces the image your <span className="font-mono">{clash.pattern}</span> rule builds.
+                  </span>
+                </p>
+              )}
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor={`${id}-df`}>Dockerfile path (optional)</Label>
+              <Input id={`${id}-df`} value={dockerfile} onChange={(e) => setDockerfile(e.target.value)} placeholder="Dockerfile" className="font-mono pointer-coarse:h-11" spellCheck={false} autoComplete="off" />
+            </div>
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-1.5">
+              <span className="text-xs text-muted-foreground">Or from a folder, with the Nimbus CLI signed in:</span>
+              <div className="relative">
+                <Code copy>{command}</Code>
+                <div className="absolute top-2 right-2">
+                  <CopyButton value={command} label="Copy the CLI command" className={TOUCH} />
+                </div>
               </div>
-            </form>
-          </Dialog.Popup>
-        </Dialog.Portal>
-      </Dialog.Root>
-    </>
+            </div>
+            {busy && (
+              <div role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} aria-label="Uploading" className="h-1.5 overflow-hidden rounded-full bg-muted">
+                <div className="h-full bg-primary transition-[width]" style={{ width: `${progress}%` }} />
+              </div>
+            )}
+            <FormError>{error}</FormError>
+            <div className="flex justify-end gap-2">
+              <Dialog.Close render={<Button type="button" variant="outline" className={TOUCH} />}>Cancel</Dialog.Close>
+              <SubmitButton pending={busy} disabled={!file || !tags.trim()} className={TOUCH}>
+                Upload and build
+              </SubmitButton>
+            </div>
+          </form>
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
   )
 }
-

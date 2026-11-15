@@ -238,7 +238,7 @@ export default async function RegistryAdminPage() {
                 id="registry-build-concurrency"
                 label="Builds at the same time"
                 htmlFor="registryBuildConcurrency"
-                hint="The rest wait in line. Restart the build runner after changing this."
+                hint={<>The rest wait in line. Restart the build runner after changing this: <code className="font-mono">docker compose restart build-runner</code>.</>}
                 tip={{
                   does: "How many builds run together. Each build uses a lot of memory and CPU.",
                   affects: "The build runner, the next time it starts.",
@@ -262,7 +262,10 @@ export default async function RegistryAdminPage() {
                 tip={{ does: "Ends builds that hang or take far too long.", affects: "Every build, from the next one.", default: `${BUILD_DEFAULTS.timeoutMin} minutes` }}
                 reset={reset("registryBuildTimeoutMin")}
               >
-                <Input id="registryBuildTimeoutMin" name="registryBuildTimeoutMin" type="number" min={1} max={720} step={1} defaultValue={s.registryBuildTimeoutMin} />
+                <div className="flex items-center gap-2">
+                  <Input id="registryBuildTimeoutMin" name="registryBuildTimeoutMin" type="number" min={1} max={720} step={1} defaultValue={s.registryBuildTimeoutMin} />
+                  <span className="shrink-0 text-sm text-muted-foreground">minutes</span>
+                </div>
               </SettingRow>
               <SettingRow
                 id="registry-build-preflight-ram"
@@ -272,7 +275,10 @@ export default async function RegistryAdminPage() {
                 tip={{ does: "Keeps a new build from starting on a server that is already busy.", affects: "Builds that haven't started.", default: `${BUILD_DEFAULTS.preflightRamPct}%` }}
                 reset={reset("registryBuildPreflightRamPct")}
               >
-                <Input id="registryBuildPreflightRamPct" name="registryBuildPreflightRamPct" type="number" min={10} max={99} step={1} defaultValue={s.registryBuildPreflightRamPct} />
+                <div className="flex items-center gap-2">
+                  <Input id="registryBuildPreflightRamPct" name="registryBuildPreflightRamPct" type="number" min={10} max={99} step={1} defaultValue={s.registryBuildPreflightRamPct} />
+                  <span className="shrink-0 text-sm text-muted-foreground">%</span>
+                </div>
               </SettingRow>
               <SettingRow
                 id="registry-build-guard-ram"
@@ -282,7 +288,10 @@ export default async function RegistryAdminPage() {
                 tip={{ does: "Protects Nimbus from a build that eats all the memory.", affects: "Running builds, checked every 5 seconds.", default: `${BUILD_DEFAULTS.guardRamPct}%` }}
                 reset={reset("registryBuildGuardRamPct")}
               >
-                <Input id="registryBuildGuardRamPct" name="registryBuildGuardRamPct" type="number" min={10} max={99} step={1} defaultValue={s.registryBuildGuardRamPct} />
+                <div className="flex items-center gap-2">
+                  <Input id="registryBuildGuardRamPct" name="registryBuildGuardRamPct" type="number" min={10} max={99} step={1} defaultValue={s.registryBuildGuardRamPct} />
+                  <span className="shrink-0 text-sm text-muted-foreground">%</span>
+                </div>
               </SettingRow>
               <SettingRow
                 id="registry-build-min-disk"
@@ -292,7 +301,10 @@ export default async function RegistryAdminPage() {
                 tip={{ does: "Keeps a new build from starting when the disk is nearly full.", affects: "Builds that haven't started.", default: `${BUILD_DEFAULTS.minDiskGb} GB` }}
                 reset={reset("registryBuildMinDiskGb")}
               >
-                <Input id="registryBuildMinDiskGb" name="registryBuildMinDiskGb" type="number" min={0} max={10000} step={1} defaultValue={s.registryBuildMinDiskGb} />
+                <div className="flex items-center gap-2">
+                  <Input id="registryBuildMinDiskGb" name="registryBuildMinDiskGb" type="number" min={0} max={10000} step={1} defaultValue={s.registryBuildMinDiskGb} />
+                  <span className="shrink-0 text-sm text-muted-foreground">GB</span>
+                </div>
               </SettingRow>
               <SettingRow
                 id="registry-build-guard-disk"
@@ -302,16 +314,19 @@ export default async function RegistryAdminPage() {
                 tip={{ does: "Protects Nimbus from a build that fills the disk.", affects: "Running builds, checked every 5 seconds.", default: `${BUILD_DEFAULTS.guardDiskGb} GB` }}
                 reset={reset("registryBuildGuardDiskGb")}
               >
-                <Input id="registryBuildGuardDiskGb" name="registryBuildGuardDiskGb" type="number" min={0} max={10000} step={1} defaultValue={s.registryBuildGuardDiskGb} />
+                <div className="flex items-center gap-2">
+                  <Input id="registryBuildGuardDiskGb" name="registryBuildGuardDiskGb" type="number" min={0} max={10000} step={1} defaultValue={s.registryBuildGuardDiskGb} />
+                  <span className="shrink-0 text-sm text-muted-foreground">GB</span>
+                </div>
               </SettingRow>
               <SettingRow
                 id="registry-build-caps"
                 label="Memory and CPU for builds"
-                hint="Fixed when the server was set up, so a build can never use more. Change them in setup."
+                hint={<>Fixed on the BuildKit container, so a build can never use more. To change them, edit BUILD_MEM and BUILD_CPUS in <code className="font-mono">.env</code>, then run <code className="font-mono">docker compose up -d buildkitd</code>.</>}
               >
                 <p className="text-sm tabular-nums">
-                  {process.env.BUILD_MEM ?? "Set in setup"}
-                  {process.env.BUILD_CPUS ? `, ${process.env.BUILD_CPUS} CPUs` : ""}
+                  {(process.env.BUILD_MEM ?? "2g").replace(/g$/i, " GB").replace(/m$/i, " MB")}, {process.env.BUILD_CPUS ?? "1"} {(process.env.BUILD_CPUS ?? "1") === "1" ? "CPU" : "CPUs"}
+                  {process.env.BUILD_MEM && process.env.BUILD_CPUS ? "" : " (the defaults; not set in this server's environment)"}
                 </p>
               </SettingRow>
             </SettingsForm>

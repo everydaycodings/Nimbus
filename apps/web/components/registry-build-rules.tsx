@@ -2,7 +2,7 @@
 
 import { Dialog } from "@base-ui/react/dialog"
 import { Menu } from "@base-ui/react/menu"
-import { CheckCircleIcon, KeyIcon, PencilSimpleIcon, PlusIcon, TrashIcon, XIcon } from "@phosphor-icons/react"
+import { CaretRightIcon, CheckCircleIcon, KeyIcon, PencilSimpleIcon, PlusIcon, TrashIcon, WarningIcon, XIcon } from "@phosphor-icons/react"
 import { useEffect, useId, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 
@@ -10,6 +10,7 @@ import { buildSecretKeys, deleteRule, previewRule, saveRule } from "@/app/(app)/
 import { ApiError, api, errorText } from "@/components/secrets/client"
 import { DIALOG_BACKDROP, DIALOG_POPUP, MENU_ITEM } from "@/components/overlay-styles"
 import { Empty, Heading, LIST, RowMenu, SECTION, SELECT, Segmented, Switch, TOUCH } from "@/components/registry-ui"
+import { SafetyLine, useOutlook } from "@/components/registry-build-safety"
 import { SubmitButton } from "@/components/submit-button"
 import { useNotice } from "@/components/toaster"
 import { FormError } from "@/components/two-factor"
@@ -54,7 +55,7 @@ const toInput = (r: RuleView): RuleInput => ({
   enabled: r.enabled,
 })
 
-const GRID = "lg:grid-cols-[4.5rem_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1fr)_5.5rem_4.5rem_5rem_2.5rem_2.25rem]"
+const GRID = "lg:grid-cols-[4.5rem_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1fr)_5.5rem_7rem_5rem_2.5rem_2.25rem]"
 
 export function RuleSection({
   repo,
@@ -103,21 +104,23 @@ export function RuleSection({
           )}
         </Empty>
       ) : (
-        <div className={LIST}>
-          <div aria-hidden className={cn("hidden gap-x-3 border-b bg-muted/30 px-4 py-2 text-xs font-medium text-muted-foreground lg:grid", GRID)}>
-            <span>Type</span>
-            <span>Source</span>
-            <span>Image tags</span>
-            <span>Dockerfile</span>
-            <span>Platforms</span>
-            <span>Scan gate</span>
-            <span>Schedule</span>
-            <span />
-            <span />
+        <div role="table" aria-label="Build rules" className={LIST}>
+          <div role="row" className={cn("hidden gap-x-3 border-b bg-muted/30 px-4 py-2 text-xs font-medium text-muted-foreground lg:grid", GRID)}>
+            <span role="columnheader">Type</span>
+            <span role="columnheader">Source</span>
+            <span role="columnheader">Image tags</span>
+            <span role="columnheader">Dockerfile</span>
+            <span role="columnheader">Platforms</span>
+            <span role="columnheader">Scan gate</span>
+            <span role="columnheader">Schedule</span>
+            <span role="columnheader">On</span>
+            <span role="columnheader">
+              <span className="sr-only">Actions</span>
+            </span>
           </div>
-          <ul className="divide-y">
+          <ul role="rowgroup" className="divide-y">
             {rules.map((r) => (
-              <RuleRow key={`${r.id}:${r.enabled}`} repoId={repo.id} rule={r} canEdit={canEdit} onEdit={() => setEditing({ rule: r })} />
+              <RuleRow key={`${r.id}:${r.enabled}`} repoId={repo.id} rule={r} canEdit={canEdit} scanOn={scanOn} onEdit={() => setEditing({ rule: r })} />
             ))}
           </ul>
         </div>
@@ -139,7 +142,7 @@ export function RuleSection({
   )
 }
 
-function RuleRow({ repoId, rule, canEdit, onEdit }: { repoId: string; rule: RuleView; canEdit: boolean; onEdit: () => void }) {
+function RuleRow({ repoId, rule, canEdit, scanOn, onEdit }: { repoId: string; rule: RuleView; canEdit: boolean; scanOn: boolean; onEdit: () => void }) {
   const router = useRouter()
   const setNotice = useNotice()
   const [on, setOn] = useState(rule.enabled)
@@ -149,43 +152,48 @@ function RuleRow({ repoId, rule, canEdit, onEdit }: { repoId: string; rule: Rule
   const { id, preview, ...input } = rule
   const cell = "min-w-0 text-xs text-muted-foreground lg:text-sm"
   return (
-    <li className={cn("grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-2 px-4 py-3 lg:grid-cols-none", GRID, !on && "opacity-70")}>
+    <li role="row" className={cn("grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-2 px-4 py-3 lg:grid-cols-none", GRID, !on && "opacity-70")}>
       <div className="flex min-w-0 flex-wrap items-center gap-2 lg:contents">
-        <Badge variant="outline" className="w-fit">
-          {rule.sourceType === "branch" ? "Branch" : "Tag"}
-        </Badge>
-        <span className="min-w-0 font-mono text-sm break-all" title={rule.pattern}>
+        <div role="cell">
+          <span className="sr-only lg:hidden">Type: </span>
+          <Badge variant="outline" className="w-fit">
+            {rule.sourceType === "branch" ? "Branch" : "Tag"}
+          </Badge>
+        </div>
+        <div role="cell" className="min-w-0 font-mono text-sm break-all" title={rule.pattern}>
           {rule.pattern}
-        </span>
+        </div>
       </div>
-      <div className="order-last col-span-full flex min-w-0 flex-wrap gap-1.5 lg:order-none lg:col-span-1">
+      <div role="cell" className="order-last col-span-full flex min-w-0 flex-wrap gap-1.5 lg:order-none lg:col-span-1">
+        <span className="sr-only lg:hidden">Image tags: </span>
         {(preview.length ? preview : rule.tags).map((t) => (
           <Badge key={t} variant="outline" className="font-mono">
             {t}
           </Badge>
         ))}
       </div>
-      <p className={cn(cell, "order-last col-span-full break-all lg:order-none lg:col-span-1")}>
+      <p role="cell" className={cn(cell, "order-last col-span-full break-all lg:order-none lg:col-span-1")}>
+        <span className="sr-only lg:hidden">Dockerfile: </span>
         <span className="font-mono">{rule.dockerfile}</span>
         {rule.context !== "." && <span className="block text-xs">in {rule.context}</span>}
       </p>
-      <p className={cn(cell, "order-last col-span-full lg:order-none lg:col-span-1")} title={rule.platforms.join(", ")}>
+      <p role="cell" className={cn(cell, "order-last col-span-full lg:order-none lg:col-span-1")} title={rule.platforms.join(", ")}>
         <span className="lg:hidden">Platforms: </span>
         {rule.platforms.length === 0 ? "This server" : rule.platforms.map((p) => p.replace("linux/", "")).join(", ")}
       </p>
-      <p className={cn(cell, "order-last col-span-full lg:order-none lg:col-span-1")}>
-        <span className="lg:hidden">Fails on Critical: </span>
-        {rule.failOnCritical ? "Yes" : <span aria-label="No">No</span>}
+      <p role="cell" className={cn(cell, "order-last col-span-full lg:order-none lg:col-span-1", rule.failOnCritical && !scanOn && "text-warning")}>
+        <span className="lg:hidden">Scan gate: </span>
+        {rule.failOnCritical ? (scanOn ? "On" : "On (scanning is off)") : "Off"}
       </p>
-      <p className={cn(cell, "order-last col-span-full lg:order-none lg:col-span-1")}>
+      <p role="cell" className={cn(cell, "order-last col-span-full lg:order-none lg:col-span-1")}>
         <span className="lg:hidden">Schedule: </span>
         {describeCron(rule.schedule).replace("Every day at ", "Daily ")}
       </p>
+      <div role="cell" className="justify-self-end">
       <Switch
         aria-label={`Rule for ${rule.pattern} is on`}
         checked={on}
         disabled={!canEdit || pending}
-        className="justify-self-end"
         onChange={(e) => {
           const next = e.currentTarget.checked
           setOn(next)
@@ -198,6 +206,8 @@ function RuleRow({ repoId, rule, canEdit, onEdit }: { repoId: string; rule: Rule
           })
         }}
       />
+      </div>
+      <div role="cell">
       {canEdit ? (
         <RowMenu label={`More for the ${rule.pattern} rule`}>
           <Menu.Item className={MENU_ITEM} onClick={onEdit}>
@@ -212,6 +222,7 @@ function RuleRow({ repoId, rule, canEdit, onEdit }: { repoId: string; rule: Rule
       ) : (
         <span />
       )}
+      </div>
       <Dialog.Root open={asking} onOpenChange={(o) => !o && !pending && setAsking(false)}>
         <Dialog.Portal>
           <Dialog.Backdrop className={DIALOG_BACKDROP} />
@@ -288,6 +299,10 @@ function RuleEditor({
   const [probe, setProbe] = useState<{ matches: boolean; tags: string[] } | null>(null)
   const [error, setError] = useState<string>()
   const [pending, start] = useTransition()
+  const [said, setSaid] = useState("")
+  const [more, setMore] = useState(() => start0.platforms.some((p) => p !== arch))
+  const outlook = useOutlook(true)
+  const [advanced, setAdvanced] = useState(() => Boolean(start0.buildArgs.length || start0.secretRefs.length || start0.platforms.length || start0.schedule))
   const set = <K extends keyof RuleInput>(k: K, v: RuleInput[K]) => setD((x) => ({ ...x, [k]: v }))
 
   // "Does this name match, and what would it be tagged": asked of the server, which owns the matching code.
@@ -307,8 +322,14 @@ function RuleEditor({
     const t = raw.trim().replace(/,$/, "")
     if (!t || d.tags.includes(t)) return setTagText("")
     set("tags", [...d.tags, t])
+    setSaid(`Added ${t}`)
     setTagText("")
   }
+  const removeTag = (t: string) => {
+    set("tags", d.tags.filter((x) => x !== t))
+    setSaid(`Removed ${t}`)
+  }
+  const foreign = d.platforms.filter((p) => p !== arch).length
   const schedule = d.schedule ?? ""
   const literal = !d.pattern.startsWith("re:") && !/[*?,]/.test(d.pattern)
 
@@ -340,18 +361,23 @@ function RuleEditor({
             {!rule && (
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-xs text-muted-foreground">Start from:</span>
-                {presets.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => setD((x) => ({ ...x, ...p.rule }))}
-                    className="rounded-md outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:min-h-11"
-                  >
-                    <Badge variant="outline" className="hover:bg-accent">
-                      {p.label}
-                    </Badge>
-                  </button>
-                ))}
+                {presets.map((p) => {
+                  const on = p.rule.sourceType === d.sourceType && p.rule.pattern === d.pattern && p.rule.tags.join("\n") === d.tags.join("\n")
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => setD((x) => ({ ...x, ...p.rule }))}
+                      className="rounded-md outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:min-h-11"
+                    >
+                      <Badge variant="outline" className={cn("hover:bg-accent", on && "border-ring/60 bg-input/30")}>
+                        {on && <CheckCircleIcon aria-hidden weight="fill" className="text-brand" />}
+                        {p.label}
+                      </Badge>
+                    </button>
+                  )
+                })}
               </div>
             )}
 
@@ -427,7 +453,7 @@ function RuleEditor({
                 {d.tags.map((t) => (
                   <Badge key={t} variant="outline" className="gap-1 pr-1 font-mono">
                     {t}
-                    <button type="button" aria-label={`Remove ${t}`} onClick={() => set("tags", d.tags.filter((x) => x !== t))} className="grid size-4 place-items-center rounded-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:size-8">
+                    <button type="button" aria-label={`Remove ${t}`} onClick={() => removeTag(t)} className="grid size-4 place-items-center rounded-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:size-11">
                       <XIcon className="size-3" />
                     </button>
                   </Badge>
@@ -440,7 +466,7 @@ function RuleEditor({
                     if (e.key === "Enter") {
                       e.preventDefault()
                       addTag(tagText)
-                    } else if (e.key === "Backspace" && !tagText && d.tags.length) set("tags", d.tags.slice(0, -1))
+                    } else if (e.key === "Backspace" && !tagText && d.tags.length) removeTag(d.tags[d.tags.length - 1])
                   }}
                   onBlur={() => tagText && addTag(tagText)}
                   placeholder={d.tags.length ? "" : "latest"}
@@ -452,13 +478,16 @@ function RuleEditor({
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-xs text-muted-foreground">Add:</span>
                 {TEMPLATES.filter((t) => !d.tags.includes(t)).map((t) => (
-                  <button key={t} type="button" onClick={() => set("tags", [...d.tags, t])} className="rounded-md outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:min-h-11">
+                  <button key={t} type="button" aria-label={`Add ${t}`} onClick={() => (set("tags", [...d.tags, t]), setSaid(`Added ${t}`))} className="rounded-md outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:min-h-11">
                     <Badge variant="outline" className="font-mono hover:bg-accent">
                       {t}
                     </Badge>
                   </button>
                 ))}
               </div>
+              <p role="status" className="sr-only">
+                {said}
+              </p>
               <p className={HELP}>
                 <span className="font-mono">{"{branch}"}</span> the branch, <span className="font-mono">{"{sha}"}</span> the short commit, <span className="font-mono">{"{tag}"}</span> the git tag,{" "}
                 <span className="font-mono">{"{version}"}</span> 1.2.3 from v1.2.3, <span className="font-mono">{"{major}.{minor}"}</span> 1.2, <span className="font-mono">{"{major}"}</span> 1. A tag that
@@ -478,6 +507,22 @@ function RuleEditor({
             </div>
 
             <div className={GROUP}>
+              <label className="flex min-h-11 items-center justify-between gap-4">
+                <span className="grid gap-0.5">
+                  <span className="text-sm font-semibold">Scan gate: fail the build on critical vulnerabilities</span>
+                  <span className={HELP}>{scanOn ? "The image is scanned before it is tagged. A Critical finding fails the build and nothing is tagged." : "Turn on image scanning in setup to use this."}</span>
+                </span>
+                <Switch aria-label="Scan gate: fail the build on critical vulnerabilities" checked={d.failOnCritical && scanOn} disabled={!scanOn} onChange={(e) => set("failOnCritical", e.currentTarget.checked)} />
+              </label>
+            </div>
+
+            <details className="group grid gap-5 border-t pt-2" open={advanced} onToggle={(e) => setAdvanced(e.currentTarget.open)}>
+              <summary className="flex min-h-11 w-fit cursor-pointer items-center gap-1.5 rounded-md text-sm font-semibold outline-none select-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
+                <CaretRightIcon aria-hidden className="size-3.5 transition-transform group-open:rotate-90 motion-reduce:transition-none" />
+                Advanced
+                <span className="font-normal text-muted-foreground">build arguments, secrets, platforms, schedule</span>
+              </summary>
+            <div className="grid gap-3">
               <div className="grid gap-0.5">
                 <h3 className="text-sm font-semibold">Build arguments</h3>
                 <p className={HELP}>Plain values passed as ARG. Anything private belongs in a build secret below.</p>
@@ -502,35 +547,28 @@ function RuleEditor({
             <div className={GROUP}>
               <div className="grid gap-0.5">
                 <h3 className="text-sm font-semibold">Platforms</h3>
-                <p className={HELP}>
-                  Nothing ticked builds for this server ({arch}). Other platforms are emulated and much slower.
-                </p>
+                <p className={HELP}>Nothing ticked builds for this server ({arch}). Other platforms are emulated and much slower.</p>
               </div>
               <div className="grid gap-1.5 sm:grid-cols-2">
-                {platforms.map((p) => {
-                  const on = d.platforms.includes(p)
-                  const foreign = p !== arch
-                  return (
-                    <label key={p} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-sm has-checked:border-ring/60 has-checked:bg-input/30">
-                      <input type="checkbox" className="size-4 shrink-0 accent-primary" checked={on} onChange={() => set("platforms", on ? d.platforms.filter((x) => x !== p) : [...d.platforms, p])} />
-                      <span className="min-w-0 flex-1">
-                        <span className="font-mono">{p}</span>
-                        {foreign && <span className="block text-xs text-muted-foreground">emulated, slower</span>}
-                      </span>
-                    </label>
-                  )
-                })}
+                <PlatformBox p={arch} d={d} set={set} />
               </div>
-            </div>
-
-            <div className={GROUP}>
-              <label className="flex min-h-11 items-center justify-between gap-4">
-                <span className="grid gap-0.5">
-                  <span className="text-sm font-semibold">Fail the build on critical vulnerabilities</span>
-                  <span className={HELP}>{scanOn ? "The image is scanned before it is tagged. A Critical finding fails the build and nothing is tagged." : "Turn on image scanning in setup to use this."}</span>
-                </span>
-                <Switch aria-label="Fail the build on critical vulnerabilities" checked={d.failOnCritical && scanOn} disabled={!scanOn} onChange={(e) => set("failOnCritical", e.currentTarget.checked)} />
-              </label>
+              <details className="group grid gap-1.5" open={more} onToggle={(e) => setMore(e.currentTarget.open)}>
+                <summary className="flex min-h-11 w-fit cursor-pointer items-center gap-1 rounded-md text-sm font-medium outline-none select-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:min-h-8">
+                  <CaretRightIcon aria-hidden className="size-3.5 transition-transform group-open:rotate-90 motion-reduce:transition-none" />
+                  More platforms (emulated, slower)
+                </summary>
+                <div className="grid gap-1.5 pt-1.5 sm:grid-cols-2">
+                  {platforms.filter((p) => p !== arch).map((p) => (
+                    <PlatformBox key={p} p={p} d={d} set={set} foreign />
+                  ))}
+                </div>
+              </details>
+              {foreign > 2 && (
+                <p role="status" className="flex items-start gap-2 text-sm text-pretty">
+                  <WarningIcon aria-hidden weight="fill" className="mt-0.5 size-4 shrink-0 text-warning" />
+                  Each emulated platform can take several times longer than a build for this server, and uses the same memory.
+                </p>
+              )}
             </div>
 
             <div className={GROUP}>
@@ -561,6 +599,8 @@ function RuleEditor({
               </div>
             </div>
 
+            </details>
+
             <div className={GROUP}>
               <label className="flex min-h-11 items-center justify-between gap-4">
                 <span className="text-sm font-semibold">Rule is on</span>
@@ -569,18 +609,34 @@ function RuleEditor({
             </div>
 
             <FormError>{error}</FormError>
-            <div className="flex justify-end gap-2">
-              <Dialog.Close disabled={pending} render={<Button type="button" variant="outline" className={TOUCH} />}>
-                Cancel
-              </Dialog.Close>
-              <SubmitButton pending={pending} className={TOUCH}>
-                {rule ? "Save rule" : "Add rule"}
-              </SubmitButton>
+            <div className="sticky -bottom-6 -mx-6 -mb-6 grid gap-2 border-t bg-popover px-6 pt-3 pb-6">
+              <SafetyLine o={outlook} />
+              <div className="flex justify-end gap-2">
+                <Dialog.Close disabled={pending} render={<Button type="button" variant="outline" className={TOUCH} />}>
+                  Cancel
+                </Dialog.Close>
+                <SubmitButton pending={pending} className={TOUCH}>
+                  {rule ? "Save rule" : "Add rule"}
+                </SubmitButton>
+              </div>
             </div>
           </form>
         </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
+  )
+}
+
+function PlatformBox({ p, d, set, foreign }: { p: string; d: RuleInput; set: <K extends keyof RuleInput>(k: K, v: RuleInput[K]) => void; foreign?: boolean }) {
+  const on = d.platforms.includes(p)
+  return (
+    <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-sm has-checked:border-ring/60 has-checked:bg-input/30">
+      <input type="checkbox" className="size-4 shrink-0 accent-primary" checked={on} onChange={() => set("platforms", on ? d.platforms.filter((x) => x !== p) : [...d.platforms, p])} />
+      <span className="min-w-0 flex-1">
+        <span className="font-mono">{p}</span>
+        <span className="block text-xs text-muted-foreground">{foreign ? "emulated, slower" : "this server"}</span>
+      </span>
+    </label>
   )
 }
 

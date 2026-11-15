@@ -128,7 +128,7 @@ export function LogViewer({
             <ol className="w-max min-w-full">
               {shown.map((r) => (
                 <li key={r.n} className="flex hover:bg-accent/30">
-                  <span aria-hidden className="sticky left-0 w-12 shrink-0 bg-input/20 pr-3 text-right text-muted-foreground/70 tabular-nums select-none">
+                  <span aria-hidden className="sticky left-0 w-12 shrink-0 bg-input/20 pr-3 text-right text-muted-foreground tabular-nums select-none">
                     {r.n}
                   </span>
                   <span className={cn("pr-3 whitespace-pre", /\b(error|failed|denied)\b/i.test(r.text) && "text-destructive")}>{r.text || " "}</span>
@@ -144,7 +144,7 @@ export function LogViewer({
           </Button>
         )}
       </div>
-      <p className="text-xs text-muted-foreground tabular-nums" aria-live="polite">
+      <p className="text-xs text-muted-foreground tabular-nums" aria-live={live ? "off" : "polite"}>
         {needle ? `${rows.length.toLocaleString()} of ${clean.length.toLocaleString()} lines match` : `${clean.length.toLocaleString()} lines`}
         {live ? " · live" : ""}
       </p>

@@ -420,7 +420,7 @@ async function reach(userId: string, fullName: string) {
 }
 
 // Bytes of one manifest: its config and layers, plus those of every child manifest.
-function manifestBytes(
+export function manifestBytes(
   id: string,
   refs: Map<string, { kind: string; digest: string }[]>,
   blob: Map<string, number>,
@@ -1492,7 +1492,7 @@ export async function searchTags(userId: string, q: string) {
 // ---- Builds, for the admin page ------------------------------------------------------------------
 
 // The last builds that failed or were stopped to protect the server, across every repository.
-export async function recentBuildFailures(limit = 8) {
+export async function recentBuildFailures(limit = 16) {
   const rows = await db
     .select({
       id: registryBuilds.id,
@@ -1527,4 +1527,27 @@ export async function adminCancelBuild(adminName: string, id: string): Promise<R
     await redis.publish(`events:${buildChannel(id)}`, JSON.stringify({ status: "cancelled", reason })).catch(() => {})
   }
   return {}
+}
+
+// Bytes of the images behind some digests of one repository, 0 for a digest that isn't stored.
+export async function digestBytes(repoId: string, digests: string[]): Promise<Record<string, number>> {
+  if (!digests.length) return {}
+  const manifests = await db
+    .select({ id: registryManifests.id, digest: registryManifests.digest })
+    .from(registryManifests)
+    .where(and(eq(registryManifests.repoId, repoId), isNull(registryManifests.deletedAt)))
+  const ids = manifests.map((m) => m.id)
+  const [refRows, blobRows] = await Promise.all([
+    ids.length ? db.select().from(registryManifestRefs).where(inArray(registryManifestRefs.manifestId, ids)) : [],
+    db
+      .select({ digest: registryBlobs.digest, size: registryBlobs.size })
+      .from(registryRepoBlobs)
+      .innerJoin(registryBlobs, eq(registryBlobs.digest, registryRepoBlobs.digest))
+      .where(eq(registryRepoBlobs.repoId, repoId)),
+  ])
+  const refs = new Map<string, { kind: string; digest: string }[]>()
+  for (const x of refRows) refs.set(x.manifestId, [...(refs.get(x.manifestId) ?? []), x])
+  const blob = new Map(blobRows.map((b) => [b.digest, b.size]))
+  const byDigest = new Map(manifests.map((m) => [m.digest, m.id]))
+  return Object.fromEntries(digests.map((d) => [d, byDigest.has(d) ? manifestBytes(byDigest.get(d)!, refs, blob, byDigest) : 0]))
 }

@@ -2844,6 +2844,8 @@ export const registryRepos = pgTable(
     // Short description; follows the image label until someone types one.
     description: varchar("description", { length: 100 }),
     descriptionCustom: boolean("description_custom").notNull().default(false),
+    // Secret in the build status badge URL of a private repository; null until someone makes one.
+    badgeToken: text("badge_token"),
     createdAt: createdAt(),
     // Soft delete (registry trash); purged after 7 days.
     deletedAt: timestamp("deleted_at", { withTimezone: true }),

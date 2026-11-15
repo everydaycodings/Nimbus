@@ -11,10 +11,10 @@ import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm"
 import { decrypt, encrypt } from "@/lib/crypto"
 import { db } from "@/lib/db"
 import { user } from "@/lib/db/auth-schema"
-import { registryBuildRules, registryBuildSources, registryBuilds, registryNamespaces, registryRepos, settings } from "@/lib/db/schema"
+import { registryBuildRules, registryBuildSources, registryBuilds, registryManifests, registryNamespaces, registryRepos, settings } from "@/lib/db/schema"
 import { appUrl } from "@/lib/email"
 import { listen } from "@/lib/events"
-import { hostMetrics } from "@/lib/host-metrics"
+import { guardVerdict, hostMetrics } from "@/lib/host-metrics"
 import { buildsQueue, enqueueBuild, redis } from "@/lib/redis"
 import { removeObjects, getText, putStream } from "@/lib/s3"
 import { checkUrl, dialable } from "@/lib/secrets/webhooks"
@@ -37,6 +37,7 @@ import {
 } from "./build-rules.ts"
 import * as github from "./github.ts"
 import { atLeast, validTag } from "./rules.ts"
+import { scanReport, scanSummaries } from "./scan.ts"
 
 export { PRESETS, expandTags, matchRule, validateRule, type RuleInput, type TagTemplate } from "./build-rules.ts"
 
@@ -723,4 +724,73 @@ export async function buildsHealth(s: { registryBuilds: boolean }): Promise<{ de
     .join(", ")
   const warn = stops >= 3 ? `${stops} builds were stopped to protect the server in 24 hours.` : cache && cache.bytes > 0.8 * limit ? `The build cache is ${gb(cache.bytes)} of ${gb(limit)} GB. Clean it in Registry settings.` : undefined
   return { detail: `${detail}.`, ...(stops && { slow: true as const }), warn }
+}
+
+// ---- what a build would meet right now, and what a failed scan found -----------------------------------------
+
+export type Outlook = { mem: string; cpus: string; timeoutMin: number; memPct: number; wait: string | null; ahead: number }
+
+// For the Build now dialog and the rule editor: the caps a build runs under, the server's load, and whether a
+// build started now would wait (same checks as the runner's pre-flight) or stand in line.
+export async function buildOutlook(): Promise<Outlook> {
+  const [s, m, [{ n }]] = await Promise.all([
+    getSettings(),
+    hostMetrics(),
+    db.select({ n: sql<number>`count(*)::int` }).from(registryBuilds).where(inArray(registryBuilds.status, ACTIVE)),
+  ])
+  const v = guardVerdict(m, { ramPct: s.registryBuildPreflightRamPct, minDiskGb: s.registryBuildMinDiskGb, loadFactor: 1.5 })
+  const slots = Math.max(1, s.registryBuildConcurrency)
+  return {
+    mem: process.env.BUILD_MEM || "2g",
+    cpus: process.env.BUILD_CPUS || "1",
+    timeoutMin: s.registryBuildTimeoutMin,
+    memPct: m.memUsedPct,
+    wait: v.ok ? null : (v.reason ?? "busy"),
+    // Builds in line beyond the free slots; 0 means a slot is open.
+    ahead: Math.max(0, n - slots + 1),
+  }
+}
+
+// The Critical and High findings of the image a failed build pushed (the scan gate keeps it untagged, so look it up by digest).
+export async function buildFindings(repoId: string, digest: string) {
+  const [m] = await db
+    .select({ id: registryManifests.id })
+    .from(registryManifests)
+    .where(and(eq(registryManifests.repoId, repoId), eq(registryManifests.digest, digest), isNull(registryManifests.deletedAt)))
+  if (!m) return null
+  const [sum, rep] = await Promise.all([scanSummaries([m.id]), scanReport(m.id)])
+  const s = sum[m.id]
+  if (!s) return null
+  return {
+    summary: { status: s.status, critical: s.critical, high: s.high, medium: s.medium, low: s.low },
+    vulns: (rep?.vulns ?? []).filter((v) => /^(critical|high)$/i.test(v.severity)),
+    error: rep?.error ?? null,
+  }
+}
+
+// The newest successful build with a digest, optionally the one before `before`: for the cosign example and "bigger than last time".
+export async function lastSuccess(repoId: string, before?: Date) {
+  const [r] = await db
+    .select({ tags: registryBuilds.tags, digest: registryBuilds.digest })
+    .from(registryBuilds)
+    .where(and(eq(registryBuilds.repoId, repoId), eq(registryBuilds.status, "success"), sql`${registryBuilds.digest} is not null`, before ? lt(registryBuilds.createdAt, before) : undefined))
+    .orderBy(desc(registryBuilds.createdAt))
+    .limit(1)
+  return r ?? null
+}
+
+// ---- status badge token (private repositories) ---------------------------------------------------------------------
+
+export async function badgeToken(repoId: string): Promise<string | null> {
+  const [r] = await db.select({ t: registryRepos.badgeToken }).from(registryRepos).where(eq(registryRepos.id, repoId))
+  return r?.t ?? null
+}
+
+// Makes the secret in a private repository's badge URL; the old URL stops working.
+export async function newBadgeToken(actorUserId: string, repoId: string): Promise<{ token?: string; error?: string }> {
+  const a = await access(actorUserId, repoId, "admin")
+  if ("error" in a) return a
+  const token = randomBytes(18).toString("base64url")
+  await db.update(registryRepos).set({ badgeToken: token }).where(eq(registryRepos.id, repoId))
+  return { token }
 }

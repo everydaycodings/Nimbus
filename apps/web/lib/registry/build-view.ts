@@ -53,6 +53,13 @@ export function duration(ms: number) {
   return `${Math.floor(m / 60)}h ${m % 60}m`
 }
 
+// How long something has been waiting, in whole minutes: 40s -> "<1m", 7 min -> "7m", 135 min -> "2h 15m".
+export function since(ms: number) {
+  const m = Math.floor(Math.max(0, ms) / 60000)
+  if (m < 1) return "<1m"
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`
+}
+
 export const buildMs = (b: Pick<BuildItem, "startedAt" | "finishedAt">, now = Date.now()) =>
   b.startedAt ? (b.finishedAt ? Date.parse(b.finishedAt) : now) - Date.parse(b.startedAt) : null
 

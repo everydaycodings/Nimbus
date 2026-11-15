@@ -399,7 +399,7 @@ export function BuildsAdmin({ cacheBytes, cacheLimit, queue, failures }: { cache
                     {b.reason ? ` · ${b.reason}` : ""}
                   </p>
                 </div>
-                <StatusChip status={b.status} startedAt={b.startedAt} reason={b.reason} />
+                <StatusChip status={b.status} startedAt={b.startedAt} createdAt={b.createdAt} />
                 <ConfirmAction label="Cancel" aria={`Cancel the build of ${b.name}`} question="Stop this build?" yes="Stop build" done="Build cancelled." run={adminCancelBuild.bind(null, b.id)} />
               </li>
             ))}
@@ -407,34 +407,55 @@ export function BuildsAdmin({ cacheBytes, cacheLimit, queue, failures }: { cache
         )}
       </section>
 
-      <section id="registry-build-failures" className="flex scroll-mt-24 flex-col gap-3" aria-labelledby="build-fail-heading">
-        <h3 id="build-fail-heading" className="text-sm font-semibold">
-          Recent failures
-        </h3>
-        {failures.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-input px-6 py-8 text-center text-sm text-muted-foreground">No failed builds lately.</p>
-        ) : (
-          <ul className={LIST}>
-            {failures.map((f) => (
-              <li key={f.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
-                <div className="grid min-w-0 flex-1 basis-56 gap-0.5">
-                  <Link href={detailHref(f.name, f.id)} className="w-fit max-w-full rounded-sm font-mono text-sm break-all underline-offset-4 outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50">
-                    {f.name}
-                    {f.ref ? `@${f.ref}` : ""}
-                  </Link>
-                  <p className="text-xs text-pretty text-muted-foreground">{f.reason ?? (f.status === "stopped" ? "Stopped to protect the server" : "Failed")}</p>
-                </div>
-                <Badge variant="outline" className={f.status === "failed" ? "text-destructive" : "text-warning"}>
-                  {f.status === "stopped" ? "Stopped" : "Failed"}
-                </Badge>
-                <span suppressHydrationWarning className="text-xs text-muted-foreground">
-                  {f.finishedAt ? ago(f.finishedAt) : ""}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <FailureList
+        id="registry-build-failures"
+        title="Recent failures"
+        empty="No failed builds lately."
+        items={failures.filter((f) => f.status !== "stopped")}
+      />
+      <FailureList
+        id="registry-build-stopped"
+        title="Stopped to protect the server"
+        hint="The guard ended these builds because memory or disk ran low. They can be rebuilt, and are not the repository's fault."
+        empty="No builds were stopped lately."
+        items={failures.filter((f) => f.status === "stopped")}
+      />
     </div>
+  )
+}
+
+function FailureList({ id, title, hint, empty, items }: { id: string; title: string; hint?: string; empty: string; items: FailureItem[] }) {
+  return (
+    <section id={id} className="flex scroll-mt-24 flex-col gap-3" aria-labelledby={`${id}-heading`}>
+      <div className="grid gap-1">
+        <h3 id={`${id}-heading`} className="text-sm font-semibold">
+          {title}
+        </h3>
+        {hint && <p className="max-w-prose text-sm text-pretty text-muted-foreground">{hint}</p>}
+      </div>
+      {items.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-input px-6 py-8 text-center text-sm text-muted-foreground">{empty}</p>
+      ) : (
+        <ul className={LIST}>
+          {items.map((f) => (
+            <li key={f.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
+              <div className="grid min-w-0 flex-1 basis-56 gap-0.5">
+                <Link href={detailHref(f.name, f.id)} className="w-fit max-w-full rounded-sm font-mono text-sm break-all underline-offset-4 outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50">
+                  {f.name}
+                  {f.ref ? `@${f.ref}` : ""}
+                </Link>
+                <p className="text-xs text-pretty text-muted-foreground">{(f.reason ?? (f.status === "stopped" ? "Stopped to protect the server" : "Failed")).replace(/^Stopped to protect the server:\s*/i, "")}</p>
+              </div>
+              <Badge variant="outline" className={f.status === "failed" ? "text-destructive" : "text-warning"}>
+                {f.status === "stopped" ? "Stopped" : "Failed"}
+              </Badge>
+              <span suppressHydrationWarning className="text-xs text-muted-foreground">
+                {f.finishedAt ? ago(f.finishedAt) : ""}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   )
 }

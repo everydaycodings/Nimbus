@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { useEffect, useRef, useState } from "react"
 
 import { Hooks, PolicyEditor } from "@/components/registry-extra"
 import { AccessSection, ArchiveSection, DeleteSection, GeneralSection, ImmutableSection, RenameSection } from "@/components/registry-settings"
@@ -13,8 +14,29 @@ export type RepoTab = "overview" | "tags" | "builds" | "activity" | "settings"
 
 // Same segmented look as the registry's own tabs; the choice lives in ?tab= so a tab can be linked to.
 export function RepoTabs({ name, tab, tabs }: { name: string; tab: RepoTab; tabs: [RepoTab, string][] }) {
+  const nav = useRef<HTMLElement>(null)
+  // On a narrow screen the row scrolls; a fade on the right edge says there is more.
+  const [more, setMore] = useState(false)
+  useEffect(() => {
+    const el = nav.current
+    if (!el) return
+    const check = () => setMore(el.scrollWidth - el.scrollLeft - el.clientWidth > 4)
+    check()
+    el.addEventListener("scroll", check, { passive: true })
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    return () => {
+      el.removeEventListener("scroll", check)
+      ro.disconnect()
+    }
+  }, [])
   return (
-    <nav aria-label="Repository sections" className="flex w-fit max-w-full overflow-x-auto rounded-lg bg-muted p-[3px]">
+    <nav
+      ref={nav}
+      aria-label="Repository sections"
+      className="flex w-fit max-w-full overflow-x-auto rounded-lg bg-muted p-[3px]"
+      style={more ? { maskImage: "linear-gradient(to right, black calc(100% - 2rem), transparent)" } : undefined}
+    >
       {tabs.map(([id, label]) => (
         <Link
           key={id}
@@ -31,6 +53,7 @@ export function RepoTabs({ name, tab, tabs }: { name: string; tab: RepoTab; tabs
 
 const NAV = [
   ["general", "General"],
+  ["signing", "Image signing"],
   ["access", "Access"],
   ["tags-cleanup", "Tags & cleanup"],
   ["webhooks", "Webhooks"],
@@ -51,10 +74,10 @@ export function RepoSettings({
   access: RepoAccess | null
   targets: string[]
   // Set when builds are on: the host and the server's public cosign key.
-  signing?: { host: string; key: string | null }
+  signing?: { host: string; key: string | null; signedTag: string | null }
 }) {
   if (!repo.canWrite) return null
-  const links = NAV.filter(([id]) => (id === "access" ? access : id === "webhooks" ? repo.isOwner : true))
+  const links = NAV.filter(([id]) => (id === "access" ? access : id === "webhooks" ? repo.isOwner : id === "signing" ? signing : true))
   return (
     <div className="lg:grid lg:grid-cols-[9rem_minmax(0,1fr)] lg:items-start lg:gap-10">
       <nav aria-label="Settings sections" className="sticky top-6 hidden flex-col gap-0.5 lg:flex">
@@ -71,7 +94,7 @@ export function RepoSettings({
       <div className="flex min-w-0 flex-col gap-10">
         <GeneralSection repo={repo} scanOn={scanOn} />
 
-        {signing && <SigningSection host={signing.host} name={repo.fullName} publicKey={signing.key} />}
+        {signing && <SigningSection host={signing.host} name={repo.fullName} publicKey={signing.key} signedTag={signing.signedTag} />}
 
         {access && <AccessSection repo={repo} access={access} />}
 

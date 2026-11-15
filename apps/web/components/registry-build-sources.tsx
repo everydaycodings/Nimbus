@@ -2,7 +2,7 @@
 
 import { Dialog } from "@base-ui/react/dialog"
 import { Menu } from "@base-ui/react/menu"
-import { GitBranchIcon, GithubLogoIcon, HammerIcon, LockSimpleIcon, MagnifyingGlassIcon, PlugsIcon, TerminalWindowIcon, UploadSimpleIcon } from "@phosphor-icons/react"
+import { ArrowRightIcon, CheckCircleIcon, GitBranchIcon, GithubLogoIcon, HammerIcon, LockSimpleIcon, MagnifyingGlassIcon, PlugsIcon, TerminalWindowIcon, UploadSimpleIcon } from "@phosphor-icons/react"
 import { useRouter } from "next/navigation"
 import { useId, useMemo, useState, useTransition } from "react"
 
@@ -28,22 +28,22 @@ export type SourceView = {
 }
 
 const CARD =
-  "flex min-h-11 cursor-pointer flex-col items-start gap-1.5 rounded-xl border bg-card p-4 text-left outline-none hover:bg-accent/30 focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-pressed:border-ring/60 aria-pressed:bg-input/30"
+  "group flex min-h-11 cursor-pointer flex-col items-start gap-1.5 rounded-xl border bg-card p-4 text-left shadow-xs outline-none hover:border-ring/40 hover:bg-accent/30 focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-pressed:border-primary aria-pressed:bg-input/30 aria-pressed:ring-1 aria-pressed:ring-primary"
 
 type Pick = "github" | "git" | "upload"
 
 // Nothing connected yet: three ways in, one form open at a time.
-export function ConnectSources({ repoId, fullName }: { repoId: string; fullName: string }) {
+export function ConnectSources({ repoId, fullName, scanOn }: { repoId: string; fullName: string; scanOn: boolean }) {
   const [pick, setPick] = useState<Pick | null>(null)
   const cards: [Pick, React.ComponentType<{ className?: string }>, string, string][] = [
     ["github", GithubLogoIcon, "GitHub", "Pick a repository. Nimbus adds the webhook and reports each result on the commit."],
     ["git", GitBranchIcon, "Any git URL", "Gitea, GitLab, your own server. You add the webhook there."],
-    ["upload", TerminalWindowIcon, "Upload or CLI only", "No repository. Send a folder from the web or the command line."],
+    ["upload", TerminalWindowIcon, "Archive or CLI only", "No repository. Upload a .zip or .tar from the web, or send a folder from the command line."],
   ]
   return (
     <div className="flex flex-col gap-6">
       <Empty icon={HammerIcon} title="Build this image automatically">
-        <p>Connect where your Dockerfile lives. Nimbus builds on every push or tag that matches a rule, signs the result and scans it.</p>
+        <p>Connect where your Dockerfile lives. Nimbus builds on every push or tag that matches a rule and signs the result{scanOn ? ", then scans it" : ""}.</p>
       </Empty>
       <div className="grid gap-3 md:grid-cols-3">
         {cards.map(([id, Icon, title, text]) => (
@@ -51,6 +51,19 @@ export function ConnectSources({ repoId, fullName }: { repoId: string; fullName:
             <Icon aria-hidden className="size-6 text-muted-foreground" />
             <span className="text-sm font-semibold">{title}</span>
             <span className="text-sm text-pretty text-muted-foreground">{text}</span>
+            <span className="mt-1 flex items-center gap-1 text-sm font-medium">
+              {pick === id ? (
+                <>
+                  <CheckCircleIcon aria-hidden weight="fill" className="size-4 text-brand" />
+                  Selected
+                </>
+              ) : (
+                <>
+                  Connect
+                  <ArrowRightIcon aria-hidden className="size-3.5 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" />
+                </>
+              )}
+            </span>
           </button>
         ))}
       </div>
@@ -291,9 +304,9 @@ function UploadOnly({ repoId, fullName }: { repoId: string; fullName: string }) 
   return (
     <section className={FORM} aria-label="Upload or CLI only">
       <div className="grid gap-1">
-        <h3 className="text-sm font-semibold">Build from the command line</h3>
+        <h3 className="text-sm font-semibold">Build from an archive or the command line</h3>
         <p className="max-w-prose text-sm text-pretty text-muted-foreground">
-          From a folder with a Dockerfile, with the Nimbus CLI signed in. You can also drop a .zip or .tar here on the Builds tab.
+          From a folder with a Dockerfile, with the Nimbus CLI signed in. You can also upload a .zip or .tar on the Builds tab.
         </p>
       </div>
       <div className="relative">
@@ -330,7 +343,7 @@ export function SourceRow({ repoId, source, canAdmin }: { repoId: string; source
   const [error, setError] = useState<string>()
   const [pending, start] = useTransition()
   const Icon = source.kind === "github" ? GithubLogoIcon : source.kind === "git" ? GitBranchIcon : TerminalWindowIcon
-  const title = source.kind === "github" ? source.url : source.kind === "git" ? source.url : "Uploads and the command line"
+  const title = source.kind === "github" ? source.url : source.kind === "git" ? source.url : "Archive uploads and the command line"
   return (
     <section aria-labelledby="source-heading" className="flex flex-col gap-3">
       <Heading id="source-heading" title="Source" hint="Where this repository's builds come from." />
@@ -352,7 +365,7 @@ export function SourceRow({ repoId, source, canAdmin }: { repoId: string; source
             {source.kind === "upload" ? "No repository connected" : source.lastDeliveryAt ? `Last webhook ${ago(source.lastDeliveryAt)}` : "No webhook received yet"}
           </p>
         </div>
-        {source.kind === "git" && source.webhookUrl && <CopyButton value={source.webhookUrl} label="Copy webhook URL" className={TOUCH} />}
+        {source.kind === "git" && source.webhookUrl && <CopyButton value={source.webhookUrl} label="Copy webhook URL" text="Copy webhook URL" className={TOUCH} />}
         {canAdmin && (
           <RowMenu label="Source options">
             <Menu.Item className={cn(MENU_ITEM, "text-destructive [&_svg]:text-destructive")} onClick={() => setAsking(true)}>

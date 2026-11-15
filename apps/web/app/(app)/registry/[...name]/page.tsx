@@ -13,7 +13,7 @@ import { activityPage } from "@/app/(app)/registry/actions"
 import { VulnList } from "@/components/registry-scan"
 import { Heading, SECTION } from "@/components/registry-ui"
 import { Badge } from "@/components/ui/badge"
-import { adminRepoAccess, listHooksFor, ownedNamespaces, repoDetail, registryState, tagDetail, type ImageInfo, type RepoDetail } from "@/lib/registry/manage"
+import { adminRepoAccess, digestBytes, listHooksFor, ownedNamespaces, repoDetail, registryState, tagDetail, type ImageInfo, type RepoDetail } from "@/lib/registry/manage"
 import { artifactsFor } from "@/lib/registry/artifacts"
 import { readmeFor } from "@/lib/registry/readme"
 import { scanAvailable, scanReport, scanSummaries } from "@/lib/registry/scan"
@@ -24,7 +24,8 @@ import { requireMember, isAdmin } from "@/lib/session"
 import { BuildDetail } from "@/components/registry-build-detail"
 import { BuildsOff, BuildsTab, LatestBuild } from "@/components/registry-builds"
 import { PLATFORMS, PRESETS, expandTags } from "@/lib/registry/build-rules"
-import { buildsAvailable, cosignPublicKey, getBuild, getSource, listBuilds, listRules } from "@/lib/registry/builds"
+import { badgeToken, buildFindings, buildsAvailable, cosignPublicKey, getBuild, getSource, lastSuccess, listBuilds, listRules } from "@/lib/registry/builds"
+import { appUrl } from "@/lib/email"
 import { toItem } from "@/lib/registry/build-view"
 
 export const metadata = { title: "Container registry · Nimbus" }
@@ -220,14 +221,17 @@ async function Overview({ repo, host, meId }: { repo: RepoDetail; host: string; 
 }
 
 async function SettingsTab({ repo, meId, full }: { repo: RepoDetail; meId: string; full: string }) {
-  const [hooks, scanOn, access, owned, builds, key] = await Promise.all([
+  const [hooks, scanOn, access, owned, builds, key, last] = await Promise.all([
     repo.isOwner ? listHooksFor(meId, repo.namespace, full.slice(repo.namespace.length + 1)) : [],
     scanAvailable(),
     repo.canAdmin ? adminRepoAccess(meId, repo.id) : null,
     repo.isOwner ? ownedNamespaces(meId) : [],
     buildsAvailable(meId),
     cosignPublicKey(),
+    lastSuccess(repo.id),
   ])
+  // A command that verifies something real: the newest successful build's tag, if that image carries a signature.
+  const signedTag = last?.digest && last.tags[0] ? ((await artifactsFor(repo.id, [last.digest]))[last.digest]?.signatures ?? 0) > 0 && last.tags[0] : null
   return (
     <RepoSettings
       repo={repo}
@@ -235,7 +239,7 @@ async function SettingsTab({ repo, meId, full }: { repo: RepoDetail; meId: strin
       scanOn={scanOn}
       access={access}
       targets={owned.length ? owned.map((n) => n.name) : [repo.namespace]}
-      signing={builds.on ? { host: endpoint()!.replace(/^https?:\/\//, ""), key } : undefined}
+      signing={builds.on ? { host: endpoint()!.replace(/^https?:\/\//, ""), key, signedTag: signedTag || null } : undefined}
     />
   )
 }
@@ -336,10 +340,16 @@ async function BuildsPanel({ repo, meId, build }: { repo: RepoDetail; meId: stri
   const b = build ? await getBuild(build) : null
   if (b && b.repoId === repo.id) {
     const tag = repo.tags.find((t) => b.tags.includes(t.name))
-    const [scans, arts] = await Promise.all([
+    const me = await requireMember()
+    const gated = b.status === "failed" && /^Critical vulnerabilities found/i.test(b.reason ?? "")
+    const [scans, arts, findings, previous, key] = await Promise.all([
       scanOn && tag?.manifestId ? scanSummaries([tag.manifestId]) : ({} as Awaited<ReturnType<typeof scanSummaries>>),
       b.digest ? artifactsFor(repo.id, [b.digest]) : {},
+      gated && b.digest ? buildFindings(repo.id, b.digest) : null,
+      b.status === "success" && b.digest ? lastSuccess(repo.id, b.createdAt) : null,
+      cosignPublicKey(),
     ])
+    const bytes = b.status === "success" && b.digest ? await digestBytes(repo.id, [b.digest, ...(previous?.digest ? [previous.digest] : [])]) : {}
     const scan = tag?.manifestId ? scans[tag.manifestId] : undefined
     const a = b.digest ? (arts as Awaited<ReturnType<typeof artifactsFor>>)[b.digest] : undefined
     const { logTail, ruleSummary, ...row } = b
@@ -353,13 +363,19 @@ async function BuildsPanel({ repo, meId, build }: { repo: RepoDetail; meId: stri
         scanOn={scanOn}
         scan={scan ? { status: scan.status, critical: scan.critical, high: scan.high, medium: scan.medium, low: scan.low } : null}
         attached={{ signed: (a?.signatures ?? 0) > 0, sbom: (a?.sboms ?? 0) > 0, provenance: (a?.attestations ?? 0) > 0 }}
+        host={endpoint()!.replace(/^https?:\/\//, "")}
+        isAdmin={isAdmin(me.role)}
+        signingOn={Boolean(key)}
+        findings={findings}
+        size={b.digest && bytes[b.digest] !== undefined ? { now: bytes[b.digest], before: previous?.digest ? (bytes[previous.digest] ?? null) : null } : null}
       />
     )
   }
   const [source, rules, rows] = await Promise.all([getSource(repo.id), listRules(repo.id), listBuilds(repo.id, { limit: 31 })])
   return (
     <BuildsTab
-      repo={{ id: repo.id, fullName: repo.fullName, canAdmin: repo.canAdmin, archived: repo.archived }}
+      repo={{ id: repo.id, fullName: repo.fullName, canAdmin: repo.canAdmin, archived: repo.archived, isPublic: repo.isPublic }}
+      badge={{ base: appUrl(), token: await badgeToken(repo.id) }}
       source={source && { kind: source.kind, url: source.url, hasCredential: source.hasCredential, webhookUrl: source.webhookUrl, lastDeliveryAt: source.lastDeliveryAt?.toISOString() ?? null }}
       rules={rules.map((r) => ({
         id: r.id,

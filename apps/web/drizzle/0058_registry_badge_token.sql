@@ -1,0 +1,1 @@
+ALTER TABLE "registry_repos" ADD COLUMN "badge_token" text;

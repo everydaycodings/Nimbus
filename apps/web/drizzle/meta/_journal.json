@@ -407,6 +407,13 @@
       "when": 1796400000000,
       "tag": "0057_registry_builds",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1796500000000,
+      "tag": "0058_registry_badge_token",
+      "breakpoints": true
     }
   ]
 }
