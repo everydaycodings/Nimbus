@@ -144,7 +144,7 @@ export function RepoReadme({ name, canWrite, readme }: { name: string; canWrite:
           <FormError>{error}</FormError>
           <div className="flex flex-wrap items-center gap-2">
             <SubmitButton pending={pending} className={TOUCH}>
-              Save
+              Save README
             </SubmitButton>
             <Button type="button" variant="ghost" className={TOUCH} disabled={pending} onClick={() => setEditing(false)}>
               Cancel
@@ -162,7 +162,8 @@ export function RepoReadme({ name, canWrite, readme }: { name: string; canWrite:
         </div>
       ) : (
         <p className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
-          No README. Set the <code className="font-mono">org.opencontainers.image.description</code> label when you build, or write one here.
+          No README yet.{" "}
+          {canWrite ? "Write one here, or build the image with a README in its description label." : "The image has no README in its description label."}
         </p>
       )}
     </section>

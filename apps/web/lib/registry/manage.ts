@@ -514,7 +514,7 @@ export async function repoDetail(userId: string, fullName: string): Promise<Repo
         manifestId: m?.id ?? null,
         mediaType: m?.mediaType ?? "",
         bytes: m ? manifestBytes(m.id, refs, blob, byDigest) : 0,
-        platforms: m?.platforms ?? [],
+        platforms: (m?.platforms ?? []).filter((p) => p !== "unknown/unknown"),
         pushedBy: by,
         pushedAt: t.pushedAt.toISOString(),
         lastPulledAt: t.lastPulledAt?.toISOString() ?? null,
@@ -544,7 +544,11 @@ export type ImageInfo = {
 }
 export type TagDetail = { tag: string; digest: string; mediaType: string; size: number; images: ImageInfo[] }
 
-type Desc = { digest?: string; size?: number; mediaType?: string; platform?: { os?: string; architecture?: string; variant?: string } }
+type Desc = { digest?: string; size?: number; mediaType?: string; annotations?: Record<string, string>; platform?: { os?: string; architecture?: string; variant?: string } }
+
+// buildx adds provenance and SBOM manifests to an index as unknown/unknown "platforms"; they are attachments, not images.
+export const isAttestation = (c: Desc) =>
+  c.annotations?.["vnd.docker.reference.type"] === "attestation-manifest" || (c.platform?.os === "unknown" && c.platform?.architecture === "unknown")
 
 async function readConfig(digest: string) {
   const [b] = await db.select({ key: registryBlobs.key, size: registryBlobs.size }).from(registryBlobs).where(eq(registryBlobs.digest, digest))
@@ -625,7 +629,7 @@ export async function tagDetail(userId: string, fullName: string, tag: string): 
   try {
     j = JSON.parse(Buffer.from(m.bytes).toString("utf8"))
   } catch {}
-  const kids = (j.manifests ?? []).filter((c) => c.digest)
+  const kids = (j.manifests ?? []).filter((c) => c.digest && !isAttestation(c))
   const images = kids.length
     ? await Promise.all(
         kids.map((c) =>

@@ -16,6 +16,7 @@ export type ActivityEvent = {
   repoName: string | null
   actorId: string | null
   actorName: string
+  actorImage: string | null
   action: string
   detail: Record<string, unknown> | null
   ip: string | null
@@ -115,7 +116,7 @@ function since(iso: string) {
 function Row({ e, showRepo }: { e: ActivityEvent; showRepo: boolean }) {
   return (
     <li className="flex items-start gap-3 px-4 py-3">
-      <UserAvatar name={e.actorName} size={32} />
+      <UserAvatar name={e.actorName} image={e.actorImage} size={32} />
       <div className="grid min-w-0 flex-1 gap-0.5">
         <p className="text-sm text-pretty break-words">
           <span className="font-medium">{e.actorName}</span> {sentence(e)}

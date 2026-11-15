@@ -357,7 +357,7 @@ export function PolicyEditor({
                   setCustom(v as boolean)
                   setPreview(null)
                 }}
-                className="mt-1 size-4 accent-primary"
+                className="mt-1 size-4 shrink-0 accent-primary"
               />
               <span className="grid gap-0.5">
                 <span className="font-medium">{title as string}</span>
@@ -402,7 +402,7 @@ export function PolicyEditor({
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <SubmitButton pending={pending} className={TOUCH}>
-          Save
+          Save cleanup rules
         </SubmitButton>
         <Button
           type="button"
@@ -549,7 +549,7 @@ export function Hooks({ namespace, repo, initial }: { namespace: string; repo?: 
             <label key={v} className="flex items-center gap-1.5 text-sm pointer-coarse:min-h-11">
               <input
                 type="checkbox"
-                className="size-4 accent-primary"
+                className="size-4 shrink-0 accent-primary"
                 checked={events.includes(v)}
                 onChange={(e) => setEvents(e.target.checked ? [...events, v] : events.filter((x) => x !== v))}
               />

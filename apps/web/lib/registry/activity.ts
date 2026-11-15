@@ -5,6 +5,7 @@ import { and, desc, eq, lt, sql } from "drizzle-orm"
 
 import { db } from "@/lib/db"
 import { redis } from "@/lib/redis"
+import { user } from "@/lib/db/auth-schema"
 import { registryEvents, registryNamespaces, registryRepos } from "@/lib/db/schema"
 
 import { roleIn, repoRole } from "./access.ts"
@@ -43,6 +44,7 @@ export type EventRow = {
   repoName: string | null
   actorId: string | null
   actorName: string
+  actorImage: string | null
   action: string
   detail: Record<string, unknown> | null
   ip: string | null
@@ -63,6 +65,7 @@ export async function listEvents(o: { namespaceId?: string; repoId?: string; act
       repoName: registryRepos.name,
       actorId: registryEvents.actorId,
       actorName: registryEvents.actorName,
+      actorImage: user.image,
       action: registryEvents.action,
       detail: registryEvents.detail,
       ip: registryEvents.ip,
@@ -70,6 +73,7 @@ export async function listEvents(o: { namespaceId?: string; repoId?: string; act
     })
     .from(registryEvents)
     .leftJoin(registryRepos, eq(registryRepos.id, registryEvents.repoId))
+    .leftJoin(user, eq(user.id, registryEvents.actorId))
     .where(where)
     .orderBy(desc(registryEvents.at))
     .limit(Math.min(o.limit ?? 50, 200))

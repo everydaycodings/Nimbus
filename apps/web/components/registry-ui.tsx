@@ -1,8 +1,10 @@
 "use client"
 
-import { CheckCircleIcon } from "@phosphor-icons/react"
+import { Menu } from "@base-ui/react/menu"
+import { CheckCircleIcon, DotsThreeIcon } from "@phosphor-icons/react"
 import { useEffect, useId, useState } from "react"
 
+import { MENU_POPUP } from "@/components/overlay-styles"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -21,12 +23,33 @@ export const Switch = ({ className, ...props }: Omit<React.ComponentProps<"input
   />
 )
 
+// One vocabulary: repositories and teams use Read / Write / Admin, orgs Owner / Write / Read, tokens Pull / Push / Push + Delete.
+export const GRANTS = [
+  ["read", "Read"],
+  ["write", "Write"],
+  ["admin", "Admin"],
+] as const
+export const GRANT_LABEL: Record<string, string> = Object.fromEntries(GRANTS)
+export const ORG_ROLES = [
+  ["owner", "Owner"],
+  ["write", "Write"],
+  ["read", "Read"],
+] as const
+export const ORG_ROLE_LABEL = Object.fromEntries(ORG_ROLES) as Record<"owner" | "write" | "read", string>
+export const TOKEN_ACCESS = [
+  ["pull", "Pull", "Download images. Like Read."],
+  ["push", "Push", "Download and upload images. Like Write."],
+  ["delete", "Push + Delete", "Write plus deleting tags and images."],
+] as const
+export const TOKEN_ACCESS_LABEL = Object.fromEntries(TOKEN_ACCESS.map(([v, l]) => [v, l])) as Record<"pull" | "push" | "delete", string>
+
 export const SECTION = "flex flex-col gap-3"
 export const LIST = "divide-y overflow-hidden rounded-xl border bg-card"
 export const DAY = new Intl.DateTimeFormat("en", { dateStyle: "medium" })
 export const WHEN = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" })
 export const RADIO =
-  "flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-sm has-checked:border-ring/60 has-checked:bg-input/30"
+  "flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm has-checked:border-ring/60 has-checked:bg-input/30"
+export const RADIO_INPUT = "size-4 shrink-0 accent-primary"
 export const SELECT =
   "h-9 min-w-0 rounded-md border border-input bg-input/20 px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
 export const CODE =
@@ -36,19 +59,23 @@ export function Heading({
   id,
   title,
   hint,
+  sub,
   children,
 }: {
   id: string
   title: string
   hint: React.ReactNode
+  // A heading inside a group (Advanced): one level down, smaller.
+  sub?: boolean
   children?: React.ReactNode
 }) {
+  const H = sub ? "h3" : "h2"
   return (
     <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
       <div className="mr-auto grid min-w-0 gap-1">
-        <h2 id={id} className="text-base font-semibold">
+        <H id={id} className={sub ? "text-sm font-semibold" : "text-base font-semibold"}>
           {title}
-        </h2>
+        </H>
         <p className="max-w-prose text-sm text-pretty text-muted-foreground">{hint}</p>
       </div>
       {children}
@@ -124,6 +151,22 @@ export function Confirm({
         Keep
       </Button>
     </span>
+  )
+}
+
+// The ghost ⋯ menu for a row's less common actions. Items are `Menu.Item`s with MENU_ITEM.
+export function RowMenu({ label, children, disabled }: { label: string; children: React.ReactNode; disabled?: boolean }) {
+  return (
+    <Menu.Root>
+      <Menu.Trigger disabled={disabled} render={<Button variant="ghost" size="icon-sm" aria-label={label} className="pointer-coarse:size-11" />}>
+        <DotsThreeIcon weight="bold" />
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Positioner side="bottom" align="end" sideOffset={4}>
+          <Menu.Popup className={cn("w-56", MENU_POPUP)}>{children}</Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
   )
 }
 

@@ -23,7 +23,26 @@ import { CopyButton } from "@/components/copy-button"
 import { DIALOG_BACKDROP, DIALOG_POPUP } from "@/components/overlay-styles"
 import { OrgTeams } from "@/components/registry-teams"
 import { MirrorsTab, NamespacesSection, RegistryTabs, TrashTab, type Tab } from "@/components/registry-extra"
-import { Code, Confirm, DAY, Empty, Heading, LIST, NameStatus, RADIO, SECTION, SELECT, TOUCH, WHEN, useNameCheck } from "@/components/registry-ui"
+import {
+  Code,
+  Confirm,
+  DAY,
+  Empty,
+  Heading,
+  LIST,
+  NameStatus,
+  ORG_ROLES,
+  ORG_ROLE_LABEL,
+  RADIO,
+  RADIO_INPUT,
+  SECTION,
+  SELECT,
+  TOKEN_ACCESS,
+  TOKEN_ACCESS_LABEL,
+  TOUCH,
+  WHEN,
+  useNameCheck,
+} from "@/components/registry-ui"
 import { SubmitButton } from "@/components/submit-button"
 import { useNotice } from "@/components/toaster"
 import { FormError } from "@/components/two-factor"
@@ -41,8 +60,6 @@ const EXPIRY = [
   ["90", "In 90 days"],
   ["365", "In a year"],
 ]
-const ACCESS_LABEL = { pull: "Pull", push: "Push", delete: "Push + Delete" }
-const ROLE_LABEL = { owner: "Owner", write: "Can push", read: "Read only" }
 
 // The commands a member runs once they have a token. One block, so Copy takes all of it.
 const connectCommands = (host: string, me: string) =>
@@ -272,7 +289,7 @@ export function RegistryView({
             <Heading
               id="tokens-heading"
               title="Tokens"
-              hint={`Docker signs in with a token as the password, never your account password. Make one per machine so you can revoke it alone. Push tokens made before the Delete scope existed count as Push + Delete. ${tokens.length} of ${maxTokens} used.`}
+              hint={`Docker signs in with a token as the password, never your account password. Make one per machine so you can revoke it alone. ${tokens.length} of ${maxTokens} used.`}
             >
               <Button className={TOUCH} onClick={() => setNewToken(true)} disabled={tokens.length >= maxTokens}>
                 <PlusIcon />
@@ -334,7 +351,7 @@ export function RegistryView({
                     <div className="grid min-w-0 flex-1 basis-56 gap-0.5">
                       <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
                         <span className="font-mono break-all">{o.name}</span>
-                        <Badge variant="outline">{ROLE_LABEL[o.role]}</Badge>
+                        <Badge variant="outline">{ORG_ROLE_LABEL[o.role]}</Badge>
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {o.displayName !== o.name && `${o.displayName} · `}
@@ -384,7 +401,7 @@ function TokenItem({ t }: { t: TokenRow }) {
         <div className="grid min-w-0 flex-1 basis-64 gap-1">
           <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
             <span className="min-w-0 break-words">{t.name}</span>
-            <Badge variant="outline">{ACCESS_LABEL[t.access]}</Badge>
+            <Badge variant="outline">{TOKEN_ACCESS_LABEL[t.access]}</Badge>
             {t.expired && <Badge variant="secondary">Expired</Badge>}
           </p>
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
@@ -492,6 +509,7 @@ function ManageOrg({ org, meId, repos, onClose }: { org: OrgRow | null; meId: st
   const [error, setError] = useState<string>()
   const [pending, start] = useTransition()
   const [display, setDisplay] = useState("")
+  const [team, setTeam] = useState<string | null>(null)
   const setNotice = useNotice()
   const id = useId()
   const owner = org?.role === "owner"
@@ -502,6 +520,7 @@ function ManageOrg({ org, meId, repos, onClose }: { org: OrgRow | null; meId: st
     let live = true
     setError(undefined)
     setView("members")
+    setTeam(null)
     setDisplay(org?.displayName ?? "")
     orgMembers(orgId).then((m) => live && setMembers(m))
     return () => {
@@ -524,20 +543,24 @@ function ManageOrg({ org, meId, repos, onClose }: { org: OrgRow | null; meId: st
     <Dialog.Root open={Boolean(org)} onOpenChange={(o) => !o && !pending && onClose()}>
       <Dialog.Portal>
         <Dialog.Backdrop className={DIALOG_BACKDROP} />
-        <Dialog.Popup className={cn(DIALOG_POPUP, "max-h-[calc(100svh-2rem)] max-w-lg overflow-y-auto")}>
+        <Dialog.Popup className={cn(DIALOG_POPUP, "max-h-[calc(100svh-2rem)] max-w-lg overflow-y-auto", owner && "min-h-[min(36rem,calc(100svh-2rem))]")}>
           {org && (
             <>
               <div className="grid gap-1.5">
                 <Dialog.Title className="font-mono text-base font-semibold break-all">{org.name}</Dialog.Title>
                 <Dialog.Description className="text-sm text-pretty text-muted-foreground">
-                  {owner
-                    ? "Owners manage members and delete the org. Pushers push and pull. Readers only pull."
-                    : "You can see who is in this org. Owners change it."}
+                  {!owner
+                    ? "You can see who is in this org. Owners change it."
+                    : view === "members"
+                      ? "Owners manage members and delete the org. Write can push and pull. Read can only pull."
+                      : team
+                        ? `Members of ${team} and the repositories it reaches.`
+                        : "A team gives a group of org members Read, Write or Admin on chosen repositories, on top of their org role."}
                 </Dialog.Description>
               </div>
 
               {owner && (
-                <nav aria-label="Org sections" className="flex w-fit rounded-lg bg-muted p-[3px]">
+                <div role="tablist" aria-label="Org sections" className="flex w-fit rounded-lg bg-muted p-[3px]">
                   {(
                     [
                       ["members", "Members"],
@@ -547,30 +570,34 @@ function ManageOrg({ org, meId, repos, onClose }: { org: OrgRow | null; meId: st
                     <button
                       key={id}
                       type="button"
-                      aria-pressed={view === id}
+                      role="tab"
+                      aria-selected={view === id}
                       onClick={() => setView(id)}
-                      className="flex h-7 items-center rounded-md border border-transparent px-3 text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:h-11 aria-pressed:border-input aria-pressed:bg-input/30 aria-pressed:text-foreground"
+                      className="flex h-7 items-center rounded-md border border-transparent px-3 text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:h-11 aria-selected:border-input aria-selected:bg-input/30 aria-selected:text-foreground"
                     >
                       {label}
                     </button>
                   ))}
-                </nav>
+                </div>
               )}
 
-              {owner && view === "teams" && <OrgTeams orgId={org.id} orgName={org.name} members={members} repos={repos} />}
+              {owner && view === "teams" && <OrgTeams orgId={org.id} orgName={org.name} members={members} repos={repos} onTeam={setTeam} />}
 
               {owner && view === "members" && (
                 <form
-                  className="flex gap-2"
+                  className="grid gap-1.5"
                   onSubmit={(e) => {
                     e.preventDefault()
                     run(() => renameOrg(org.id, display), "Display name saved.")
                   }}
                 >
-                  <Input aria-label="Display name" value={display} onChange={(e) => setDisplay(e.target.value)} maxLength={80} />
-                  <Button type="submit" variant="outline" disabled={pending || !display.trim()}>
-                    Save
-                  </Button>
+                  <Label htmlFor={`${id}-display`}>Display name</Label>
+                  <div className="flex gap-2">
+                    <Input id={`${id}-display`} value={display} onChange={(e) => setDisplay(e.target.value)} maxLength={80} className="pointer-coarse:h-11" />
+                    <Button type="submit" variant="outline" className={TOUCH} disabled={pending || !display.trim()}>
+                      Save name
+                    </Button>
+                  </div>
                 </form>
               )}
 
@@ -588,16 +615,16 @@ function ManageOrg({ org, meId, repos, onClose }: { org: OrgRow | null; meId: st
                         value={m.role}
                         disabled={pending}
                         onChange={(e) => run(() => setOrgRole(org.id, m.userId, e.target.value))}
-                        className={cn(SELECT, "h-8")}
+                        className={cn(SELECT, "h-8 pointer-coarse:h-11")}
                       >
-                        {Object.entries(ROLE_LABEL).map(([v, l]) => (
+                        {ORG_ROLES.map(([v, l]) => (
                           <option key={v} value={v}>
                             {l}
                           </option>
                         ))}
                       </select>
                     ) : (
-                      <Badge variant="outline">{ROLE_LABEL[m.role]}</Badge>
+                      <Badge variant="outline">{ORG_ROLE_LABEL[m.role]}</Badge>
                     )}
                     {owner && (
                       <Button
@@ -632,24 +659,25 @@ function ManageOrg({ org, meId, repos, onClose }: { org: OrgRow | null; meId: st
                   <Label htmlFor={`${id}-email`} className="sr-only">
                     Email of an existing member
                   </Label>
-                  <Input id={`${id}-email`} name="email" type="email" required placeholder="Add by email" className="min-w-0 flex-1 basis-48" />
-                  <select name="role" aria-label="Role" defaultValue="write" className={SELECT}>
-                    {Object.entries(ROLE_LABEL).map(([v, l]) => (
+                  <Input id={`${id}-email`} name="email" type="email" required placeholder="Add by email" className="min-w-0 flex-1 basis-48 pointer-coarse:h-11" />
+                  <select name="role" aria-label="Role" defaultValue="write" className={cn(SELECT, "pointer-coarse:h-11")}>
+                    {ORG_ROLES.map(([v, l]) => (
                       <option key={v} value={v}>
                         {l}
                       </option>
                     ))}
                   </select>
-                  <Button type="submit" disabled={pending}>
+                  <Button type="submit" variant="outline" className={TOUCH} disabled={pending}>
                     Add
                   </Button>
                 </form>
               )}
               <FormError>{error}</FormError>
 
-              <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="mt-auto flex flex-wrap items-center justify-between gap-2">
                 <span className="flex flex-wrap gap-2">
                   {owner ? (
+                    team ? null : (
                     <Confirm
                       label="Delete org"
                       question="Only empty orgs can go."
@@ -664,6 +692,7 @@ function ManageOrg({ org, meId, repos, onClose }: { org: OrgRow | null; meId: st
                         })
                       }
                     />
+                    )
                   ) : (
                     <Confirm
                       label="Leave org"
@@ -786,15 +815,9 @@ function NewToken({
               </div>
               <fieldset className="flex flex-col gap-2">
                 <legend className="mb-2 text-sm font-medium">Access</legend>
-                {(
-                  [
-                    ["pull", "Pull", "Download images."],
-                    ["push", "Push", "Download and upload images."],
-                    ["delete", "Push + Delete", "Download and upload images, and delete tags and images."],
-                  ] as const
-                ).map(([value, label, hint]) => (
-                  <label key={value} className={cn(RADIO, "min-h-11 py-2.5")}>
-                    <input type="radio" name="access" value={value} defaultChecked={value === "push"} className="size-4 accent-primary" />
+                {TOKEN_ACCESS.map(([value, label, hint]) => (
+                  <label key={value} className={RADIO}>
+                    <input type="radio" name="access" value={value} defaultChecked={value === "push"} className={RADIO_INPUT} />
                     <span className="grid">
                       <span className="font-medium">{label}</span>
                       <span className="text-xs text-muted-foreground">{hint}</span>
@@ -805,7 +828,7 @@ function NewToken({
               <fieldset className="flex flex-col gap-2">
                 <legend className="mb-2 text-sm font-medium">Repositories</legend>
                 <label className={RADIO}>
-                  <input type="radio" name="scope" checked={all} onChange={() => setAll(true)} className="size-4 accent-primary" />
+                  <input type="radio" name="scope" checked={all} onChange={() => setAll(true)} className={RADIO_INPUT} />
                   <span className="grid">
                     <span className="font-medium">All repositories</span>
                     <span className="text-xs text-pretty text-muted-foreground">
@@ -820,7 +843,7 @@ function NewToken({
                     checked={!all}
                     disabled={!repos.length}
                     onChange={() => setAll(false)}
-                    className="size-4 accent-primary"
+                    className={RADIO_INPUT}
                   />
                   <span className="grid">
                     <span className="font-medium">Only some repositories</span>
@@ -838,7 +861,7 @@ function NewToken({
                             type="checkbox"
                             checked={chosen.includes(r.id)}
                             onChange={(e) => setChosen(e.target.checked ? [...chosen, r.id] : chosen.filter((c) => c !== r.id))}
-                            className="size-4 accent-primary"
+                            className={RADIO_INPUT}
                           />
                           <span className="truncate font-mono">{r.fullName}</span>
                         </label>

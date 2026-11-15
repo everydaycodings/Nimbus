@@ -5,8 +5,9 @@ import { notFound, redirect } from "next/navigation"
 import { ArtifactList, PullsChart } from "@/components/registry-insights"
 import { RepoReadme } from "@/components/registry-readme"
 import { ActivityList } from "@/components/registry-activity"
-import { MovedBanner, PullCommand, RepoHeader, RepoStats } from "@/components/registry-overview"
-import { RepoSettings, RepoTabs, RepoTags, type RepoTab, type TagExtra } from "@/components/registry-repo"
+import { MovedBanner, PullCommand, RecentTags, RepoHeader, RepoStats } from "@/components/registry-overview"
+import { RepoSettings, RepoTabs, type RepoTab } from "@/components/registry-repo"
+import { RepoTags, type TagExtra } from "@/components/registry-tags"
 import { ArchivedStrip } from "@/components/registry-settings"
 import { activityPage } from "@/app/(app)/registry/actions"
 import { VulnList } from "@/components/registry-scan"
@@ -160,8 +161,8 @@ export default async function RepoPage({
       {tab === "overview" && <Overview repo={repo} host={host} />}
       {tab === "tags" && <TagsTab repo={repo} host={host} tag={tag} meId={me.id} />}
       {tab === "activity" && (
-        <section className="flex flex-col gap-3" aria-labelledby="activity-heading">
-          <Heading id="activity-heading" title="Activity" hint="Pushes, deletes and changes to this repository, kept for 90 days." />
+        <section className="flex flex-col gap-3" aria-label="Activity">
+          <p className="max-w-prose text-sm text-pretty text-muted-foreground">Pushes, deletes and changes to this repository, kept for 90 days.</p>
           <ActivityList scope={{ repoId: repo.id }} initial={await activityPage({ repoId: repo.id }, {})} />
         </section>
       )}
@@ -172,13 +173,19 @@ export default async function RepoPage({
 
 async function Overview({ repo, host }: { repo: RepoDetail; host: string }) {
   const [days, readme] = await Promise.all([pullStats(repo.id, 30), readmeFor(repo.id)])
-  const tagName = repo.tags.find((t) => t.name === "latest")?.name ?? repo.tags[0]?.name
+  const pullTag = repo.tags.find((t) => t.name === "latest") ?? repo.tags[0]
+  const pulls = days.reduce((a, d) => a + d.count, 0)
   return (
     <div className="flex flex-col gap-8">
       {repo.moved && <MovedBanner from={repo.moved.from} until={repo.moved.until} />}
       <ArchivedStrip repo={repo} />
-      {tagName ? (
-        <PullCommand command={`docker pull ${host}/${repo.fullName}:${tagName}`} />
+      {pullTag ? (
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+          <div className="order-first lg:order-last">
+            <PullCommand image={`${host}/${repo.fullName}`} tag={pullTag.name} digest={pullTag.digest} />
+          </div>
+          <RecentTags repo={repo} host={host} />
+        </div>
       ) : (
         <p className="rounded-xl border border-dashed px-4 py-6 text-sm text-pretty text-muted-foreground">
           Nothing pushed yet. Log in with <span className="font-mono">docker login {host} -u {repo.namespace}</span>, then push an image to{" "}
@@ -190,10 +197,12 @@ async function Overview({ repo, host }: { repo: RepoDetail; host: string }) {
       )}
       <RepoStats repo={repo} days={days} />
       <RepoReadme name={repo.fullName} canWrite={repo.canWrite && !repo.archived} readme={readme} />
-      <section className={SECTION} aria-labelledby="pulls-heading">
-        <Heading id="pulls-heading" title="Pulls" hint="Pulls of every tag in this repository, by day." />
-        <PullsChart days={days} />
-      </section>
+      {pulls > 0 && (
+        <section className={SECTION} aria-labelledby="pulls-heading">
+          <Heading id="pulls-heading" title="Pulls" hint="Pulls of every tag in this repository, by day." />
+          <PullsChart days={days} />
+        </section>
+      )}
     </div>
   )
 }

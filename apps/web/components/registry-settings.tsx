@@ -1,7 +1,7 @@
 "use client"
 
 import { Dialog } from "@base-ui/react/dialog"
-import { ArchiveIcon, InfoIcon } from "@phosphor-icons/react"
+import { ArchiveIcon, GlobeIcon, InfoIcon, LockSimpleIcon, TrashIcon } from "@phosphor-icons/react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useId, useState, useTransition } from "react"
@@ -9,15 +9,20 @@ import { useId, useState, useTransition } from "react"
 import {
   addCollaborator,
   checkRepoName,
+  deleteRepo,
   removeCollaborator,
   renameRepo,
+  restoreTrash,
   setArchived,
+  setBlockCritical,
   setCollaboratorRole,
   setDescription,
+  setImmutable,
+  setRepoPublic,
   setTeamRepo,
 } from "@/app/(app)/registry/actions"
 import { DIALOG_BACKDROP, DIALOG_POPUP } from "@/components/overlay-styles"
-import { Confirm, Heading, LIST, NameStatus, SECTION, SELECT, TOUCH, useNameCheck } from "@/components/registry-ui"
+import { Confirm, GRANT_LABEL, GRANTS, Heading, LIST, NameStatus, SECTION, SELECT, Switch, TOUCH, useNameCheck } from "@/components/registry-ui"
 import { SubmitButton } from "@/components/submit-button"
 import { useNotice } from "@/components/toaster"
 import { FormError } from "@/components/two-factor"
@@ -28,11 +33,6 @@ import { Label } from "@/components/ui/label"
 import type { RepoAccess, RepoDetail } from "@/lib/registry/manage"
 import { cn } from "@/lib/utils"
 
-const GRANTS = [
-  ["read", "Read"],
-  ["write", "Write"],
-  ["admin", "Admin"],
-] as const
 // Matches DESCRIPTION_MAX in lib/registry/rules (that file pulls in node:crypto, so it stays out of the client).
 const DESCRIPTION_MAX = 100
 const SEL = cn(SELECT, "pointer-coarse:h-11")
@@ -113,7 +113,7 @@ export function DescriptionForm({ repo }: { repo: RepoDetail }) {
           className={cn("min-w-0 flex-1 basis-64", FIELD)}
         />
         <SubmitButton pending={pending} variant="outline" className={TOUCH}>
-          Save
+          Save description
         </SubmitButton>
         {repo.descriptionCustom && (
           <Button type="button" variant="ghost" className={TOUCH} disabled={pending} onClick={() => save(null, "Description follows the image label again.")}>
@@ -180,7 +180,7 @@ export function AccessSection({ repo, access }: { repo: RepoDetail; access: Repo
                   aria-label={`Role of ${c.name}`}
                   value={c.role}
                   disabled={pending}
-                  onChange={(e) => run(() => setCollaboratorRole(repo.id, c.userId, e.target.value), `${c.name} is now ${e.target.value}.`)}
+                  onChange={(e) => run(() => setCollaboratorRole(repo.id, c.userId, e.target.value), `${c.name} is now ${GRANT_LABEL[e.target.value] ?? e.target.value}.`)}
                   className={SEL}
                 >
                   {GRANTS.map(([v, l]) => (
@@ -332,6 +332,7 @@ export function RenameSection({ repo, targets }: { repo: RepoDetail; targets: st
   return (
     <section id="rename" className={cn(SECTION, "scroll-mt-20")} aria-labelledby="rename-heading">
       <Heading
+        sub
         id="rename-heading"
         title="Rename or move"
         hint="Pick another name, or move it to another registry name you own. Pulls of the old name keep working for 30 days."
@@ -433,6 +434,7 @@ export function ArchiveSection({ repo }: { repo: RepoDetail }) {
   return (
     <section id="archive" className={cn(SECTION, "scroll-mt-20")} aria-labelledby="archive-heading">
       <Heading
+        sub
         id="archive-heading"
         title="Archive"
         hint="Keep the images for pulls but stop changes. Pushes and deletes are refused and cleanup rules skip it. Unarchive any time."
@@ -459,6 +461,173 @@ export function ArchiveSection({ repo }: { repo: RepoDetail }) {
         )}
         <FormError>{error}</FormError>
       </div>
+    </section>
+  )
+}
+
+// ---- General, Immutable, Delete: each owns its pending state and error --------
+
+const TOGGLE = "flex cursor-pointer items-start gap-3 text-sm pointer-coarse:min-h-11"
+
+export function GeneralSection({ repo, scanOn }: { repo: RepoDetail; scanOn: boolean }) {
+  const [pending, start] = useTransition()
+  const [error, setError] = useState<string>()
+  const [isPublic, setPublic] = useState(repo.isPublic)
+  const [block, setBlock] = useState(repo.blockCritical)
+  const setNotice = useNotice()
+  return (
+    <section id="general" className={cn(SECTION, "scroll-mt-20")} aria-labelledby="general-heading">
+      <Heading id="general-heading" title="General" hint="What this repository is called in lists, and who can pull it." />
+      <div className="flex flex-col gap-5 rounded-xl border bg-card p-4">
+        <DescriptionForm repo={repo} />
+        <label className={TOGGLE}>
+          <Switch
+            checked={isPublic}
+            disabled={pending || (!repo.publicAllowed && !isPublic)}
+            onChange={(e) => {
+              const next = e.target.checked
+              setPublic(next)
+              setError(undefined)
+              start(async () => {
+                const r = await setRepoPublic(repo.fullName, next)
+                if (r.error) {
+                  setPublic(!next)
+                  return setError(r.error)
+                }
+                setNotice({ text: next ? "Anyone can now pull this repository." : "This repository is private again." })
+              })
+            }}
+            className="mt-0.5"
+          />
+          <span className="grid gap-0.5">
+            <span className="flex items-center gap-1.5 font-medium">
+              {isPublic ? <GlobeIcon className="size-4" /> : <LockSimpleIcon className="size-4" />}
+              Public
+            </span>
+            <span className="text-xs text-pretty text-muted-foreground">
+              {repo.publicAllowed
+                ? "Anyone can pull without signing in. Only people with Write or Admin access can push."
+                : "An admin turned off public repositories on this server."}
+            </span>
+          </span>
+        </label>
+        {scanOn && (
+          <label className={TOGGLE}>
+            <Switch
+              checked={block}
+              disabled={pending}
+              onChange={(e) => {
+                const next = e.target.checked
+                setBlock(next)
+                setError(undefined)
+                start(async () => {
+                  const r = await setBlockCritical(repo.fullName, next)
+                  if (r.error) {
+                    setBlock(!next)
+                    return setError(r.error)
+                  }
+                  setNotice({ text: next ? "Pulls of images with critical vulnerabilities are blocked." : "Images with critical vulnerabilities can be pulled again." })
+                })
+              }}
+              className="mt-0.5"
+            />
+            <span className="grid gap-0.5">
+              <span className="font-medium">Block pulls of images with critical vulnerabilities</span>
+              <span className="text-xs text-pretty text-muted-foreground">
+                A scanned image with a critical finding fails to pull. Images that haven&apos;t been scanned yet still pull.
+              </span>
+            </span>
+          </label>
+        )}
+        <FormError>{error}</FormError>
+      </div>
+    </section>
+  )
+}
+
+export function ImmutableSection({ repo }: { repo: RepoDetail }) {
+  const [pending, start] = useTransition()
+  const [error, setError] = useState<string>()
+  const router = useRouter()
+  const setNotice = useNotice()
+  const id = useId()
+  return (
+    <section className={SECTION} aria-labelledby="immutable-heading">
+      <Heading id="immutable-heading" title="Immutable tags" hint="Lock tags so a release can't be overwritten or deleted." />
+      <form
+        className="grid gap-2 rounded-xl border bg-card p-4"
+        onSubmit={(e) => {
+          e.preventDefault()
+          const v = String(new FormData(e.currentTarget).get("pattern") ?? "")
+          setError(undefined)
+          start(async () => {
+            const r = await setImmutable(repo.fullName, v)
+            if (r.error) return setError(r.error)
+            setNotice({ text: v.trim() ? "Immutable tags saved." : "No tags are immutable now." })
+            router.refresh()
+          })
+        }}
+      >
+        <Label htmlFor={id}>Pattern</Label>
+        <p className="text-xs text-pretty text-muted-foreground">
+          Tags matching this can&apos;t be overwritten or deleted, and cleanup skips them. A glob like <code className="font-mono">v*</code>, several separated by
+          commas (<code className="font-mono">v*,release-*</code>), or <code className="font-mono">re:^v\d+$</code> for a regular expression. Blank for none.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Input id={id} name="pattern" defaultValue={repo.immutablePattern ?? ""} autoComplete="off" spellCheck={false} className={cn("min-w-0 flex-1 basis-48 font-mono", FIELD)} />
+          <SubmitButton pending={pending} variant="outline" className={TOUCH}>
+            Save pattern
+          </SubmitButton>
+        </div>
+        <FormError>{error}</FormError>
+      </form>
+    </section>
+  )
+}
+
+export function DeleteSection({ repo }: { repo: RepoDetail }) {
+  const [pending, start] = useTransition()
+  const [error, setError] = useState<string>()
+  const router = useRouter()
+  const setNotice = useNotice()
+  return (
+    <section className={SECTION} aria-labelledby="delete-heading">
+      <Heading
+        sub
+        id="delete-heading"
+        title="Delete repository"
+        hint={repo.archived ? "Unarchive it first. Deleting moves it and every tag to Trash." : "Moves it and every tag to Trash. Restore it from there within 7 days."}
+      />
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/30 p-4">
+        <span className="flex min-w-0 flex-1 basis-56 items-center gap-2 text-sm font-medium">
+          <TrashIcon className="size-4 text-destructive" />
+          <span className="font-mono break-all">{repo.fullName}</span>
+        </span>
+        <Confirm
+          label="Delete repository"
+          question="Pulls and pushes stop right away."
+          yes="Move to Trash"
+          disabled={repo.archived}
+          pending={pending}
+          onYes={() =>
+            start(async () => {
+              setError(undefined)
+              const r = await deleteRepo(repo.fullName)
+              if (r.error) return setError(r.error)
+              setNotice({
+                text: `Moved ${repo.fullName} to Trash.`,
+                undo: () =>
+                  restoreTrash("repo", r.id!).then((u) => {
+                    setNotice(u.error ? { text: u.error, error: true } : { text: `Restored ${repo.fullName}.` })
+                    router.replace(`/registry/${repo.fullName}`)
+                  }),
+              })
+              router.replace("/registry")
+            })
+          }
+        />
+      </div>
+      <FormError>{error}</FormError>
     </section>
   )
 }

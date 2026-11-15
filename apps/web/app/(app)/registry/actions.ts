@@ -88,6 +88,21 @@ export async function deleteTag(name: string, tag: string) {
   return me ? done(await svc.deleteTag(me.id, name, tag)) : NOT_ON
 }
 
+// Many tags at once: each goes through deleteTag (immutable and archived rules, audit, activity). Returns what moved, and why the rest didn't.
+export async function deleteTags(name: string, tags: string[]) {
+  const me = await member()
+  if (!me) return { ids: [], skipped: tags.map((tag) => ({ tag, error: NOT_ON.error })) }
+  const ids: string[] = []
+  const skipped: { tag: string; error: string }[] = []
+  for (const tag of tags.slice(0, 200)) {
+    const r = await svc.deleteTag(me.id, name, tag)
+    if (r.error || !r.id) skipped.push({ tag, error: r.error ?? "Already gone." })
+    else ids.push(r.id)
+  }
+  done({})
+  return { ids, skipped }
+}
+
 export async function createToken(o: svc.NewToken): ReturnType<typeof svc.createToken> {
   const me = await member()
   return me ? done(await svc.createToken(me.id, o)) : NOT_ON

@@ -2,10 +2,11 @@
 
 import { GlobeIcon, LockSimpleIcon } from "@phosphor-icons/react"
 import Link from "next/link"
+import { useState } from "react"
 
 import { CopyButton } from "@/components/copy-button"
 import { Badge } from "@/components/ui/badge"
-import { CODE, DAY, TOUCH, WHEN } from "@/components/registry-ui"
+import { CODE, DAY, LIST, TOUCH, WHEN } from "@/components/registry-ui"
 import { sizeOf } from "@/lib/registry/size"
 import type { RepoDetail } from "@/lib/registry/manage"
 import { cn } from "@/lib/utils"
@@ -86,18 +87,87 @@ export function RepoStats({ repo, days }: { repo: RepoDetail; days: { day: strin
   )
 }
 
-// The command to run, in the usual block with Copy in the corner.
-export function PullCommand({ command }: { command: string }) {
+// The command to run, in the usual block with Copy in the corner. By tag, or pinned to the digest.
+export function PullCommand({ image, tag, digest }: { image: string; tag: string; digest: string }) {
+  const [by, setBy] = useState<"tag" | "digest">("tag")
+  const command = `docker pull ${image}${by === "tag" ? `:${tag}` : `@${digest}`}`
   return (
-    <div className="grid gap-2">
-      <h2 className="text-base font-semibold">Pull this image</h2>
+    <div className="grid content-start gap-2">
+      <div className="flex min-h-9 flex-wrap items-center justify-between gap-2">
+        <h2 className="text-base font-semibold">Pull this image</h2>
+        <div role="radiogroup" aria-label="Pull by" className="flex rounded-lg bg-muted p-[3px]">
+          {(
+            [
+              ["tag", `Tag ${tag}`],
+              ["digest", "Digest"],
+            ] as const
+          ).map(([v, label]) => (
+            <button
+              key={v}
+              type="button"
+              role="radio"
+              aria-checked={by === v}
+              onClick={() => setBy(v)}
+              className="flex h-7 max-w-40 items-center rounded-md border border-transparent px-3 text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:h-11 aria-checked:border-input aria-checked:bg-input/30 aria-checked:text-foreground"
+            >
+              <span className="truncate">{label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="relative">
-        <code className={cn(CODE, "pt-12 sm:pt-3 sm:pr-24")}>{command}</code>
+        <code className={cn(CODE, "pt-12 whitespace-pre-wrap break-all sm:pr-24 sm:pt-3")}>{command}</code>
         <div className="absolute top-2 right-2">
           <CopyButton value={command} label="Copy pull command" className={TOUCH} />
         </div>
       </div>
+      <p className="text-xs text-pretty text-muted-foreground">
+        {by === "tag" ? "A tag can move to a newer image. Use the digest to pin this one." : "A digest always gives this exact image."}
+      </p>
     </div>
+  )
+}
+
+// The five newest tags, with a way into the full list.
+export function RecentTags({ repo, host }: { repo: RepoDetail; host: string }) {
+  const recent = repo.tags.slice(0, 5)
+  return (
+    <section className="grid content-start gap-2" aria-labelledby="recent-heading">
+      <div className="flex min-h-9 flex-wrap items-center justify-between gap-2">
+        <h2 id="recent-heading" className="text-base font-semibold">
+          Recent tags
+        </h2>
+        <Link
+          href={`/registry/${repo.fullName}?tab=tags`}
+          className="rounded-sm text-sm text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:flex pointer-coarse:min-h-11 pointer-coarse:items-center"
+        >
+          All tags{repo.tags.length > recent.length ? ` (${repo.tags.length})` : ""} →
+        </Link>
+      </div>
+      <ul className={LIST}>
+        {recent.map((t) => (
+          <li key={t.name} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3">
+            <div className="grid min-w-0 flex-1 basis-44 gap-1">
+              <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium">
+                <Link
+                  href={`/registry/${repo.fullName}?tab=tags&tag=${encodeURIComponent(t.name)}`}
+                  className="rounded-sm font-mono break-all underline-offset-4 outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:flex pointer-coarse:min-h-11 pointer-coarse:items-center"
+                >
+                  {t.name}
+                </Link>
+                {t.platforms.length > 0 && (
+                  <span className="text-xs font-normal text-muted-foreground">{t.platforms.length === 1 ? t.platforms[0] : `${t.platforms.length} platforms`}</span>
+                )}
+              </p>
+              <p suppressHydrationWarning className="text-xs text-muted-foreground">
+                <span className="tabular-nums">{sizeOf(t.bytes)}</span> · {DAY.format(new Date(t.pushedAt))}
+              </p>
+            </div>
+            <CopyButton value={`docker pull ${host}/${repo.fullName}:${t.name}`} label={`Copy pull command for ${t.name}`} className={TOUCH} />
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 
