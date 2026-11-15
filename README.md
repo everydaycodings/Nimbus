@@ -138,10 +138,12 @@ Nimbus binds only to 127.0.0.1, on ports chosen to stay clear of other apps:
 | WebDAV proxy | 3404 | always |
 | SSH terminal (WebSocket) | 3406 | always |
 | S3-compatible API | 3407 | `s3api` profile |
+| Container registry | 3408 | `registry` profile |
 | Redis | 6340 | always |
 | Postgres | 54340 | `postgres` profile |
 | MinIO API / console | 3402 / 3403 | `minio` profile |
 
+Image scanning (`scan` profile) and image builds (`build` profile) publish no host port.
 `setup.sh` checks that the ones you need are free. If one is taken, change it in
 `docker-compose.yml` and in the templates under `production_script/nginx/`.
 
@@ -158,7 +160,8 @@ The script asks:
 2. **Database:** run Postgres in Docker, or use your own ([details](#your-own-postgres)).
 3. **File storage:** run MinIO in Docker, or use your own S3-compatible storage
    ([details](#your-own-s3-storage)).
-4. Optional: email, Google/GitHub sign-in, and the backup worker.
+4. Optional: email, Google/GitHub sign-in, the backup worker, the S3-compatible API and the
+   container registry (with image scanning and image builds).
 5. Whether to set up nginx and HTTPS for you, or print what to point your own proxy at.
 
 It writes `.env` with fresh secrets, starts the right services and waits for the app. If nginx
@@ -466,6 +469,60 @@ terraform {
 
 Limits: a bucket name is unique per account and, like every name in Nimbus, case-insensitive.
 Deletes move to the trash. Versioning is always on. Vault folders can't be buckets.
+
+### Container registry (optional)
+
+A private Docker registry (OCI) for you and your team: `docker push` and `docker pull`, with the
+image layers kept in your Nimbus storage. Helm charts, oras artifacts, cosign signatures and buildx
+caches work too. Turn it on in `setup.sh` ("Turn on the container registry?"): it adds the
+`registry` profile and asks for a subdomain (default `registry.<DOMAIN>`), saved as
+`REGISTRY_DOMAIN`. Add a DNS A record for it and run `sudo production_script/setup-nginx.sh`.
+Pulls also work at `https://<DOMAIN>/v2/`. The `registry` service listens on port 3408.
+
+If the domain is on Cloudflare, make the registry record **DNS only** (grey cloud): Cloudflare's
+proxy caps a request at 100 MB, which large image layers go over.
+
+Members claim a registry name under **Container registry**, then make a token under **Access**
+(Pull, Push, or Push + Delete):
+
+```sh
+docker login registry.example.com -u <registry name>     # the token is the password
+docker push registry.example.com/<registry name>/app:1.0
+```
+
+Repositories are private until made public (an admin can turn public repositories off). Orgs,
+teams and per-repository collaborators share access. Deleted tags wait in the registry's Trash
+for 7 days; cleanup rules, immutable tags, rename with a 30-day redirect and archiving are in
+each repository's Settings. Limits per member and org are on **Admin → System → Registry**, which
+also has the pull-through mirrors (for example `registry.example.com/mirror/dockerhub/library/nginx`).
+
+**Image scanning** (`scan` profile, about 1 GB): setup asks after the registry. Trivy scans each
+pushed image and rescans daily. Each repository shows its vulnerabilities, packages (from the
+image's SBOM or the scan), a compare view between two tags and base-image advice. Image policies
+(per registry name, on the Access tab) can require no critical findings, signed images or no
+blocked licenses, and can refuse pulls of images that fail.
+
+**Image builds** (`build` profile, needs 2 GB or more of free RAM): setup asks for the CPU and RAM
+builds may use and the size of the layer cache. Builds run in a rootless BuildKit container under
+those limits. A build waits while the server is busy and is stopped if the server runs low on
+memory or disk, so it can't take Nimbus down; the thresholds are on **Admin → System → Registry**,
+and **Admin → System → Health** shows the server's memory, load and disk. Connect a GitHub
+repository (a fine-grained token with Contents read, Webhooks read and write, and Commit statuses
+read and write) or any git URL in a repository's **Builds** tab, add rules like "branch `main` →
+`latest`" or "tags `v*` → `{version}`, `{major}.{minor}`", or build from your own folder:
+
+```sh
+nimbus registry build . -t <registry name>/app:1.0     # NIMBUS_REGISTRY_TOKEN = a Push token
+```
+
+Built images are scanned, signed with the server's cosign key (shown in the repository's
+Settings) and get an SBOM and provenance attached.
+
+On Ubuntu 23.10 and newer, user namespaces are restricted, which rootless BuildKit needs. Setup
+installs a small AppArmor profile that allows them for the BuildKit container only
+([docker/buildkit/apparmor-nimbus-buildkit](docker/buildkit/apparmor-nimbus-buildkit)) and sets
+`BUILDKIT_APPARMOR=nimbus-buildkit` in `.env`. Building for another architecture (arm64 on an x86
+server) needs QEMU: `docker run --privileged --rm tonistiigi/binfmt --install arm64`.
 
 ### SSH keys, CA and browser terminal (Secrets → SSH)
 
