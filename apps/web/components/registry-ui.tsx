@@ -171,8 +171,9 @@ export function RowMenu({ label, children, disabled }: { label: string; children
 }
 
 // `copy`: leaves room for a Copy button in the corner.
-export function Code({ children, copy }: { children: string; copy?: boolean }) {
-  return <code className={cn(CODE, copy && "pt-12 sm:pt-3 sm:pr-20")}>{children}</code>
+// `wrap` breaks a long single line (a URL) instead of scrolling sideways.
+export function Code({ children, copy, wrap }: { children: string; copy?: boolean; wrap?: boolean }) {
+  return <code className={cn(CODE, copy && "pt-12 sm:pt-3 sm:pr-20", wrap && "break-all whitespace-pre-wrap")}>{children}</code>
 }
 
 export type NameCheck = { state: "idle" | "checking" | "ok" | "bad"; error?: string }

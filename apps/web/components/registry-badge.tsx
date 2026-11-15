@@ -27,13 +27,15 @@ export function StatusBadge({ repoId, base, name, isPublic, token, canAdmin }: {
   return (
     <section className={SECTION} aria-labelledby="badge-heading">
       <Heading id="badge-heading" title="Status badge" hint="Shows whether the latest build passes, for a README. Add ?tag=v1 to follow one tag." />
-      <div className="grid gap-3 rounded-xl border bg-card p-4">
+      <div className="grid min-w-0 gap-3 rounded-xl border bg-card p-4">
         {ready ? (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={image} alt="Build status badge" height={20} className="h-5 w-fit" />
-            <div className="relative">
-              <Code copy>{markdown}</Code>
+            <div className="relative min-w-0">
+              <Code copy wrap>
+                {markdown}
+              </Code>
               <div className="absolute top-2 right-2">
                 <CopyButton value={markdown} label="Copy the Markdown" className={TOUCH} />
               </div>
