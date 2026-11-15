@@ -24,6 +24,11 @@ const done = <T extends { error?: string }>(r: T) => {
   return r
 }
 
+export async function checkName(name: string) {
+  await requireMember()
+  return svc.checkName(String(name).slice(0, 64))
+}
+
 export async function claimName(name: string) {
   const me = await requireMember()
   const s = await svc.registryState(me.id)

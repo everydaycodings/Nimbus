@@ -64,6 +64,15 @@ export async function myNamespace(userId: string): Promise<Ns | null> {
   return ns ?? null
 }
 
+// For the live "available?" hint while typing; claimName/createOrg still decide for real.
+export async function checkName(raw: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const name = raw.trim().toLowerCase()
+  const bad = registryNameError(name)
+  if (bad) return { ok: false, error: bad }
+  if (await nameTaken(name)) return { ok: false, error: "That name is taken. Try another." }
+  return { ok: true }
+}
+
 async function nameTaken(name: string) {
   const [t] = await db
     .select({ id: registryNamespaces.id })

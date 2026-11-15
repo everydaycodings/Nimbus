@@ -7,6 +7,7 @@ import { useEffect, useId, useState, useTransition } from "react"
 
 import {
   addOrgMember,
+  checkName,
   claimName,
   createOrg,
   createToken,
@@ -109,11 +110,50 @@ function SetupCard({ host, me, tokens, onNewToken }: { host: string; me: string;
   )
 }
 
+type NameCheck = { state: "idle" | "checking" | "ok" | "bad"; error?: string }
+
+// Debounced "is this name free?" while typing. The claim itself re-checks on the server.
+function useNameCheck(name: string): NameCheck {
+  const [check, setCheck] = useState<NameCheck>({ state: "idle" })
+  useEffect(() => {
+    if (!name) return setCheck({ state: "idle" })
+    let live = true
+    setCheck({ state: "checking" })
+    const t = setTimeout(async () => {
+      const r = await checkName(name).catch(() => null)
+      if (!live) return
+      if (!r) setCheck({ state: "idle" })
+      else setCheck(r.ok ? { state: "ok" } : { state: "bad", error: r.error })
+    }, 300)
+    return () => {
+      live = false
+      clearTimeout(t)
+    }
+  }, [name])
+  return check
+}
+
+function NameStatus({ id, check }: { id: string; check: NameCheck }) {
+  return (
+    <p id={id} aria-live="polite" className="flex min-h-5 items-center gap-1.5 text-sm">
+      {check.state === "checking" && <span className="text-muted-foreground">Checking…</span>}
+      {check.state === "ok" && (
+        <>
+          <CheckCircleIcon aria-hidden className="size-4 text-brand" />
+          <span className="text-muted-foreground">Available</span>
+        </>
+      )}
+      {check.state === "bad" && <span className="text-destructive">{check.error}</span>}
+    </p>
+  )
+}
+
 // Shown until a member picks their registry name; the name is the first part of every image they push.
 export function ClaimName({ suggestion }: { suggestion: string }) {
   const [error, setError] = useState<string>()
   const [pending, start] = useTransition()
   const [name, setName] = useState(suggestion)
+  const check = useNameCheck(name)
   return (
     <div className="mx-auto flex w-full max-w-xl flex-col gap-6">
       <header className="grid gap-1">
@@ -147,10 +187,14 @@ export function ClaimName({ suggestion }: { suggestion: string }) {
           maxLength={39}
           autoComplete="off"
           autoFocus
+          spellCheck={false}
+          aria-invalid={check.state === "bad" || undefined}
+          aria-describedby="claim-name-status"
           className="font-mono"
         />
+        <NameStatus id="claim-name-status" check={check} />
         <FormError>{error}</FormError>
-        <SubmitButton pending={pending} className="self-start">
+        <SubmitButton pending={pending} disabled={check.state !== "ok"} className="self-start">
           Claim name
         </SubmitButton>
       </form>
@@ -350,6 +394,7 @@ export function RegistryView({
       {tab === "mirrors" && <MirrorsTab host={host} upstreams={upstreams} cached={cached} />}
 
       <NewOrg
+        key={newOrg ? "open" : "closed"}
         open={newOrg}
         onClose={() => setNewOrg(false)}
         onDone={(name) => {
@@ -412,6 +457,8 @@ function TokenItem({ t }: { t: TokenRow }) {
 function NewOrg({ open, onClose, onDone }: { open: boolean; onClose: () => void; onDone: (name: string) => void }) {
   const [error, setError] = useState<string>()
   const [pending, start] = useTransition()
+  const [orgName, setOrgName] = useState("")
+  const check = useNameCheck(orgName)
   const id = useId()
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && !pending && onClose()}>
@@ -440,7 +487,20 @@ function NewOrg({ open, onClose, onDone }: { open: boolean; onClose: () => void;
           >
             <div className="grid gap-2">
               <Label htmlFor={`${id}-name`}>Name</Label>
-              <Input id={`${id}-name`} name="name" maxLength={39} autoComplete="off" autoFocus placeholder="acme" className="font-mono" />
+              <Input
+                id={`${id}-name`}
+                name="name"
+                value={orgName}
+                onChange={(e) => setOrgName(e.target.value.toLowerCase())}
+                maxLength={39}
+                autoComplete="off"
+                autoFocus
+                spellCheck={false}
+                aria-invalid={check.state === "bad" || undefined}
+                aria-describedby={`${id}-status`}
+                className="font-mono"
+              />
+              <NameStatus id={`${id}-status`} check={check} />
             </div>
             <div className="grid gap-2">
               <Label htmlFor={`${id}-display`}>Display name (optional)</Label>
@@ -451,7 +511,7 @@ function NewOrg({ open, onClose, onDone }: { open: boolean; onClose: () => void;
               <Dialog.Close disabled={pending} render={<Button variant="outline" />}>
                 Cancel
               </Dialog.Close>
-              <SubmitButton pending={pending}>Create org</SubmitButton>
+              <SubmitButton pending={pending} disabled={check.state !== "ok"}>Create org</SubmitButton>
             </div>
           </form>
         </Dialog.Popup>

@@ -49,6 +49,12 @@ export function PullsChart({ days }: { days: { day: string; count: number }[] })
   const max = Math.max(1, ...days.map((d) => d.count))
   const top = max < 10 ? max : Math.ceil(max / 10) * 10
   const hit = at === null ? null : days[at]
+  if (!total)
+    return (
+      <p className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">
+        No pulls in the last {days.length} days.
+      </p>
+    )
   return (
     <div className="grid gap-3 rounded-xl border bg-card p-4">
       <p aria-live="off" className="text-sm tabular-nums">
@@ -96,7 +102,9 @@ export function PullsChart({ days }: { days: { day: string; count: number }[] })
           <span>{dayOf(days[days.length - 1].day)}</span>
         </div>
       </div>
-      <table className="sr-only">
+      {/* sr-only on the <table> itself lets Chrome paint the caption on top of the chart. */}
+      <div className="sr-only">
+      <table>
         <caption>Pulls per day</caption>
         <tbody>
           {days.map((d) => (
@@ -107,6 +115,7 @@ export function PullsChart({ days }: { days: { day: string; count: number }[] })
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }
