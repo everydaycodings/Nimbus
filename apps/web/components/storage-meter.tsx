@@ -13,6 +13,7 @@ const PARTS = [
   { key: "docs", label: "Docs", fill: "bg-file-doc" },
   { key: "other", label: "Other", fill: "bg-file-archive" },
   { key: "vault", label: "Vault", fill: "bg-foreground/70" },
+  { key: "s3", label: "S3 buckets", fill: "bg-file-bucket" },
   {
     key: "extra",
     label: "Versions & trash",
@@ -108,6 +109,17 @@ export function StorageMeter({ usage, href }: { usage: Usage; href?: string }) {
       {full && (
         <p className="text-xs text-destructive">
           Full. Uploads stop until space is freed.
+        </p>
+      )}
+      {usage.registry > 0 && (
+        // Its own limit, so it sits outside the bar above.
+        <p className="flex items-center justify-between gap-2 border-t border-sidebar-border pt-2 text-xs text-sidebar-foreground/70">
+          <span>Container registry</span>
+          <span className="whitespace-nowrap tabular-nums">
+            {usage.registryQuota === null
+              ? formatBytes(usage.registry)
+              : `${formatBytes(usage.registry)} of ${formatBytes(usage.registryQuota)}`}
+          </span>
         </p>
       )}
     </>

@@ -25,6 +25,8 @@ export const c = {
     audio: "#4fd1a5",
     code: "#ff9f66",
     archive: "#b5b5b5",
+    // Folders used as S3 buckets (web --file-bucket).
+    bucket: "#a3d977",
     other: "#a1a1a1",
   },
   tag: {

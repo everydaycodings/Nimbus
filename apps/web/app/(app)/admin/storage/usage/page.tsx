@@ -15,6 +15,7 @@ const KINDS = [
   { key: "docs", label: "Docs", fill: "bg-file-doc" },
   { key: "other", label: "Other", fill: "bg-file-archive" },
   { key: "vault", label: "Vault", fill: "bg-foreground/70" },
+  { key: "s3", label: "S3 buckets", fill: "bg-file-bucket" },
   { key: "extra", label: "Versions & trash", fill: "bg-muted-foreground" },
 ] as const
 

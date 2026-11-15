@@ -103,6 +103,11 @@ export type Usage = {
   extra: number
   /** Copies held by live transfers (already part of `used`). */
   transfers: number
+  /** Files in folders used as S3 buckets (already part of `used`). */
+  s3: number
+  /** Container registry images under the member's own registry name; its own limit, not part of `used`. */
+  registry: number
+  registryQuota: number | null
 }
 
 export type Me = {

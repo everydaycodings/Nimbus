@@ -13,6 +13,7 @@ const PARTS = [
   { key: "docs", label: "Docs", fill: c.file.doc },
   { key: "other", label: "Other", fill: c.file.archive },
   { key: "vault", label: "Vault", fill: c.foreground },
+  { key: "s3", label: "S3 buckets", fill: c.file.bucket },
   { key: "extra", label: "Versions & trash", fill: c.dim },
 ] as const
 
@@ -23,7 +24,7 @@ export function StorageMeter({ usage, sizes, bare }: { usage: Usage; sizes?: boo
   const scale = quota ?? used
   const full = quota !== null && used >= quota
   const near = quota !== null && used >= quota * 0.9
-  const parts = PARTS.filter((p) => usage[p.key] > 0)
+  const parts = PARTS.filter((p) => (usage[p.key] ?? 0) > 0)
   const share = quota ? (used / quota) * 100 : 0
   const percent = share > 0 && share < 1 ? "<1" : Math.min(100, Math.round(share))
   const summary =
@@ -78,6 +79,15 @@ export function StorageMeter({ usage, sizes, bare }: { usage: Usage; sizes?: boo
         </View>
       )}
       {full && <Text variant="caption" color={c.destructive}>Full. Uploads stop until space is freed.</Text>}
+      {(usage.registry ?? 0) > 0 && (
+        // Its own limit, so it sits outside the bar.
+        <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 8 }}>
+          <Text variant="caption" color={c.mutedForeground}>Container registry</Text>
+          <Text variant="caption" color={c.mutedForeground} style={{ fontVariant: ["tabular-nums"] }}>
+            {usage.registryQuota == null ? formatBytes(usage.registry) : `${formatBytes(usage.registry)} of ${formatBytes(usage.registryQuota)}`}
+          </Text>
+        </View>
+      )}
     </View>
   )
 }

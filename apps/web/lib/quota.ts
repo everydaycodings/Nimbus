@@ -3,10 +3,11 @@ import "server-only"
 import { and, eq, isNotNull, isNull, sql } from "drizzle-orm"
 
 import { db } from "@/lib/db"
-import { settings, user } from "@/lib/db/schema"
+import { registryNamespaces, settings, user } from "@/lib/db/schema"
 import { AUDIO, DOC, IMAGE, TEXT, VIDEO } from "@/lib/file-rules"
 import { notify } from "@/lib/notify"
 import { redis } from "@/lib/redis"
+import { registryUsage } from "@/lib/registry/quota"
 import { RESERVE_TTL, reservedBytes } from "@/lib/upload-rules"
 
 export type Usage = {
@@ -24,6 +25,11 @@ export type Usage = {
   extra: number
   // Copies held by live transfers (already part of `used`).
   transfers: number
+  // Current files in folders used as S3 buckets, plus unfinished multipart parts (part of `used`).
+  s3: number
+  // Container registry images under the member's own registry name. Its own limit, NOT part of `used`.
+  registry: number
+  registryQuota: number | null
 }
 
 // What a sender's live transfers hold: not revoked, not expired (drafts count).
@@ -37,7 +43,7 @@ const transferBytes = (userId: string) =>
 // counted once per S3 key.
 // ponytail: summed on every call; cache per user if big accounts get slow.
 export async function getUsage(userId: string): Promise<Usage> {
-  const [[stored], [current], quota, [held]] = await Promise.all([
+  const [[stored], [current], quota, [held], reg] = await Promise.all([
     db.execute<{ used: string }>(sql`
       select (coalesce(sum(size), 0) + (
         -- S3 multipart parts uploaded but not yet completed (lib/s3api/multipart.ts).
@@ -51,11 +57,19 @@ export async function getUsage(userId: string): Promise<Usage> {
         where n.owner_id = ${userId}
       ) k`),
     db.execute<
-      Record<"images" | "videos" | "docs" | "other" | "vault", string>
+      Record<"images" | "videos" | "docs" | "other" | "vault" | "s3", string>
     >(sql`
-      with f as (
+      with recursive s3tree as (
+        select b.node_id as id from s3_buckets b
+        join nodes bn on bn.id = b.node_id
+        where bn.owner_id = ${userId}
+        union
+        select c.id from nodes c join s3tree t on c.parent_id = t.id
+      ),
+      f as (
         select size, case
           when vault_id is not null then 'vault'
+          when id in (select id from s3tree) then 's3'
           when name ~* ${IMAGE.source} then 'images'
           when name ~* ${VIDEO.source} then 'videos'
           when name ~* ${AUDIO.source} then 'other'
@@ -75,16 +89,24 @@ export async function getUsage(userId: string): Promise<Usage> {
         coalesce(sum(size) filter (where cat = 'videos'), 0)::text as videos,
         coalesce(sum(size) filter (where cat = 'docs'), 0)::text as docs,
         coalesce(sum(size) filter (where cat = 'other'), 0)::text as other,
-        coalesce(sum(size) filter (where cat = 'vault'), 0)::text as vault
+        coalesce(sum(size) filter (where cat = 'vault'), 0)::text as vault,
+        (coalesce(sum(size) filter (where cat = 's3'), 0) + (
+          select coalesce(sum(m.bytes), 0) from s3_multipart m
+          join s3_buckets b on b.id = m.bucket_id
+          join nodes bn on bn.id = b.node_id
+          where bn.owner_id = ${userId}
+        ))::text as s3
       from f`),
     quotaFor(userId),
     transferBytes(userId),
+    ownRegistry(userId),
   ])
   const images = Number(current.images)
   const videos = Number(current.videos)
   const docs = Number(current.docs)
   const other = Number(current.other)
   const vault = Number(current.vault)
+  const s3 = Number(current.s3)
   const transfers = Number(held.n)
   const used = Number(stored.used) + transfers
   return {
@@ -95,9 +117,24 @@ export async function getUsage(userId: string): Promise<Usage> {
     docs,
     other,
     vault,
-    extra: Math.max(0, used - transfers - images - videos - docs - other - vault),
+    extra: Math.max(0, used - transfers - images - videos - docs - other - vault - s3),
     transfers,
+    s3,
+    registry: reg.used,
+    registryQuota: reg.quota,
   }
+}
+
+// The member's own registry name (orgs are shared, so they aren't anyone's personal usage).
+async function ownRegistry(userId: string): Promise<{ used: number; quota: number | null }> {
+  const [ns] = await db
+    .select({ id: registryNamespaces.id, own: registryNamespaces.quotaBytes, fallback: settings.registryDefaultQuotaBytes, role: user.role })
+    .from(registryNamespaces)
+    .leftJoin(settings, sql`true`)
+    .innerJoin(user, eq(user.id, registryNamespaces.refId))
+    .where(and(eq(registryNamespaces.kind, "user"), eq(registryNamespaces.refId, userId)))
+  if (!ns) return { used: 0, quota: null }
+  return { used: await registryUsage(ns.id), quota: ns.role === "owner" ? null : (ns.own ?? ns.fallback ?? null) }
 }
 
 // The owner runs the server, so they're never limited.
