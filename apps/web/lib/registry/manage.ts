@@ -1551,3 +1551,40 @@ export async function digestBytes(repoId: string, digests: string[]): Promise<Re
   const byDigest = new Map(manifests.map((m) => [m.digest, m.id]))
   return Object.fromEntries(digests.map((d) => [d, byDigest.has(d) ? manifestBytes(byDigest.get(d)!, refs, blob, byDigest) : 0]))
 }
+
+// ---- Insights helpers ------------------------------------------------------------
+
+// A repo the member can read, for the insights actions.
+export async function readableRepo(userId: string, fullName: string) {
+  const r = await reach(userId, fullName)
+  return r ? { id: r.repo.id, namespaceId: r.ns.id, namespace: r.ns.name, canWrite: r.role !== "read" } : null
+}
+
+export async function ownedNamespaceId(userId: string, nsName: string) {
+  return (await owned(userId, nsName))?.id ?? null
+}
+
+// The newest tag of each live repository in a registry name, for "would these pass the policy" checks.
+export async function namespaceLatestTags(namespaceId: string, cap = 60) {
+  const rows = await db.execute<{ repo_id: string; repo: string; tag: string; digest: string }>(sql`
+    select * from (
+      select distinct on (t.repo_id) t.repo_id, r.name as repo, t.name as tag, t.digest
+      from registry_tags t join registry_repos r on r.id = t.repo_id
+      where r.namespace_id = ${namespaceId} and r.deleted_at is null and r.archived_at is null and t.deleted_at is null
+        and t.name !~ '^(sha256-[0-9a-f]{64}(\\.[a-z0-9-]+)?|buildcache)$'
+      order by t.repo_id, t.pushed_at desc
+    ) x limit ${cap}`)
+  return rows.map((r) => ({ repoId: r.repo_id, repo: r.repo, tag: r.tag, digest: r.digest }))
+}
+
+// A tag name or sha256 digest in a readable repo, as the repo and the image's digest.
+export async function resolveImage(userId: string, fullName: string, ref: string) {
+  const r = await readableRepo(userId, fullName)
+  if (!r) return null
+  if (/^sha256:[0-9a-f]{64}$/.test(ref)) return { ...r, digest: ref, tag: null as string | null }
+  const [t] = await db
+    .select({ digest: registryTags.digest })
+    .from(registryTags)
+    .where(and(eq(registryTags.repoId, r.id), eq(registryTags.name, ref), isNull(registryTags.deletedAt)))
+  return t ? { ...r, digest: t.digest, tag: ref as string | null } : null
+}

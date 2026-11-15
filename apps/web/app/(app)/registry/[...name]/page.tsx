@@ -8,6 +8,14 @@ import { ActivityList } from "@/components/registry-activity"
 import { MovedBanner, PullCommand, RecentTags, RepoHeader, RepoStats } from "@/components/registry-overview"
 import { RepoSettings, RepoTabs, type RepoTab } from "@/components/registry-repo"
 import { RepoTags, type TagExtra } from "@/components/registry-tags"
+import { TagViews } from "@/components/registry-tag-views"
+import { VIEWS, type View } from "@/components/registry-links"
+import { CompareView, type CompareData } from "@/components/registry-compare"
+import { ImageHealth } from "@/components/registry-health"
+import { PolicyPanel, type Verdict } from "@/components/registry-policy"
+import { baseImageAdvice } from "@/lib/registry/advice"
+import { compareImages } from "@/lib/registry/compare"
+import { evaluateTags, getPolicy, type ImagePolicy } from "@/lib/registry/policy-eval"
 import { ArchivedStrip } from "@/components/registry-settings"
 import { activityPage } from "@/app/(app)/registry/actions"
 import { VulnList } from "@/components/registry-scan"
@@ -31,7 +39,10 @@ import { toItem } from "@/lib/registry/build-view"
 export const metadata = { title: "Container registry · Nimbus" }
 
 const argv = (a: string[] | null) => (a?.length ? a.join(" ") : "")
-const dateTime = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" })
+const dateTime = new Intl.DateTimeFormat("en", {
+  dateStyle: "medium",
+  timeStyle: "short",
+})
 
 function Block({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -73,9 +84,7 @@ function Image({ img }: { img: ImageInfo }) {
           {(img.workingDir || img.user || img.ports.length > 0) && (
             <Block title="Runtime">
               <pre className={MONO}>
-                {[img.workingDir && `WORKDIR ${img.workingDir}`, img.user && `USER ${img.user}`, img.ports.length && `EXPOSE ${img.ports.join(" ")}`]
-                  .filter(Boolean)
-                  .join("\n")}
+                {[img.workingDir && `WORKDIR ${img.workingDir}`, img.user && `USER ${img.user}`, img.ports.length && `EXPOSE ${img.ports.join(" ")}`].filter(Boolean).join("\n")}
               </pre>
             </Block>
           )}
@@ -97,17 +106,17 @@ function Image({ img }: { img: ImageInfo }) {
             {img.layers.length === 0 ? (
               <p className="text-sm text-muted-foreground">This image has no layers, only its config.</p>
             ) : (
-            <ol className="divide-y overflow-hidden rounded-md border text-xs">
-              {img.layers.map((l, i) => (
-                <li key={l.digest} className="flex items-center gap-3 px-3 py-1.5">
-                  <span className="w-5 shrink-0 text-muted-foreground tabular-nums">{i + 1}</span>
-                  <code className="min-w-0 flex-1 truncate font-mono text-muted-foreground" title={l.digest}>
-                    {l.digest}
-                  </code>
-                  <span className="shrink-0 tabular-nums">{sizeOf(l.size)}</span>
-                </li>
-              ))}
-            </ol>
+              <ol className="divide-y overflow-hidden rounded-md border text-xs">
+                {img.layers.map((l, i) => (
+                  <li key={l.digest} className="flex items-center gap-3 px-3 py-1.5">
+                    <span className="w-5 shrink-0 text-muted-foreground tabular-nums">{i + 1}</span>
+                    <code className="min-w-0 flex-1 truncate font-mono text-muted-foreground" title={l.digest}>
+                      {l.digest}
+                    </code>
+                    <span className="shrink-0 tabular-nums">{sizeOf(l.size)}</span>
+                  </li>
+                ))}
+              </ol>
             )}
           </Block>
           {img.history.length > 0 && (
@@ -127,6 +136,18 @@ function Image({ img }: { img: ImageInfo }) {
   )
 }
 
+// The image policy as the tag rows use it: nothing is shown until it asks for something.
+const asks = (p: ImagePolicy | null) => Boolean(p && (p.maxCritical != null || p.maxHigh != null || p.maxAgeDays != null || p.requireSigned || p.blockedLicenses?.length))
+const verdicts = async (repo: RepoDetail, digests: string[]): Promise<{ policy: ImagePolicy | null; by: Record<string, Verdict> }> => {
+  const policy = await getPolicy(repo.namespaceId).catch(() => null)
+  if (!asks(policy) || !digests.length) return { policy, by: {} }
+  const e = await evaluateTags(repo.id, digests).catch(() => ({}))
+  return {
+    policy,
+    by: Object.fromEntries(Object.entries(e).map(([d, v]) => [d, { pass: v.pass, checks: v.checks }])),
+  }
+}
+
 const TABS = ["overview", "tags", "builds", "activity", "settings"] as const
 
 export default async function RepoPage({
@@ -134,14 +155,26 @@ export default async function RepoPage({
   searchParams,
 }: {
   params: Promise<{ name: string[] }>
-  searchParams: Promise<{ tag?: string; tab?: string; build?: string }>
+  searchParams: Promise<{
+    tag?: string
+    tab?: string
+    build?: string
+    view?: string
+    a?: string
+    b?: string
+  }>
 }) {
   const me = await requireMember()
-  const [{ name }, { tag, tab: rawTab, build }] = await Promise.all([params, searchParams])
+  const [{ name }, { tag, tab: rawTab, build, view, a, b }] = await Promise.all([params, searchParams])
   if ((await registryState(me.id)) !== "ready") redirect("/registry")
   const full = name.map(decodeURIComponent).join("/")
   const repo = await repoDetail(me.id, full)
-  if (!repo) notFound()
+  if (!repo) {
+    // /registry/<name>/compare?a=&b=
+    const parent = name.length > 2 && name.at(-1) === "compare" ? await repoDetail(me.id, name.slice(0, -1).map(decodeURIComponent).join("/")) : null
+    if (parent) return <ComparePage repo={parent} a={a} b={b} />
+    notFound()
+  }
   const wanted = (TABS as readonly string[]).includes(rawTab ?? "") ? (rawTab as RepoTab) : tag ? "tags" : build ? "builds" : "overview"
   const tab: RepoTab = (wanted === "activity" && !repo.canActivity) || (wanted === "settings" && !repo.canWrite) || (wanted === "builds" && !repo.canWrite) ? "overview" : wanted
   const host = endpoint()!.replace(/^https?:\/\//, "")
@@ -166,7 +199,7 @@ export default async function RepoPage({
       </header>
       <RepoTabs name={repo.fullName} tab={tab} tabs={tabs} />
       {tab === "overview" && <Overview repo={repo} host={host} meId={me.id} />}
-      {tab === "tags" && <TagsTab repo={repo} host={host} tag={tag} meId={me.id} />}
+      {tab === "tags" && <TagsTab repo={repo} host={host} tag={tag} meId={me.id} view={view} />}
       {tab === "builds" && <BuildsPanel repo={repo} meId={me.id} build={build} />}
       {tab === "activity" && (
         <section className="flex flex-col gap-3" aria-label="Activity">
@@ -186,6 +219,18 @@ async function Overview({ repo, host, meId }: { repo: RepoDetail; host: string; 
     repo.canWrite && (await buildsAvailable(meId)).on ? listBuilds(repo.id, { limit: 1 }) : [],
   ])
   const pullTag = repo.tags.find((t) => t.name === "latest") ?? repo.tags[0]
+  const newest = repo.tags[0]
+  const checked = repo.tags.slice(0, 20)
+  const [scanOn, newestArts, ver, advice] = await Promise.all([
+    scanAvailable(),
+    newest ? artifactsFor(repo.id, [newest.digest]) : {},
+    verdicts(repo, [...new Set(checked.map((t) => t.digest))]),
+    newest ? baseImageAdvice(repo.id, newest.digest).catch(() => null) : null,
+  ])
+  const newestScan = scanOn && newest?.manifestId ? (await scanSummaries([newest.manifestId]))[newest.manifestId] : undefined
+  const newestArt = newest ? (newestArts as Awaited<ReturnType<typeof artifactsFor>>)[newest.digest] : undefined
+  const newestVerdict = newest ? (ver.by[newest.digest] ?? null) : null
+  const failing = checked.filter((t) => ver.by[t.digest] && !ver.by[t.digest].pass).length
   const pulls = days.reduce((a, d) => a + d.count, 0)
   return (
     <div className="flex flex-col gap-8">
@@ -200,7 +245,11 @@ async function Overview({ repo, host, meId }: { repo: RepoDetail; host: string; 
         </div>
       ) : (
         <p className="rounded-xl border border-dashed px-4 py-6 text-sm text-pretty text-muted-foreground">
-          Nothing pushed yet. Log in with <span className="font-mono">docker login {host} -u {repo.namespace}</span>, then push an image to{" "}
+          Nothing pushed yet. Log in with{" "}
+          <span className="font-mono">
+            docker login {host} -u {repo.namespace}
+          </span>
+          , then push an image to{" "}
           <span className="font-mono break-all">
             {host}/{repo.fullName}
           </span>
@@ -208,6 +257,40 @@ async function Overview({ repo, host, meId }: { repo: RepoDetail; host: string; 
         </p>
       )}
       <RepoStats repo={repo} days={days} />
+      {newest && (
+        <div className="grid items-start gap-6 lg:grid-cols-2">
+          <ImageHealth
+            name={repo.fullName}
+            tag={newest.name}
+            scanOn={scanOn}
+            scan={
+              newestScan
+                ? {
+                    status: newestScan.status,
+                    critical: newestScan.critical,
+                    high: newestScan.high,
+                    medium: newestScan.medium,
+                    low: newestScan.low,
+                  }
+                : null
+            }
+            verdict={newestVerdict}
+            signed={(newestArt?.signatures ?? 0) > 0}
+            sbom={(newestArt?.sboms ?? 0) > 0}
+            advice={advice}
+          />
+          {newestVerdict && ver.policy && (
+            <section className="grid content-start gap-2" aria-labelledby="policy-heading">
+              <div className="flex min-h-9 items-center">
+                <h2 id="policy-heading" className="text-base font-semibold">
+                  Image policy
+                </h2>
+              </div>
+              <PolicyPanel tag={newest.name} verdict={newestVerdict} failing={failing} total={checked.length} blocking={Boolean(ver.policy.blockPulls)} />
+            </section>
+          )}
+        </div>
+      )}
       {latest[0] && <LatestBuild name={repo.fullName} b={toItem(latest[0])} />}
       <RepoReadme name={repo.fullName} canWrite={repo.canWrite && !repo.archived} readme={readme} />
       {pulls > 0 && (
@@ -239,19 +322,31 @@ async function SettingsTab({ repo, meId, full }: { repo: RepoDetail; meId: strin
       scanOn={scanOn}
       access={access}
       targets={owned.length ? owned.map((n) => n.name) : [repo.namespace]}
-      signing={builds.on ? { host: endpoint()!.replace(/^https?:\/\//, ""), key, signedTag: signedTag || null } : undefined}
+      signing={
+        builds.on
+          ? {
+              host: endpoint()!.replace(/^https?:\/\//, ""),
+              key,
+              signedTag: signedTag || null,
+            }
+          : undefined
+      }
     />
   )
 }
 
-async function TagsTab({ repo, host, tag, meId }: { repo: RepoDetail; host: string; tag?: string; meId: string }) {
+async function TagsTab({ repo, host, tag, meId, view }: { repo: RepoDetail; host: string; tag?: string; meId: string; view?: string }) {
   const detail = tag ? await tagDetail(meId, repo.fullName, tag) : null
   const scanOn = await scanAvailable()
   const manifestIds = repo.tags.flatMap((t) => (t.manifestId ? [t.manifestId] : []))
-  const [scans, arts, perTag] = await Promise.all([
+  const [scans, arts, perTag, ver] = await Promise.all([
     scanOn ? scanSummaries(manifestIds) : ({} as Awaited<ReturnType<typeof scanSummaries>>),
-    artifactsFor(repo.id, repo.tags.map((t) => t.digest)),
+    artifactsFor(
+      repo.id,
+      repo.tags.map((t) => t.digest)
+    ),
     tagPulls(repo.id),
+    verdicts(repo, [...new Set(repo.tags.map((t) => t.digest))]),
   ])
   const extras: Record<string, TagExtra> = Object.fromEntries(
     repo.tags.map((t) => {
@@ -260,11 +355,20 @@ async function TagsTab({ repo, host, tag, meId }: { repo: RepoDetail; host: stri
       return [
         t.name,
         {
-          scan: scan ? { status: scan.status, critical: scan.critical, high: scan.high, medium: scan.medium, low: scan.low } : null,
+          scan: scan
+            ? {
+                status: scan.status,
+                critical: scan.critical,
+                high: scan.high,
+                medium: scan.medium,
+                low: scan.low,
+              }
+            : null,
           signed: (a?.signatures ?? 0) > 0,
           sbom: (a?.sboms ?? 0) > 0,
           attestation: (a?.attestations ?? 0) > 0,
           pulls: perTag[t.name] ?? 0,
+          policy: ver.by[t.digest] ?? null,
         },
       ]
     })
@@ -284,26 +388,39 @@ async function TagsTab({ repo, host, tag, meId }: { repo: RepoDetail; host: stri
           detail && (
             <div id="detail" className="flex flex-col gap-3">
               <h3 className="sr-only">Details for {detail.tag}</h3>
-              <p className="text-xs text-muted-foreground">
-                <span className="font-mono">{detail.mediaType.replace("application/vnd.", "")}</span> ·{" "}
-                {detail.images.length > 1 ? `${detail.images.length} platforms` : "1 image"}
-              </p>
-              {scanOn && picked && (
-                <VulnList
-                  tag={detail.tag}
-                  name={repo.fullName}
-                  summary={extras[picked.name].scan}
-                  vulns={report?.vulns ?? []}
-                  error={report?.error ?? null}
-                  canRescan={repo.canWrite}
-                />
-              )}
-              {picked && <ArtifactList tag={detail.tag} items={arts[picked.digest]?.items ?? []} />}
-              <div className="divide-y">
-                {detail.images.map((img) => (
-                  <Image key={img.digest} img={img} />
-                ))}
-              </div>
+              <TagViews
+                key={detail.tag}
+                name={repo.fullName}
+                tag={detail.tag}
+                platforms={detail.images.flatMap((i) => (i.platform ? [i.platform] : []))}
+                others={repo.tags.filter((t) => t.name !== detail.tag).map((t) => t.name)}
+                canWrite={repo.canWrite}
+                initial={(VIEWS.map((v) => v[0]) as string[]).includes(view ?? "") ? (view as View) : "overview"}
+                overview={
+                  <div className="flex flex-col gap-3">
+                    <p className="text-xs text-muted-foreground">
+                      <span className="font-mono">{detail.mediaType.replace("application/vnd.", "")}</span> ·{" "}
+                      {detail.images.length > 1 ? `${detail.images.length} platforms` : "1 image"}
+                    </p>
+                    {scanOn && picked && (
+                      <VulnList
+                        tag={detail.tag}
+                        name={repo.fullName}
+                        summary={extras[picked.name].scan}
+                        vulns={report?.vulns ?? []}
+                        error={report?.error ?? null}
+                        canRescan={repo.canWrite}
+                      />
+                    )}
+                    {picked && <ArtifactList tag={detail.tag} items={arts[picked.digest]?.items ?? []} />}
+                    <div className="divide-y">
+                      {detail.images.map((img) => (
+                        <Image key={img.digest} img={img} />
+                      ))}
+                    </div>
+                  </div>
+                }
+              />
             </div>
           )
         }
@@ -361,22 +478,57 @@ async function BuildsPanel({ repo, meId, build }: { repo: RepoDetail; meId: stri
         canWrite={repo.canWrite}
         archived={repo.archived}
         scanOn={scanOn}
-        scan={scan ? { status: scan.status, critical: scan.critical, high: scan.high, medium: scan.medium, low: scan.low } : null}
-        attached={{ signed: (a?.signatures ?? 0) > 0, sbom: (a?.sboms ?? 0) > 0, provenance: (a?.attestations ?? 0) > 0 }}
+        scan={
+          scan
+            ? {
+                status: scan.status,
+                critical: scan.critical,
+                high: scan.high,
+                medium: scan.medium,
+                low: scan.low,
+              }
+            : null
+        }
+        attached={{
+          signed: (a?.signatures ?? 0) > 0,
+          sbom: (a?.sboms ?? 0) > 0,
+          provenance: (a?.attestations ?? 0) > 0,
+        }}
         host={endpoint()!.replace(/^https?:\/\//, "")}
         isAdmin={isAdmin(me.role)}
         signingOn={Boolean(key)}
         findings={findings}
-        size={b.digest && bytes[b.digest] !== undefined ? { now: bytes[b.digest], before: previous?.digest ? (bytes[previous.digest] ?? null) : null } : null}
+        size={
+          b.digest && bytes[b.digest] !== undefined
+            ? {
+                now: bytes[b.digest],
+                before: previous?.digest ? (bytes[previous.digest] ?? null) : null,
+              }
+            : null
+        }
       />
     )
   }
   const [source, rules, rows] = await Promise.all([getSource(repo.id), listRules(repo.id), listBuilds(repo.id, { limit: 31 })])
   return (
     <BuildsTab
-      repo={{ id: repo.id, fullName: repo.fullName, canAdmin: repo.canAdmin, archived: repo.archived, isPublic: repo.isPublic }}
+      repo={{
+        id: repo.id,
+        fullName: repo.fullName,
+        canAdmin: repo.canAdmin,
+        archived: repo.archived,
+        isPublic: repo.isPublic,
+      }}
       badge={{ base: appUrl(), token: await badgeToken(repo.id) }}
-      source={source && { kind: source.kind, url: source.url, hasCredential: source.hasCredential, webhookUrl: source.webhookUrl, lastDeliveryAt: source.lastDeliveryAt?.toISOString() ?? null }}
+      source={
+        source && {
+          kind: source.kind,
+          url: source.url,
+          hasCredential: source.hasCredential,
+          webhookUrl: source.webhookUrl,
+          lastDeliveryAt: source.lastDeliveryAt?.toISOString() ?? null,
+        }
+      }
       rules={rules.map((r) => ({
         id: r.id,
         sourceType: r.sourceType,
@@ -391,7 +543,10 @@ async function BuildsPanel({ repo, meId, build }: { repo: RepoDetail; meId: stri
         schedule: r.schedule,
         enabled: r.enabled,
         // What a typical push of this rule would tag, e.g. 1.2.3, 1.2, 1 for a semver tag.
-        preview: expandTags(r.tags, { sha: "a1b2c3d4e5f6", ...(r.sourceType === "tag" ? { tag: /^re:|[*?,]/.test(r.pattern) ? "v1.2.3" : r.pattern } : { branch: /^re:|[*?,]/.test(r.pattern) ? "main" : r.pattern }) }),
+        preview: expandTags(r.tags, {
+          sha: "a1b2c3d4e5f6",
+          ...(r.sourceType === "tag" ? { tag: /^re:|[*?,]/.test(r.pattern) ? "v1.2.3" : r.pattern } : { branch: /^re:|[*?,]/.test(r.pattern) ? "main" : r.pattern }),
+        }),
       }))}
       presets={PRESETS}
       platforms={PLATFORMS}
@@ -399,5 +554,44 @@ async function BuildsPanel({ repo, meId, build }: { repo: RepoDetail; meId: stri
       scanOn={scanOn}
       arch={arch()}
     />
+  )
+}
+
+async function ComparePage({ repo, a, b }: { repo: RepoDetail; a?: string; b?: string }) {
+  const tags = repo.tags.map((t) => ({ name: t.name, digest: t.digest }))
+  const back = (
+    <Link
+      href={`/registry/${repo.fullName}?tab=tags`}
+      className="flex w-fit items-center gap-1 rounded-sm text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:min-h-11"
+    >
+      <ArrowLeftIcon className="size-3.5" />
+      <span className="font-mono">{repo.fullName}</span>
+    </Link>
+  )
+  // Without ?a=&b= compare the newest tag with the one before it.
+  const to = b ?? tags[0]?.name
+  const from = a ?? tags.find((t) => t.name !== to)?.name
+  const data =
+    from && to
+      ? await compareImages(repo.id, from, to).catch(() => ({
+          error: "The comparison couldn't be made right now.",
+        }))
+      : null
+  return (
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
+      <header className="grid gap-3">
+        {back}
+        <h1 className="text-2xl font-semibold tracking-tight">Compare images</h1>
+      </header>
+      {!data ? (
+        <p className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">This repository needs two tags to compare.</p>
+      ) : "error" in data ? (
+        <p role="alert" className="rounded-xl border px-4 py-6 text-sm text-pretty">
+          {data.error}
+        </p>
+      ) : (
+        <CompareView name={repo.fullName} tags={tags} canWrite={repo.canWrite} data={JSON.parse(JSON.stringify(data)) as CompareData} />
+      )}
+    </div>
   )
 }

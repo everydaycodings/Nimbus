@@ -22,6 +22,22 @@ const DOT: Record<Sev, string> = { critical: "bg-destructive", high: "bg-warning
 
 const Dot = ({ sev }: { sev: Sev }) => <span aria-hidden className={cn("size-2 rounded-full", DOT[sev])} />
 
+export type Counts = { critical: number; high: number; medium: number; low: number }
+
+// The four counts as dot + number + word, quiet when zero.
+export function SeverityCounts({ c, className }: { c: Counts; className?: string }) {
+  return (
+    <span className={cn("inline-flex flex-wrap items-center gap-x-3 gap-y-1", className)}>
+      {(["critical", "high", "medium", "low"] as const).map((s) => (
+        <span key={s} className={cn("inline-flex items-center gap-1.5 tabular-nums", c[s] === 0 && "text-muted-foreground")}>
+          <Dot sev={s} />
+          {c[s]} {LABEL[s]}
+        </span>
+      ))}
+    </span>
+  )
+}
+
 export const isScanning = (s?: ScanSummary | null) => s?.status === "pending" || s?.status === "running"
 
 // A scan summary as it sits in a tag row.
@@ -74,7 +90,11 @@ export function VulnList({
   vulns,
   error,
   canRescan,
+  title = "Vulnerabilities",
+  empty = "No known vulnerabilities found.",
 }: {
+  title?: string
+  empty?: string
   tag: string
   name: string
   summary: ScanSummary | null
@@ -96,7 +116,7 @@ export function VulnList({
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <h4 className="mr-auto flex items-center gap-1.5 text-sm font-medium">
           <ShieldCheckIcon className="size-4 text-muted-foreground" />
-          Vulnerabilities
+          {title}
         </h4>
         {canRescan && (
           <Button
@@ -126,7 +146,7 @@ export function VulnList({
       ) : summary.status === "failed" || error ? (
         <p className="text-sm text-pretty text-muted-foreground">The scan didn&apos;t finish{error ? `: ${error}` : "."}</p>
       ) : vulns.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No known vulnerabilities found.</p>
+        <p className="text-sm text-muted-foreground">{empty}</p>
       ) : (
         <>
           <div role="group" aria-label="Filter by severity" className="flex flex-wrap gap-1.5">

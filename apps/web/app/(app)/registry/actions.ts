@@ -8,6 +8,9 @@ import { createHook, deleteHook, testHook } from "@/lib/registry/hooks"
 import * as svc from "@/lib/registry/manage"
 import * as admin from "@/lib/registry/repo-admin"
 import { requestScan } from "@/lib/registry/scan"
+import { baseImageAdvice, requestAdvice } from "@/lib/registry/advice"
+import { evaluateTags, getPolicy, setPolicy, type ImagePolicy } from "@/lib/registry/policy-eval"
+import { exportSbom, packagesFor } from "@/lib/registry/sbom"
 import { saveTokenToSecret } from "@/lib/registry/secrets-pull"
 import { setReadme } from "@/lib/registry/readme"
 import { applyPolicy, previewPolicy } from "@/lib/registry/policy"
@@ -363,4 +366,75 @@ export async function activityPage(scope: ActivityScope, o: { actorId?: string; 
   })
   const named = await svc.withNames(rows.slice(0, PAGE))
   return { rows: named.map((e) => ({ ...e, at: e.at.toISOString() })), more: rows.length > PAGE }
+}
+
+// ---- Insights: packages, compare, base image, image policy -------------------------
+
+export async function tagPackages(name: string, ref: string, platform?: string) {
+  const me = await member()
+  const img = me && (await svc.resolveImage(me.id, name, ref))
+  if (!img) return null
+  return packagesFor(img.id, img.digest, { platform })
+}
+
+export async function downloadSbom(name: string, ref: string, format: "csv" | "spdx-json") {
+  const me = await member()
+  const img = me && (await svc.resolveImage(me.id, name, ref))
+  if (!img || (format !== "csv" && format !== "spdx-json")) return null
+  return exportSbom(img.id, img.digest, format)
+}
+
+export async function tagAdvice(name: string, ref: string) {
+  const me = await member()
+  const img = me && (await svc.resolveImage(me.id, name, ref))
+  return img ? baseImageAdvice(img.id, img.digest) : null
+}
+
+export async function refreshAdvice(name: string, ref: string): Promise<Result> {
+  const me = await member()
+  const img = me && (await svc.resolveImage(me.id, name, ref))
+  if (!img) return { error: "You can only read this repository." }
+  await requestAdvice(img.id, img.digest)
+  return {}
+}
+
+export async function namespaceImagePolicy(ns: string) {
+  const me = await member()
+  const id = me && (await svc.ownedNamespaceId(me.id, ns))
+  return id ? getPolicy(id) : null
+}
+
+// Today's verdict on the newest tag of each repository, so a change in the rules shows what it would do.
+export type PolicyPreview = { total: number; failing: { repo: string; tag: string; reason: string }[] }
+export async function previewImagePolicy(ns: string): Promise<PolicyPreview | null> {
+  const me = await member()
+  const id = me && (await svc.ownedNamespaceId(me.id, ns))
+  if (!id) return null
+  const latest = await svc.namespaceLatestTags(id)
+  const by = new Map<string, typeof latest>()
+  for (const l of latest) by.set(l.repoId, [l])
+  const failing: PolicyPreview["failing"] = []
+  for (const [repoId, [l]] of by) {
+    const e = (await evaluateTags(repoId, [l.digest]))[l.digest]
+    if (!e) continue
+    const bad = e.checks.find((c) => !c.pass)
+    if (!e.pass) failing.push({ repo: `${ns}/${l.repo}`, tag: l.tag, reason: bad ? `${bad.label}: ${bad.detail}` : "Failed" })
+  }
+  return { total: by.size, failing }
+}
+
+export async function saveImagePolicy(ns: string, raw: ImagePolicy | null): Promise<Result> {
+  const me = await member()
+  const id = me && (await svc.ownedNamespaceId(me.id, ns))
+  if (!me || !id) return { error: "Only an owner can change image policies." }
+  const num = (v: unknown) => (v === null || v === undefined || v === "" ? null : Math.max(0, Math.floor(Number(v))))
+  const p: ImagePolicy | null = raw && {
+    maxCritical: num(raw.maxCritical),
+    maxHigh: num(raw.maxHigh),
+    maxAgeDays: num(raw.maxAgeDays),
+    requireSigned: Boolean(raw.requireSigned),
+    blockedLicenses: (raw.blockedLicenses ?? []).map((s) => String(s).trim().slice(0, 64)).filter(Boolean).slice(0, 50),
+    blockPulls: Boolean(raw.blockPulls),
+  }
+  return done(await setPolicy(me.id, id, p))
 }

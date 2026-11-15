@@ -1,7 +1,7 @@
 "use client"
 
 import { Menu } from "@base-ui/react/menu"
-import { CaretDownIcon, CopySimpleIcon, PackageIcon, TrashIcon } from "@phosphor-icons/react"
+import { CaretDownIcon, CopySimpleIcon, GitDiffIcon, PackageIcon, TrashIcon } from "@phosphor-icons/react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useEffect, useMemo, useRef, useState, useTransition } from "react"
@@ -9,6 +9,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { deleteTags, restoreTrash } from "@/app/(app)/registry/actions"
 import { CopyButton } from "@/components/copy-button"
 import { MENU_ITEM } from "@/components/overlay-styles"
+import { PolicyBadge, type Verdict } from "@/components/registry-policy"
 import { ScanBadge, isScanning, type ScanSummary } from "@/components/registry-scan"
 import { Code, Confirm, Empty, LIST, RowMenu, SECTION, SELECT, TOUCH, WHEN } from "@/components/registry-ui"
 import { useNotice } from "@/components/toaster"
@@ -20,7 +21,7 @@ import type { RepoDetail, TagRow } from "@/lib/registry/manage"
 import { cn } from "@/lib/utils"
 
 // What the page knows about a tag beyond its row: scan result, attachments, pulls.
-export type TagExtra = { scan: ScanSummary | null; signed: boolean; sbom: boolean; attestation: boolean; pulls: number }
+export type TagExtra = { scan: ScanSummary | null; signed: boolean; sbom: boolean; attestation: boolean; pulls: number; policy?: Verdict | null }
 
 const FILTER_AT = 10
 // Rows are separate grids, so every column but the name ones has a fixed width to line up under the header.
@@ -232,6 +233,7 @@ function TagItem({
   detail: React.ReactNode
 }) {
   const setNotice = useNotice()
+  const router = useRouter()
   const image = `${host}/${repo.fullName}`
   const cell = "md:row-start-1"
   return (
@@ -266,6 +268,7 @@ function TagItem({
             {x?.sbom && <Badge variant="outline">SBOM</Badge>}
             {x?.attestation && <Badge variant="outline">Attestation</Badge>}
             {scanOn && <ScanBadge s={x?.scan} />}
+            <PolicyBadge v={x?.policy} />
           </p>
           {same && (
             <p className="text-xs text-muted-foreground">
@@ -282,6 +285,10 @@ function TagItem({
             >
               <CopySimpleIcon />
               Copy digest pull command
+            </Menu.Item>
+            <Menu.Item className={MENU_ITEM} onClick={() => router.push(`/registry/${repo.fullName}?tab=tags&tag=${encodeURIComponent(t.name)}&view=compare#detail`)}>
+              <GitDiffIcon />
+              Compare with…
             </Menu.Item>
             {writer && (
               <Menu.Item className={cn(MENU_ITEM, "text-destructive [&_svg]:text-destructive data-disabled:opacity-50")} disabled={t.immutable || busy} onClick={onTrash}>

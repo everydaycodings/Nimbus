@@ -6,6 +6,7 @@ import { useState } from "react"
 
 import { CopyButton } from "@/components/copy-button"
 import { Badge } from "@/components/ui/badge"
+import { compareHref } from "@/components/registry-links"
 import { CODE, DAY, LIST, TOUCH, WHEN } from "@/components/registry-ui"
 import { sizeOf } from "@/lib/registry/size"
 import type { RepoDetail } from "@/lib/registry/manage"
@@ -145,7 +146,7 @@ export function RecentTags({ repo, host }: { repo: RepoDetail; host: string }) {
         </Link>
       </div>
       <ul className={LIST}>
-        {recent.map((t) => (
+        {recent.map((t, i) => (
           <li key={t.name} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3">
             <div className="grid min-w-0 flex-1 basis-44 gap-1">
               <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium">
@@ -163,6 +164,15 @@ export function RecentTags({ repo, host }: { repo: RepoDetail; host: string }) {
                 <span className="tabular-nums">{sizeOf(t.bytes)}</span> · {DAY.format(new Date(t.pushedAt))}
               </p>
             </div>
+            {recent[i + 1] && (
+              <Link
+                href={compareHref(repo.fullName, recent[i + 1].name, t.name)}
+                aria-label={`Compare ${t.name} with ${recent[i + 1].name}`}
+                className="rounded-sm text-xs text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:flex pointer-coarse:min-h-11 pointer-coarse:items-center"
+              >
+                Compare
+              </Link>
+            )}
             <CopyButton value={`docker pull ${host}/${repo.fullName}:${t.name}`} label={`Copy pull command for ${t.name}`} className={TOUCH} />
           </li>
         ))}
