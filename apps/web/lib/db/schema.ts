@@ -2775,7 +2775,7 @@ export const s3Multipart = pgTable(
 )
 
 // Container registry (lib/registry). A namespace is the first path part
-// (cr.example.com/<namespace>/<repo>): one per user (ref_id = user id) or org
+// (registry.example.com/<namespace>/<repo>): one per user (ref_id = user id) or org
 // (ref_id = registry_orgs.id). Its name is unique across both, lowercase.
 export const registryNamespaces = pgTable(
   "registry_namespaces",

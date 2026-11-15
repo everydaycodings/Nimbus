@@ -264,7 +264,7 @@ if confirm "Turn on the container registry?" "$default"; then
   PROFILES="${PROFILES:+$PROFILES,}registry"
   REGISTRY_DOMAIN=$(env_value REGISTRY_DOMAIN)
   while :; do
-    ask REGISTRY_DOMAIN "Registry domain" "${REGISTRY_DOMAIN:-cr.$DOMAIN}"
+    ask REGISTRY_DOMAIN "Registry domain" "${REGISTRY_DOMAIN:-registry.$DOMAIN}"
     valid_domain "$REGISTRY_DOMAIN" && [ "$REGISTRY_DOMAIN" != "$DOMAIN" ] && [ "$REGISTRY_DOMAIN" != "$S3_DOMAIN" ] && [ "$REGISTRY_DOMAIN" != "$S3API_DOMAIN" ] && break
   done
   echo "Image scanning shows known vulnerabilities per image and can refuse pulls with Critical ones."

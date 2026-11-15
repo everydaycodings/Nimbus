@@ -56,7 +56,7 @@ test("digests", () => {
 
 test("endpoint", () => {
   assert.equal(endpoint({}), null)
-  assert.equal(endpoint({ REGISTRY_DOMAIN: "cr.example.com/" }), "https://cr.example.com")
+  assert.equal(endpoint({ REGISTRY_DOMAIN: "registry.example.com/" }), "https://registry.example.com")
   assert.equal(endpoint({ REGISTRY_DOMAIN: "http://localhost:3408" }), "http://localhost:3408")
 })
 
