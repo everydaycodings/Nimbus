@@ -25,7 +25,7 @@ export function InfoTip({ label, tip }: { label: string; tip: Tip }) {
         openOnHover
         delay={150}
         aria-label={`About ${label}`}
-        className="grid size-5 place-items-center rounded-full text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 data-popup-open:text-foreground"
+        className="relative grid size-5 place-items-center rounded-full pointer-coarse:after:absolute pointer-coarse:after:-inset-3 pointer-coarse:after:content-[''] text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 data-popup-open:text-foreground"
       >
         <InfoIcon className="size-4" />
       </Popover.Trigger>

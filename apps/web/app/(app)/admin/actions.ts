@@ -17,6 +17,7 @@ import {
   nodeContent,
   nodeTextParts,
   passkey,
+  registryRepos,
   settings,
   shares,
   transfers,
@@ -172,6 +173,12 @@ export async function revokeRegistryToken(id: string) {
 export async function deleteRegistryRepo(id: string) {
   await requireAdmin()
   await adminDeleteRepo(String(id))
+  revalidatePath("/", "layout")
+}
+
+export async function restoreRegistryRepo(id: string) {
+  await requireAdmin()
+  await db.update(registryRepos).set({ deletedAt: null }).where(eq(registryRepos.id, String(id)))
   revalidatePath("/", "layout")
 }
 

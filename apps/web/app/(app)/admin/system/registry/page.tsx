@@ -9,18 +9,18 @@ import {
   speedField,
 } from "@/components/admin/setting"
 import { GcCard, MirrorsAdmin } from "@/components/admin/registry-admin"
-import { SubmitButton } from "@/components/submit-button"
+import { ConfirmAction, QuotaForm } from "@/components/admin/registry-actions"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { formatBytes } from "@/lib/file-rules"
 import { adminNamespaces, adminRepos, adminUpstreams, listTokens } from "@/lib/registry/manage"
 import { endpoint } from "@/lib/registry/rules"
 import { getSettings } from "@/lib/signup"
-import { deleteRegistryRepo, revokeRegistryToken, setRegistry, setRegistryQuota } from "../../actions"
+import { deleteRegistryRepo, restoreRegistryRepo, revokeRegistryToken, setRegistry } from "../../actions"
 
 export const metadata = { title: "Container registry · Admin · Nimbus" }
 
-const CHECK = "size-4 shrink-0 accent-primary self-start sm:self-end"
+const CHECK = "size-4 pointer-coarse:size-6 shrink-0 accent-primary self-start sm:self-end"
 const ACCESS = { pull: "Pull only", push: "Pull & push" }
 const when = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" })
 const day = new Intl.DateTimeFormat("en", { dateStyle: "medium" })
@@ -142,7 +142,7 @@ export default async function RegistryAdminPage() {
         >
           <div className="grid grid-cols-[1fr_6rem] gap-2">
             <Input id="registryBps" name="registryBps" type="number" min={0.01} step="any" defaultValue={bps.value} placeholder="No cap" />
-            <select key={bps.unit} aria-label="Unit" name="bpsUnit" defaultValue={bps.unit} className={SELECT}>
+            <select key={bps.unit} aria-label="Bandwidth unit" name="bpsUnit" defaultValue={bps.unit} className={SELECT}>
               <option value="KB">KB/s</option>
               <option value="MB">MB/s</option>
             </select>
@@ -180,7 +180,7 @@ export default async function RegistryAdminPage() {
         >
           <div className="grid grid-cols-[1fr_5rem] gap-2">
             <Input id="quota" name="quota" type="number" min={0.01} step="any" defaultValue={quota.value} placeholder="No limit" />
-            <select key={quota.unit} aria-label="Unit" name="quotaUnit" defaultValue={quota.unit} className={SELECT}>
+            <select key={quota.unit} aria-label="Default storage limit unit" name="quotaUnit" defaultValue={quota.unit} className={SELECT}>
               <option value="GB">GB</option>
               <option value="TB">TB</option>
             </select>
@@ -219,26 +219,7 @@ export default async function RegistryAdminPage() {
                       </p>
                       <p className="text-sm text-muted-foreground tabular-nums">{formatBytes(n.used)} used</p>
                     </div>
-                    <form action={setRegistryQuota} className="flex items-center gap-2">
-                      <input type="hidden" name="id" value={n.id} />
-                      <Input
-                        name="quota"
-                        type="number"
-                        min={0.01}
-                        step="any"
-                        aria-label={`Storage limit for ${n.name}`}
-                        defaultValue={q.value}
-                        placeholder="Default"
-                        className="w-32"
-                      />
-                      <select key={q.unit} aria-label="Unit" name="unit" defaultValue={q.unit} className={SELECT + " w-20"}>
-                        <option value="GB">GB</option>
-                        <option value="TB">TB</option>
-                      </select>
-                      <SubmitButton size="sm" variant="outline">
-                        Save
-                      </SubmitButton>
-                    </form>
+                    <QuotaForm id={n.id} name={n.name} value={q.value} unit={q.unit} />
                   </li>
                 )
               })}
@@ -274,11 +255,15 @@ export default async function RegistryAdminPage() {
                       {r.tags === 1 ? "1 tag" : `${r.tags} tags`} · {formatBytes(r.bytes)}
                     </p>
                   </div>
-                  <form action={deleteRegistryRepo.bind(null, r.id)}>
-                    <SubmitButton size="sm" variant="destructive">
-                      Delete
-                    </SubmitButton>
-                  </form>
+                  <ConfirmAction
+                    label="Delete"
+                    aria={`Delete ${r.fullName}`}
+                    question={`Delete ${r.fullName}?`}
+                    yes="Delete repository"
+                    done={`Deleted ${r.fullName}.`}
+                    run={deleteRegistryRepo.bind(null, r.id)}
+                    undo={restoreRegistryRepo.bind(null, r.id)}
+                  />
                 </li>
               ))}
             </ul>
@@ -320,15 +305,18 @@ export default async function RegistryAdminPage() {
                     {k.allRepos ? "All repositories" : k.repos.length ? k.repos.join(", ") : "No repositories left"}
                     <br />
                     <span className="tabular-nums">
-                      {k.lastUsedAt ? `Used ${when.format(new Date(k.lastUsedAt))}${k.lastIp ? ` from ${k.lastIp}` : ""}` : "Never used"} ·{" "}
+                      {k.lastUsedAt ? `Used ${when.format(new Date(k.lastUsedAt))}${k.lastIp ? ` from ${k.lastIp.replace(/^::ffff:/, "")}` : ""}` : "Never used"} ·{" "}
                       {k.expiresAt ? `${k.expired ? "Expired" : "Expires"} ${day.format(new Date(k.expiresAt))}` : "Never expires"}
                     </span>
                   </p>
-                  <form action={revokeRegistryToken.bind(null, k.id)}>
-                    <SubmitButton size="sm" variant="destructive">
-                      Revoke
-                    </SubmitButton>
-                  </form>
+                  <ConfirmAction
+                    label="Revoke"
+                    aria={`Revoke ${k.name} (${k.member})`}
+                    question={`Revoke ${k.name}?`}
+                    yes="Revoke token"
+                    done={`Revoked ${k.name}.`}
+                    run={revokeRegistryToken.bind(null, k.id)}
+                  />
                 </li>
               ))}
             </ul>

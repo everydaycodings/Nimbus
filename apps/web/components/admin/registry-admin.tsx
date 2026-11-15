@@ -6,6 +6,7 @@ import { useId, useState, useTransition } from "react"
 
 import { deleteRegistryMirror, runRegistryGc, saveRegistryMirror } from "@/app/(app)/admin/actions"
 import { DIALOG_BACKDROP, DIALOG_POPUP } from "@/components/overlay-styles"
+import { ConfirmAction } from "@/components/admin/registry-actions"
 import { Confirm } from "@/components/registry-ui"
 import { SubmitButton } from "@/components/submit-button"
 import { useNotice } from "@/components/toaster"
@@ -26,6 +27,10 @@ const PRESETS = [
 
 type Draft = { id?: string; name: string; url: string; username: string; password: string; clearPassword: boolean; ttlDays: string; enabled: boolean }
 const blank: Draft = { name: "", url: "", username: "", password: "", clearPassword: false, ttlDays: "30", enabled: true }
+
+// Which field a saveUpstream error is about, so focus and aria can point at it.
+const errorField = (e: string) =>
+  /address|https|credentials/i.test(e) ? "url" : /days/i.test(e) ? "ttl" : /name|mirror/i.test(e) ? "name" : undefined
 
 export function MirrorsAdmin({ upstreams, host }: { upstreams: Upstream[]; host: string }) {
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -67,7 +72,7 @@ export function MirrorsAdmin({ upstreams, host }: { upstreams: Upstream[]; host:
           <p className="text-sm text-muted-foreground">No mirrors yet. Start from a common one:</p>
           <div className="flex flex-wrap justify-center gap-2">
             {PRESETS.map((p) => (
-              <Button key={p.name} variant="outline" size="sm" onClick={() => open(null, p)}>
+              <Button key={p.name} variant="outline" size="sm" className="pointer-coarse:h-11 pointer-coarse:px-4" onClick={() => open(null, p)}>
                 {p.label}
               </Button>
             ))}
@@ -88,21 +93,17 @@ export function MirrorsAdmin({ upstreams, host }: { upstreams: Upstream[]; host:
                     {u.url} · kept {u.ttlDays === 1 ? "1 day" : `${u.ttlDays} days`} after the last pull
                   </p>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => open(u)}>
+                <Button variant="outline" size="sm" className="pointer-coarse:h-11 pointer-coarse:px-4" aria-label={`Edit ${u.name}`} onClick={() => open(u)}>
                   <PencilSimpleIcon />
                   Edit
                 </Button>
-                <Confirm
+                <ConfirmAction
                   label="Delete"
-                  question="Cached copies expire on their own."
+                  aria={`Delete ${u.name}`}
+                  question={`Delete mirror ${u.name}? Cached copies expire on their own.`}
                   yes="Delete mirror"
-                  pending={pending}
-                  onYes={() =>
-                    start(async () => {
-                      await deleteRegistryMirror(u.id)
-                      setNotice({ text: `Deleted the ${u.name} mirror.` })
-                    })
-                  }
+                  done={`Deleted the ${u.name} mirror.`}
+                  run={() => deleteRegistryMirror(u.id)}
                 />
               </li>
             ))}
@@ -130,7 +131,11 @@ export function MirrorsAdmin({ upstreams, host }: { upstreams: Upstream[]; host:
                     setError(undefined)
                     start(async () => {
                       const r = await saveRegistryMirror({ ...draft, ttlDays: Number(draft.ttlDays) })
-                      if (r.error) return setError(r.error)
+                      if (r.error) {
+                        setError(r.error)
+                        document.getElementById(`${id}-${errorField(r.error) ?? "err"}`)?.focus()
+                        return
+                      }
                       setNotice({ text: draft.id ? `Saved ${draft.name}.` : `Added the ${draft.name} mirror.` })
                       setDraft(null)
                     })
@@ -145,6 +150,7 @@ export function MirrorsAdmin({ upstreams, host }: { upstreams: Upstream[]; host:
                           type="button"
                           variant="outline"
                           size="sm"
+                          className="pointer-coarse:h-11 pointer-coarse:px-4"
                           onClick={() => setDraft((d) => d && { ...d, name: p.name, url: p.url })}
                         >
                           {p.label}
@@ -159,6 +165,7 @@ export function MirrorsAdmin({ upstreams, host }: { upstreams: Upstream[]; host:
                       value={draft.name}
                       onChange={(e) => set("name", e.target.value.toLowerCase())}
                       maxLength={39}
+                      aria-invalid={errorField(error ?? "") === "name" || undefined} aria-describedby={errorField(error ?? "") === "name" ? `${id}-err` : undefined}
                       autoComplete="off"
                       placeholder="dockerhub"
                       className="font-mono"
@@ -166,6 +173,11 @@ export function MirrorsAdmin({ upstreams, host }: { upstreams: Upstream[]; host:
                     <p className="text-xs text-muted-foreground">
                       The path members use: <span className="font-mono">mirror/{draft.name || "name"}/…</span>
                     </p>
+                    {saved && draft.name !== saved.name && (
+                      <p className="text-xs text-pretty text-muted-foreground">
+                        Members pull from the new path; images cached under the old name are dropped.
+                      </p>
+                    )}
                   </div>
                   <div className="grid gap-2">
                     <Label htmlFor={`${id}-url`}>Address</Label>
@@ -176,6 +188,7 @@ export function MirrorsAdmin({ upstreams, host }: { upstreams: Upstream[]; host:
                       onChange={(e) => set("url", e.target.value)}
                       autoComplete="off"
                       placeholder="https://registry-1.docker.io"
+                      aria-invalid={errorField(error ?? "") === "url" || undefined} aria-describedby={errorField(error ?? "") === "url" ? `${id}-err` : undefined}
                       className="font-mono"
                     />
                   </div>
@@ -196,11 +209,16 @@ export function MirrorsAdmin({ upstreams, host }: { upstreams: Upstream[]; host:
                       />
                     </div>
                   </div>
+                  {saved?.hasPassword && !draft.username.trim() && !draft.clearPassword && (
+                    <p className="text-xs text-pretty text-muted-foreground">
+                      With no username, the saved password is removed when you save.
+                    </p>
+                  )}
                   {saved?.hasPassword && (
-                    <label className="flex items-center gap-2 text-sm">
+                    <label className="flex min-h-5 items-center gap-2 text-sm pointer-coarse:min-h-11">
                       <input
                         type="checkbox"
-                        className="size-4 accent-primary"
+                        className="size-4 accent-primary pointer-coarse:size-6"
                         checked={draft.clearPassword}
                         onChange={(e) => set("clearPassword", e.target.checked)}
                       />
@@ -214,26 +232,29 @@ export function MirrorsAdmin({ upstreams, host }: { upstreams: Upstream[]; host:
                       type="number"
                       min={1}
                       max={3650}
+                      aria-invalid={errorField(error ?? "") === "ttl" || undefined} aria-describedby={errorField(error ?? "") === "ttl" ? `${id}-err` : undefined}
                       value={draft.ttlDays}
                       onChange={(e) => set("ttlDays", e.target.value)}
                       className="max-w-32"
                     />
                   </div>
-                  <label className="flex items-center gap-2 text-sm">
+                  <label className="flex items-center gap-2 text-sm pointer-coarse:min-h-11">
                     <input
                       type="checkbox"
-                      className="size-4 accent-primary"
+                      className="size-4 accent-primary pointer-coarse:size-6"
                       checked={draft.enabled}
                       onChange={(e) => set("enabled", e.target.checked)}
                     />
                     Enabled
                   </label>
-                  <FormError>{error}</FormError>
+                  <p id={`${id}-err`} tabIndex={-1} role="alert" className="text-sm text-destructive outline-none empty:hidden">
+                    {error}
+                  </p>
                   <div className="flex justify-end gap-2">
-                    <Dialog.Close disabled={pending} render={<Button type="button" variant="outline" />}>
+                    <Dialog.Close disabled={pending} render={<Button type="button" variant="outline" className="pointer-coarse:h-11 pointer-coarse:px-4" />}>
                       Cancel
                     </Dialog.Close>
-                    <SubmitButton pending={pending}>{draft.id ? "Save" : "Add mirror"}</SubmitButton>
+                    <SubmitButton pending={pending} className="pointer-coarse:h-11 pointer-coarse:px-4">{draft.id ? "Save" : "Add mirror"}</SubmitButton>
                   </div>
                 </form>
               </>
@@ -272,7 +293,7 @@ export function GcCard() {
       </div>
       <div className="flex flex-col gap-3 rounded-xl border bg-card p-4">
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" disabled={pending} onClick={() => go(true)}>
+          <Button variant="outline" aria-disabled={pending || undefined} aria-busy={pending} className="aria-disabled:pointer-events-none aria-disabled:opacity-50" onClick={() => !pending && go(true)}>
             <BroomIcon />
             Preview
           </Button>
@@ -284,16 +305,18 @@ export function GcCard() {
             onYes={() => go(false)}
           />
         </div>
-        {result && (
-          <p role="status" className="text-sm">
-            <span className="font-medium">{result.dry ? "Would remove" : "Removed"}</span>{" "}
-            <span className="tabular-nums">
-              {result.r.blobs} {result.r.blobs === 1 ? "layer" : "layers"} ({formatBytes(result.r.bytes)}) and {result.r.manifests}{" "}
-              {result.r.manifests === 1 ? "image" : "images"}
-            </span>
-            .
-          </p>
-        )}
+        <p role="status" className="text-sm empty:hidden">
+          {result && (
+            <>
+              <span className="font-medium">{result.dry ? "Would remove" : "Removed"}</span>{" "}
+              <span className="tabular-nums">
+                {result.r.blobs} {result.r.blobs === 1 ? "layer" : "layers"} ({formatBytes(result.r.bytes)}) and {result.r.manifests}{" "}
+                {result.r.manifests === 1 ? "image" : "images"}
+              </span>
+              .
+            </>
+          )}
+        </p>
         <FormError>{error}</FormError>
       </div>
     </section>

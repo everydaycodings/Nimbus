@@ -5,7 +5,7 @@ import {
   SettingsForm,
   resettable,
 } from "@/components/admin/setting"
-import { SubmitButton } from "@/components/submit-button"
+import { ConfirmAction } from "@/components/admin/registry-actions"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { listKeys } from "@/lib/s3api/manage"
@@ -156,11 +156,14 @@ export default async function S3Page() {
                         : "Never expires"}
                     </span>
                   </p>
-                  <form action={revokeS3Key.bind(null, k.id)}>
-                    <SubmitButton size="sm" variant="destructive">
-                      Revoke
-                    </SubmitButton>
-                  </form>
+                  <ConfirmAction
+                    label="Revoke"
+                    aria={`Revoke ${k.name}`}
+                    question={`Revoke ${k.name}?`}
+                    yes="Revoke key"
+                    done={`Revoked ${k.name}.`}
+                    run={revokeS3Key.bind(null, k.id)}
+                  />
                 </li>
               ))}
             </ul>
