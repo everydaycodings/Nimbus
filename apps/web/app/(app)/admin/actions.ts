@@ -155,7 +155,8 @@ export async function setRegistry(form: FormData) {
     registry: form.get("registry") === "on",
     registryPublic: form.get("registryPublic") === "on",
     registryRedirect: form.get("registryRedirect") === "on",
-    registryScan: form.get("registryScan") === "on",
+    // The checkbox is disabled (so never submitted) until scanning is set up; keep the stored value then.
+    ...(process.env.REGISTRY_SCAN_URL ? { registryScan: form.get("registryScan") === "on" } : {}),
     registryRpsLimit: rps === null ? null : Math.min(Math.floor(rps), 100_000),
     registryBpsLimit: bps === null ? null : Math.max(1024, Math.round(bps * bpsUnit)),
     registryOrgCreate: form.get("registryOrgCreate") === "admins" ? "admins" : "anyone",
