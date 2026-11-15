@@ -17,6 +17,8 @@ function overflow(policy: Policy, tags: PolicyTag[]) {
     .filter((n) => !(policy.keepPattern && matchPattern(policy.keepPattern, n)))
 }
 
+const images = (tags: PolicyTag[]) => tags.filter((t) => t.name !== "buildcache")
+
 export function selectCleanup(
   policy: Policy,
   tags: PolicyTag[],
@@ -25,7 +27,10 @@ export function selectCleanup(
   now: Date = new Date()
 ) {
   return {
-    tags: [...new Set([...evaluatePolicy(policy, tags, now), ...overflow(policy, tags)])].filter((t) => !(immutablePattern && matchPattern(immutablePattern, t))),
+    // The build cache tag never counts or goes: losing it makes the next build start cold.
+    tags: [...new Set([...evaluatePolicy(policy, images(tags), now), ...overflow(policy, images(tags))])].filter(
+      (t) => !(immutablePattern && matchPattern(immutablePattern, t))
+    ),
     untagged: untaggedToDelete(
       policy,
       manifests.filter((m) => !m.protectedBy),

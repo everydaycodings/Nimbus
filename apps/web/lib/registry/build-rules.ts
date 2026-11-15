@@ -3,6 +3,9 @@
 // runner (scripts/registry-build.ts) and node --test load it too.
 import { matchPattern, validTag } from "./rules.ts"
 
+// Where builds keep their layer cache. Not an image: hidden from tag lists, never scanned or cleaned up.
+export const BUILD_CACHE_TAG = "buildcache"
+
 export type TagTemplate = string
 
 export type RuleInput = {
@@ -203,7 +206,7 @@ export type BuildctlOpts = {
 
 export function buildctlArgs(o: BuildctlOpts): string[] {
   const reg = o.insecure ? ",registry.insecure=true" : ""
-  const cache = `type=registry,ref=${o.image}:buildcache${reg}`
+  const cache = `type=registry,ref=${o.image}:${BUILD_CACHE_TAG}${reg}`
   return [
     "--addr", o.addr,
     "build",

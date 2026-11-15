@@ -446,7 +446,8 @@ function manifestBytes(
 }
 
 // cosign and similar tools store signatures and SBOMs under tags like sha256-<hex>.sig; they belong to their image, not the tag list.
-const ATTACHMENT_TAG = /^sha256-[0-9a-f]{64}(\.[a-z0-9-]+)?$/
+// The build cache tag isn't an image either.
+const ATTACHMENT_TAG = /^(sha256-[0-9a-f]{64}(\.[a-z0-9-]+)?|buildcache)$/
 
 export async function repoDetail(userId: string, fullName: string): Promise<RepoDetail | null> {
   const r = await reach(userId, fullName)

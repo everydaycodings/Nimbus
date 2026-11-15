@@ -193,7 +193,7 @@ export async function putManifest(c: C, repo: Repo, name: string, ref: string) {
     if (!moved.length) await db.insert(registryTags).values({ repoId: repo.id, name: tag, ...set })
   }
   // A tagged image (not a signature, SBOM or attestation) is scanned when scanning is on; the same digest isn't redone on every push.
-  if (tag && !subject && !artifactType)
+  if (tag && tag !== "buildcache" && !subject && !artifactType)
     try {
       if ((await scanAvailable()) && !(await scanSummaries([m.id]))[m.id]) await requestScan(m.id)
     } catch (e) {
