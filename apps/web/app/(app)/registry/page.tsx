@@ -6,12 +6,15 @@ import {
   MAX_TOKENS,
   listOrgs,
   listRepos,
+  listMirrors,
   listTokens,
+  listTrash,
   myNamespace,
+  ownedNamespaces,
   registryState,
   type RegistryState,
 } from "@/lib/registry/manage"
-import { endpoint, registryNameError } from "@/lib/registry/rules"
+import { TRASH_DAYS, endpoint, registryNameError } from "@/lib/registry/rules"
 import { isAdmin, requireMember } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
 
@@ -59,8 +62,9 @@ function suggest(email: string) {
   return s && !registryNameError(s) ? s : ""
 }
 
-export default async function RegistryPage() {
+export default async function RegistryPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const me = await requireMember()
+  const { tab } = await searchParams
   const state = await registryState(me.id)
   if (state === "unclaimed") return <ClaimName suggestion={suggest(me.email)} />
   if (state !== "ready") {
@@ -76,12 +80,15 @@ export default async function RegistryPage() {
       </div>
     )
   }
-  const [ns, repos, orgs, tokens, s] = await Promise.all([
+  const [ns, repos, orgs, tokens, s, trash, owned, mirrors] = await Promise.all([
     myNamespace(me.id),
     listRepos(me.id),
     listOrgs(me.id),
     listTokens(me.id),
     getSettings(),
+    listTrash(me.id),
+    ownedNamespaces(me.id),
+    listMirrors(),
   ])
   return (
     <RegistryView
@@ -94,6 +101,12 @@ export default async function RegistryPage() {
       maxTokens={MAX_TOKENS}
       canCreateOrg={s.registryOrgCreate === "anyone" || isAdmin(me.role)}
       publicAllowed={s.registryPublic}
+      tab={tab === "trash" || tab === "mirrors" ? tab : "repos"}
+      trash={trash}
+      trashDays={TRASH_DAYS}
+      owned={owned}
+      upstreams={mirrors.upstreams}
+      cached={mirrors.cached}
     />
   )
 }

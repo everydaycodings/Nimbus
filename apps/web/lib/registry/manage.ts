@@ -21,22 +21,27 @@ import {
   registryRepos,
   registryTags,
   registryTokenRepos,
+  registryHookDeliveries,
+  registryHooks,
   registryTokens,
+  registryUpstreams,
 } from "@/lib/db/schema"
 import { notify } from "@/lib/notify"
 import { getStream } from "@/lib/s3"
 import { isAdmin } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
 import { isClash } from "@/lib/uploads"
-import { roleIn } from "./access"
+import { roleIn as roleInRaw } from "./access"
 import { registryUsage } from "./quota"
-import { EXPIRY_DAYS, endpoint, matchPattern, newToken, registryNameError, splitName } from "./rules"
+import { EXPIRY_DAYS, TRASH_DAYS, endpoint, matchPattern, newToken, registryNameError, splitName, validTag, type Policy } from "./rules"
 
 type Result = { error?: string }
 type Role = "owner" | "write" | "read"
 type Ns = typeof registryNamespaces.$inferSelect
 
 export const MAX_TOKENS = 50
+// The system `mirror` namespace is an org row whose ref_id isn't a uuid; nobody holds a role in it.
+const roleIn = (userId: string, ns: Ns) => (ns.kind === "org" && !UUID.test(ns.refId) ? Promise.resolve(null) : roleInRaw(userId, ns))
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 // Why the page can't be used, or "ready". "unset": setup never turned the registry on.
@@ -346,8 +351,13 @@ export type RepoDetail = {
   fullName: string
   isPublic: boolean
   immutablePattern: string | null
-  // Writers can change settings and delete.
+  // The repo's own cleanup policy (null inherits) and the namespace default it would inherit.
+  policy: Policy | null
+  nsPolicy: Policy | null
+  namespace: string
+  // Writers can change settings and delete; only owners manage webhooks.
   canWrite: boolean
+  isOwner: boolean
   bytes: number
   tags: TagRow[]
   publicAllowed: boolean
@@ -443,7 +453,11 @@ export async function repoDetail(userId: string, fullName: string): Promise<Repo
     fullName,
     isPublic: r.repo.isPublic,
     immutablePattern: pat,
+    policy: r.repo.policy ?? null,
+    nsPolicy: r.ns.policy ?? null,
+    namespace: r.ns.name,
     canWrite: r.role !== "read",
+    isOwner: r.role === "owner",
     bytes: blobRows.reduce((a, b) => a + b.size, 0),
     publicAllowed: s.registryPublic,
     tags: tags.map(({ t, by }) => {
@@ -614,26 +628,453 @@ export async function setImmutable(userId: string, fullName: string, raw: string
   return {}
 }
 
-// Soft delete; the trash page comes later, until then it's out of sight and the protocol 404s.
-export async function deleteRepo(userId: string, fullName: string): Promise<Result> {
+// Soft delete: the repo and its tags go to Trash for TRASH_DAYS, then the purge job removes them.
+export async function deleteRepo(userId: string, fullName: string): Promise<Result & { id?: string }> {
   const r = await writable(userId, fullName)
   if (!r) return NO_WRITE
   await db.update(registryRepos).set({ deletedAt: new Date() }).where(eq(registryRepos.id, r.repo.id))
   await audit("registry_repo_delete", { detail: fullName })
-  return {}
+  return { id: r.repo.id }
 }
 
-export async function deleteTag(userId: string, fullName: string, tag: string): Promise<Result> {
+export async function deleteTag(userId: string, fullName: string, tag: string): Promise<Result & { id?: string }> {
   const r = await writable(userId, fullName)
   if (!r) return NO_WRITE
   if (r.repo.immutablePattern && matchPattern(r.repo.immutablePattern, tag))
     return { error: "That tag is immutable. Change the pattern in Settings first." }
-  await db
+  const [t] = await db
     .update(registryTags)
     .set({ deletedAt: new Date() })
     .where(and(eq(registryTags.repoId, r.repo.id), eq(registryTags.name, tag), isNull(registryTags.deletedAt)))
+    .returning({ id: registryTags.id })
   await audit("registry_tag_delete", { detail: `${fullName}:${tag}` })
+  return { id: t?.id }
+}
+
+// ---- Trash ---------------------------------------------------------------
+
+export type TrashRow = {
+  kind: "repo" | "tag" | "manifest"
+  id: string
+  // What it was: a repository name, a tag name or a short digest.
+  label: string
+  // The repository a tag or manifest belonged to; the repo itself for repos.
+  repo: string
+  detail: string
+  deletedAt: string
+  daysLeft: number
+}
+
+// Namespaces the member can write to: their own and orgs where they push or own.
+async function writableNamespaces(userId: string): Promise<{ id: string; name: string }[]> {
+  return db.execute<{ id: string; name: string }>(sql`
+    select n.id, n.name from registry_namespaces n
+    left join registry_org_members m on n.kind = 'org' and m.org_id::text = n.ref_id and m.user_id = ${userId}
+    where (n.kind = 'user' and n.ref_id = ${userId}) or m.role in ('owner', 'write')`)
+}
+
+const daysLeft = (at: Date) => Math.max(0, Math.ceil((at.getTime() + TRASH_DAYS * 86_400_000 - Date.now()) / 86_400_000))
+
+// Trashed repos, tags and manifests the member can restore, newest first.
+export async function listTrash(userId: string): Promise<TrashRow[]> {
+  const nss = await writableNamespaces(userId)
+  if (!nss.length) return []
+  const ids = nss.map((n) => n.id)
+  const nsName = new Map(nss.map((n) => [n.id, n.name]))
+  const [repos, tags, manifests] = await Promise.all([
+    db
+      .select({ id: registryRepos.id, name: registryRepos.name, ns: registryRepos.namespaceId, at: registryRepos.deletedAt })
+      .from(registryRepos)
+      .where(and(inArray(registryRepos.namespaceId, ids), sql`${registryRepos.deletedAt} is not null`)),
+    db
+      .select({ id: registryTags.id, name: registryTags.name, digest: registryTags.digest, at: registryTags.deletedAt, repo: registryRepos.name, ns: registryRepos.namespaceId })
+      .from(registryTags)
+      .innerJoin(registryRepos, eq(registryRepos.id, registryTags.repoId))
+      .where(and(inArray(registryRepos.namespaceId, ids), isNull(registryRepos.deletedAt), sql`${registryTags.deletedAt} is not null`))
+      .limit(500),
+    db
+      .select({ id: registryManifests.id, digest: registryManifests.digest, size: registryManifests.size, at: registryManifests.deletedAt, repo: registryRepos.name, ns: registryRepos.namespaceId })
+      .from(registryManifests)
+      .innerJoin(registryRepos, eq(registryRepos.id, registryManifests.repoId))
+      .where(and(inArray(registryRepos.namespaceId, ids), isNull(registryRepos.deletedAt), sql`${registryManifests.deletedAt} is not null`))
+      .limit(500),
+  ])
+  const full = (ns: string, repo: string) => `${nsName.get(ns)}/${repo}`
+  const rows = [
+    ...repos.map((r) => ({ kind: "repo" as const, id: r.id, label: full(r.ns, r.name), repo: full(r.ns, r.name), detail: "Repository and all its tags", at: r.at! })),
+    ...tags.map((t) => ({ kind: "tag" as const, id: t.id, label: t.name, repo: full(t.ns, t.repo), detail: t.digest.slice(0, 19), at: t.at! })),
+    ...manifests.map((m) => ({ kind: "manifest" as const, id: m.id, label: m.digest.slice(0, 19), repo: full(m.ns, m.repo), detail: "Untagged image", at: m.at! })),
+  ]
+  return rows
+    .sort((a, b) => b.at.getTime() - a.at.getTime())
+    .map(({ at, ...r }) => ({ ...r, deletedAt: at.toISOString(), daysLeft: daysLeft(at) }))
+}
+
+// The trashed thing, if the member may write to its namespace.
+async function trashed(userId: string, kind: string, id: string) {
+  if (!UUID.test(id)) return null
+  const nss = new Set((await writableNamespaces(userId)).map((n) => n.id))
+  if (kind === "repo") {
+    const [r] = await db.select().from(registryRepos).where(eq(registryRepos.id, id))
+    return r && r.deletedAt && nss.has(r.namespaceId) ? { repo: r } : null
+  }
+  if (kind === "tag") {
+    const [x] = await db
+      .select({ tag: registryTags, repo: registryRepos })
+      .from(registryTags)
+      .innerJoin(registryRepos, eq(registryRepos.id, registryTags.repoId))
+      .where(eq(registryTags.id, id))
+    return x && x.tag.deletedAt && !x.repo.deletedAt && nss.has(x.repo.namespaceId) ? x : null
+  }
+  if (kind === "manifest") {
+    const [x] = await db
+      .select({ manifest: registryManifests, repo: registryRepos })
+      .from(registryManifests)
+      .innerJoin(registryRepos, eq(registryRepos.id, registryManifests.repoId))
+      .where(eq(registryManifests.id, id))
+    return x && x.manifest.deletedAt && !x.repo.deletedAt && nss.has(x.repo.namespaceId) ? x : null
+  }
+  return null
+}
+
+const GONE = { error: "That is already gone from Trash." }
+
+// A tag comes back under its own name, or `as` when a live tag already has it (conflict: true).
+export async function restoreFromTrash(
+  userId: string,
+  kind: string,
+  id: string,
+  as?: string
+): Promise<Result & { conflict?: boolean }> {
+  const x = await trashed(userId, kind, id)
+  if (!x) return GONE
+  if (kind === "repo" && "repo" in x && !("tag" in x)) {
+    await db.update(registryRepos).set({ deletedAt: null }).where(eq(registryRepos.id, x.repo.id))
+    await audit("registry_repo_restore", { detail: x.repo.name })
+    return {}
+  }
+  if ("tag" in x) {
+    const name = (as ?? x.tag.name).trim()
+    if (!validTag(name)) return { error: "That isn't a valid tag name." }
+    const [live] = await db
+      .select({ id: registryTags.id })
+      .from(registryTags)
+      .where(and(eq(registryTags.repoId, x.repo.id), eq(registryTags.name, name), isNull(registryTags.deletedAt)))
+    if (live) return { error: `A tag named “${name}” already exists in this repository.`, conflict: true }
+    if (x.repo.immutablePattern && matchPattern(x.repo.immutablePattern, name) && name !== x.tag.name)
+      return { error: "That name matches the immutable tags pattern." }
+    // The manifest may have been trashed along with it (cleanup policy).
+    await db.transaction(async (tx) => {
+      await tx
+        .update(registryManifests)
+        .set({ deletedAt: null })
+        .where(and(eq(registryManifests.repoId, x.repo.id), eq(registryManifests.digest, x.tag.digest)))
+      await tx.update(registryTags).set({ deletedAt: null, name }).where(eq(registryTags.id, x.tag.id))
+    })
+    await audit("registry_tag_restore", { detail: `${x.repo.name}:${name}` })
+    return {}
+  }
+  if ("manifest" in x) {
+    await db.update(registryManifests).set({ deletedAt: null }).where(eq(registryManifests.id, x.manifest.id))
+    await audit("registry_tag_restore", { detail: `${x.repo.name}@${x.manifest.digest.slice(0, 19)}` })
+    return {}
+  }
+  return GONE
+}
+
+// Deletes the rows now; garbage collection sweeps the blobs nothing refers to any more.
+export async function purgeFromTrash(userId: string, kind: string, id: string): Promise<Result> {
+  const x = await trashed(userId, kind, id)
+  if (!x) return GONE
+  if ("tag" in x) {
+    await db.delete(registryTags).where(eq(registryTags.id, x.tag.id))
+    await audit("registry_trash_purge", { detail: `${x.repo.name}:${x.tag.name}` })
+  } else if ("manifest" in x) {
+    await db.delete(registryManifests).where(eq(registryManifests.id, x.manifest.id))
+    await audit("registry_trash_purge", { detail: `${x.repo.name}@${x.manifest.digest.slice(0, 19)}` })
+  } else {
+    await db.delete(registryRepos).where(eq(registryRepos.id, x.repo.id))
+    await audit("registry_trash_purge", { detail: x.repo.name })
+  }
   return {}
+}
+
+// ---- Cleanup policies ------------------------------------------------------
+
+const PATTERN_HELP = "That regular expression doesn't compile."
+
+// Raw form values to a policy: blanks dropped, numbers whole and positive, patterns that compile.
+// Null when nothing is set.
+export function parsePolicy(raw: Record<string, unknown>): { policy: Policy | null; error?: string } {
+  const out: Policy = {}
+  const num = (key: "keepLast" | "untaggedDays" | "notPulledDays", max: number, label: string) => {
+    const v = String(raw[key] ?? "").trim()
+    if (!v) return null
+    const n = Number(v)
+    if (!Number.isInteger(n) || n < 1 || n > max) return `${label} must be a whole number from 1 to ${max}.`
+    out[key] = n
+    return null
+  }
+  const pat = (key: "keepPattern" | "deletePattern", label: string) => {
+    const v = String(raw[key] ?? "").trim().slice(0, 200)
+    if (!v) return null
+    if (v.startsWith("re:"))
+      try {
+        new RegExp(v.slice(3))
+      } catch {
+        return `${label}: ${PATTERN_HELP}`
+      }
+    out[key] = v
+    return null
+  }
+  const error =
+    num("keepLast", 1000, "Keep last") ??
+    num("untaggedDays", 3650, "Untagged days") ??
+    num("notPulledDays", 3650, "Not pulled days") ??
+    pat("keepPattern", "Keep pattern") ??
+    pat("deletePattern", "Delete pattern")
+  if (error) return { policy: null, error }
+  return { policy: Object.keys(out).length ? out : null }
+}
+
+// Namespaces the member owns: their own and orgs they own.
+export type OwnedNamespace = { id: string; name: string; kind: "user" | "org"; policy: Policy | null }
+
+export async function ownedNamespaces(userId: string): Promise<OwnedNamespace[]> {
+  const rows = await db.execute<{ id: string; name: string; kind: "user" | "org"; policy: Policy | null }>(sql`
+    select n.id, n.name, n.kind, n.policy from registry_namespaces n
+    left join registry_org_members m on n.kind = 'org' and m.org_id::text = n.ref_id and m.user_id = ${userId}
+    where (n.kind = 'user' and n.ref_id = ${userId}) or m.role = 'owner'
+    order by n.kind desc, n.name`)
+  return rows.map((r) => ({ id: r.id, name: r.name, kind: r.kind, policy: r.policy ?? null }))
+}
+
+async function owned(userId: string, nsName: string) {
+  return (await ownedNamespaces(userId)).find((n) => n.name === nsName) ?? null
+}
+
+export async function setNamespacePolicy(userId: string, nsName: string, raw: Record<string, unknown>): Promise<Result> {
+  const ns = await owned(userId, nsName)
+  if (!ns) return NOT_OWNER
+  const { policy, error } = parsePolicy(raw)
+  if (error) return { error }
+  await db.update(registryNamespaces).set({ policy }).where(eq(registryNamespaces.id, ns.id))
+  await audit("registry_policy", { detail: `${nsName}: ${policy ? JSON.stringify(policy) : "none"}` })
+  return {}
+}
+
+// Null policy: the repo follows its namespace again.
+export async function setRepoPolicy(userId: string, fullName: string, raw: Record<string, unknown> | null): Promise<Result> {
+  const r = await writable(userId, fullName)
+  if (!r) return NO_WRITE
+  const { policy, error } = raw ? parsePolicy(raw) : { policy: null, error: undefined }
+  if (error) return { error }
+  await db.update(registryRepos).set({ policy }).where(eq(registryRepos.id, r.repo.id))
+  await audit("registry_policy", { detail: `${fullName}: ${raw ? (policy ? JSON.stringify(policy) : "none") : "inherit"}` })
+  return {}
+}
+
+// Repos a namespace-level preview covers: those that follow the namespace policy.
+export async function inheritingRepos(userId: string, nsName: string): Promise<{ id: string; fullName: string }[]> {
+  const ns = await owned(userId, nsName)
+  if (!ns) return []
+  const rows = await db
+    .select({ id: registryRepos.id, name: registryRepos.name })
+    .from(registryRepos)
+    .where(and(eq(registryRepos.namespaceId, ns.id), isNull(registryRepos.deletedAt), isNull(registryRepos.policy)))
+    .orderBy(asc(registryRepos.name))
+  return rows.map((r) => ({ id: r.id, fullName: `${nsName}/${r.name}` }))
+}
+
+// The repo id when the member may write to it.
+export async function writableRepoId(userId: string, fullName: string) {
+  return (await writable(userId, fullName))?.repo.id ?? null
+}
+
+// ---- Webhooks --------------------------------------------------------------
+
+export type HookRow = { id: string; url: string; events: string[]; enabled: boolean; repo: string | null }
+export type DeliveryRow = { id: string; event: string; status: number | null; error: string | null; attempts: number; at: string; delivered: boolean }
+
+// Hooks, repo-scoped or not, belong to the namespace's owner (as in hooks.ts).
+async function hookScope(userId: string, nsName: string, repoName?: string) {
+  if (repoName) {
+    const r = await reach(userId, `${nsName}/${repoName}`)
+    return r?.role === "owner" ? { nsId: r.ns.id, repoId: r.repo.id } : null
+  }
+  const ns = await owned(userId, nsName)
+  return ns ? { nsId: ns.id, repoId: null } : null
+}
+
+export async function listHooksFor(userId: string, nsName: string, repoName?: string): Promise<HookRow[]> {
+  const sc = await hookScope(userId, nsName, repoName)
+  if (!sc) return []
+  const rows = await db
+    .select({ h: registryHooks, repo: registryRepos.name })
+    .from(registryHooks)
+    .leftJoin(registryRepos, eq(registryRepos.id, registryHooks.repoId))
+    .where(and(eq(registryHooks.namespaceId, sc.nsId), sc.repoId ? eq(registryHooks.repoId, sc.repoId) : undefined))
+    .orderBy(asc(registryHooks.createdAt))
+  return rows.map(({ h, repo }) => ({ id: h.id, url: h.url, events: h.events, enabled: h.enabled, repo }))
+}
+
+// The scope a new hook belongs to, or an error.
+export async function hookTarget(userId: string, nsName: string, repoName?: string) {
+  const sc = await hookScope(userId, nsName, repoName)
+  return sc ? { namespaceId: sc.nsId, repoId: sc.repoId ?? undefined } : null
+}
+
+// Whether the member may manage this hook.
+export async function canManageHook(userId: string, hookId: string) {
+  if (!UUID.test(hookId)) return false
+  const [h] = await db
+    .select({ ns: registryNamespaces, repoId: registryHooks.repoId })
+    .from(registryHooks)
+    .innerJoin(registryNamespaces, eq(registryNamespaces.id, registryHooks.namespaceId))
+    .where(eq(registryHooks.id, hookId))
+  if (!h) return false
+  return (await roleIn(userId, h.ns)) === "owner"
+}
+
+export async function hookDeliveries(userId: string, hookId: string): Promise<DeliveryRow[]> {
+  if (!(await canManageHook(userId, hookId))) return []
+  const rows = await db
+    .select()
+    .from(registryHookDeliveries)
+    .where(eq(registryHookDeliveries.hookId, hookId))
+    .orderBy(desc(registryHookDeliveries.createdAt))
+    .limit(10)
+  return rows.map((d) => ({
+    id: d.id,
+    event: d.event,
+    status: d.status,
+    error: d.error,
+    attempts: d.attempts,
+    at: (d.deliveredAt ?? d.createdAt).toISOString(),
+    delivered: Boolean(d.deliveredAt),
+  }))
+}
+
+export async function setHookEnabled(userId: string, hookId: string, enabled: boolean): Promise<Result> {
+  if (!(await canManageHook(userId, hookId))) return NOT_OWNER
+  await db.update(registryHooks).set({ enabled }).where(eq(registryHooks.id, hookId))
+  return {}
+}
+
+// ---- Mirrors ---------------------------------------------------------------
+
+export type Upstream = {
+  id: string
+  name: string
+  url: string
+  username: string | null
+  hasPassword: boolean
+  ttlDays: number
+  enabled: boolean
+}
+
+export async function adminUpstreams(): Promise<Upstream[]> {
+  const rows = await db.select().from(registryUpstreams).orderBy(asc(registryUpstreams.name))
+  return rows.map((u) => ({
+    id: u.id,
+    name: u.name,
+    url: u.url,
+    username: u.username,
+    hasPassword: Boolean(u.passwordEnc),
+    ttlDays: u.ttlDays,
+    enabled: u.enabled,
+  }))
+}
+
+export type UpstreamInput = {
+  id?: string
+  name: string
+  url: string
+  username: string
+  // Blank on edit keeps the saved password.
+  password: string
+  clearPassword?: boolean
+  ttlDays: number
+  enabled: boolean
+}
+
+export async function saveUpstream(o: UpstreamInput): Promise<Result> {
+  const name = String(o.name ?? "").trim().toLowerCase()
+  const bad = registryNameError(name)
+  if (bad) return { error: bad.replace("Registry names are", "Mirror names are") }
+  let url: URL
+  try {
+    url = new URL(String(o.url ?? "").trim())
+  } catch {
+    return { error: "Enter the upstream's address, like https://registry-1.docker.io." }
+  }
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && local)) return { error: "The address must start with https://." }
+  if (url.username || url.password || url.search || url.hash) return { error: "Leave credentials and query parts out of the address." }
+  const ttl = Math.floor(Number(o.ttlDays))
+  if (!Number.isFinite(ttl) || ttl < 1 || ttl > 3650) return { error: "Keep cached images for 1 to 3650 days." }
+  const username = String(o.username ?? "").trim().slice(0, 200) || null
+  const clean = url.origin + url.pathname.replace(/\/+$/, "")
+  const fields = { name, url: clean, username, ttlDays: ttl, enabled: Boolean(o.enabled) }
+  const password = String(o.password ?? "")
+  try {
+    if (o.id) {
+      if (!UUID.test(o.id)) return {}
+      const [row] = await db
+        .update(registryUpstreams)
+        .set({
+          ...fields,
+          ...(password ? { passwordEnc: encrypt(password) } : o.clearPassword || !username ? { passwordEnc: null } : {}),
+        })
+        .where(eq(registryUpstreams.id, o.id))
+        .returning({ id: registryUpstreams.id })
+      if (!row) return { error: "That mirror is gone. Refresh and try again." }
+    } else {
+      await db.insert(registryUpstreams).values({ ...fields, passwordEnc: password && username ? encrypt(password) : null })
+    }
+  } catch (e) {
+    if (isClash(e)) return { error: "A mirror with that name already exists." }
+    throw e
+  }
+  await audit("registry_mirror", { detail: `${o.id ? "saved" : "added"} ${name} (${clean})` })
+  return {}
+}
+
+export async function deleteUpstream(id: string): Promise<Result> {
+  if (!UUID.test(id)) return {}
+  const [u] = await db.delete(registryUpstreams).where(eq(registryUpstreams.id, id)).returning({ name: registryUpstreams.name })
+  if (u) await audit("registry_mirror", { detail: `removed ${u.name}` })
+  return {}
+}
+
+export type CachedRepo = { fullName: string; bytes: number; tags: number; lastPulledAt: string | null }
+
+// Enabled upstreams plus what has been cached under the `mirror` namespace; read-only for members.
+export async function listMirrors(): Promise<{ upstreams: { name: string; url: string; ttlDays: number }[]; cached: CachedRepo[] }> {
+  const [ups, rows] = await Promise.all([
+    db
+      .select({ name: registryUpstreams.name, url: registryUpstreams.url, ttlDays: registryUpstreams.ttlDays })
+      .from(registryUpstreams)
+      .where(eq(registryUpstreams.enabled, true))
+      .orderBy(asc(registryUpstreams.name)),
+    db.execute<{ name: string; bytes: string; tags: string; pulled: string | null }>(sql`
+      select r.name,
+        (select coalesce(sum(b.size), 0) from registry_repo_blobs rb
+          join registry_blobs b on b.digest = rb.digest where rb.repo_id = r.id)::text as bytes,
+        (select count(*) from registry_tags t where t.repo_id = r.id and t.deleted_at is null)::text as tags,
+        (select max(t.last_pulled_at) from registry_tags t where t.repo_id = r.id and t.deleted_at is null) as pulled
+      from registry_repos r join registry_namespaces n on n.id = r.namespace_id
+      where n.name = 'mirror' and r.deleted_at is null order by r.name`),
+  ])
+  return {
+    upstreams: ups,
+    cached: rows.map((r) => ({
+      fullName: `mirror/${r.name}`,
+      bytes: Number(r.bytes),
+      tags: Number(r.tags),
+      lastPulledAt: r.pulled ? new Date(r.pulled).toISOString() : null,
+    })),
+  }
 }
 
 // ---- Tokens --------------------------------------------------------------
@@ -792,7 +1233,9 @@ export async function adminDeleteRepo(id: string): Promise<Result> {
 export type AdminNamespace = { id: string; name: string; kind: "user" | "org"; quotaBytes: number | null; used: number }
 
 export async function adminNamespaces(): Promise<AdminNamespace[]> {
-  const rows = await db.select().from(registryNamespaces).orderBy(asc(registryNamespaces.name))
+  const rows = (await db.select().from(registryNamespaces).orderBy(asc(registryNamespaces.name))).filter(
+    (n) => n.kind === "user" || UUID.test(n.refId)
+  )
   return Promise.all(
     rows.map(async (n) => ({ id: n.id, name: n.name, kind: n.kind, quotaBytes: n.quotaBytes, used: await registryUsage(n.id) }))
   )

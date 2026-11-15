@@ -5,8 +5,9 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 
-import { deleteRepo, deleteTag, setImmutable, setRepoPublic } from "@/app/(app)/registry/actions"
+import { deleteRepo, deleteTag, restoreTrash, setImmutable, setRepoPublic } from "@/app/(app)/registry/actions"
 import { CopyButton } from "@/components/copy-button"
+import { Hooks, PolicyEditor } from "@/components/registry-extra"
 import { Code, Confirm, Empty, Heading, LIST, SECTION, WHEN } from "@/components/registry-ui"
 import { SubmitButton } from "@/components/submit-button"
 import { useNotice } from "@/components/toaster"
@@ -15,7 +16,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { formatBytes } from "@/lib/file-types"
-import type { RepoDetail, TagRow } from "@/lib/registry/manage"
+import type { HookRow, RepoDetail, TagRow } from "@/lib/registry/manage"
 import { cn } from "@/lib/utils"
 
 export function RepoTags({ repo, host, selected }: { repo: RepoDetail; host: string; selected?: string }) {
@@ -77,14 +78,21 @@ function TagItem({ t, repo, host, selected }: { t: TagRow; repo: RepoDetail; hos
         {repo.canWrite && (
           <Confirm
             label="Delete"
-            question="Pulls of this tag stop."
-            yes="Delete tag"
+            question="Pulls of this tag stop. It waits in Trash for 7 days."
+            yes="Move to Trash"
             pending={pending}
             onYes={() =>
               start(async () => {
                 const r = await deleteTag(repo.fullName, t.name)
                 if (r.error) return setError(r.error)
-                setNotice({ text: `Deleted tag “${t.name}”.` })
+                setNotice({
+                  text: `Moved tag “${t.name}” to Trash.`,
+                  undo: () =>
+                    restoreTrash("tag", r.id!).then((u) => {
+                      setNotice(u.error ? { text: u.error, error: true } : { text: `Restored “${t.name}”.` })
+                      router.refresh()
+                    }),
+                })
                 if (selected) router.replace(`/registry/${repo.fullName}`)
               })
             }
@@ -99,7 +107,7 @@ function TagItem({ t, repo, host, selected }: { t: TagRow; repo: RepoDetail; hos
   )
 }
 
-export function RepoSettings({ repo }: { repo: RepoDetail }) {
+export function RepoSettings({ repo, hooks }: { repo: RepoDetail; hooks: HookRow[] }) {
   const [pending, start] = useTransition()
   const [error, setError] = useState<string>()
   const [isPublic, setPublic] = useState(repo.isPublic)
@@ -107,95 +115,129 @@ export function RepoSettings({ repo }: { repo: RepoDetail }) {
   const setNotice = useNotice()
   if (!repo.canWrite) return null
   return (
-    <section className={SECTION} aria-labelledby="settings-heading">
-      <Heading id="settings-heading" title="Settings" hint="Who can pull this repository, which tags are locked, and deleting it." />
-      <div className="flex flex-col gap-5 rounded-xl border bg-card p-4">
-        <label className="flex cursor-pointer items-start gap-3 text-sm">
-          <input
-            type="checkbox"
-            role="switch"
-            checked={isPublic}
-            disabled={pending || (!repo.publicAllowed && !isPublic)}
-            onChange={(e) => {
-              const next = e.target.checked
-              setPublic(next)
+    <>
+      <section className={SECTION} aria-labelledby="settings-heading">
+        <Heading id="settings-heading" title="Settings" hint="Who can pull this repository, which tags are locked, and deleting it." />
+        <div className="flex flex-col gap-5 rounded-xl border bg-card p-4">
+          <label className="flex cursor-pointer items-start gap-3 text-sm">
+            <input
+              type="checkbox"
+              role="switch"
+              checked={isPublic}
+              disabled={pending || (!repo.publicAllowed && !isPublic)}
+              onChange={(e) => {
+                const next = e.target.checked
+                setPublic(next)
+                setError(undefined)
+                start(async () => {
+                  const r = await setRepoPublic(repo.fullName, next)
+                  if (r.error) {
+                    setPublic(!next)
+                    return setError(r.error)
+                  }
+                  setNotice({ text: next ? "Anyone can now pull this repository." : "This repository is private again." })
+                })
+              }}
+              className="mt-0.5 size-4 accent-primary"
+            />
+            <span className="grid gap-0.5">
+              <span className="flex items-center gap-1.5 font-medium">
+                {isPublic ? <GlobeIcon className="size-4" /> : <LockSimpleIcon className="size-4" />}
+                Public
+              </span>
+              <span className="text-xs text-pretty text-muted-foreground">
+                {repo.publicAllowed
+                  ? "Anyone can pull without signing in. Only you and your org can push."
+                  : "An admin turned off public repositories on this server."}
+              </span>
+            </span>
+          </label>
+
+          <form
+            className="grid gap-2"
+            onSubmit={(e) => {
+              e.preventDefault()
+              const v = String(new FormData(e.currentTarget).get("pattern") ?? "")
               setError(undefined)
               start(async () => {
-                const r = await setRepoPublic(repo.fullName, next)
-                if (r.error) {
-                  setPublic(!next)
-                  return setError(r.error)
-                }
-                setNotice({ text: next ? "Anyone can now pull this repository." : "This repository is private again." })
+                const r = await setImmutable(repo.fullName, v)
+                if (r.error) return setError(r.error)
+                setNotice({ text: v.trim() ? "Immutable tags saved." : "No tags are immutable now." })
+                router.refresh()
               })
             }}
-            className="mt-0.5 size-4 accent-primary"
-          />
-          <span className="grid gap-0.5">
-            <span className="flex items-center gap-1.5 font-medium">
-              {isPublic ? <GlobeIcon className="size-4" /> : <LockSimpleIcon className="size-4" />}
-              Public
-            </span>
-            <span className="text-xs text-pretty text-muted-foreground">
-              {repo.publicAllowed
-                ? "Anyone can pull without signing in. Only you and your org can push."
-                : "An admin turned off public repositories on this server."}
-            </span>
-          </span>
-        </label>
+          >
+            <Label htmlFor="immutable">Immutable tags</Label>
+            <p className="text-xs text-pretty text-muted-foreground">
+              Tags matching this can&apos;t be overwritten or deleted, and cleanup skips them. A glob like{" "}
+              <code className="font-mono">v*</code>, several separated by commas (<code className="font-mono">v*,release-*</code>
+              ), or <code className="font-mono">re:^v\d+$</code> for a regular expression. Blank for none.
+            </p>
+            <div className="flex gap-2">
+              <Input id="immutable" name="pattern" defaultValue={repo.immutablePattern ?? ""} placeholder="v*" className="font-mono" />
+              <SubmitButton pending={pending} variant="outline">
+                Save
+              </SubmitButton>
+            </div>
+          </form>
 
-        <form
-          className="grid gap-2"
-          onSubmit={(e) => {
-            e.preventDefault()
-            const v = String(new FormData(e.currentTarget).get("pattern") ?? "")
-            setError(undefined)
-            start(async () => {
-              const r = await setImmutable(repo.fullName, v)
-              if (r.error) return setError(r.error)
-              setNotice({ text: v.trim() ? "Immutable tags saved." : "No tags are immutable now." })
-              router.refresh()
-            })
-          }}
-        >
-          <Label htmlFor="immutable">Immutable tags</Label>
-          <p className="text-xs text-pretty text-muted-foreground">
-            Tags matching this can&apos;t be overwritten or deleted. A glob like <code className="font-mono">v*</code>, comma
-            separated, or <code className="font-mono">re:^v\d+$</code> for a regex. Blank for none.
-          </p>
-          <div className="flex gap-2">
-            <Input id="immutable" name="pattern" defaultValue={repo.immutablePattern ?? ""} placeholder="v*" className="font-mono" />
-            <SubmitButton pending={pending} variant="outline">
-              Save
-            </SubmitButton>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
+            <span className="grid gap-0.5 text-sm">
+              <span className="flex items-center gap-1.5 font-medium">
+                <GearIcon className="size-4" />
+                Delete repository
+              </span>
+              <span className="text-xs text-muted-foreground">Moves it and every tag to Trash. Restore it from there within 7 days.</span>
+            </span>
+            <Confirm
+              label="Delete repository"
+              question="Pulls and pushes stop. It waits in Trash for 7 days."
+              yes="Move to Trash"
+              pending={pending}
+              onYes={() =>
+                start(async () => {
+                  const r = await deleteRepo(repo.fullName)
+                  if (r.error) return setError(r.error)
+                  setNotice({
+                    text: `Moved ${repo.fullName} to Trash.`,
+                    undo: () =>
+                      restoreTrash("repo", r.id!).then((u) => {
+                        setNotice(u.error ? { text: u.error, error: true } : { text: `Restored ${repo.fullName}.` })
+                        router.replace(`/registry/${repo.fullName}`)
+                      }),
+                  })
+                  router.replace("/registry")
+                })
+              }
+            />
           </div>
-        </form>
-
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
-          <span className="grid gap-0.5 text-sm">
-            <span className="flex items-center gap-1.5 font-medium">
-              <GearIcon className="size-4" />
-              Delete repository
-            </span>
-            <span className="text-xs text-muted-foreground">Removes it and every tag from view.</span>
-          </span>
-          <Confirm
-            label="Delete repository"
-            question="Pulls and pushes stop."
-            yes="Delete"
-            pending={pending}
-            onYes={() =>
-              start(async () => {
-                const r = await deleteRepo(repo.fullName)
-                if (r.error) return setError(r.error)
-                setNotice({ text: `Deleted ${repo.fullName}.` })
-                router.replace("/registry")
-              })
-            }
-          />
+          <FormError>{error}</FormError>
         </div>
-        <FormError>{error}</FormError>
-      </div>
-    </section>
+      </section>
+
+      <section className={SECTION} aria-labelledby="cleanup-heading">
+        <Heading
+          id="cleanup-heading"
+          title="Cleanup"
+          hint="Tidy old tags automatically. Removed tags go to Trash first."
+        />
+        <div className="rounded-xl border bg-card p-4">
+          <PolicyEditor namespace={repo.namespace} repo={repo.fullName} initial={repo.policy} inherited={repo.nsPolicy} />
+        </div>
+      </section>
+
+      {repo.isOwner && (
+        <section className={SECTION} aria-labelledby="hooks-heading">
+          <Heading
+            id="hooks-heading"
+            title="Webhooks"
+            hint="Get a signed POST when an image is pushed or deleted here. Webhooks on the registry name cover this repository too."
+          />
+          <div className="rounded-xl border bg-card p-4">
+            <Hooks namespace={repo.namespace} repo={repo.fullName.slice(repo.namespace.length + 1)} initial={hooks} />
+          </div>
+        </section>
+      )}
+    </>
   )
 }

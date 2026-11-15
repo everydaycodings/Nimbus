@@ -8,11 +8,12 @@ import {
   sizeField,
   speedField,
 } from "@/components/admin/setting"
+import { GcCard, MirrorsAdmin } from "@/components/admin/registry-admin"
 import { SubmitButton } from "@/components/submit-button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { formatBytes } from "@/lib/file-rules"
-import { adminNamespaces, adminRepos, listTokens } from "@/lib/registry/manage"
+import { adminNamespaces, adminRepos, adminUpstreams, listTokens } from "@/lib/registry/manage"
 import { endpoint } from "@/lib/registry/rules"
 import { getSettings } from "@/lib/signup"
 import { deleteRegistryRepo, revokeRegistryToken, setRegistry, setRegistryQuota } from "../../actions"
@@ -43,7 +44,13 @@ export default async function RegistryAdminPage() {
       </AdminPage>
     )
 
-  const [s, repos, tokens, namespaces] = await Promise.all([getSettings(), adminRepos(), listTokens(null), adminNamespaces()])
+  const [s, repos, tokens, namespaces, upstreams] = await Promise.all([
+    getSettings(),
+    adminRepos(),
+    listTokens(null),
+    adminNamespaces(),
+    adminUpstreams(),
+  ])
   const reset = resettable(s)
   const quota = sizeField(s.registryDefaultQuotaBytes, "GB", "TB")
   const bps = speedField(s.registryBpsLimit)
@@ -180,6 +187,10 @@ export default async function RegistryAdminPage() {
           </div>
         </SettingRow>
       </SettingsForm>
+
+      <MirrorsAdmin upstreams={upstreams} host={url.replace(/^https?:\/\//, "")} />
+
+      <GcCard />
 
       <section id="registry-names" className="flex scroll-mt-24 flex-col gap-3">
         <div className="grid gap-1">

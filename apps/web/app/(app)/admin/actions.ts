@@ -26,7 +26,8 @@ import {
 } from "@/lib/db/schema"
 import { passkeyHost } from "@/lib/passkey-rules"
 import { POLICY_MAX, POLICY_MIN } from "@/lib/password-policy"
-import { adminDeleteRepo, revokeToken, setNamespaceQuota } from "@/lib/registry/manage"
+import { runGc } from "@/lib/registry/gc"
+import { adminDeleteRepo, deleteUpstream, revokeToken, saveUpstream, setNamespaceQuota, type UpstreamInput } from "@/lib/registry/manage"
 import { revokeKey } from "@/lib/s3api/manage"
 import { turnCopiesOffAndDelete } from "@/lib/video-copies"
 import { enqueue, scheduleBackups, scheduleHealth } from "@/lib/redis"
@@ -180,6 +181,32 @@ export async function setRegistryQuota(form: FormData) {
   const unit = UNITS[String(form.get("unit"))] ?? UNITS.GB
   await setNamespaceQuota(String(form.get("id")), n === null ? null : Math.round(n * unit))
   revalidatePath("/admin", "layout")
+}
+
+export async function saveRegistryMirror(o: UpstreamInput) {
+  await requireAdmin()
+  const r = await saveUpstream(o)
+  if (!r.error) revalidatePath("/", "layout")
+  return r
+}
+
+export async function deleteRegistryMirror(id: string) {
+  await requireAdmin()
+  const r = await deleteUpstream(String(id))
+  revalidatePath("/", "layout")
+  return r
+}
+
+// Garbage collection from the admin page: a dry run counts, a real run removes.
+export async function runRegistryGc(dryRun: boolean): Promise<{ error?: string; blobs?: number; bytes?: number; manifests?: number }> {
+  await requireAdmin()
+  try {
+    const r = await runGc({ dryRun })
+    if (!dryRun) await audit("registry_gc", { detail: `${r.blobs} blobs, ${r.manifests} manifests, ${r.bytes} bytes` })
+    return r
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Garbage collection failed." }
+  }
 }
 
 export async function revokeS3Key(id: string) {

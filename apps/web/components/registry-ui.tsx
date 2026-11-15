@@ -75,17 +75,17 @@ export function Confirm({
   const [sure, setSure] = useState(false)
   if (!sure)
     return (
-      <Button variant="outline" size="sm" onClick={() => setSure(true)}>
+      <Button type="button" variant="outline" size="sm" onClick={() => setSure(true)}>
         {label}
       </Button>
     )
   return (
     <span className="flex flex-wrap items-center gap-1.5">
       <span className="text-xs text-muted-foreground">{question}</span>
-      <Button variant="destructive" size="sm" disabled={pending} onClick={onYes}>
+      <Button type="button" variant="destructive" size="sm" disabled={pending} onClick={onYes}>
         {yes}
       </Button>
-      <Button variant="ghost" size="sm" autoFocus disabled={pending} onClick={() => setSure(false)}>
+      <Button type="button" variant="ghost" size="sm" autoFocus disabled={pending} onClick={() => setSure(false)}>
         Keep
       </Button>
     </span>

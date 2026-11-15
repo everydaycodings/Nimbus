@@ -5,7 +5,7 @@ import { notFound, redirect } from "next/navigation"
 import { RepoSettings, RepoTags } from "@/components/registry-repo"
 import { Badge } from "@/components/ui/badge"
 import { formatBytes } from "@/lib/file-rules"
-import { repoDetail, registryState, tagDetail, type ImageInfo } from "@/lib/registry/manage"
+import { listHooksFor, repoDetail, registryState, tagDetail, type ImageInfo } from "@/lib/registry/manage"
 import { endpoint } from "@/lib/registry/rules"
 import { requireMember } from "@/lib/session"
 
@@ -117,6 +117,7 @@ export default async function RepoPage({
   const full = name.map(decodeURIComponent).join("/")
   const repo = await repoDetail(me.id, full)
   if (!repo) notFound()
+  const hooks = repo.isOwner ? await listHooksFor(me.id, repo.namespace, full.slice(repo.namespace.length + 1)) : []
   const detail = tag ? await tagDetail(me.id, full, tag) : null
   const host = endpoint()!.replace(/^https?:\/\//, "")
   return (
@@ -155,7 +156,7 @@ export default async function RepoPage({
         </section>
       )}
 
-      <RepoSettings repo={repo} />
+      <RepoSettings repo={repo} hooks={hooks} />
     </div>
   )
 }

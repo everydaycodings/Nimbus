@@ -520,6 +520,18 @@ export const ADMIN_SETTINGS: {
     keywords: "registry docker quota storage limit namespace",
   },
   {
+    id: "registry-mirrors",
+    label: "Registry mirrors",
+    href: "/admin/system/registry",
+    keywords: "registry docker mirror pull-through cache upstream docker hub ghcr quay proxy",
+  },
+  {
+    id: "registry-gc",
+    label: "Registry garbage collection",
+    href: "/admin/system/registry",
+    keywords: "registry docker garbage collection gc free space layers blobs cleanup",
+  },
+  {
     id: "registry-repos",
     label: "Registry repositories",
     href: "/admin/system/registry",

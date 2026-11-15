@@ -19,6 +19,7 @@ import {
 } from "@/app/(app)/registry/actions"
 import { CopyButton } from "@/components/copy-button"
 import { DIALOG_BACKDROP, DIALOG_POPUP } from "@/components/overlay-styles"
+import { MirrorsTab, NamespacesSection, RegistryTabs, TrashTab, type Tab } from "@/components/registry-extra"
 import { Code, Confirm, DAY, Empty, Heading, LIST, RADIO, SECTION, SELECT, WHEN } from "@/components/registry-ui"
 import { SubmitButton } from "@/components/submit-button"
 import { useNotice } from "@/components/toaster"
@@ -28,7 +29,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { formatBytes } from "@/lib/file-types"
-import type { OrgMember, OrgRow, RepoRow, TokenRow } from "@/lib/registry/manage"
+import type { CachedRepo, OrgMember, OrgRow, OwnedNamespace, RepoRow, TokenRow, TrashRow } from "@/lib/registry/manage"
 import { cn } from "@/lib/utils"
 
 const EXPIRY = [
@@ -98,6 +99,12 @@ export function RegistryView({
   maxTokens,
   canCreateOrg,
   publicAllowed,
+  tab,
+  trash,
+  trashDays,
+  owned,
+  upstreams,
+  cached,
 }: {
   me: string
   meId: string
@@ -108,6 +115,12 @@ export function RegistryView({
   maxTokens: number
   canCreateOrg: boolean
   publicAllowed: boolean
+  tab: Tab
+  trash: TrashRow[]
+  trashDays: number
+  owned: OwnedNamespace[]
+  upstreams: { name: string; url: string; ttlDays: number }[]
+  cached: CachedRepo[]
 }) {
   const [newOrg, setNewOrg] = useState(false)
   const [newToken, setNewToken] = useState(false)
@@ -123,137 +136,149 @@ export function RegistryView({
         </p>
       </header>
 
-      <section className={SECTION} aria-labelledby="repos-heading">
-        <Heading
-          id="repos-heading"
-          title="Repositories"
-          hint={
-            publicAllowed
-              ? "Made on your first push. Open one for tags, layers and settings."
-              : "Made on your first push. Open one for tags, layers and settings. Public repositories are off on this server."
-          }
-        />
-        {repos.length === 0 ? (
-          <Empty icon={PackageIcon} title="No repositories yet">
-            Make a token below, then push your first image:
-            <Code>{`docker login ${host} -u ${me}\ndocker tag myimage ${host}/${me}/myimage:latest\ndocker push ${host}/${me}/myimage:latest`}</Code>
-          </Empty>
-        ) : (
-          <ul className={LIST}>
-            {repos.map((r) => (
-              <li key={r.id}>
-                <Link
-                  href={`/registry/${r.fullName}`}
-                  className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 outline-none hover:bg-accent/40 focus-visible:bg-accent/40"
-                >
-                  <span className="grid min-w-0 flex-1 basis-56 gap-0.5">
-                    <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                      <span className="font-mono break-all">{r.fullName}</span>
-                      <Badge variant="outline" className="gap-1">
-                        {r.isPublic ? <GlobeIcon /> : <LockSimpleIcon />}
-                        {r.isPublic ? "Public" : "Private"}
-                      </Badge>
-                    </span>
-                    <span suppressHydrationWarning className="text-xs text-muted-foreground">
-                      {r.tags === 1 ? "1 tag" : `${r.tags} tags`} ·{" "}
-                      <span className="tabular-nums">{formatBytes(r.bytes)}</span>
-                      {r.pushedAt ? ` · Pushed ${WHEN.format(new Date(r.pushedAt))}` : ""}
-                    </span>
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <RegistryTabs tab={tab} trash={trash.length} />
 
-      <section className={SECTION} aria-labelledby="orgs-heading">
-        <Heading
-          id="orgs-heading"
-          title="Orgs"
-          hint="A shared registry name for a team. Members push and pull under it by role."
-        >
-          {canCreateOrg && (
-            <Button onClick={() => setNewOrg(true)}>
-              <PlusIcon />
-              New org
-            </Button>
-          )}
-        </Heading>
-        {orgs.length === 0 ? (
-          <Empty icon={BuildingsIcon} title="No orgs yet">
-            {canCreateOrg
-              ? "Make an org to share images with others, or ask to be added to one."
-              : "Only admins make orgs on this server. Ask one to add you to an org."}
-          </Empty>
-        ) : (
-          <ul className={LIST}>
-            {orgs.map((o) => (
-              <li key={o.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
-                <div className="grid min-w-0 flex-1 basis-56 gap-0.5">
-                  <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                    <span className="font-mono break-all">{o.name}</span>
-                    <Badge variant="outline">{ROLE_LABEL[o.role]}</Badge>
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {o.displayName !== o.name && `${o.displayName} · `}
-                    {o.members === 1 ? "1 member" : `${o.members} members`} ·{" "}
-                    {o.repos === 1 ? "1 repository" : `${o.repos} repositories`}
-                  </p>
-                </div>
-                <Button variant="outline" size="sm" onClick={() => setManaging(o)}>
-                  <UsersIcon />
-                  {o.role === "owner" ? "Manage" : "Members"}
+      {tab === "trash" ? (
+        <TrashTab rows={trash} days={trashDays} />
+      ) : tab === "mirrors" ? (
+        <MirrorsTab host={host} upstreams={upstreams} cached={cached} />
+      ) : (
+        <>
+          <section className={SECTION} aria-labelledby="repos-heading">
+            <Heading
+              id="repos-heading"
+              title="Repositories"
+              hint={
+                publicAllowed
+                  ? "Made on your first push. Open one for tags, layers and settings."
+                  : "Made on your first push. Open one for tags, layers and settings. Public repositories are off on this server."
+              }
+            />
+            {repos.length === 0 ? (
+              <Empty icon={PackageIcon} title="No repositories yet">
+                Make a token below, then push your first image:
+                <Code>{`docker login ${host} -u ${me}\ndocker tag myimage ${host}/${me}/myimage:latest\ndocker push ${host}/${me}/myimage:latest`}</Code>
+              </Empty>
+            ) : (
+              <ul className={LIST}>
+                {repos.map((r) => (
+                  <li key={r.id}>
+                    <Link
+                      href={`/registry/${r.fullName}`}
+                      className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 outline-none hover:bg-accent/40 focus-visible:bg-accent/40"
+                    >
+                      <span className="grid min-w-0 flex-1 basis-56 gap-0.5">
+                        <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                          <span className="font-mono break-all">{r.fullName}</span>
+                          <Badge variant="outline" className="gap-1">
+                            {r.isPublic ? <GlobeIcon /> : <LockSimpleIcon />}
+                            {r.isPublic ? "Public" : "Private"}
+                          </Badge>
+                        </span>
+                        <span suppressHydrationWarning className="text-xs text-muted-foreground">
+                          {r.tags === 1 ? "1 tag" : `${r.tags} tags`} ·{" "}
+                          <span className="tabular-nums">{formatBytes(r.bytes)}</span>
+                          {r.pushedAt ? ` · Pushed ${WHEN.format(new Date(r.pushedAt))}` : ""}
+                        </span>
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className={SECTION} aria-labelledby="orgs-heading">
+            <Heading
+              id="orgs-heading"
+              title="Orgs"
+              hint="A shared registry name for a team. Members push and pull under it by role."
+            >
+              {canCreateOrg && (
+                <Button onClick={() => setNewOrg(true)}>
+                  <PlusIcon />
+                  New org
                 </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+              )}
+            </Heading>
+            {orgs.length === 0 ? (
+              <Empty icon={BuildingsIcon} title="No orgs yet">
+                {canCreateOrg
+                  ? "Make an org to share images with others, or ask to be added to one."
+                  : "Only admins make orgs on this server. Ask one to add you to an org."}
+              </Empty>
+            ) : (
+              <ul className={LIST}>
+                {orgs.map((o) => (
+                  <li key={o.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+                    <div className="grid min-w-0 flex-1 basis-56 gap-0.5">
+                      <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                        <span className="font-mono break-all">{o.name}</span>
+                        <Badge variant="outline">{ROLE_LABEL[o.role]}</Badge>
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {o.displayName !== o.name && `${o.displayName} · `}
+                        {o.members === 1 ? "1 member" : `${o.members} members`} ·{" "}
+                        {o.repos === 1 ? "1 repository" : `${o.repos} repositories`}
+                      </p>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => setManaging(o)}>
+                      <UsersIcon />
+                      {o.role === "owner" ? "Manage" : "Members"}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
 
-      <section className={SECTION} aria-labelledby="tokens-heading">
-        <Heading
-          id="tokens-heading"
-          title="Tokens"
-          hint={`Docker signs in with a token as the password, never your account password. Make one per machine so you can revoke it alone. ${tokens.length} of ${maxTokens} used.`}
-        >
-          <Button onClick={() => setNewToken(true)} disabled={tokens.length >= maxTokens}>
-            <PlusIcon />
-            New token
-          </Button>
-        </Heading>
-        {tokens.length === 0 ? (
-          <Empty icon={KeyIcon} title="No tokens yet">
-            Make a token to docker login. You see it once, right after it&apos;s made.
-          </Empty>
-        ) : (
-          <ul className={LIST}>
-            {tokens.map((t) => (
-              <TokenItem key={t.id} t={t} />
-            ))}
-          </ul>
-        )}
-      </section>
+          <NamespacesSection owned={owned} />
 
-      <section className={SECTION} aria-labelledby="connect-heading">
-        <Heading
-          id="connect-heading"
-          title="Connect Docker"
-          hint="Log in with your registry name and a token, then push and pull as usual."
-        />
-        <div className="relative flex flex-col gap-3 rounded-xl border bg-card p-4">
-          <div className="relative">
-            <Code copy>{`docker login ${host} -u ${me}
-# paste a token as the password
+          <section className={SECTION} aria-labelledby="tokens-heading">
+            <Heading
+              id="tokens-heading"
+              title="Tokens"
+              hint={`Docker signs in with a token as the password, never your account password. Make one per machine so you can revoke it alone. ${tokens.length} of ${maxTokens} used.`}
+            >
+              <Button onClick={() => setNewToken(true)} disabled={tokens.length >= maxTokens}>
+                <PlusIcon />
+                New token
+              </Button>
+            </Heading>
+            {tokens.length === 0 ? (
+              <Empty icon={KeyIcon} title="No tokens yet">
+                Make a token to docker login. You see it once, right after it&apos;s made.
+              </Empty>
+            ) : (
+              <ul className={LIST}>
+                {tokens.map((t) => (
+                  <TokenItem key={t.id} t={t} />
+                ))}
+              </ul>
+            )}
+          </section>
 
-docker pull ${host}/${me}/<repo>:<tag>
-docker push ${host}/${me}/<repo>:<tag>`}</Code>
-            <div className="absolute top-2 right-2">
-              <CopyButton value={`docker login ${host} -u ${me}`} />
+          <section className={SECTION} aria-labelledby="connect-heading">
+            <Heading
+              id="connect-heading"
+              title="Connect Docker"
+              hint="Log in with your registry name and a token, then push and pull as usual."
+            />
+            <div className="relative flex flex-col gap-3 rounded-xl border bg-card p-4">
+              <div className="relative">
+                <Code copy>{`docker login ${host} -u ${me}
+    # paste a token as the password
+
+    docker pull ${host}/${me}/<repo>:<tag>
+    docker push ${host}/${me}/<repo>:<tag>`}</Code>
+                <div className="absolute top-2 right-2">
+                  <CopyButton value={`docker login ${host} -u ${me}`} />
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      </section>
+          </section>
+        </>
+      )}
 
       <NewOrg
         open={newOrg}

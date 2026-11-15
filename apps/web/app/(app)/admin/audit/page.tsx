@@ -69,6 +69,20 @@ function sentence(e: typeof auditEvents.$inferSelect, who: string) {
       return `deleted the repository ${d}`
     case "registry_tag_delete":
       return `deleted the tag ${d}`
+    case "registry_repo_restore":
+      return `restored the repository ${d} from Trash`
+    case "registry_tag_restore":
+      return `restored ${d} from Trash`
+    case "registry_trash_purge":
+      return `deleted ${d} from Trash for good`
+    case "registry_policy":
+      return `set registry cleanup rules for ${d}`
+    case "registry_hook":
+      return `changed a registry webhook: ${d}`
+    case "registry_mirror":
+      return `changed a registry mirror: ${d}`
+    case "registry_gc":
+      return `ran registry garbage collection (${d})`
     case "registry_quota":
       return `set the registry storage limit for ${d}`
     case "registry":
