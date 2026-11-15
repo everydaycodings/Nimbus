@@ -127,7 +127,8 @@ export async function canDelete(actor: Actor, ns: Ns, repo: Repo): Promise<boole
   return atLeast(await repoRole(actor.userId, ns, repo), "write")
 }
 
-export async function createRepoOnPush(actor: Actor, fullName: string): Promise<{ repo: Repo; namespace: Ns } | null> {
+// `by`: "push" (a docker push made it) or "web" (New repository on /registry).
+export async function createRepoOnPush(actor: Actor, fullName: string, by: "push" | "web" = "push"): Promise<{ repo: Repo; namespace: Ns } | null> {
   const p = splitName(fullName)
   if (!p || !validRepoName(p.repo)) return null
   const [namespace] = await db
@@ -142,8 +143,8 @@ export async function createRepoOnPush(actor: Actor, fullName: string): Promise<
     .returning()
   if (made) {
     const [u] = await db.select({ name: user.name }).from(user).where(eq(user.id, actor.userId!))
-    await auditAs({ id: actor.userId, name: u?.name ?? "A member" }, "registry_repo_create", `${namespace.name}/${p.repo} (by push)`)
-    await logEvent({ namespaceId: namespace.id, repoId: made.id, actorId: actor.userId, actorName: u?.name ?? "A member", action: "repo_create", detail: { name: `${namespace.name}/${p.repo}`, by: "push" } })
+    await auditAs({ id: actor.userId, name: u?.name ?? "A member" }, "registry_repo_create", `${namespace.name}/${p.repo} (by ${by})`)
+    await logEvent({ namespaceId: namespace.id, repoId: made.id, actorId: actor.userId, actorName: u?.name ?? "A member", action: "repo_create", detail: { name: `${namespace.name}/${p.repo}`, by } })
     return { repo: made, namespace }
   }
   // Another push made it first.

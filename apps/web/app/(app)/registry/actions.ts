@@ -41,6 +41,10 @@ export async function claimName(name: string) {
   return done(await svc.claimName(me.id, name))
 }
 
+export async function createRepository(namespace: string, name: string, isPublic: boolean) {
+  const me = await member()
+  return me ? done(await svc.createRepository(me.id, { namespace, name, isPublic })) : NOT_ON
+}
 export async function createOrg(name: string, displayName: string) {
   const me = await member()
   return me ? done(await svc.createOrg(me.id, name, displayName)) : NOT_ON

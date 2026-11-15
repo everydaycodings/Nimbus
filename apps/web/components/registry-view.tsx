@@ -1,8 +1,9 @@
 "use client"
 
 import { Dialog } from "@base-ui/react/dialog"
-import { BuildingsIcon, CheckCircleIcon, KeyIcon, LockSimpleIcon, GlobeIcon, PackageIcon, PlusIcon, UsersIcon } from "@phosphor-icons/react"
+import { ArrowsClockwiseIcon, BuildingsIcon, CheckCircleIcon, GitBranchIcon, KeyIcon, LockSimpleIcon, GlobeIcon, PackageIcon, PlusIcon, TerminalWindowIcon, UsersIcon } from "@phosphor-icons/react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { useEffect, useId, useState, useTransition } from "react"
 
 import {
@@ -10,6 +11,7 @@ import {
   checkName,
   claimName,
   createOrg,
+  createRepository,
   createToken,
   deleteOrg,
   orgMembers,
@@ -219,6 +221,8 @@ export function RegistryView({
 }) {
   const [newOrg, setNewOrg] = useState(false)
   const [newToken, setNewToken] = useState(false)
+  // Open with the step to land on afterwards: the repo's Overview, or its Builds tab.
+  const [newRepo, setNewRepo] = useState<"overview" | "builds" | null>(null)
   const [managing, setManaging] = useState<OrgRow | null>(null)
   const setNotice = useNotice()
   const firstRun = tokens.length === 0 || repos.length === 0
@@ -247,10 +251,32 @@ export function RegistryView({
                   ? "Made on your first push. Open one for tags, layers and settings."
                   : "Made on your first push. Open one for tags, layers and settings. Public repositories are off on this server."
               }
-            />
+            >
+              <Button className={TOUCH} onClick={() => setNewRepo("overview")}>
+                <PlusIcon />
+                New repository
+              </Button>
+            </Heading>
             {repos.length === 0 ? (
               <Empty icon={PackageIcon} title="No repositories yet">
-                Your first push makes one, under <span className="font-mono">{me}/</span>.
+                <p>
+                  A push makes one under <span className="font-mono">{me}/</span>, or start one here first.
+                </p>
+                <ul className="grid w-full gap-2 text-left sm:grid-cols-3">
+                  <StartOption
+                    icon={GitBranchIcon}
+                    title="Build automatically"
+                    text="From GitHub or any git server, on every push or tag."
+                    onClick={() => setNewRepo("builds")}
+                  />
+                  <StartOption
+                    icon={TerminalWindowIcon}
+                    title="Push from Docker"
+                    text="Make a repository now and push to it later."
+                    onClick={() => setNewRepo("overview")}
+                  />
+                  <StartOption icon={ArrowsClockwiseIcon} title="Mirror public images" text="Pull Docker Hub images through this server." href="/registry?tab=mirrors" />
+                </ul>
               </Empty>
             ) : (
               <ul className={LIST}>
@@ -378,6 +404,14 @@ export function RegistryView({
       {tab === "trash" && <TrashTab rows={trash} days={trashDays} />}
       {tab === "mirrors" && <MirrorsTab host={host} upstreams={upstreams} cached={cached} />}
 
+      <NewRepository
+        key={`repo-${newRepo ?? "closed"}`}
+        next={newRepo}
+        onClose={() => setNewRepo(null)}
+        me={me}
+        orgs={orgs.filter((o) => o.role === "owner" || o.role === "write")}
+        publicAllowed={publicAllowed}
+      />
       <NewOrg
         key={newOrg ? "open" : "closed"}
         open={newOrg}
@@ -436,6 +470,166 @@ function TokenItem({ t }: { t: TokenRow }) {
       </div>
       <FormError>{error}</FormError>
     </li>
+  )
+}
+
+// One way to start in the empty Repositories state: a dialog step or a link.
+function StartOption({
+  icon: Icon,
+  title,
+  text,
+  onClick,
+  href,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  title: string
+  text: string
+  onClick?: () => void
+  href?: string
+}) {
+  const body = (
+    <>
+      <Icon className="size-5 text-muted-foreground" />
+      <span className="font-medium text-foreground">{title}</span>
+      <span className="text-xs text-pretty text-muted-foreground">{text}</span>
+    </>
+  )
+  const box =
+    "flex h-full w-full flex-col items-start gap-1 rounded-lg border bg-card p-3 text-left outline-none hover:bg-accent/40 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+  return (
+    <li>
+      {href ? (
+        <Link href={href} className={box}>
+          {body}
+        </Link>
+      ) : (
+        <button type="button" onClick={onClick} className={box}>
+          {body}
+        </button>
+      )}
+    </li>
+  )
+}
+
+// Makes an empty repository before any push, so builds, settings and access can be set up first.
+function NewRepository({
+  next,
+  onClose,
+  me,
+  orgs,
+  publicAllowed,
+}: {
+  next: "overview" | "builds" | null
+  onClose: () => void
+  me: string
+  orgs: OrgRow[]
+  publicAllowed: boolean
+}) {
+  const router = useRouter()
+  const [error, setError] = useState<string>()
+  const [pending, start] = useTransition()
+  const [ns, setNs] = useState(me)
+  const [name, setName] = useState("")
+  const [builds, setBuilds] = useState(next === "builds")
+  const id = useId()
+  return (
+    <Dialog.Root open={next !== null} onOpenChange={(o) => !o && !pending && onClose()}>
+      <Dialog.Portal>
+        <Dialog.Backdrop className={DIALOG_BACKDROP} />
+        <Dialog.Popup className={DIALOG_POPUP}>
+          <div className="grid gap-1.5">
+            <Dialog.Title className="text-base font-semibold">New repository</Dialog.Title>
+            <Dialog.Description className="text-sm text-pretty text-muted-foreground">
+              An empty repository you can push to, connect for automatic builds, or share before the first image.
+            </Dialog.Description>
+          </div>
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={(e) => {
+              e.preventDefault()
+              const f = new FormData(e.currentTarget)
+              setError(undefined)
+              start(async () => {
+                const r = await createRepository(ns, name, f.get("visibility") === "public")
+                const fullName = "fullName" in r ? r.fullName : undefined
+                if (r.error || !fullName) return setError(r.error ?? "Couldn't create the repository.")
+                onClose()
+                router.push(`/registry/${fullName}${builds ? "?tab=builds" : ""}`)
+              })
+            }}
+          >
+            <div className="grid gap-2">
+              <Label htmlFor={`${id}-name`}>Name</Label>
+              <div className="flex min-w-0 items-center gap-2">
+                {orgs.length > 0 ? (
+                  <select aria-label="Registry name" value={ns} onChange={(e) => setNs(e.target.value)} className={cn(SELECT, "shrink-0 font-mono")}>
+                    <option value={me}>{me}</option>
+                    {orgs.map((o) => (
+                      <option key={o.id} value={o.name}>
+                        {o.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="shrink-0 font-mono text-sm text-muted-foreground">{me}</span>
+                )}
+                <span aria-hidden className="text-muted-foreground">
+                  /
+                </span>
+                <Input
+                  id={`${id}-name`}
+                  value={name}
+                  onChange={(e) => setName(e.target.value.toLowerCase())}
+                  maxLength={200}
+                  required
+                  autoComplete="off"
+                  autoFocus
+                  spellCheck={false}
+                  aria-describedby={`${id}-hint`}
+                  className="min-w-0 font-mono"
+                />
+              </div>
+              <p id={`${id}-hint`} className="text-xs text-muted-foreground">
+                Lowercase letters, numbers, and . _ - or / between parts, like <span className="font-mono">web</span> or{" "}
+                <span className="font-mono">tools/cli</span>.
+              </p>
+            </div>
+            <fieldset className="flex flex-col gap-2">
+              <legend className="mb-2 text-sm font-medium">Visibility</legend>
+              <label className={RADIO}>
+                <input type="radio" name="visibility" value="private" defaultChecked className={RADIO_INPUT} />
+                <span className="grid">
+                  <span className="font-medium">Private</span>
+                  <span className="text-xs text-muted-foreground">Only people with access can pull.</span>
+                </span>
+              </label>
+              <label className={cn(RADIO, !publicAllowed && "cursor-not-allowed opacity-60")}>
+                <input type="radio" name="visibility" value="public" disabled={!publicAllowed} className={RADIO_INPUT} />
+                <span className="grid">
+                  <span className="font-medium">Public</span>
+                  <span className="text-xs text-muted-foreground">
+                    {publicAllowed ? "Anyone can pull, without signing in. Only people with access can push." : "Public repositories are off on this server."}
+                  </span>
+                </span>
+              </label>
+            </fieldset>
+            <label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm">
+              <input type="checkbox" checked={builds} onChange={(e) => setBuilds(e.target.checked)} className={RADIO_INPUT} />
+              Set up automatic builds next (GitHub, git or an archive)
+            </label>
+            <FormError>{error}</FormError>
+            <div className="flex justify-end gap-2">
+              <Dialog.Close disabled={pending} render={<Button variant="outline" />}>
+                Cancel
+              </Dialog.Close>
+              <SubmitButton pending={pending} disabled={!name}>
+                Create repository
+              </SubmitButton>
+            </div>
+          </form>
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
   )
 }
 

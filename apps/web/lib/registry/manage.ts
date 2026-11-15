@@ -34,7 +34,7 @@ import { getStream } from "@/lib/s3"
 import { isAdmin } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
 import { isClash } from "@/lib/uploads"
-import { repoRole, roleIn, type Role as RepoRole } from "./access"
+import { createRepoOnPush, repoRole, roleIn, type Role as RepoRole } from "./access"
 import { aliasFor, listCollaborators, listTeams, teamsForRepo } from "./repo-admin"
 import { canSeeActivity, logEvent } from "./activity"
 import { registryUsage } from "./quota"
@@ -1587,4 +1587,25 @@ export async function resolveImage(userId: string, fullName: string, ref: string
     .from(registryTags)
     .where(and(eq(registryTags.repoId, r.id), eq(registryTags.name, ref), isNull(registryTags.deletedAt)))
   return t ? { ...r, digest: t.digest, tag: ref as string | null } : null
+}
+
+// New repository from the web (before any push), so builds can be set up first.
+export async function createRepository(
+  userId: string,
+  o: { namespace: string; name: string; isPublic: boolean }
+): Promise<Result & { fullName?: string }> {
+  const name = o.name.trim().toLowerCase()
+  if (!validRepoName(name)) return { error: "Use lowercase letters, numbers, and . _ - or / between parts, like web or tools/cli." }
+  const [ns] = await db.select().from(registryNamespaces).where(sql`lower(${registryNamespaces.name}) = ${o.namespace.toLowerCase()}`)
+  const role = ns ? await roleIn(userId, ns) : null
+  if (!ns || (role !== "owner" && role !== "write")) return { error: "You can't create repositories there." }
+  const [taken] = await db
+    .select({ deletedAt: registryRepos.deletedAt })
+    .from(registryRepos)
+    .where(and(eq(registryRepos.namespaceId, ns.id), sql`lower(${registryRepos.name}) = ${name}`))
+  if (taken) return { error: taken.deletedAt ? "A repository with that name is in Trash. Restore it, or pick another name." : "That repository already exists." }
+  const made = await createRepoOnPush({ userId, tokenId: null, access: "delete", allRepos: true, repoIds: [] }, `${ns.name}/${name}`, "web")
+  if (!made) return { error: "You can't create repositories there." }
+  if (o.isPublic && (await getSettings()).registryPublic) await db.update(registryRepos).set({ isPublic: true }).where(eq(registryRepos.id, made.repo.id))
+  return { fullName: `${ns.name}/${name}` }
 }
