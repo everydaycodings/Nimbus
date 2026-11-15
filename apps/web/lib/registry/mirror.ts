@@ -65,7 +65,7 @@ const bearers = new Map<string, { token: string; exp: number }>()
 
 // One upstream request, answering a 401 challenge once: Bearer (token service, with the upstream's
 // login when set) or Basic.
-async function upstream(u: Upstream, path: string, repo: string, o: { accept?: string; method?: string; signal?: AbortSignal } = {}) {
+export async function upstream(u: Upstream, path: string, repo: string, o: { accept?: string; method?: string; signal?: AbortSignal } = {}) {
   const url = `${u.url.replace(/\/+$/, "")}/v2/${path}`
   const pw = u.passwordEnc ? decrypt(u.passwordEnc) : null
   const basic = u.username && pw !== null ? `Basic ${Buffer.from(`${u.username}:${pw}`).toString("base64")}` : null

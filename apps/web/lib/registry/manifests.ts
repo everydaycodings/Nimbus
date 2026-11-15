@@ -21,6 +21,7 @@ import { announce, checkRegistryQuota } from "./events.ts"
 import type { C } from "./http.ts"
 import { RegError, errors, json, respond } from "./http.ts"
 import { refreshDescription } from "./repo-admin.ts"
+import { blockedByImagePolicy } from "./policy-eval.ts"
 import { blockedByScan, requestScan, scanAvailable, scanSummaries } from "./scan.ts"
 import { MAX_MANIFEST_BYTES, matchPattern, parseDigest, validTag } from "./rules.ts"
 import { paginate } from "./wire.ts"
@@ -77,6 +78,8 @@ export async function getManifest(repo: Repo, ref: string, head: boolean, tokenI
   if (!m) throw errors.manifestUnknown(ref)
   const blocked = await blockedByScan(repo, m.id, tokenId)
   if (blocked) throw errors.denied(blocked)
+  const failing = await blockedByImagePolicy(repo, m, tokenId, parseDigest(ref) ? null : ref)
+  if (failing) throw errors.denied(failing)
   if (!head && !parseDigest(ref)) {
     // ponytail: Accept isn't negotiated; clients always get the stored type.
     await db.update(registryTags).set({ lastPulledAt: new Date() }).where(and(eq(registryTags.repoId, repo.id), eq(registryTags.name, ref), isNull(registryTags.deletedAt)))

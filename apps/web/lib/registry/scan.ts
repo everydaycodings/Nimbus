@@ -15,7 +15,7 @@ import { enqueue, redis } from "@/lib/redis"
 import { getSettings } from "@/lib/signup"
 
 import { namespaceOwners } from "./events.ts"
-import { attestationRefs, compact, count, maxOf, newCriticals, parseTrivy, type Vuln } from "./extras-rules.ts"
+import { attestationRefs, compact, count, maxOf, newCriticals, parseTrivyFull, type Pkg, type Vuln } from "./extras-rules.ts"
 import { emit } from "./hooks.ts"
 import { INDEXES } from "./manifests.ts"
 import { endpoint, newToken } from "./rules.ts"
@@ -51,6 +51,8 @@ export async function requestScan(manifestId: string): Promise<void> {
 
 const scanTokenKey = (id: string) => `registry:scan-token:${id}`
 const isScanToken = async (id: string | null) => Boolean(id) && (await redis.exists(scanTokenKey(id!))) === 1
+// The scanner's and the build runner's own tokens (build-ops.ts keeps the second key): never blocked by a policy.
+export const isInternalToken = async (id: string | null) => Boolean(id) && (await redis.exists(scanTokenKey(id!), `registry:build:token:${id}`)) > 0
 
 // Throws-by-return: the message to refuse the pull with, or null. The scanner's own token is let through
 // (it has to read a blocked image to rescan it).
@@ -72,15 +74,21 @@ function target() {
   return { host: override || ep!.replace(/^https?:\/\//, ""), insecure: Boolean(override) || ep!.startsWith("http:") }
 }
 
-async function trivy(ref: string, password: string, insecure: boolean) {
+async function trivy(body: object) {
   const r = await fetch(`${process.env.REGISTRY_SCAN_URL}/scan`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-scan-secret": process.env.REGISTRY_SCAN_SECRET ?? "" },
-    body: JSON.stringify({ ref, username: "nimbus", password, insecure }),
+    body: JSON.stringify(body),
     signal: AbortSignal.timeout(10 * 60_000),
   })
   if (!r.ok) throw new Error((await r.text()).replace(/\s+/g, " ").slice(0, 300) || `The scanner answered ${r.status}.`)
-  return parseTrivy(await r.json())
+  return parseTrivyFull(await r.json())
+}
+
+// A public image from another registry, scanned without credentials (base-image advice): severity counts only.
+export async function scanRemote(ref: string) {
+  if (!(await scanAvailable())) throw new Error("The scanner isn't turned on.")
+  return count((await trivy({ ref, remote: true })).vulns)
 }
 
 const put = (manifestId: string, v: Partial<typeof registryScans.$inferInsert>) =>
@@ -102,7 +110,7 @@ export async function runScan(manifestId: string) {
   await put(manifestId, { status: "running", error: null })
 
   // What to scan: the manifest, or every platform image of an index (not buildx's attestation manifests).
-  let targets = [{ id: m.id, digest: m.digest }]
+  let targets = [{ id: m.id, digest: m.digest, arch: true }]
   if (INDEXES.includes(m.mediaType)) {
     const skip = new Set(attestationRefs(JSON.parse(m.bytes.toString("utf8"))).map((a) => a.digest))
     const kids = await db
@@ -110,7 +118,9 @@ export async function runScan(manifestId: string) {
       .from(registryManifestRefs)
       .innerJoin(registryManifests, and(eq(registryManifests.repoId, repo.id), eq(registryManifests.digest, registryManifestRefs.digest), isNull(registryManifests.deletedAt)))
       .where(and(eq(registryManifestRefs.manifestId, m.id), eq(registryManifestRefs.kind, "manifest")))
-    targets = kids.filter((k) => !skip.has(k.digest))
+    const hostArch = process.arch === "x64" ? "amd64" : process.arch
+    const platformOf = new Map((JSON.parse(m.bytes.toString("utf8")).manifests ?? []).map((d: { digest: string; platform?: { architecture?: string } }) => [d.digest, d.platform?.architecture]))
+    targets = kids.filter((k) => !skip.has(k.digest)).map((k) => ({ ...k, arch: platformOf.get(k.digest) === hostArch }))
   }
 
   // A short-lived pull token for this repo, owned by the namespace owner; gone when the scan is.
@@ -124,16 +134,16 @@ export async function runScan(manifestId: string) {
   const name = `${ns.name}/${repo.name}`
   try {
     const { host, insecure } = target()
-    const per: { counts: ReturnType<typeof count>; vulns: Vuln[] }[] = []
+    const per: { counts: ReturnType<typeof count>; vulns: Vuln[]; packages: Pkg[]; truncated: boolean; os: { family: string; name: string } | null; arch: boolean }[] = []
     let error: string | null = null
     for (const t of targets) {
       try {
         await db.update(registryTokens).set({ expiresAt: new Date(Date.now() + TOKEN_MINUTES * 60_000) }).where(eq(registryTokens.id, tk.id))
-        const vulns = await trivy(`${host}/${name}@${t.digest}`, token, insecure)
+        const { vulns, packages, truncated, os } = await trivy({ ref: `${host}/${name}@${t.digest}`, username: "nimbus", password: token, insecure })
         const counts = count(vulns)
-        per.push({ counts, vulns })
+        per.push({ counts, vulns, packages, truncated, os, arch: t.arch })
         // The platform image keeps its own result too, so pulling it by digest is checked.
-        if (t.id !== m.id) await put(t.id, { status: "done", ...counts, report: compact(vulns), error: null, scannedAt: new Date() })
+        if (t.id !== m.id) await put(t.id, { status: "done", ...counts, report: compact(vulns), packages, packagesTruncated: truncated, os, error: null, scannedAt: new Date() })
       } catch (e) {
         error ??= (e as Error).message
       }
@@ -141,7 +151,9 @@ export async function runScan(manifestId: string) {
     const sum = maxOf(per.map((p) => p.counts))
     if (error && !per.length) await put(manifestId, { status: "failed", error, scannedAt: new Date() })
     else {
-      await put(manifestId, { status: error ? "failed" : "done", ...sum, report: compact(per.flatMap((p) => p.vulns)), error, scannedAt: new Date() })
+      // The index (or single image) row keeps the package list of one image: the host architecture's, else the first.
+      const main = per.find((p) => p.arch) ?? per[0]
+      await put(manifestId, { status: error ? "failed" : "done", ...sum, report: compact(per.flatMap((p) => p.vulns)), packages: main.packages, packagesTruncated: main.truncated, os: main.os, error, scannedAt: new Date() })
       const [tag] = await db.select({ name: registryTags.name }).from(registryTags).where(and(eq(registryTags.repoId, repo.id), eq(registryTags.digest, m.digest), isNull(registryTags.deletedAt))).limit(1)
       await emit("scan", repo.id, { repository: name, tag: tag?.name ?? null, digest: m.digest, mediaType: m.mediaType, ...sum })
       if (newCriticals(seen, sum.critical))
@@ -154,7 +166,8 @@ export async function runScan(manifestId: string) {
   }
 }
 
-// Daily: tagged images never scanned (pushed before scanning was on) or last scanned over a day ago, 50 a run.
+// Daily: tagged images never scanned (pushed before scanning was on), last scanned over a day ago, or scanned
+// before the package list was kept (the R6 backfill), 50 a run.
 export async function runRescan() {
   if (!(await scanAvailable())) return { queued: 0 }
   const rows = await db.execute<{ id: string }>(sql`
@@ -164,7 +177,7 @@ export async function runRescan() {
       left join registry_scans s on s.manifest_id = m.id
     where m.deleted_at is null and m.artifact_type is null and m.subject is null
       and exists (select 1 from registry_tags t where t.repo_id = m.repo_id and t.digest = m.digest and t.deleted_at is null)
-      and (s.id is null or (s.status in ('done', 'failed') and (s.scanned_at is null or s.scanned_at < now() - interval '24 hours')))
+      and (s.id is null or (s.status in ('done', 'failed') and (s.scanned_at is null or s.scanned_at < now() - interval '24 hours' or (s.status = 'done' and s.packages is null))))
     order by s.scanned_at nulls first limit 50`)
   for (const r of rows) await requestScan(r.id)
   return { queued: rows.length }

@@ -21,6 +21,7 @@ import { purgeEvents } from "@/lib/registry/activity"
 import { purgeAliases } from "@/lib/registry/repo-admin"
 import { EVENT_DAYS } from "@/lib/registry/rules"
 import { applyPolicy, effectivePolicy } from "@/lib/registry/policy"
+import { runAdvice } from "@/lib/registry/advice"
 import { runRescan, runScan } from "@/lib/registry/scan"
 import { abortStale as abortStaleUploads } from "@/lib/registry/uploads"
 import { abortStale } from "@/lib/s3api/multipart"
@@ -83,6 +84,7 @@ const jobs: Record<string, (data: never) => Promise<unknown>> = {
   "registry-mirror-expire": expireMirror,
   "registry-scan": ({ manifestId }: { manifestId: string }) => runScan(manifestId),
   "registry-rescan": runRescan,
+  "registry-advice": ({ repoId, digest }: { repoId: string; digest: string }) => runAdvice(repoId, digest),
   "registry-webhook": ({ id }: { id: string }) => deliverRegistryHook(id),
   "phone-backup-stale": alertStalePhones,
   "documents-remind": remindExpiring,

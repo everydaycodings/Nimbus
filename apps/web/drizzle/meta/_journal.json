@@ -414,6 +414,13 @@
       "when": 1796500000000,
       "tag": "0058_registry_badge_token",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1796600000000,
+      "tag": "0059_registry_insights",
+      "breakpoints": true
     }
   ]
 }

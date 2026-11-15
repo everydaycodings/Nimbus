@@ -2788,6 +2788,8 @@ export const registryNamespaces = pgTable(
     quotaBytes: bigint("quota_bytes", { mode: "number" }),
     // Cleanup policy for every repo without its own. Null: none.
     policy: jsonb("policy").$type<Policy>(),
+    // Image policy (max Critical/High, age, signed, blocked licenses, block pulls). Null: none.
+    imagePolicy: jsonb("image_policy").$type<{ maxCritical?: number | null; maxHigh?: number | null; maxAgeDays?: number | null; requireSigned?: boolean; blockedLicenses?: string[]; blockPulls?: boolean }>(),
     createdAt: createdAt(),
   },
   (t) => [
@@ -3144,11 +3146,30 @@ export const registryScans = pgTable(
     medium: integer("medium").notNull().default(0),
     low: integer("low").notNull().default(0),
     report: jsonb("report"),
+    // Trivy's package list (capped at 20k) and the OS it found; null until the image is scanned again.
+    packages: jsonb("packages"),
+    packagesTruncated: boolean("packages_truncated").notNull().default(false),
+    os: jsonb("os").$type<{ family: string; name: string }>(),
     error: text("error"),
     scannedAt: timestamp("scanned_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("registry_scans_manifest_idx").on(t.manifestId)]
+)
+
+// Base-image advice, cached 24 h per image (lib/registry/advice.ts).
+export const registryAdvice = pgTable(
+  "registry_advice",
+  {
+    id: id(),
+    repoId: uuid("repo_id")
+      .notNull()
+      .references(() => registryRepos.id, { onDelete: "cascade" }),
+    digest: text("digest").notNull(),
+    result: jsonb("result").notNull(),
+    checkedAt: timestamp("checked_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("registry_advice_repo_digest_idx").on(t.repoId, t.digest)]
 )
 
 // Webhooks for a namespace (repoId null) or one repo.
