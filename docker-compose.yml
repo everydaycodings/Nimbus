@@ -12,6 +12,7 @@ name: nimbus
 #   s3api     run the S3-compatible API (README, "S3-compatible API")
 #   registry  run the container registry (docker push/pull)
 #   scan      scan registry images with Trivy (needs registry; ~1 GB)
+#   build     build images from GitHub, git or uploads with BuildKit (needs registry; BUILD_MEM/BUILD_CPUS cap it)
 #   ml        run nimbus-ml, the optional AI service (speech, photo and face search)
 
 x-nimbus: &nimbus
@@ -30,6 +31,9 @@ x-nimbus: &nimbus
     REGISTRY_SCAN_URL: ${REGISTRY_SCAN_URL:-}
     REGISTRY_SCAN_SECRET: ${REGISTRY_SCAN_SECRET:-}
     REGISTRY_SCAN_REGISTRY: ${REGISTRY_SCAN_REGISTRY:-}
+    # Set by setup.sh when image builds are on: lets the app show whether builds are available.
+    BUILDKIT_HOST: ${BUILDKIT_HOST:-}
+    BUILD_CACHE_GB: ${BUILD_CACHE_GB:-10}
   # Reach the public names through this host's nginx, not a hairpin through the
   # router; host.docker.internal is this host, for a Postgres running on it.
   extra_hosts: &hosts
@@ -221,6 +225,55 @@ services:
     depends_on:
       registry: { condition: service_started }
 
+  # Image builds (profile build): BuildKit in a CPU- and RAM-capped container that only this compose
+  # network can reach (no host port), and the runner that drives it. Rootless, so a bad Dockerfile
+  # runs as an unprivileged user; the seccomp/apparmor lines are what rootless BuildKit needs in Docker.
+  buildkitd:
+    image: moby/buildkit:v0.34.2-rootless
+    profiles: [build]
+    restart: unless-stopped
+    command:
+      - --addr=tcp://0.0.0.0:1234
+      - --config=/etc/buildkit/buildkitd.toml
+      - --oci-worker-no-process-sandbox
+      - --oci-worker-gc-keepstorage=${BUILD_CACHE_MB:-10240}
+    security_opt: [seccomp=unconfined, apparmor=unconfined]
+    mem_limit: ${BUILD_MEM:-2g}
+    memswap_limit: ${BUILD_MEM:-2g}
+    cpus: ${BUILD_CPUS:-1}
+    volumes:
+      - buildkit-cache:/home/user/.local/share/buildkit
+      - ./docker/buildkit/buildkitd.toml:/etc/buildkit/buildkitd.toml:ro
+    healthcheck:
+      test: ["CMD", "buildctl", "--addr", "tcp://127.0.0.1:1234", "debug", "workers"]
+      interval: 15s
+      retries: 5
+
+  # The runner is the app image plus buildctl, git and cosign (docker/build-runner/Dockerfile).
+  # Concurrency (Admin → Registry) is read when it starts: restart this service to change it.
+  build-runner:
+    build:
+      context: .
+      dockerfile: docker/build-runner/Dockerfile
+      additional_contexts:
+        nimbus-app: service:migrate
+    image: nimbus-build-runner:latest
+    profiles: [build]
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      <<: *nimbus-env
+      BUILDKIT_HOST: tcp://buildkitd:1234
+      REGISTRY_BUILD_REGISTRY: registry:3408
+      REGISTRY_BUILD_APP_URL: http://app:3000
+      BUILD_WORK_DIR: /work
+      BUILD_DISK_PATHS: /work,/
+    extra_hosts: *hosts
+    volumes: [build-work:/work]
+    depends_on:
+      buildkitd: { condition: service_healthy }
+      app: { condition: service_started }
+
   # Browser SSH terminal (Secrets → SSH): WebSockets from xterm.js to ssh2. nginx forwards
   # /ssh-ws here. Next can't upgrade WebSockets itself.
   ssh-terminal:
@@ -261,3 +314,5 @@ volumes:
   ntfy:
   ml-models:
   trivy-cache:
+  buildkit-cache:
+  build-work:

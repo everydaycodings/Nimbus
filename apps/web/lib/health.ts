@@ -28,6 +28,7 @@ import {
   type Status,
 } from "@/lib/health-rules"
 import { notify } from "@/lib/notify"
+import { buildsHealth } from "@/lib/registry/builds"
 import { ml as mlClient, mlBase } from "@/lib/ml"
 import { DOCS_KEY, HEARTBEAT_KEY, INDEXER_KEY, ML_KEY, redis } from "@/lib/redis"
 import { BUCKET, deleteObject, getText, putObject } from "@/lib/s3"
@@ -38,7 +39,7 @@ const MINUTE = 60_000
 
 // What a probe found. `off`: not set up, so there's nothing to check.
 // `timed: false`: answered without a round trip, so latency means nothing.
-type Found = { detail: string; off?: boolean; timed?: false }
+type Found = { detail: string; off?: boolean; timed?: false; slow?: true }
 
 const off = (detail: string): Found => ({ detail, off: true })
 
@@ -212,6 +213,15 @@ const PROBES: Record<Service, (s: Settings) => Promise<Found>> = {
     return { detail: `Last sweep ${ago(new Date(k.at).toISOString(), Date.now())}. ${extra.join(", ")}.`, timed: false }
   },
 
+  async builds(s) {
+    const b = await buildsHealth(s)
+    // One bell a day for cache size or repeated guard stops.
+    if (b.warn && (await redis.set("registry:build:warned", "1", "EX", 86_400, "NX")))
+      for (const { id } of await admins())
+        await notify(id, "service_health", { data: { service: "builds", state: "warn", detail: b.warn } })
+    return b
+  },
+
   async oauth() {
     const env = process.env
     const set = (["GOOGLE", "GITHUB"] as const).flatMap((p) => {
@@ -254,7 +264,9 @@ async function check(s: Settings, service: Service) {
       service,
       outcome: (found.off
         ? "off"
-        : outcomeOf(
+        : found.slow
+          ? "slow"
+          : outcomeOf(
             false,
             ms(),
             timed ? slowMs(s, service) : undefined

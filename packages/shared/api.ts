@@ -639,6 +639,7 @@ export type NotificationKind =
   | "registry_cleanup"
   | "registry_quota"
   | "registry_scan"
+  | "registry_build"
 export type Notification = {
   id: string
   kind: NotificationKind

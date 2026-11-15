@@ -610,6 +610,8 @@ export const NOTIFICATION_KINDS = [
   "registry_cleanup",
   "registry_quota",
   "registry_scan",
+  // An image build finished (R5): failed, stopped to protect the server, or succeeded for a manual or CLI build.
+  "registry_build",
 ] as const
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number]
 // Only admins get these, so only admins see their settings.
@@ -824,6 +826,21 @@ export const settings = pgTable(
     registryDefaultQuotaBytes: bigint("registry_default_quota_bytes", { mode: "number" }),
     // Trivy scanning (needs the scan service from setup).
     registryScan: boolean("registry_scan").notNull().default(false),
+    // Automated image builds (BuildKit, compose profile "build"; needs BUILDKIT_HOST).
+    registryBuilds: boolean("registry_builds").notNull().default(true),
+    // Builds at once, and the ceiling per build in minutes. The runner reads the concurrency on start.
+    registryBuildConcurrency: integer("registry_build_concurrency").notNull().default(1),
+    registryBuildTimeoutMin: integer("registry_build_timeout_min").notNull().default(60),
+    // Pre-flight: a build waits while RAM is above this % or free disk is under this many GB.
+    registryBuildPreflightRamPct: integer("registry_build_preflight_ram_pct").notNull().default(80),
+    registryBuildMinDiskGb: integer("registry_build_min_disk_gb").notNull().default(5),
+    // Live guard: a running build is stopped past these.
+    registryBuildGuardRamPct: integer("registry_build_guard_ram_pct").notNull().default(90),
+    registryBuildGuardDiskGb: integer("registry_build_guard_disk_gb").notNull().default(2),
+    // The server's cosign key pair for signing builds (made by the runner on first use): the private
+    // key and its password sealed with lib/crypto.ts, and the public key in the clear.
+    registryCosignEnc: text("registry_cosign_enc"),
+    registryCosignPub: text("registry_cosign_pub"),
     // Rules for new passwords and vault passphrases. Null: the owner hasn't
     // chosen, so the industry-standard defaults apply (lib/password-policy).
     passwordPolicy: jsonb("password_policy").$type<PasswordPolicy>(),
@@ -3144,7 +3161,7 @@ export const registryHooks = pgTable(
     url: text("url").notNull(),
     // Sealed with lib/crypto.ts.
     secretEnc: text("secret_enc").notNull(),
-    events: jsonb("events").$type<("push" | "delete" | "scan")[]>().notNull(),
+    events: jsonb("events").$type<("push" | "delete" | "scan" | "build")[]>().notNull(),
     enabled: boolean("enabled").notNull().default(true),
     createdAt: createdAt(),
   },
@@ -3167,4 +3184,77 @@ export const registryHookDeliveries = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("registry_hook_deliveries_hook_idx").on(t.hookId, t.createdAt)]
+)
+
+// ---- Automated builds (lib/registry/builds.ts, scripts/registry-build.ts) ----------------------
+
+// Where a repo's builds come from; one per repo. url: "owner/name" for GitHub, the clone URL for git.
+export const registryBuildSources = pgTable("registry_build_sources", {
+  id: id(),
+  repoId: uuid("repo_id")
+    .notNull()
+    .unique()
+    .references(() => registryRepos.id, { onDelete: "cascade" }),
+  kind: text("kind").$type<"github" | "git" | "upload">().notNull(),
+  url: text("url"),
+  // Sealed with lib/crypto.ts: the GitHub token, or JSON {username?, token?, sshKey?} for git.
+  credentialEnc: text("credential_enc"),
+  webhookSecretEnc: text("webhook_secret_enc"),
+  githubHookId: bigint("github_hook_id", { mode: "number" }),
+  lastDeliveryAt: timestamp("last_delivery_at", { withTimezone: true }),
+  createdAt: createdAt(),
+})
+
+export const registryBuildRules = pgTable(
+  "registry_build_rules",
+  {
+    id: id(),
+    repoId: uuid("repo_id")
+      .notNull()
+      .references(() => registryRepos.id, { onDelete: "cascade" }),
+    sourceType: text("source_type").$type<"branch" | "tag">().notNull(),
+    pattern: text("pattern").notNull(),
+    tags: text("tags").array().notNull(),
+    dockerfile: text("dockerfile").notNull().default("Dockerfile"),
+    context: text("context").notNull().default("."),
+    buildArgs: jsonb("build_args").$type<{ key: string; value: string }[]>().notNull().default([]),
+    secretRefs: jsonb("secret_refs").$type<{ id: string; projectId: string; env: string; key: string }[]>().notNull().default([]),
+    platforms: text("platforms").array().notNull().default([]),
+    failOnCritical: boolean("fail_on_critical").notNull().default(false),
+    schedule: text("schedule"),
+    enabled: boolean("enabled").notNull().default(true),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("registry_build_rules_repo_idx").on(t.repoId), check("registry_build_rules_type_check", sql`${t.sourceType} in ('branch', 'tag')`)]
+)
+
+export const registryBuilds = pgTable(
+  "registry_builds",
+  {
+    id: id(),
+    repoId: uuid("repo_id")
+      .notNull()
+      .references(() => registryRepos.id, { onDelete: "cascade" }),
+    ruleId: uuid("rule_id").references(() => registryBuildRules.id, { onDelete: "set null" }),
+    trigger: text("trigger").$type<"push" | "tag" | "manual" | "schedule" | "cli" | "upload">().notNull(),
+    ref: text("ref"),
+    commit: text("commit"),
+    status: text("status").$type<"queued" | "waiting" | "running" | "success" | "failed" | "cancelled" | "stopped">().notNull().default("queued"),
+    reason: text("reason"),
+    tags: text("tags").array().notNull().default([]),
+    digest: text("digest"),
+    // What the runner needs, frozen at start: {rule fields, tarKey?, sourceKind, ...}. No secret values.
+    spec: jsonb("spec").$type<Record<string, unknown>>().notNull().default({}),
+    logKey: text("log_key"),
+    logTail: text("log_tail").notNull().default(""),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("registry_builds_repo_idx").on(t.repoId, t.createdAt),
+    check("registry_builds_status_check", sql`${t.status} in ('queued', 'waiting', 'running', 'success', 'failed', 'cancelled', 'stopped')`),
+  ]
 )

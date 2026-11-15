@@ -14,6 +14,7 @@ export const SERVICES = [
   "documents",
   "oauth",
   "backups",
+  "builds",
 ] as const
 export type Service = (typeof SERVICES)[number]
 
@@ -29,6 +30,7 @@ export const SERVICE_LABEL: Record<Service, string> = {
   documents: "Documents",
   oauth: "Sign-in providers",
   backups: "Backups",
+  builds: "Image builds",
 }
 
 // What each check does, in the words the Health page uses.
@@ -49,6 +51,8 @@ export const PROBE_TEXT: Record<Service, string> = {
     "Checks that each Google or GitHub sign-in has both its client ID and secret.",
   backups:
     "Writes and deletes a test file in the backup bucket, and looks for a failed or overdue backup.",
+  builds:
+    "Connects to BuildKit and looks for the build runner's heartbeat. Shows slow when the guard stopped builds in the last 24 hours. Only checked when setup turned image builds on.",
 }
 
 // Where to fix a service, when Nimbus has a page for it.
@@ -59,6 +63,7 @@ export const SERVICE_HREF: Partial<Record<Service, string>> = {
   ml: "/admin/system/ai",
   documents: "/admin/system/documents",
   backups: "/admin/system/backups",
+  builds: "/admin/system/registry",
 }
 
 // Choices for the check interval, in minutes.

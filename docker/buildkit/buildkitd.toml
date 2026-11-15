@@ -1,0 +1,11 @@
+# BuildKit for Nimbus image builds (compose profile "build"). The cache size limit is set on the
+# command line from BUILD_CACHE_MB (docker-compose.yml); the CPU and RAM caps are the container's.
+[worker.oci]
+  gc = true
+  # Builds are run one at a time by default; this keeps parallel steps inside one build modest.
+  max-parallelism = 2
+
+# The registry service, reached over plain http on the compose network.
+[registry."registry:3408"]
+  http = true
+  insecure = true

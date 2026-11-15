@@ -20,6 +20,7 @@ const globalForRedis = globalThis as unknown as {
   backupsQueue?: Queue
   deriveQueue?: Queue
   transcodeQueue?: Queue
+  buildsQueue?: Queue
 }
 export const redis =
   globalForRedis.redis ??
@@ -44,6 +45,8 @@ export const BACKUPS_QUEUE = "backups"
 export const ORPHANS_KEY = "jobs:orphans"
 export const DERIVE_QUEUE = "derive"
 export const TRANSCODE_QUEUE = "transcode"
+// Image builds, run by scripts/registry-build.ts (the build-runner service).
+export const BUILDS_QUEUE = "registry-builds"
 // Set by npm run worker:backup while it's up.
 export const BACKUP_HEARTBEAT_KEY = "backups:heartbeat"
 
@@ -58,6 +61,8 @@ export const deriveQueue =
 export const transcodeQueue =
   globalForRedis.transcodeQueue ??
   new Queue(TRANSCODE_QUEUE, { connection: redis })
+export const buildsQueue =
+  globalForRedis.buildsQueue ?? new Queue(BUILDS_QUEUE, { connection: redis })
 if (process.env.NODE_ENV !== "production")
   Object.assign(globalForRedis, {
     redis,
@@ -66,6 +71,7 @@ if (process.env.NODE_ENV !== "production")
     backupsQueue,
     deriveQueue,
     transcodeQueue,
+    buildsQueue,
   })
 
 // Runs the checks every `minutes`, or stops the schedule when null.
@@ -265,4 +271,10 @@ export async function scheduleBackups(s: {
         }
       )
   }
+}
+
+// A build for the runner. The build id as job id: queued once. Never retried by BullMQ (a failed build
+// is Retry in the UI, a new build); a runner that dies leaves the build to be marked failed on restart.
+export async function enqueueBuild(buildId: string) {
+  await buildsQueue.add("build", { buildId }, { jobId: buildId, attempts: 1, removeOnComplete: true, removeOnFail: 50 })
 }

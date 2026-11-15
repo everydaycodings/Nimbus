@@ -256,9 +256,10 @@ echo "its own subdomain and also under https://$DOMAIN/v2/ (members make tokens 
 PROFILES=$(tr ',' '\n' <<<"$PROFILES" | grep -vx -e registry -e '' | paste -sd, || true)
 default=n
 [ "$write_env" = n ] && [[ ",$(env_value COMPOSE_PROFILES)," == *",registry,"* ]] && default=y
-PROFILES=$(tr ',' '\n' <<<"$PROFILES" | grep -vx -e scan -e '' | paste -sd, || true)
+PROFILES=$(tr ',' '\n' <<<"$PROFILES" | grep -vx -e scan -e build -e '' | paste -sd, || true)
 REGISTRY_DOMAIN=""
 REGISTRY_SCAN=n
+REGISTRY_BUILD=n
 if confirm "Turn on the container registry?" "$default"; then
   PROFILES="${PROFILES:+$PROFILES,}registry"
   REGISTRY_DOMAIN=$(env_value REGISTRY_DOMAIN)
@@ -272,6 +273,28 @@ if confirm "Turn on the container registry?" "$default"; then
   if confirm "Turn on image scanning (Trivy, ~1 GB)?" "$default"; then
     PROFILES="${PROFILES:+$PROFILES,}scan"
     REGISTRY_SCAN=y
+  fi
+  echo "Image builds run Dockerfiles from GitHub, any git URL or an upload inside BuildKit, with a hard"
+  echo "CPU and RAM cap, then scan, tag and sign the image. A build waits while the server is busy and"
+  echo "is stopped if RAM or disk run short."
+  default=n
+  [ "$write_env" = n ] && [[ ",$(env_value COMPOSE_PROFILES)," == *",build,"* ]] && default=y
+  if confirm "Turn on image builds (BuildKit, needs 2+ GB free RAM)?" "$default"; then
+    PROFILES="${PROFILES:+$PROFILES,}build"
+    REGISTRY_BUILD=y
+    # Defaults: half the cores, a quarter of the RAM (at least 2 GB), a 10 GB layer cache.
+    cores=$(nproc 2>/dev/null || echo 2)
+    mem_gb=$(awk '/MemTotal/ { printf "%d", $2 / 1024 / 1024 }' /proc/meminfo 2>/dev/null || echo 8)
+    cpu_default=$(( cores / 2 )); [ "$cpu_default" -ge 1 ] || cpu_default=1
+    mem_default=$(( mem_gb / 4 )); [ "$mem_default" -ge 2 ] || mem_default=2
+    BUILD_CPUS=$(env_value BUILD_CPUS); BUILD_MEM=$(env_value BUILD_MEM); BUILD_CACHE_GB=$(env_value BUILD_CACHE_GB)
+    ask BUILD_CPUS "CPU cores builds may use (this machine has $cores)" "${BUILD_CPUS:-$cpu_default}"
+    ask BUILD_MEM "RAM builds may use, like 2g (this machine has ${mem_gb}g)" "${BUILD_MEM:-${mem_default}g}"
+    ask BUILD_CACHE_GB "Layer cache size in GB (older cache is removed)" "${BUILD_CACHE_GB:-10}"
+    echo "Building for another architecture (say arm64 on an x86 server) needs QEMU."
+    if confirm "Install QEMU support for other architectures now (runs a privileged container once)?" n; then
+      docker run --privileged --rm tonistiigi/binfmt --install arm64,amd64 || warn "QEMU support didn't install; same-architecture builds still work."
+    fi
   fi
 fi
 
@@ -371,6 +394,15 @@ if [ "$REGISTRY_SCAN" = y ]; then
 else
   set_env REGISTRY_SCAN_URL ""
   set_env REGISTRY_SCAN_REGISTRY ""
+fi
+if [ "$REGISTRY_BUILD" = y ]; then
+  set_env BUILDKIT_HOST "tcp://buildkitd:1234"
+  set_env BUILD_CPUS "$BUILD_CPUS"
+  set_env BUILD_MEM "$BUILD_MEM"
+  set_env BUILD_CACHE_GB "$BUILD_CACHE_GB"
+  set_env BUILD_CACHE_MB "$(( BUILD_CACHE_GB * 1000 ))"
+else
+  set_env BUILDKIT_HOST ""
 fi
 [ "$NGINX" = y ] && set_env CERTBOT_EMAIL "$CERTBOT_EMAIL"
 chmod 600 .env

@@ -16,8 +16,8 @@ import { checkUrl, dialable, post, sign } from "@/lib/secrets/webhooks"
 
 import { roleIn } from "./access.ts"
 
-type Event = "push" | "delete" | "scan"
-const EVENTS: Event[] = ["push", "delete", "scan"]
+type Event = "push" | "delete" | "scan" | "build"
+const EVENTS: Event[] = ["push", "delete", "scan", "build"]
 
 export class HookError extends Error {
   constructor(

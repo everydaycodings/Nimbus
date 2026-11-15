@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process"
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
+import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { randomBytes } from "node:crypto"
 import { homedir, hostname, platform } from "node:os"
 import { dirname, join } from "node:path"
+import { Readable } from "node:stream"
+import { createGzip } from "node:zlib"
 
 type Secret = { key: string; value: string; type: string; comment: string }
 type Config = { server?: string; token?: string }
@@ -38,6 +40,9 @@ const HELP = `nimbus <command>
   push list | push run --env E | push remove --env E
   push set --env E --host H --user U --path FILE [--port 22] [--key FILE | --key-id ID]
                          [--command CMD] [--auto]   write the env's .env to a server over SSH
+  registry build DIR -t NAMESPACE/REPO[:TAG] [-t ...] [-f Dockerfile] [--platform linux/arm64]
+                         [--build-arg K=V] [--token NMCR...]   build an image on the server and follow the log
+                         (token: a registry push token, or NIMBUS_REGISTRY_TOKEN; .dockerignore is honoured)
 Common: --project P --env E --path /   Env: NIMBUS_TOKEN NIMBUS_SERVER`
 
 // ---- config -----------------------------------------------------------------
@@ -452,6 +457,217 @@ async function push(flags: Record<string, string>, pos: string[]) {
   console.error("Saved. Run `nimbus push run` to push now.")
 }
 
+// ---- registry build ---------------------------------------------------------
+
+// .dockerignore: one pattern per line, relative to the folder; * ? ** work, ! brings a path back, the last match wins.
+function ignoreMatcher(dir: string) {
+  let lines: string[] = []
+  try {
+    lines = readFileSync(join(dir, ".dockerignore"), "utf8").split(/\r?\n/)
+  } catch {}
+  const rules = lines
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith("#"))
+    .map((l) => {
+      const neg = l.startsWith("!")
+      const p = (neg ? l.slice(1) : l).replace(/^\/+|\/+$/g, "")
+      const re = p
+        .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+        .replace(/\*\*\//g, "\u0000")
+        .replace(/\*\*/g, "\u0001")
+        .replace(/\*/g, "[^/]*")
+        .replace(/\?/g, "[^/]")
+        .replace(/\u0000/g, "(?:.*/)?")
+        .replace(/\u0001/g, ".*")
+      return { neg, re: new RegExp(`^${re}$`) }
+    })
+  const hasNeg = rules.some((r) => r.neg)
+  // A path is out when its own name or any parent folder's matches (and no later ! rule says otherwise).
+  const ignored = (rel: string) => {
+    let out = false
+    const parts = rel.split("/")
+    for (let i = 1; i <= parts.length; i++) {
+      const sub = parts.slice(0, i).join("/")
+      for (const r of rules) if (r.re.test(sub)) out = !r.neg
+    }
+    return out && rel !== "Dockerfile" && rel !== ".dockerignore"
+  }
+  return { ignored, hasNeg }
+}
+
+function listFiles(dir: string): { rel: string; abs: string; mode: number; size: number; mtime: number; link?: string }[] {
+  const { ignored, hasNeg } = ignoreMatcher(dir)
+  const out: ReturnType<typeof listFiles> = []
+  const walk = (rel: string) => {
+    for (const e of readdirSync(join(dir, rel), { withFileTypes: true })) {
+      const r = rel ? `${rel}/${e.name}` : e.name
+      const abs = join(dir, ...r.split("/"))
+      if (e.isDirectory()) {
+        if (!hasNeg && ignored(r)) continue
+        walk(r)
+      } else if (!ignored(r)) {
+        const st = e.isFile() ? statSync(abs, { throwIfNoEntry: false }) : null
+        if (st) out.push({ rel: r, abs, mode: st.mode & 0o777, size: st.size, mtime: Math.floor(st.mtimeMs / 1000) })
+      }
+    }
+  }
+  walk("")
+  return out
+}
+
+const pad = (n: number) => (512 - (n % 512)) % 512
+function tarHeader(name: string, size: number, mode: number, mtime: number, type = "0") {
+  const h = Buffer.alloc(512)
+  const put = (s: string, at: number, len: number) => h.write(s.slice(0, len), at, "utf8")
+  const oct = (n: number, len: number) => `${n.toString(8).padStart(len - 1, "0")}\0`
+  put(name, 0, 100)
+  put(oct(mode, 8), 100, 8)
+  put(oct(0, 8), 108, 8)
+  put(oct(0, 8), 116, 8)
+  put(oct(size, 12), 124, 12)
+  put(oct(mtime, 12), 136, 12)
+  h.fill(0x20, 148, 156)
+  put(type, 156, 1)
+  put("ustar\0" + "00", 257, 8)
+  let sum = 0
+  for (const b of h) sum += b
+  put(`${sum.toString(8).padStart(6, "0")}\0 `, 148, 8)
+  return h
+}
+
+// A gzip'd tar of the folder, streamed (names over 100 characters use a PAX header).
+function packTar(dir: string) {
+  async function* entries() {
+    for (const f of listFiles(dir)) {
+      if (Buffer.byteLength(f.rel) > 100) {
+        // "<length> path=<name>\n", where the length counts its own digits.
+        const rest = Buffer.byteLength(` path=${f.rel}\n`)
+        let len = rest + 1
+        while (String(len).length + rest !== len) len = String(len).length + rest
+        const body = Buffer.from(`${len} path=${f.rel}\n`)
+        yield tarHeader("PaxHeader", body.length, 0o644, f.mtime, "x")
+        yield body
+        yield Buffer.alloc(pad(body.length))
+      }
+      yield tarHeader(f.rel, f.size, f.mode, f.mtime)
+      let sent = 0
+      for await (const c of createReadStream(f.abs)) {
+        sent += (c as Buffer).length
+        yield c as Buffer
+      }
+      // A file that changed while reading would corrupt the archive; pad to the size promised.
+      if (sent < f.size) yield Buffer.alloc(f.size - sent)
+      yield Buffer.alloc(pad(f.size))
+    }
+    yield Buffer.alloc(1024)
+  }
+  return Readable.from(entries()).pipe(createGzip())
+}
+
+// Several -t, --platform and --build-arg are allowed, so this reads the arguments itself.
+function buildArgs(argv: string[]) {
+  const o = { dir: "", tags: [] as string[], platforms: [] as string[], args: [] as string[], file: "", token: "", server: "" }
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]
+    const val = () => {
+      const eq = a.indexOf("=")
+      return eq > 0 && a.startsWith("--") ? a.slice(eq + 1) : (argv[++i] ?? "")
+    }
+    const flag = a.startsWith("--") ? a.slice(2).split("=")[0] : a
+    if (flag === "-t" || flag === "tag") o.tags.push(val())
+    else if (flag === "-f" || flag === "file") o.file = val()
+    else if (flag === "platform") o.platforms.push(...val().split(","))
+    else if (flag === "build-arg") o.args.push(val())
+    else if (flag === "token") o.token = val()
+    else if (flag === "server") o.server = val()
+    else if (!a.startsWith("-") && !o.dir) o.dir = a
+    else throw new Fail(`Unknown option ${a}\n${HELP}`, 2)
+  }
+  return o
+}
+
+async function registryBuild(argv: string[]) {
+  const o = buildArgs(argv)
+  if (!o.dir || !o.tags.length) throw new Fail("Usage: nimbus registry build DIR -t NAMESPACE/REPO[:TAG] [-t ...]", 2)
+  if (!existsSync(join(o.dir, o.file || "Dockerfile"))) throw new Fail(`No ${o.file || "Dockerfile"} in ${o.dir}.`, 2)
+  const names = o.tags.map((t) => {
+    const m = /^([^:]+\/[^:]+?)(?::([^:/]+))?$/.exec(t)
+    if (!m) throw new Fail(`"${t}" isn't NAMESPACE/REPO[:TAG].`, 2)
+    return { repo: m[1], tag: m[2] ?? "latest" }
+  })
+  const repo = names[0].repo
+  if (names.some((n) => n.repo !== repo)) throw new Fail("All -t options must name the same repository.", 2)
+  const token = o.token || process.env.NIMBUS_REGISTRY_TOKEN
+  if (!token) throw new Fail("A registry push token is needed: --token NMCR... or NIMBUS_REGISTRY_TOKEN.", 4)
+  const server = (o.server || process.env.NIMBUS_SERVER || readJson<Config>(configFile()).server || "").replace(/\/+$/, "")
+  if (!server) throw new Fail("No server. Set NIMBUS_SERVER or --server URL.", 2)
+  const q = new URLSearchParams({ repo })
+  names.forEach((n) => q.append("tag", n.tag))
+  o.platforms.filter(Boolean).forEach((p) => q.append("platform", p))
+  o.args.forEach((a) => q.append("arg", a))
+  if (o.file) q.set("file", o.file)
+  const auth = { authorization: `Bearer ${token}` }
+  console.error(`Uploading ${o.dir} to ${server}…`)
+  let res: Response
+  try {
+    res = await fetch(`${server}/api/v1/registry/builds?${q}`, {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/gzip" },
+      body: Readable.toWeb(packTar(o.dir)) as ReadableStream,
+      // @ts-expect-error Node needs this to send a stream
+      duplex: "half",
+    })
+  } catch (e) {
+    throw new Fail(`Cannot reach ${server}: ${(e as Error).message}`)
+  }
+  const made = (await res.json().catch(() => ({}))) as { id?: string; error?: { message?: string } }
+  if (!res.ok || !made.id) throw new Fail(`${res.status}: ${made.error?.message ?? res.statusText}`, res.status === 401 ? 4 : 1)
+  console.error(`Build ${made.id} started.`)
+
+  // Follow the log; if the connection drops, pick up after the last line.
+  let seq = -1
+  let status = ""
+  let reason: string | null = null
+  for (let attempt = 0; attempt < 20; attempt++) {
+    try {
+      const ev = await fetch(`${server}/api/v1/registry/builds/${made.id}/events?from=${seq}`, { headers: auth })
+      if (!ev.ok || !ev.body) throw new Fail(`${ev.status}: could not follow the build.`)
+      let buf = ""
+      for await (const chunk of ev.body as unknown as AsyncIterable<Uint8Array>) {
+        buf += Buffer.from(chunk).toString("utf8")
+        let at
+        while ((at = buf.indexOf("\n\n")) >= 0) {
+          const frame = buf.slice(0, at)
+          buf = buf.slice(at + 2)
+          const type = /^event: (.+)$/m.exec(frame)?.[1]
+          const data = /^data: (.+)$/m.exec(frame)?.[1]
+          if (!type || !data) continue
+          const d = JSON.parse(data)
+          if (type === "line") {
+            seq = d.seq
+            console.log(d.text)
+          } else if (type === "status") {
+            status = d.status
+            reason = d.reason
+          } else if (type === "end") {
+            if (status === "success") {
+              console.error(`Built ${names.map((n) => `${repo}:${n.tag}`).join(", ")}.`)
+              return
+            }
+            console.error(`Build ${status}${reason ? `: ${reason}` : ""}`)
+            process.exitCode = 1
+            return
+          }
+        }
+      }
+    } catch (e) {
+      if (e instanceof Fail) throw e
+    }
+    await new Promise((r) => setTimeout(r, 2000))
+  }
+  throw new Fail("Lost the connection to the server. Check the build in the web app.")
+}
+
 async function main() {
   const { flags, pos, rest } = parse(process.argv.slice(2))
   const cmd = pos[0]
@@ -472,6 +688,9 @@ async function main() {
     case "share": return share(flags, pos)
     case "webhooks": return webhooks(flags, pos)
     case "push": return push(flags, pos)
+    case "registry":
+      if (pos[1] !== "build") throw new Fail(`Usage: nimbus registry build DIR -t NAMESPACE/REPO\n${HELP}`, 2)
+      return registryBuild(process.argv.slice(2).filter((a, i) => i !== process.argv.slice(2).indexOf("registry") && i !== process.argv.slice(2).indexOf("build")))
     case "run": process.exitCode = await run(flags, rest); return
     default: throw new Fail(`Unknown command "${cmd}"\n${HELP}`, 2)
   }

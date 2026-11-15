@@ -46,6 +46,8 @@ export const user = pgTable(
     s3Disabled: boolean("s3_disabled").default(false).notNull(),
     // An admin turned the container registry off for this account.
     registryDisabled: boolean("registry_disabled").default(false).notNull(),
+    // An admin turned image builds off for this account.
+    registryBuildsDisabled: boolean("registry_builds_disabled").default(false).notNull(),
     // Phase 20: face grouping. Null follows settings.faces_default.
     facesOn: boolean("faces_on"),
     // On the chosen list for AI features (used when settings.ai_access is "chosen").
