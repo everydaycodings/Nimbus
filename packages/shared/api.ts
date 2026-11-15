@@ -640,6 +640,7 @@ export type NotificationKind =
   | "registry_quota"
   | "registry_scan"
   | "registry_build"
+  | "registry_connection"
 export type Notification = {
   id: string
   kind: NotificationKind

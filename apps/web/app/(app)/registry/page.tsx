@@ -14,6 +14,7 @@ import {
   registryState,
   type RegistryState,
 } from "@/lib/registry/manage"
+import { listConnections, ownersFor } from "@/lib/registry/connections"
 import { TRASH_DAYS, endpoint, registryNameError } from "@/lib/registry/rules"
 import { isAdmin, requireMember } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
@@ -80,7 +81,7 @@ export default async function RegistryPage({ searchParams }: { searchParams: Pro
       </div>
     )
   }
-  const [ns, repos, orgs, tokens, s, trash, owned, mirrors] = await Promise.all([
+  const [ns, repos, orgs, tokens, s, trash, owned, mirrors, connections, connectionOwners] = await Promise.all([
     myNamespace(me.id),
     listRepos(me.id),
     listOrgs(me.id),
@@ -89,6 +90,8 @@ export default async function RegistryPage({ searchParams }: { searchParams: Pro
     listTrash(me.id),
     ownedNamespaces(me.id),
     listMirrors(),
+    tab === "access" ? listConnections(me.id) : [],
+    tab === "access" ? ownersFor(me.id) : [],
   ])
   return (
     <RegistryView
@@ -107,6 +110,8 @@ export default async function RegistryPage({ searchParams }: { searchParams: Pro
       owned={owned}
       upstreams={mirrors.upstreams}
       cached={mirrors.cached}
+      connections={connections}
+      connectionOwners={connectionOwners}
     />
   )
 }

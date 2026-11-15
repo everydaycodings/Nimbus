@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 
 import { audit } from "@/lib/audit"
+import * as conn from "@/lib/registry/connections"
 import { listEvents } from "@/lib/registry/activity"
 import { createHook, deleteHook, testHook } from "@/lib/registry/hooks"
 import * as svc from "@/lib/registry/manage"
@@ -432,4 +433,23 @@ export async function saveImagePolicy(ns: string, raw: ImagePolicy | null): Prom
     unscannedFails: Boolean(raw.unscannedFails),
   }
   return done(await setPolicy(me.id, id, p))
+}
+
+// ---- Saved git connections (Access tab) ---------------------------------------------------------------------
+
+export async function addConnection(v: conn.NewConnection) {
+  const me = await member()
+  return me ? done(await conn.createConnection(me.id, { ...v, name: String(v.name ?? ""), secret: String(v.secret ?? "") })) : (NOT_ON as { error: string; id?: string; account?: string | null; expiresAt?: string | null })
+}
+export async function renameConnection(id: string, name: string) {
+  const me = await member()
+  return me ? done(await conn.renameConnection(me.id, id, String(name))) : NOT_ON
+}
+export async function replaceConnectionSecret(id: string, secret: string) {
+  const me = await member()
+  return me ? done(await conn.replaceSecret(me.id, id, String(secret))) : NOT_ON
+}
+export async function deleteConnection(id: string) {
+  const me = await member()
+  return me ? done(await conn.deleteConnection(me.id, id)) : NOT_ON
 }

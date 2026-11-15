@@ -219,6 +219,7 @@ async function describe(userId: string, ids?: string[]) {
       registry_cleanup: `Registry cleanup removed ${d.tags ?? "0"} tag${d.tags === "1" ? "" : "s"}${Number(d.untagged) ? ` and ${d.untagged} untagged image${d.untagged === "1" ? "" : "s"}` : ""} from ${d.name ?? "your namespace"}. They stay in the trash for 7 days.`,
       registry_quota: `Registry storage for ${d.name ?? "your namespace"} is ${d.percent ?? 90}% full. Delete old images or ask an admin for more.`,
       registry_scan: `A registry scan found ${d.critical ?? "some"} critical vulnerabilit${d.critical === "1" ? "y" : "ies"} in ${d.name ?? "an image"}`,
+      registry_connection: `The ${d.name ?? "git"} connection ${Number(d.days) > 0 ? `expires in ${d.days} day${d.days === "1" ? "" : "s"}` : "has expired"}. Replace its token in Registry, Access.`,
       registry_build: `Build of ${d.name ?? "an image"} ${d.status === "success" ? "finished" : d.status === "stopped" ? "was stopped to protect the server" : d.status === "cancelled" ? "was cancelled" : "failed"}${d.reason ? `: ${d.reason}` : ""}`,
       secrets: d.text ?? "Something needs a look in Secrets",
     }[r.kind]
@@ -246,7 +247,7 @@ async function describe(userId: string, ids?: string[]) {
               : "/account#connect"
           : r.kind === "storage_low"
             ? "/storage"
-          : r.kind === "registry_build"
+          : r.kind === "registry_build" || r.kind === "registry_connection"
             ? (d.href ?? "/registry")
           : r.kind === "registry_token" || r.kind === "registry_cleanup" || r.kind === "registry_quota" || r.kind === "registry_scan"
             ? "/registry"

@@ -612,6 +612,8 @@ export const NOTIFICATION_KINDS = [
   "registry_scan",
   // An image build finished (R5): failed, stopped to protect the server, or succeeded for a manual or CLI build.
   "registry_build",
+  // A saved git connection's token or key expires within 7 days (or already has).
+  "registry_connection",
 ] as const
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number]
 // Only admins get these, so only admins see their settings.
@@ -3212,6 +3214,36 @@ export const registryHookDeliveries = pgTable(
 // ---- Automated builds (lib/registry/builds.ts, scripts/registry-build.ts) ----------------------
 
 // Where a repo's builds come from; one per repo. url: "owner/name" for GitHub, the clone URL for git.
+// A saved git credential (GitHub token, GitLab/Gitea/git token, SSH key) owned by a user's or an org's namespace.
+// Build sources point at it; replacing the secret updates every source that uses it. secretEnc is sealed with
+// lib/crypto.ts: the token, or the private key for provider "ssh".
+export const registryGitConnections = pgTable(
+  "registry_git_connections",
+  {
+    id: id(),
+    namespaceId: uuid("namespace_id")
+      .notNull()
+      .references(() => registryNamespaces.id, { onDelete: "cascade" }),
+    provider: text("provider").$type<"github" | "gitlab" | "gitea" | "git" | "ssh">().notNull(),
+    name: text("name").notNull(),
+    username: text("username"),
+    // The account the token belongs to (a GitHub login).
+    account: text("account"),
+    host: text("host"),
+    secretEnc: text("secret_enc").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    // The 7-day warning went out; cleared when the secret is replaced.
+    warnedAt: timestamp("warned_at", { withTimezone: true }),
+    createdBy: text("created_by").notNull(),
+    createdAt: createdAt(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("registry_git_connections_name_idx").on(t.namespaceId, sql`lower(${t.name})`),
+    check("registry_git_connections_provider_check", sql`${t.provider} in ('github', 'gitlab', 'gitea', 'git', 'ssh')`),
+  ]
+)
+
 export const registryBuildSources = pgTable("registry_build_sources", {
   id: id(),
   repoId: uuid("repo_id")
@@ -3222,6 +3254,9 @@ export const registryBuildSources = pgTable("registry_build_sources", {
   url: text("url"),
   // Sealed with lib/crypto.ts: the GitHub token, or JSON {username?, token?, sshKey?} for git.
   credentialEnc: text("credential_enc"),
+  // A saved connection supplies the credential instead. Deleted: connectionId goes null and connectionLost is set.
+  connectionId: uuid("connection_id").references(() => registryGitConnections.id, { onDelete: "set null" }),
+  connectionLost: boolean("connection_lost").notNull().default(false),
   webhookSecretEnc: text("webhook_secret_enc"),
   githubHookId: bigint("github_hook_id", { mode: "number" }),
   lastDeliveryAt: timestamp("last_delivery_at", { withTimezone: true }),

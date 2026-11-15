@@ -35,6 +35,7 @@ const KIND_LABEL: Record<NotificationKind, string> = {
   registry_cleanup: "A registry cleanup policy removes tags or images from my namespace",
   registry_quota: "My registry namespace is nearly out of storage (90%)",
   registry_scan: "A registry image scan finds critical vulnerabilities",
+  registry_connection: "A saved git connection for registry builds is about to expire (7 days before)",
   registry_build: "An image build I started fails or is stopped (or finishes, for builds I start by hand)",
   secrets: "Secrets: change and access requests, rotation reminders, expiring tokens, project invites",
 }

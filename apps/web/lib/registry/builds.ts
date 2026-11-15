@@ -11,7 +11,7 @@ import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm"
 import { decrypt, encrypt } from "@/lib/crypto"
 import { db } from "@/lib/db"
 import { user } from "@/lib/db/auth-schema"
-import { registryBuildRules, registryBuildSources, registryBuilds, registryManifests, registryNamespaces, registryRepos, settings } from "@/lib/db/schema"
+import { registryBuildRules, registryBuildSources, registryGitConnections, registryBuilds, registryManifests, registryNamespaces, registryRepos, settings } from "@/lib/db/schema"
 import { appUrl } from "@/lib/email"
 import { listen } from "@/lib/events"
 import { guardVerdict, hostMetrics } from "@/lib/host-metrics"
@@ -23,6 +23,7 @@ import { getSettings } from "@/lib/signup"
 import { repoRole, type Role } from "./access.ts"
 import { logEvent } from "./activity.ts"
 import { checkRefs } from "./build-secrets.ts"
+import { createConnection, secretOf, sourceCredential, usable } from "./connections.ts"
 import {
   PLATFORMS,
   buildCacheKey,
@@ -262,6 +263,9 @@ export type Source = {
   kind: "github" | "git" | "upload"
   url: string | null
   hasCredential: boolean
+  // The saved connection it uses; connectionLost: it was deleted and nothing replaced it yet.
+  connection: { id: string; name: string; provider: string } | null
+  connectionLost: boolean
   webhookUrl: string | null
   webhookSecretShownOnce?: never
   githubHookId: number | null
@@ -271,10 +275,13 @@ export type Source = {
 export async function getSource(repoId: string): Promise<Source | null> {
   const [s] = await db.select().from(registryBuildSources).where(eq(registryBuildSources.repoId, repoId))
   if (!s) return null
+  const [c] = s.connectionId ? await db.select().from(registryGitConnections).where(eq(registryGitConnections.id, s.connectionId)) : []
   return {
     kind: s.kind,
     url: s.url,
-    hasCredential: Boolean(s.credentialEnc),
+    hasCredential: Boolean(s.credentialEnc || c),
+    connection: c ? { id: c.id, name: c.name, provider: c.provider } : null,
+    connectionLost: s.connectionLost,
     webhookUrl: s.kind === "upload" ? null : appUrl(`/api/registry/hooks/${s.kind}/${s.id}`),
     githubHookId: s.githubHookId,
     lastDeliveryAt: s.lastDeliveryAt,
@@ -284,8 +291,8 @@ export async function getSource(repoId: string): Promise<Source | null> {
 async function dropSource(repoId: string) {
   const [s] = await db.select().from(registryBuildSources).where(eq(registryBuildSources.repoId, repoId))
   if (!s) return
-  if (s.kind === "github" && s.githubHookId && s.credentialEnc && s.url) {
-    const token = decrypt(s.credentialEnc)
+  if (s.kind === "github" && s.githubHookId && s.url) {
+    const token = (await sourceCredential(s)).cred?.token
     if (token) await github.deleteHook(token, s.url, s.githubHookId).catch(() => {})
   }
   await db.delete(registryBuildSources).where(eq(registryBuildSources.id, s.id))
@@ -299,18 +306,46 @@ export async function listGithubRepos(token: string): Promise<github.GhRepo[] | 
   }
 }
 
-export async function connectGithub(actorUserId: string, repoId: string, v: { token: string; repo: string }): Promise<{ error?: string }> {
+// The repo picker with a saved connection: the token stays on the server.
+export async function listGithubReposFor(actorUserId: string, repoId: string, connectionId: string): Promise<github.GhRepo[] | { error: string }> {
+  const c = await usable(actorUserId, repoId, connectionId, { kind: "github", url: "" })
+  if ("error" in c) return c
+  return listGithubRepos(secretOf(c))
+}
+
+// Either a saved connection, or a new secret that is saved as one (`save`) or kept on this source alone.
+export type Save = { name: string; namespaceId: string }
+export type GithubAuth = { connectionId: string } | { token: string; save?: Save }
+export type GitAuth = { connectionId: string } | { username?: string; token?: string; sshKey?: string; save?: Save }
+
+export async function connectGithub(actorUserId: string, repoId: string, v: { repo: string } & GithubAuth): Promise<{ error?: string }> {
   const a = await access(actorUserId, repoId, "admin")
   if ("error" in a) return a
-  const token = v.token.trim()
   const full = github.parseFullName(v.repo)
-  if (!token || !full) return { error: "Enter a GitHub token and a repository like owner/name." }
+  if (!full) return { error: "Pick a repository like owner/name." }
+  let token: string
+  let link: { connectionId: string } | { credentialEnc: string }
+  if ("connectionId" in v) {
+    const c = await usable(actorUserId, repoId, v.connectionId, { kind: "github", url: full })
+    if ("error" in c) return c
+    token = secretOf(c)
+    link = { connectionId: c.id }
+  } else {
+    token = v.token.trim()
+    if (!token) return { error: "Enter a GitHub token." }
+    link = { credentialEnc: encrypt(token) }
+  }
   const id = randomUUID()
   const secret = `ghs_${randomBytes(24).toString("base64url")}`
   try {
     await github.getRepo(token, full)
+    if ("token" in v && v.save) {
+      const made = await createConnection(actorUserId, { ...v.save, provider: "github", secret: token })
+      if (!made.id) return { error: made.error }
+      link = { connectionId: made.id }
+    }
     await dropSource(repoId)
-    await db.insert(registryBuildSources).values({ id, repoId, kind: "github", url: full, credentialEnc: encrypt(token), webhookSecretEnc: encrypt(secret) })
+    await db.insert(registryBuildSources).values({ id, repoId, kind: "github", url: full, ...link, webhookSecretEnc: encrypt(secret) })
     const hookId = await github.createHook(token, full, appUrl(`/api/registry/hooks/github/${id}`), secret)
     await db.update(registryBuildSources).set({ githubHookId: hookId }).where(eq(registryBuildSources.id, id))
   } catch (e) {
@@ -324,15 +359,16 @@ export async function connectGithub(actorUserId: string, repoId: string, v: { to
 
 const SSH_URL = /^(?:ssh:\/\/)?[\w.-]+@[\w.-]+(?::|\/)[\w./~-]+$/
 
+const hostOf = (url: string) => /^https?:\/\//i.test(url) ? new URL(url).host : (/@([\w.-]+)[:/]/.exec(url)?.[1] ?? "")
+
 export async function connectGit(
   actorUserId: string,
   repoId: string,
-  v: { url: string; username?: string; token?: string; sshKey?: string }
+  v: { url: string } & GitAuth
 ): Promise<{ error?: string; webhookUrl?: string; webhookSecret?: string }> {
   const a = await access(actorUserId, repoId, "admin")
   if ("error" in a) return a
   const url = v.url.trim()
-  const sshKey = v.sshKey?.trim()
   if (!url || url.length > 500 || url.startsWith("-")) return { error: "Enter the repository's clone URL." }
   if (/^https?:\/\//i.test(url)) {
     try {
@@ -341,17 +377,53 @@ export async function connectGit(
       return { error: (e as Error).message }
     }
   } else if (!SSH_URL.test(url)) return { error: "Use an https:// or http:// URL, or an SSH address like git@host:owner/name.git." }
-  if (sshKey && (!/^-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(sshKey) || sshKey.length > 16_000)) return { error: "That doesn't look like an SSH private key." }
-  if (sshKey && /^https?:/i.test(url)) return { error: "An SSH key goes with an SSH address, not an https:// URL." }
+  let link: { connectionId: string } | { credentialEnc: string | null } = { credentialEnc: null }
+  if ("connectionId" in v) {
+    const c = await usable(actorUserId, repoId, v.connectionId, { kind: "git", url })
+    if ("error" in c) return c
+    link = { connectionId: c.id }
+  } else {
+    const sshKey = v.sshKey?.trim()
+    const token = v.token?.trim()
+    if (sshKey && (!/^-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(sshKey) || sshKey.length > 16_000)) return { error: "That doesn't look like an SSH private key." }
+    if (sshKey && /^https?:/i.test(url)) return { error: "An SSH key goes with an SSH address, not an https:// URL." }
+    if (token && !/^https?:/i.test(url)) return { error: "A token goes with an https:// URL. For an SSH address, use an SSH key." }
+    if (token || sshKey) {
+      if (v.save) {
+        const made = await createConnection(actorUserId, { ...v.save, provider: sshKey ? "ssh" : "git", host: hostOf(url), username: v.username, secret: (sshKey ?? token)! })
+        if (!made.id) return { error: made.error }
+        link = { connectionId: made.id }
+      } else link = { credentialEnc: encrypt(JSON.stringify({ username: v.username?.trim() || undefined, token: token || undefined, sshKey: sshKey ? `${sshKey}\n` : undefined })) }
+    }
+  }
   const secret = `whsec_${randomBytes(24).toString("base64url")}`
-  const cred = v.token?.trim() || sshKey ? JSON.stringify({ username: v.username?.trim() || undefined, token: v.token?.trim() || undefined, sshKey: sshKey ? `${sshKey}\n` : undefined }) : null
   await dropSource(repoId)
   const [s] = await db
     .insert(registryBuildSources)
-    .values({ repoId, kind: "git", url, credentialEnc: cred && encrypt(cred), webhookSecretEnc: encrypt(secret) })
+    .values({ repoId, kind: "git", url, ...link, webhookSecretEnc: encrypt(secret) })
     .returning({ id: registryBuildSources.id })
   await logEvent({ namespaceId: a.ns.id, repoId, actorId: actorUserId, actorName: await nameOf(actorUserId), action: "build_source", detail: { kind: "git", url } })
   return { webhookUrl: appUrl(`/api/registry/hooks/git/${s.id}`), webhookSecret: secret }
+}
+
+// Switch a connected source to another saved connection. The repository, and so its webhook, stays.
+export async function changeConnection(actorUserId: string, repoId: string, connectionId: string): Promise<{ error?: string }> {
+  const a = await access(actorUserId, repoId, "admin")
+  if ("error" in a) return a
+  const [s] = await db.select().from(registryBuildSources).where(eq(registryBuildSources.repoId, repoId))
+  if (!s || s.kind === "upload" || !s.url) return { error: "This repository has no GitHub or git source." }
+  const c = await usable(actorUserId, repoId, connectionId, { kind: s.kind, url: s.url })
+  if ("error" in c) return c
+  if (s.kind === "github") {
+    try {
+      await github.getRepo(secretOf(c), s.url)
+    } catch (e) {
+      return { error: (e as Error).message }
+    }
+  }
+  await db.update(registryBuildSources).set({ connectionId: c.id, credentialEnc: null, connectionLost: false }).where(eq(registryBuildSources.id, s.id))
+  await logEvent({ namespaceId: a.ns.id, repoId, actorId: actorUserId, actorName: await nameOf(actorUserId), action: "connection", detail: { what: "use", name: c.name, provider: c.provider } })
+  return {}
 }
 
 export async function useUploadsOnly(actorUserId: string, repoId: string): Promise<{ error?: string }> {

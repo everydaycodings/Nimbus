@@ -22,7 +22,7 @@ import { buildPage, startBuild } from "@/app/(app)/registry/build-actions"
 import { StatusBadge } from "@/components/registry-badge"
 import { SafetyLine, useOutlook } from "@/components/registry-build-safety"
 import { RuleSection, type PresetView, type RuleView } from "@/components/registry-build-rules"
-import { ConnectSources, SourceRow, type SourceView } from "@/components/registry-build-sources"
+import { ConnectSources, SourceRow, type Picks, type SourceView } from "@/components/registry-build-sources"
 import { DIALOG_BACKDROP, DIALOG_POPUP } from "@/components/overlay-styles"
 import { CopyButton } from "@/components/copy-button"
 import { Code, Empty, Heading, LIST, SECTION, Segmented, TOUCH } from "@/components/registry-ui"
@@ -171,12 +171,13 @@ export type BuildsTabProps = {
   scanOn: boolean
   arch: string
   badge: { base: string; token: string | null }
+  picks: Picks
 }
 
-export function BuildsTab({ repo, source, rules, presets, platforms, initial, scanOn, arch, badge }: BuildsTabProps) {
+export function BuildsTab({ repo, source, rules, presets, platforms, initial, scanOn, arch, badge, picks }: BuildsTabProps) {
   if (!source)
     return repo.canAdmin ? (
-      <ConnectSources repoId={repo.id} fullName={repo.fullName} scanOn={scanOn} />
+      <ConnectSources repoId={repo.id} fullName={repo.fullName} scanOn={scanOn} picks={picks} />
     ) : (
       <Empty icon={HammerIcon} title="No build source yet">
         <p>A repository admin can connect GitHub, a git URL or uploads here. You can still build once it is set up.</p>
@@ -187,7 +188,7 @@ export function BuildsTab({ repo, source, rules, presets, platforms, initial, sc
   const produced = rules.filter((r) => r.enabled).map((r) => ({ pattern: r.pattern, tags: [...new Set([...r.tags, ...r.preview])] }))
   return (
     <div className="flex flex-col gap-8">
-      <SourceRow repoId={repo.id} source={source} canAdmin={repo.canAdmin} />
+      <SourceRow repoId={repo.id} source={source} canAdmin={repo.canAdmin} picks={picks} />
       {source.kind !== "upload" && (
         <RuleSection repo={repo} rules={rules} presets={presets} platforms={platforms} scanOn={scanOn} arch={arch} />
       )}

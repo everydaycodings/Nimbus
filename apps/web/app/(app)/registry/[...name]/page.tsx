@@ -32,6 +32,7 @@ import { requireMember, isAdmin } from "@/lib/session"
 import { BuildDetail } from "@/components/registry-build-detail"
 import { BuildsOff, BuildsTab, LatestBuild } from "@/components/registry-builds"
 import { PLATFORMS, PRESETS, expandTags } from "@/lib/registry/build-rules"
+import { connectionsFor, ownersFor } from "@/lib/registry/connections"
 import { badgeToken, buildFindings, buildsAvailable, cosignPublicKey, getBuild, getSource, lastSuccess, listBuilds, listRules } from "@/lib/registry/builds"
 import { appUrl } from "@/lib/email"
 import { toItem } from "@/lib/registry/build-view"
@@ -512,7 +513,14 @@ async function BuildsPanel({ repo, meId, build }: { repo: RepoDetail; meId: stri
       />
     )
   }
-  const [source, rules, rows] = await Promise.all([getSource(repo.id), listRules(repo.id), listBuilds(repo.id, { limit: 31 })])
+  const [source, rules, rows, picks] = await Promise.all([
+    getSource(repo.id),
+    listRules(repo.id),
+    listBuilds(repo.id, { limit: 31 }),
+    repo.canAdmin
+      ? Promise.all([connectionsFor(meId, repo.id, "github"), connectionsFor(meId, repo.id, "git"), ownersFor(meId)]).then(([github, git, owners]) => ({ github, git, owners }))
+      : { github: [], git: [], owners: [] },
+  ])
   return (
     <BuildsTab
       repo={{
@@ -523,11 +531,14 @@ async function BuildsPanel({ repo, meId, build }: { repo: RepoDetail; meId: stri
         isPublic: repo.isPublic,
       }}
       badge={{ base: appUrl(), token: await badgeToken(repo.id) }}
+      picks={picks}
       source={
         source && {
           kind: source.kind,
           url: source.url,
           hasCredential: source.hasCredential,
+          connection: source.connection,
+          connectionLost: source.connectionLost,
           webhookUrl: source.webhookUrl,
           lastDeliveryAt: source.lastDeliveryAt?.toISOString() ?? null,
         }

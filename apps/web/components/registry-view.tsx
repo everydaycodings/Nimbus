@@ -23,6 +23,7 @@ import {
 import { SaveToSecrets } from "@/components/registry-save-secret"
 import { CopyButton } from "@/components/copy-button"
 import { DIALOG_BACKDROP, DIALOG_POPUP } from "@/components/overlay-styles"
+import { ConnectionsSection, type OwnerOption } from "@/components/registry-connections"
 import { ImagePolicySection } from "@/components/registry-policy"
 import { OrgTeams } from "@/components/registry-teams"
 import { MirrorsTab, NamespacesSection, RegistryTabs, TrashTab, type Tab } from "@/components/registry-extra"
@@ -54,6 +55,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { sizeOf } from "@/lib/registry/size"
+import type { ConnectionView } from "@/lib/registry/connections"
 import type { CachedRepo, OrgMember, OrgRow, OwnedNamespace, RepoRow, TokenRow, TrashRow } from "@/lib/registry/manage"
 import { cn } from "@/lib/utils"
 
@@ -202,6 +204,8 @@ export function RegistryView({
   owned,
   upstreams,
   cached,
+  connections,
+  connectionOwners,
 }: {
   me: string
   meId: string
@@ -218,6 +222,8 @@ export function RegistryView({
   owned: OwnedNamespace[]
   upstreams: { name: string; url: string; ttlDays: number }[]
   cached: CachedRepo[]
+  connections: ConnectionView[]
+  connectionOwners: OwnerOption[]
 }) {
   const [newOrg, setNewOrg] = useState(false)
   const [newToken, setNewToken] = useState(false)
@@ -335,6 +341,8 @@ export function RegistryView({
               </ul>
             )}
           </section>
+
+          <ConnectionsSection connections={connections} owners={connectionOwners} />
 
           <section className={SECTION} aria-labelledby="connect-heading">
             <Heading

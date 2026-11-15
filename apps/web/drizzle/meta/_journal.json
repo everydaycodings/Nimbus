@@ -421,6 +421,13 @@
       "when": 1796600000000,
       "tag": "0059_registry_insights",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1796700000000,
+      "tag": "0060_registry_git_connections",
+      "breakpoints": true
     }
   ]
 }

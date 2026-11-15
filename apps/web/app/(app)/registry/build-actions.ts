@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 
 import * as svc from "@/lib/registry/manage"
 import * as builds from "@/lib/registry/builds"
+import type { GitAuth, GithubAuth } from "@/lib/registry/builds"
 import { expandTags, matchRule, type RuleInput } from "@/lib/registry/build-rules"
 import { toItem, type BuildItem } from "@/lib/registry/build-view"
 import { projectCtx, listSecrets } from "@/lib/secrets/service"
@@ -25,13 +26,23 @@ export async function githubRepos(token: string) {
   const r = await builds.listGithubRepos(String(token).slice(0, 500))
   return Array.isArray(r) ? { repos: r } : r
 }
-export async function connectGithub(repoId: string, v: { token: string; repo: string }) {
+export async function githubReposVia(repoId: string, connectionId: string) {
+  const me = await member()
+  if (!me) return NOT_ON
+  const r = await builds.listGithubReposFor(me.id, repoId, String(connectionId))
+  return Array.isArray(r) ? { repos: r } : r
+}
+export async function connectGithub(repoId: string, v: { repo: string } & GithubAuth) {
   const me = await member()
   return me ? done(await builds.connectGithub(me.id, repoId, v)) : NOT_ON
 }
-export async function connectGit(repoId: string, v: { url: string; username?: string; token?: string; sshKey?: string }) {
+export async function connectGit(repoId: string, v: { url: string } & GitAuth) {
   const me = await member()
   return me ? done(await builds.connectGit(me.id, repoId, v)) : NOT_ON
+}
+export async function changeConnection(repoId: string, connectionId: string) {
+  const me = await member()
+  return me ? done(await builds.changeConnection(me.id, repoId, String(connectionId))) : NOT_ON
 }
 export async function useUploadsOnly(repoId: string) {
   const me = await member()

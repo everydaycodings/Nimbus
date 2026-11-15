@@ -175,6 +175,13 @@ export async function scheduleJobs() {
     { name: "registry-uploads-stale", opts }
   )
   await jobsQueue.upsertJobScheduler(
+    "registry-connections-expiry",
+    { every: 24 * 3600_000 },
+    { name: "registry-connections-expiry", opts }
+  )
+  // Per-repo git credentials become saved connections, once: the worker's start queues it, a Redis flag stops repeats.
+  await jobsQueue.add("registry-connections-backfill", {}, { jobId: "registry-connections-backfill", attempts: 3, backoff: { type: "exponential", delay: 60_000 }, removeOnComplete: true, removeOnFail: 50 })
+  await jobsQueue.upsertJobScheduler(
     "registry-gc",
     { every: 24 * 3600_000 },
     { name: "registry-gc", opts }

@@ -102,6 +102,10 @@ export function sentence(e: ActivityEvent): string {
           : d.kind === "upload"
             ? "set builds to uploads and the command line only"
             : "disconnected the build source"
+    case "connection": {
+      const n = `“${text(d.name)}”`
+      return d.what === "create" ? `added the git connection ${n}` : d.what === "rename" ? `renamed the git connection “${text(d.was)}” to ${n}` : d.what === "replace" ? `replaced the token or key of the git connection ${n}` : d.what === "use" ? `switched builds to the git connection ${n}` : `deleted the git connection ${n}`
+    }
     case "build_rule":
       return d.deleted ? `deleted the build rule for ${text(d.rule)}` : d.created ? `added a build rule for ${text(d.rule)}` : `changed the build rule for ${text(d.rule)}`
     case "build_start":

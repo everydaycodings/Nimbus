@@ -84,3 +84,24 @@ export function parseFullName(s: string): string | null {
   const m = /^(?:https?:\/\/github\.com\/)?([A-Za-z0-9-]+\/[A-Za-z0-9._-]+?)(?:\.git)?\/?$/.exec(s.trim())
   return m ? m[1] : null
 }
+
+// Who a token belongs to and when it stops working (fine-grained tokens say so in a response header).
+export async function whoami(token: string): Promise<{ login: string; expiresAt: Date | null }> {
+  let res: Response
+  try {
+    res = await fetch(`${API()}/user`, {
+      headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json", "x-github-api-version": "2022-11-28", "user-agent": "nimbus-registry" },
+      signal: AbortSignal.timeout(15_000),
+    })
+  } catch {
+    throw new GithubError("Couldn't reach GitHub.")
+  }
+  if (res.status === 401) throw new GithubError("GitHub didn't accept that token.")
+  if (!res.ok) throw new GithubError(`GitHub answered ${res.status}.`)
+  const login = ((await res.json().catch(() => ({}))) as { login?: string }).login
+  if (!login) throw new GithubError("GitHub didn't say whose token this is.")
+  // "2026-12-01 10:00:00 UTC"
+  const exp = res.headers.get("github-authentication-token-expiration")
+  const at = exp ? new Date(exp.replace(" UTC", "Z").replace(" ", "T")) : null
+  return { login, expiresAt: at && !Number.isNaN(at.getTime()) ? at : null }
+}

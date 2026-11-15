@@ -17,6 +17,7 @@ import { saveSettings } from "@/lib/audit"
 import { getSettings } from "@/lib/signup"
 
 import { logEvent } from "./activity.ts"
+import { LOST, sourceCredential } from "./connections.ts"
 import { resolveRefs } from "./build-secrets.ts"
 import { buildChannel, buildLogKey } from "./build-rules.ts"
 import { ACTIVE, BUILD_DEFAULTS, buildsAvailable, createBuild, tagsFor, type BuildStatus, type Spec } from "./builds.ts"
@@ -49,12 +50,13 @@ export async function runnerSettings() {
 
 export type Clone = { kind: "github" | "git"; url: string; username?: string; token?: string; sshKey?: string }
 
-function cloneOf(s: typeof registryBuildSources.$inferSelect): Clone | null {
+// "lost": the saved connection it used was deleted.
+async function cloneOf(s: typeof registryBuildSources.$inferSelect): Promise<Clone | "lost" | null> {
   if (s.kind === "upload" || !s.url) return null
-  const cred = s.credentialEnc ? decrypt(s.credentialEnc) : null
-  if (s.kind === "github") return { kind: "github", url: `https://github.com/${s.url}.git`, username: "x-access-token", token: cred ?? undefined }
-  const c = cred ? (JSON.parse(cred) as { username?: string; token?: string; sshKey?: string }) : {}
-  return { kind: "git", url: s.url, ...c }
+  const { cred, lost } = await sourceCredential(s)
+  if (lost) return "lost"
+  if (s.kind === "github") return { kind: "github", url: `https://github.com/${s.url}.git`, username: "x-access-token", token: cred?.token }
+  return { kind: "git", url: s.url, ...cred }
 }
 
 export type Prepared =
@@ -113,7 +115,9 @@ export async function prepare(buildId: string): Promise<Prepared> {
   let clone: Clone | null = null
   if (spec.source !== "upload") {
     const [src] = await db.select().from(registryBuildSources).where(eq(registryBuildSources.repoId, repo.id))
-    clone = src ? cloneOf(src) : null
+    const c = src ? await cloneOf(src) : null
+    if (c === "lost") return { ok: false, error: LOST }
+    clone = c
     if (!clone) return { ok: false, error: "The repository has no build source any more." }
   }
   const owner = (await namespaceOwners(ns.id))[0] ?? b.createdBy
@@ -165,8 +169,8 @@ async function ghStatus(buildId: string, state: "pending" | "success" | "failure
     const row = await ctx(buildId)
     if (!row?.b.commit) return
     const [src] = await db.select().from(registryBuildSources).where(eq(registryBuildSources.repoId, row.repo.id))
-    if (src?.kind !== "github" || !src.credentialEnc || !src.url) return
-    const token = decrypt(src.credentialEnc)
+    if (src?.kind !== "github" || !src.url) return
+    const token = (await sourceCredential(src)).cred?.token
     if (token && /^[0-9a-f]{40}$/.test(row.b.commit))
       await github.postStatus(token, src.url, row.b.commit, { state, url: link(`${row.ns.name}/${row.repo.name}`, buildId), description })
   } catch (e) {
@@ -265,8 +269,8 @@ export async function scheduleInfo(ruleId: string) {
   const [r] = await db.select().from(registryBuildRules).where(eq(registryBuildRules.id, ruleId))
   if (!r || !r.enabled) return null
   const [src] = await db.select().from(registryBuildSources).where(eq(registryBuildSources.repoId, r.repoId))
-  const clone = src ? cloneOf(src) : null
-  return clone ? { sourceType: r.sourceType, pattern: r.pattern, clone } : null
+  const clone = src ? await cloneOf(src) : null
+  return clone && clone !== "lost" ? { sourceType: r.sourceType, pattern: r.pattern, clone } : null
 }
 
 export async function scheduleStart(ruleId: string, refs: { type: "branch" | "tag"; name: string; commit: string | null }[]) {
