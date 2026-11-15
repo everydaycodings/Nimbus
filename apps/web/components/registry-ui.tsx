@@ -37,9 +37,9 @@ export const ORG_ROLES = [
 ] as const
 export const ORG_ROLE_LABEL = Object.fromEntries(ORG_ROLES) as Record<"owner" | "write" | "read", string>
 export const TOKEN_ACCESS = [
-  ["pull", "Pull", "Download images. Like Read."],
-  ["push", "Push", "Download and upload images. Like Write."],
-  ["delete", "Push + Delete", "Write plus deleting tags and images."],
+  ["pull", "Pull", "Download images."],
+  ["push", "Push", "Download and upload images, but not delete them."],
+  ["delete", "Push + Delete", "Download, upload and delete tags and images."],
 ] as const
 export const TOKEN_ACCESS_LABEL = Object.fromEntries(TOKEN_ACCESS.map(([v, l]) => [v, l])) as Record<"pull" | "push" | "delete", string>
 
