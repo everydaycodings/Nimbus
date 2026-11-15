@@ -34,7 +34,6 @@ import {
   type Preview,
 } from "@/app/(app)/registry/actions"
 import { CopyButton } from "@/components/copy-button"
-import { ImagePolicyEditor } from "@/components/registry-policy"
 import { ActivityList, type ActivityPage } from "@/components/registry-activity"
 import { DIALOG_BACKDROP, DIALOG_POPUP } from "@/components/overlay-styles"
 import { Code, Confirm, Empty, Heading, LIST, SECTION, Switch, TOUCH, WHEN } from "@/components/registry-ui"
@@ -738,7 +737,7 @@ export function NamespacesSection({ owned, repos }: { owned: OwnedNamespace[]; r
               <ClockCounterClockwiseIcon />
               View activity
             </Button>
-            <Button variant="outline" size="sm" className={TOUCH} onClick={() => pick(n)}>
+            <Button variant="outline" size="sm" className={TOUCH} aria-label={`Settings for ${n.name}`} title="Cleanup rules and webhooks" onClick={() => pick(n)}>
               <BroomIcon />
               Settings
             </Button>
@@ -785,10 +784,10 @@ export function NamespacesSection({ owned, repos }: { owned: OwnedNamespace[]; r
               <>
                 <div className="grid gap-1.5">
                   <Dialog.Title className="text-base font-semibold break-all">
-                    <span className="font-mono">{open.name}</span> · Cleanup, policy and webhooks
+                    <span className="font-mono">{open.name}</span> · Cleanup and webhooks
                   </Dialog.Title>
                   <Dialog.Description className="text-sm text-pretty text-muted-foreground">
-                    Applies to every repository here that doesn&apos;t set its own rules.
+                    Rules that tidy old tags and webhooks that tell your tools about changes, for every repository under this name.
                   </Dialog.Description>
                 </div>
                 {data ? (
@@ -796,11 +795,6 @@ export function NamespacesSection({ owned, repos }: { owned: OwnedNamespace[]; r
                     <div className="grid gap-2">
                       <h3 className="text-sm font-medium">Cleanup rules</h3>
                       <PolicyEditor key={open.id} namespace={open.name} initial={data.policy} />
-                    </div>
-                    <div className="grid gap-2 border-t pt-4">
-                      <h3 className="text-sm font-medium">Image policy</h3>
-                      <p className="text-xs text-pretty text-muted-foreground">Every image in this registry name is checked against these rules. Each tag shows a pass or fail.</p>
-                      <ImagePolicyEditor key={open.id} namespace={open.name} />
                     </div>
                     <div className="grid gap-2 border-t pt-4">
                       <h3 className="text-sm font-medium">Webhooks</h3>

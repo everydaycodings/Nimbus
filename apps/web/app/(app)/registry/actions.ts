@@ -9,8 +9,8 @@ import * as svc from "@/lib/registry/manage"
 import * as admin from "@/lib/registry/repo-admin"
 import { requestScan } from "@/lib/registry/scan"
 import { baseImageAdvice, requestAdvice } from "@/lib/registry/advice"
-import { evaluateTags, getPolicy, setPolicy, type ImagePolicy } from "@/lib/registry/policy-eval"
-import { exportSbom, packagesFor } from "@/lib/registry/sbom"
+import { getPolicy, previewPolicy as previewDraft, setPolicy, type ImagePolicy, type PolicyPreview } from "@/lib/registry/policy-eval"
+import { exportSbom, packagesFor, vulnsByPackage } from "@/lib/registry/sbom"
 import { saveTokenToSecret } from "@/lib/registry/secrets-pull"
 import { setReadme } from "@/lib/registry/readme"
 import { applyPolicy, previewPolicy } from "@/lib/registry/policy"
@@ -374,7 +374,8 @@ export async function tagPackages(name: string, ref: string, platform?: string) 
   const me = await member()
   const img = me && (await svc.resolveImage(me.id, name, ref))
   if (!img) return null
-  return packagesFor(img.id, img.digest, { platform })
+  const [r, vulns, policy] = await Promise.all([packagesFor(img.id, img.digest, { platform }), vulnsByPackage(img.id, img.digest, platform), getPolicy(img.namespaceId)])
+  return { ...r, vulns, blockedLicenses: policy?.blockedLicenses ?? [] }
 }
 
 export async function downloadSbom(name: string, ref: string, format: "csv" | "spdx-json") {
@@ -404,23 +405,12 @@ export async function namespaceImagePolicy(ns: string) {
   return id ? getPolicy(id) : null
 }
 
-// Today's verdict on the newest tag of each repository, so a change in the rules shows what it would do.
-export type PolicyPreview = { total: number; failing: { repo: string; tag: string; reason: string }[] }
-export async function previewImagePolicy(ns: string): Promise<PolicyPreview | null> {
+// What a draft policy would say about the newest tag of each repository in a name. Nothing is saved.
+export type { PolicyPreview }
+export async function previewImagePolicy(ns: string, draft: ImagePolicy | null): Promise<PolicyPreview | null> {
   const me = await member()
   const id = me && (await svc.ownedNamespaceId(me.id, ns))
-  if (!id) return null
-  const latest = await svc.namespaceLatestTags(id)
-  const by = new Map<string, typeof latest>()
-  for (const l of latest) by.set(l.repoId, [l])
-  const failing: PolicyPreview["failing"] = []
-  for (const [repoId, [l]] of by) {
-    const e = (await evaluateTags(repoId, [l.digest]))[l.digest]
-    if (!e) continue
-    const bad = e.checks.find((c) => !c.pass)
-    if (!e.pass) failing.push({ repo: `${ns}/${l.repo}`, tag: l.tag, reason: bad ? `${bad.label}: ${bad.detail}` : "Failed" })
-  }
-  return { total: by.size, failing }
+  return id ? previewDraft(id, draft) : null
 }
 
 export async function saveImagePolicy(ns: string, raw: ImagePolicy | null): Promise<Result> {
@@ -435,6 +425,7 @@ export async function saveImagePolicy(ns: string, raw: ImagePolicy | null): Prom
     requireSigned: Boolean(raw.requireSigned),
     blockedLicenses: (raw.blockedLicenses ?? []).map((s) => String(s).trim().slice(0, 64)).filter(Boolean).slice(0, 50),
     blockPulls: Boolean(raw.blockPulls),
+    unscannedFails: Boolean(raw.unscannedFails),
   }
   return done(await setPolicy(me.id, id, p))
 }

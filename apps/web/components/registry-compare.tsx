@@ -13,7 +13,7 @@ import { Delta } from "@/components/registry-advice"
 import type { Pkg } from "@/components/registry-packages"
 import { VulnList, type Counts, type Vuln } from "@/components/registry-scan"
 import { compareHref } from "@/components/registry-links"
-import { Heading, SECTION, SELECT, TOUCH, WHEN } from "@/components/registry-ui"
+import { Heading, SECTION, SELECT, TOUCH, WHEN, useLate } from "@/components/registry-ui"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { sizeOf } from "@/lib/registry/size"
@@ -149,31 +149,54 @@ function More({
   ) : null
 }
 
+const ROW = "grid items-baseline gap-x-3 gap-y-0.5 px-4 py-2 sm:grid-cols-[minmax(0,2fr)_minmax(0,1.6fr)_6rem]"
+// The small label shown in front of a value on a narrow screen, where the column headers are hidden (but still read).
+const Lbl = ({ children }: { children: string }) => <span className="mr-1 text-muted-foreground sm:hidden">{children}</span>
+
+// Added, removed and changed packages share one table shape so their columns line up.
+function DiffTable({ label, heads, children }: { label: string; heads: [string, string, string]; children: React.ReactNode }) {
+  return (
+    <div role="table" aria-label={label} className="overflow-hidden rounded-xl border bg-card text-xs">
+      <div role="rowgroup" className="max-sm:sr-only">
+        <div role="row" className={cn(ROW, "text-muted-foreground")}>
+          {heads.map((h) => (
+            <span key={h} role="columnheader">
+              {h}
+            </span>
+          ))}
+        </div>
+      </div>
+      <div role="rowgroup" className="divide-y border-t">
+        {children}
+      </div>
+    </div>
+  )
+}
+
 function PkgRows({ rows, kind }: { rows: Pkg[]; kind: "added" | "removed" }) {
   const [n, setN] = useState(PAGE)
   return (
     <div className="grid gap-2">
-      <ul className="divide-y overflow-hidden rounded-xl border bg-card text-xs">
+      <DiffTable label={kind === "added" ? "Added packages" : "Removed packages"} heads={["Package", "Version", "Type"]}>
         {rows.slice(0, n).map((p, i) => (
-          <li
-            key={`${p.type}-${p.name}-${p.version}-${i}`}
-            className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 gap-y-0.5 px-4 py-2 sm:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_5rem]"
-          >
-            <span className="font-mono text-sm break-all">
+          <div role="row" key={`${p.type}-${p.name}-${p.version}-${i}`} className={ROW}>
+            <span role="cell" className="font-mono text-sm break-all">
               <span aria-hidden className="mr-2 text-muted-foreground">
                 {kind === "added" ? "+" : "−"}
               </span>
               {p.name}
             </span>
-            <span className="font-mono break-all text-muted-foreground max-sm:col-start-1">
+            <span role="cell" className="font-mono break-all text-muted-foreground">
+              <Lbl>Version</Lbl>
               {p.version || "—"}
             </span>
-            <span className="text-muted-foreground max-sm:col-start-2 max-sm:row-start-1">
+            <span role="cell" className="text-muted-foreground">
+              <Lbl>Type</Lbl>
               {p.type}
             </span>
-          </li>
+          </div>
         ))}
-      </ul>
+      </DiffTable>
       <More shown={n} total={rows.length} onMore={() => setN(n + PAGE * 4)} />
     </div>
   )
@@ -214,7 +237,7 @@ export function CompareView({
   const added = packages.added.filter(f)
   const removed = packages.removed.filter(f)
   const changed = packages.changed.filter(f)
-  const same = a.digest === b.digest
+  const sameMsg = useLate(a.digest === b.digest ? "These are the same image, so there is nothing to compare." : "")
   const size = b.size - a.size
   const tot =
     packages.added.length + packages.removed.length + packages.changed.length
@@ -247,14 +270,13 @@ export function CompareView({
         <Picker label="To" side={b} tags={tags} onPick={(r) => go(a.ref, r)} />
       </section>
 
-      {same && (
-        <p
-          role="status"
-          className="rounded-xl border bg-muted/40 px-4 py-3 text-sm"
-        >
-          These are the same image, so there is nothing to compare.
-        </p>
-      )}
+      <div role="status">
+        {sameMsg && (
+          <p className="rounded-xl border bg-muted/40 px-4 py-3 text-sm">
+            {sameMsg}
+          </p>
+        )}
+      </div>
 
       <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border lg:grid-cols-4">
         <Stat label="Packages">
@@ -315,8 +337,11 @@ export function CompareView({
         {!scanNote && (
           <div className="grid items-start gap-4 lg:grid-cols-2">
             <VulnList
-              tag={b.ref}
+              tag={a.ref}
               name={name}
+              level={3}
+              filterLabel="Filter fixed by severity"
+              trimEmpty
               summary={ok(vulns.counts.a)}
               vulns={vulns.fixed}
               error={null}
@@ -327,6 +352,9 @@ export function CompareView({
             <VulnList
               tag={b.ref}
               name={name}
+              level={3}
+              filterLabel="Filter new by severity"
+              trimEmpty
               summary={ok(vulns.counts.b)}
               vulns={vulns.introduced}
               error={null}
@@ -368,7 +396,7 @@ export function CompareView({
                 className="min-w-0 flex-1 basis-48"
               />
               <select
-                aria-label="Filter by type"
+                aria-label="Filter changed packages by type"
                 value={type}
                 onChange={(e) => setType(e.target.value)}
                 className={cn(SELECT, "pointer-coarse:h-11")}
@@ -389,32 +417,27 @@ export function CompareView({
                 <h3 className="text-sm font-medium">
                   Changed ({changed.length})
                 </h3>
-                <ul className="divide-y overflow-hidden rounded-xl border bg-card text-xs">
+                <DiffTable label="Changed packages" heads={["Package", "Version", "Change"]}>
                   {changed.slice(0, nChanged).map((c) => {
-                    const up = cmpVersion(c.from, c.to) < 0
+                    const d = cmpVersion(c.from, c.to)
                     return (
-                      <li
-                        key={`${c.type}-${c.name}`}
-                        className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 gap-y-0.5 px-4 py-2 sm:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_5rem]"
-                      >
-                        <span className="font-mono text-sm break-all">
+                      <div role="row" key={`${c.type}-${c.name}`} className={ROW}>
+                        <span role="cell" className="font-mono text-sm break-all">
                           {c.name}
                         </span>
-                        <span className="font-mono break-all max-sm:col-start-1">
+                        <span role="cell" className="font-mono break-all">
+                          <Lbl>Version</Lbl>
                           {c.from} → {c.to}
                         </span>
-                        <span className="inline-flex items-center gap-1 text-muted-foreground max-sm:col-start-2 max-sm:row-start-1">
-                          {up ? (
-                            <ArrowUpIcon aria-hidden className="size-3" />
-                          ) : (
-                            <ArrowDownIcon aria-hidden className="size-3" />
-                          )}
-                          {up ? "Upgrade" : "Downgrade"}
+                        <span role="cell" className="inline-flex items-center gap-1 text-muted-foreground">
+                          <Lbl>Change</Lbl>
+                          {d === 0 ? null : d < 0 ? <ArrowUpIcon aria-hidden className="size-3" /> : <ArrowDownIcon aria-hidden className="size-3" />}
+                          {d === 0 ? "Same version" : d < 0 ? "Upgrade" : "Downgrade"}
                         </span>
-                      </li>
+                      </div>
                     )
                   })}
-                </ul>
+                </DiffTable>
                 <More
                   shown={nChanged}
                   total={changed.length}

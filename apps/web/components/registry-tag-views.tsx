@@ -2,12 +2,13 @@
 
 import { GitDiffIcon } from "@phosphor-icons/react"
 import Link from "next/link"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useState } from "react"
 
 import { BaseImageView } from "@/components/registry-advice"
 import { PackagesView } from "@/components/registry-packages"
 import { VIEWS, compareHref, type View } from "@/components/registry-links"
-import { Segmented, SELECT, TOUCH } from "@/components/registry-ui"
+import { FadeX, Segmented, SELECT, TOUCH } from "@/components/registry-ui"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -31,17 +32,27 @@ export function TagViews({
   overview: React.ReactNode
 }) {
   const [view, setView] = useState<View>(initial)
+  const router = useRouter()
+  const path = usePathname()
+  const params = useSearchParams()
+  // The view lives in ?view= so a sub-view can be linked to; replace, so Back isn't a trail of switches.
+  const pick = (v: View) => {
+    setView(v)
+    const q = new URLSearchParams(params.toString())
+    q.set("view", v)
+    router.replace(`${path}?${q}#detail`, { scroll: false })
+  }
   const [other, setOther] = useState(others[0] ?? "")
   return (
-    <div className="grid gap-4">
-      <div className="-mx-1 overflow-x-auto px-1 pb-1">
+    <div className="grid min-w-0 gap-4">
+      <FadeX className="-mx-1 px-1 pb-1">
         <Segmented
           label={`Views of ${tag}`}
           value={view}
           options={VIEWS}
-          onChange={setView}
+          onChange={pick}
         />
-      </div>
+      </FadeX>
       {view === "overview" && overview}
       {view === "packages" && (
         <PackagesView name={name} tag={tag} platforms={platforms} />

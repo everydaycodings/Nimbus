@@ -11,8 +11,8 @@ import { RepoTags, type TagExtra } from "@/components/registry-tags"
 import { TagViews } from "@/components/registry-tag-views"
 import { VIEWS, type View } from "@/components/registry-links"
 import { CompareView, type CompareData } from "@/components/registry-compare"
-import { ImageHealth } from "@/components/registry-health"
-import { PolicyPanel, type Verdict } from "@/components/registry-policy"
+import { VerdictCard } from "@/components/registry-health"
+import { CheckList, PolicyBadge, type Verdict } from "@/components/registry-policy"
 import { baseImageAdvice } from "@/lib/registry/advice"
 import { compareImages } from "@/lib/registry/compare"
 import { evaluateTags, getPolicy, type ImagePolicy } from "@/lib/registry/policy-eval"
@@ -144,7 +144,7 @@ const verdicts = async (repo: RepoDetail, digests: string[]): Promise<{ policy: 
   const e = await evaluateTags(repo.id, digests).catch(() => ({}))
   return {
     policy,
-    by: Object.fromEntries(Object.entries(e).map(([d, v]) => [d, { pass: v.pass, checks: v.checks }])),
+    by: Object.fromEntries(Object.entries(e).map(([d, v]) => [d, { verdict: v.verdict, checks: v.checks }])),
   }
 }
 
@@ -221,27 +221,55 @@ async function Overview({ repo, host, meId }: { repo: RepoDetail; host: string; 
   const pullTag = repo.tags.find((t) => t.name === "latest") ?? repo.tags[0]
   const newest = repo.tags[0]
   const checked = repo.tags.slice(0, 20)
-  const [scanOn, newestArts, ver, advice] = await Promise.all([
+  const [scanOn, newestArts, ver, advice, scans] = await Promise.all([
     scanAvailable(),
     newest ? artifactsFor(repo.id, [newest.digest]) : {},
     verdicts(repo, [...new Set(checked.map((t) => t.digest))]),
     newest ? baseImageAdvice(repo.id, newest.digest).catch(() => null) : null,
+    scanSummaries(checked.flatMap((t) => (t.manifestId ? [t.manifestId] : []))),
   ])
-  const newestScan = scanOn && newest?.manifestId ? (await scanSummaries([newest.manifestId]))[newest.manifestId] : undefined
+  // Stored scan counts are shown even when the scanner is off now: they are still what the last scan found.
+  const scanOf = (t: { manifestId?: string | null }) => {
+    const x = t.manifestId ? scans[t.manifestId] : undefined
+    return x ? { status: x.status, critical: x.critical, high: x.high, medium: x.medium, low: x.low, scannedAt: x.scannedAt } : null
+  }
   const newestArt = newest ? (newestArts as Awaited<ReturnType<typeof artifactsFor>>)[newest.digest] : undefined
   const newestVerdict = newest ? (ver.by[newest.digest] ?? null) : null
-  const failing = checked.filter((t) => ver.by[t.digest] && !ver.by[t.digest].pass).length
+  const failingTags = checked.filter((t) => ver.by[t.digest]?.verdict === "fail").map((t) => t.name)
   const pulls = days.reduce((a, d) => a + d.count, 0)
   return (
     <div className="flex flex-col gap-8">
       {repo.moved && <MovedBanner from={repo.moved.from} until={repo.moved.until} />}
       <ArchivedStrip repo={repo} />
+      {newest && (
+        <VerdictCard
+          name={repo.fullName}
+          namespace={repo.namespace}
+          tag={newest.name}
+          scan={scanOf(newest)}
+          scanOn={scanOn}
+          verdict={newestVerdict}
+          blocking={Boolean(ver.policy?.blockPulls)}
+          failingTags={failingTags}
+          checked={checked.length}
+          signed={(newestArt?.signatures ?? 0) > 0}
+          sbom={(newestArt?.sboms ?? 0) > 0}
+          advice={advice}
+          isOwner={repo.isOwner}
+        />
+      )}
       {pullTag ? (
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
           <div className="order-first lg:order-last">
             <PullCommand image={`${host}/${repo.fullName}`} tag={pullTag.name} digest={pullTag.digest} />
           </div>
-          <RecentTags repo={repo} host={host} />
+          <RecentTags
+            repo={repo}
+            host={host}
+            scanOn={scanOn}
+            scans={Object.fromEntries(repo.tags.slice(0, 5).map((t) => [t.name, scanOf(t)]))}
+            verdicts={Object.fromEntries(repo.tags.slice(0, 5).map((t) => [t.name, ver.by[t.digest] ?? null]))}
+          />
         </div>
       ) : (
         <p className="rounded-xl border border-dashed px-4 py-6 text-sm text-pretty text-muted-foreground">
@@ -257,40 +285,6 @@ async function Overview({ repo, host, meId }: { repo: RepoDetail; host: string; 
         </p>
       )}
       <RepoStats repo={repo} days={days} />
-      {newest && (
-        <div className="grid items-start gap-6 lg:grid-cols-2">
-          <ImageHealth
-            name={repo.fullName}
-            tag={newest.name}
-            scanOn={scanOn}
-            scan={
-              newestScan
-                ? {
-                    status: newestScan.status,
-                    critical: newestScan.critical,
-                    high: newestScan.high,
-                    medium: newestScan.medium,
-                    low: newestScan.low,
-                  }
-                : null
-            }
-            verdict={newestVerdict}
-            signed={(newestArt?.signatures ?? 0) > 0}
-            sbom={(newestArt?.sboms ?? 0) > 0}
-            advice={advice}
-          />
-          {newestVerdict && ver.policy && (
-            <section className="grid content-start gap-2" aria-labelledby="policy-heading">
-              <div className="flex min-h-9 items-center">
-                <h2 id="policy-heading" className="text-base font-semibold">
-                  Image policy
-                </h2>
-              </div>
-              <PolicyPanel tag={newest.name} verdict={newestVerdict} failing={failing} total={checked.length} blocking={Boolean(ver.policy.blockPulls)} />
-            </section>
-          )}
-        </div>
-      )}
       {latest[0] && <LatestBuild name={repo.fullName} b={toItem(latest[0])} />}
       <RepoReadme name={repo.fullName} canWrite={repo.canWrite && !repo.archived} readme={readme} />
       {pulls > 0 && (
@@ -340,7 +334,7 @@ async function TagsTab({ repo, host, tag, meId, view }: { repo: RepoDetail; host
   const scanOn = await scanAvailable()
   const manifestIds = repo.tags.flatMap((t) => (t.manifestId ? [t.manifestId] : []))
   const [scans, arts, perTag, ver] = await Promise.all([
-    scanOn ? scanSummaries(manifestIds) : ({} as Awaited<ReturnType<typeof scanSummaries>>),
+    scanSummaries(manifestIds),
     artifactsFor(
       repo.id,
       repo.tags.map((t) => t.digest)
@@ -362,6 +356,7 @@ async function TagsTab({ repo, host, tag, meId, view }: { repo: RepoDetail; host
                 high: scan.high,
                 medium: scan.medium,
                 low: scan.low,
+                scannedAt: scan.scannedAt,
               }
             : null,
           signed: (a?.signatures ?? 0) > 0,
@@ -374,7 +369,7 @@ async function TagsTab({ repo, host, tag, meId, view }: { repo: RepoDetail; host
     })
   )
   const picked = tag ? repo.tags.find((t) => t.name === tag) : undefined
-  const report = scanOn && picked?.manifestId ? await scanReport(picked.manifestId) : null
+  const report = picked?.manifestId ? await scanReport(picked.manifestId) : null
   return (
     <div className="flex flex-col gap-6">
       <ArchivedStrip repo={repo} />
@@ -386,8 +381,8 @@ async function TagsTab({ repo, host, tag, meId, view }: { repo: RepoDetail; host
         extras={extras}
         detail={
           detail && (
-            <div id="detail" className="flex flex-col gap-3">
-              <h3 className="sr-only">Details for {detail.tag}</h3>
+            <div id="detail" className="flex min-w-0 flex-col gap-3">
+              <h2 className="sr-only">Details for {detail.tag}</h2>
               <TagViews
                 key={detail.tag}
                 name={repo.fullName}
@@ -397,12 +392,20 @@ async function TagsTab({ repo, host, tag, meId, view }: { repo: RepoDetail; host
                 canWrite={repo.canWrite}
                 initial={(VIEWS.map((v) => v[0]) as string[]).includes(view ?? "") ? (view as View) : "overview"}
                 overview={
-                  <div className="flex flex-col gap-3">
+                  <div className="flex min-w-0 flex-col gap-3">
                     <p className="text-xs text-muted-foreground">
                       <span className="font-mono">{detail.mediaType.replace("application/vnd.", "")}</span> ·{" "}
                       {detail.images.length > 1 ? `${detail.images.length} platforms` : "1 image"}
                     </p>
-                    {scanOn && picked && (
+                    {picked && ver.policy && ver.by[picked.digest] && (
+                      <div className="grid gap-1.5">
+                        <h3 className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium">
+                          Image policy <PolicyBadge v={ver.by[picked.digest]} />
+                        </h3>
+                        <CheckList checks={ver.by[picked.digest].checks} />
+                      </div>
+                    )}
+                    {picked && (extras[picked.name].scan || scanOn) && (
                       <VulnList
                         tag={detail.tag}
                         name={repo.fullName}

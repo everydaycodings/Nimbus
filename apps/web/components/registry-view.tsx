@@ -21,6 +21,7 @@ import {
 import { SaveToSecrets } from "@/components/registry-save-secret"
 import { CopyButton } from "@/components/copy-button"
 import { DIALOG_BACKDROP, DIALOG_POPUP } from "@/components/overlay-styles"
+import { ImagePolicySection } from "@/components/registry-policy"
 import { OrgTeams } from "@/components/registry-teams"
 import { MirrorsTab, NamespacesSection, RegistryTabs, TrashTab, type Tab } from "@/components/registry-extra"
 import {
@@ -370,6 +371,7 @@ export function RegistryView({
           </section>
 
           <NamespacesSection owned={owned} repos={repos} />
+          <ImagePolicySection names={owned.map((n) => n.name)} />
         </>
       )}
 

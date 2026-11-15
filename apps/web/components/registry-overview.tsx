@@ -7,7 +7,9 @@ import { useState } from "react"
 import { CopyButton } from "@/components/copy-button"
 import { Badge } from "@/components/ui/badge"
 import { compareHref } from "@/components/registry-links"
-import { CODE, DAY, LIST, TOUCH, WHEN } from "@/components/registry-ui"
+import { PolicyBadge, type Verdict } from "@/components/registry-policy"
+import { SeverityCompact, type ScanSummary } from "@/components/registry-scan"
+import { CODE, DAY, LIST, Segmented, TOUCH, WHEN } from "@/components/registry-ui"
 import { sizeOf } from "@/lib/registry/size"
 import type { RepoDetail } from "@/lib/registry/manage"
 import { cn } from "@/lib/utils"
@@ -96,25 +98,15 @@ export function PullCommand({ image, tag, digest }: { image: string; tag: string
     <div className="grid content-start gap-2">
       <div className="flex min-h-9 flex-wrap items-center justify-between gap-2">
         <h2 className="text-base font-semibold">Pull this image</h2>
-        <div role="radiogroup" aria-label="Pull by" className="flex rounded-lg bg-muted p-[3px]">
-          {(
-            [
-              ["tag", `Tag ${tag}`],
-              ["digest", "Digest"],
-            ] as const
-          ).map(([v, label]) => (
-            <button
-              key={v}
-              type="button"
-              role="radio"
-              aria-checked={by === v}
-              onClick={() => setBy(v)}
-              className="flex h-7 max-w-40 items-center rounded-md border border-transparent px-3 text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:h-11 aria-checked:border-input aria-checked:bg-input/30 aria-checked:text-foreground"
-            >
-              <span className="truncate">{label}</span>
-            </button>
-          ))}
-        </div>
+        <Segmented
+          label="Pull by"
+          value={by}
+          options={[
+            ["tag", `Tag ${tag.length > 14 ? `${tag.slice(0, 13)}…` : tag}`],
+            ["digest", "Digest"],
+          ]}
+          onChange={setBy}
+        />
       </div>
       <div className="relative">
         <code className={cn(CODE, "pt-12 whitespace-pre-wrap break-all sm:pr-24 sm:pt-3")}>{command}</code>
@@ -130,7 +122,20 @@ export function PullCommand({ image, tag, digest }: { image: string; tag: string
 }
 
 // The five newest tags, with a way into the full list.
-export function RecentTags({ repo, host }: { repo: RepoDetail; host: string }) {
+export function RecentTags({
+  repo,
+  host,
+  scans = {},
+  verdicts = {},
+  scanOn = false,
+}: {
+  repo: RepoDetail
+  host: string
+  // By tag name: the scan and policy answer for the tags shown.
+  scans?: Record<string, ScanSummary | null>
+  verdicts?: Record<string, Verdict | null>
+  scanOn?: boolean
+}) {
   const recent = repo.tags.slice(0, 5)
   return (
     <section className="grid content-start gap-2" aria-labelledby="recent-heading">
@@ -159,10 +164,12 @@ export function RecentTags({ repo, host }: { repo: RepoDetail; host: string }) {
                 {t.platforms.length > 0 && (
                   <span className="text-xs font-normal text-muted-foreground">{t.platforms.length === 1 ? t.platforms[0] : `${t.platforms.length} platforms`}</span>
                 )}
+                <PolicyBadge v={verdicts[t.name]} />
               </p>
               <p suppressHydrationWarning className="text-xs text-muted-foreground">
                 <span className="tabular-nums">{sizeOf(t.bytes)}</span> · {DAY.format(new Date(t.pushedAt))}
               </p>
+              {(scanOn || scans[t.name]) && <SeverityCompact s={scans[t.name]} className="w-fit" />}
             </div>
             {recent[i + 1] && (
               <Link

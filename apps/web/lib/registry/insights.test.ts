@@ -94,21 +94,31 @@ test("exports: csv quoting and a round-trippable SPDX document", () => {
 const none: Facts = { critical: null, high: null, ageDays: null, signed: null, licenses: null }
 test("policy evaluation matrix", () => {
   const pol = { maxCritical: 0, maxHigh: 5, maxAgeDays: 90, requireSigned: true, blockedLicenses: ["GPL-3.0"] }
-  // unscanned and unknown: everything passes
+  // unscanned and unknown: not a pass, a third state
   const u = evaluateImagePolicy(pol, none)
-  assert.equal(u.pass, true)
+  assert.equal(u.verdict, "unknown")
   assert.equal(u.checks.length, 5)
+  assert.deepEqual(u.checks.map((c) => c.state), ["unknown", "unknown", "unknown", "unknown", "unknown"])
   assert.match(u.checks[0].detail, /Not scanned/)
   // everything fails
   const bad = evaluateImagePolicy(pol, { critical: 2, high: 9, ageDays: 400, signed: false, licenses: ["GPL-3.0-only AND MIT"] })
-  assert.equal(bad.pass, false)
-  assert.deepEqual(bad.checks.map((c) => c.pass), [false, false, false, false, false])
+  assert.equal(bad.verdict, "fail")
+  assert.deepEqual(bad.checks.map((c) => c.state), ["fail", "fail", "fail", "fail", "fail"])
   // at the limit passes
   const edge = evaluateImagePolicy(pol, { critical: 0, high: 5, ageDays: 90, signed: true, licenses: ["MIT"] })
-  assert.equal(edge.pass, true)
+  assert.equal(edge.verdict, "pass")
+  // a fail wins over unknowns; unknowns alone never pass
+  assert.equal(evaluateImagePolicy(pol, { ...none, critical: 1 }).verdict, "fail")
+  assert.equal(evaluateImagePolicy({ maxCritical: 0 }, { ...none, critical: 0 }).verdict, "pass")
+  assert.equal(evaluateImagePolicy({ maxCritical: 0, requireSigned: true }, { ...none, critical: 0 }).verdict, "unknown")
+  // unscannedFails: only the scan facts turn into fails
+  const strict = { ...pol, unscannedFails: true }
+  assert.deepEqual(evaluateImagePolicy(strict, none).checks.map((c) => c.state), ["fail", "fail", "unknown", "unknown", "unknown"])
+  assert.equal(evaluateImagePolicy({ maxAgeDays: 9, unscannedFails: true }, none).verdict, "unknown")
+  assert.equal(evaluateImagePolicy({ maxHigh: 1, unscannedFails: true }, { ...none, high: 1 }).verdict, "pass")
   // only configured checks appear; null limits skipped
   assert.deepEqual(evaluateImagePolicy({ maxCritical: 0, maxHigh: null }, { ...none, critical: 1 }).checks.map((c) => c.key), ["maxCritical"])
-  assert.deepEqual(evaluateImagePolicy({}, none), { pass: true, checks: [] })
+  assert.deepEqual(evaluateImagePolicy({}, none), { verdict: "pass", checks: [] })
 })
 
 test("blocked licenses match SPDX ids loosely", () => {
@@ -155,4 +165,6 @@ test("policy input is cleaned", () => {
   assert.equal(cleanImagePolicy({ blockPulls: true }), null)
   assert.deepEqual(cleanImagePolicy({ maxCritical: "0" as never, maxHigh: -3, maxAgeDays: 99999, blockedLicenses: ["GPL-3.0", " gpl-3.0 ", "bad lic", "x".repeat(70)], blockPulls: true }), { maxCritical: 0, maxHigh: 0, maxAgeDays: 3650, blockedLicenses: ["GPL-3.0", "gpl-3.0"], blockPulls: true })
   assert.deepEqual(cleanImagePolicy({ maxCritical: null, requireSigned: true }), { requireSigned: true })
+  assert.deepEqual(cleanImagePolicy({ maxHigh: 2, unscannedFails: true }), { maxHigh: 2, unscannedFails: true })
+  assert.deepEqual(cleanImagePolicy({ requireSigned: true, unscannedFails: true }), { requireSigned: true })
 })

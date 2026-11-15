@@ -31,6 +31,11 @@ File types use their own hues via `--file-*` (`text-file-image`, `bg-file-folder
 image `#f27fb2`, video `#b08cff`, doc `#6ea8ff`, pdf `#ff6f6f`, audio `#4fd1a5`, code `#ff9f66`,
 archive `#b5b5b5`. These hues never appear on chrome.
 
+Vulnerability severity (Registry) is a sanctioned meaning colour, shown only as a small dot beside the word and count:
+Critical `--destructive`, High `--warning`, Medium `--chart-3`, Low `--muted-foreground`, Unknown `--border`. The words always
+carry the meaning; the dot never stands alone. A policy that can't judge yet ("Not checked") is never teal or green:
+it is an outline badge, dashed and muted.
+
 Tags are user-chosen labels with their own `--tag-*` hues (red, orange, yellow, green, blue,
 purple, pink, teal, indigo, brown, gray; `TAG_DOT` in `lib/file-types.ts`), shown only as small dots: after an item's
 name, in menus and on the Tags filter.

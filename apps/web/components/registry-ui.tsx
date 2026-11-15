@@ -261,3 +261,40 @@ export function Segmented<T extends string>({
     </div>
   )
 }
+
+// A row that scrolls sideways on a narrow screen, with a fade on the right edge while there is more to see.
+export function FadeX({ children, className }: { children: React.ReactNode; className?: string }) {
+  const el = useRef<HTMLDivElement>(null)
+  const [more, setMore] = useState(false)
+  useEffect(() => {
+    const e = el.current
+    if (!e) return
+    const check = () => setMore(e.scrollWidth - e.scrollLeft - e.clientWidth > 4)
+    check()
+    e.addEventListener("scroll", check, { passive: true })
+    const ro = new ResizeObserver(check)
+    ro.observe(e)
+    return () => {
+      e.removeEventListener("scroll", check)
+      ro.disconnect()
+    }
+  }, [])
+  return (
+    <div
+      ref={el}
+      className={cn("min-w-0 overflow-x-auto", className)}
+      style={more ? { maskImage: "linear-gradient(to right, black calc(100% - 2rem), transparent)" } : undefined}
+    >
+      {children}
+    </div>
+  )
+}
+
+// The text, but only after the first paint. A live region that is mounted with its text isn't reliably
+// announced; mount it empty and pass the message through here.
+export function useLate(text: string) {
+  const [on, setOn] = useState(false)
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- the point is to flip after the first paint
+  useEffect(() => setOn(true), [])
+  return on ? text : ""
+}

@@ -308,8 +308,11 @@ export function isArtifactManifest(doc: { subject?: unknown; artifactType?: stri
 
 // ---- Image policy ----
 
-export type ImagePolicy = { maxCritical?: number | null; maxHigh?: number | null; maxAgeDays?: number | null; requireSigned?: boolean; blockedLicenses?: string[]; blockPulls?: boolean }
-export type Check = { key: string; label: string; pass: boolean; detail: string }
+export type ImagePolicy = { maxCritical?: number | null; maxHigh?: number | null; maxAgeDays?: number | null; requireSigned?: boolean; blockedLicenses?: string[]; blockPulls?: boolean; unscannedFails?: boolean }
+// unknown: the fact isn't known (not scanned, no package list), which is neither a pass nor a fail.
+export type CheckState = "pass" | "fail" | "unknown"
+export type Check = { key: string; label: string; state: CheckState; detail: string }
+export type Verdict = CheckState
 // null means unknown (not scanned, no package list yet, nothing to check).
 export type Facts = { critical: number | null; high: number | null; ageDays: number | null; signed: boolean | null; licenses: string[] | null }
 
@@ -340,33 +343,42 @@ export function cleanImagePolicy(p: ImagePolicy): ImagePolicy | null {
   if (p.requireSigned) out.requireSigned = true
   const lic = [...new Set((p.blockedLicenses ?? []).map((l) => String(l).trim()).filter((l) => /^[A-Za-z0-9.+-]{1,64}$/.test(l)))].slice(0, 50)
   if (lic.length) out.blockedLicenses = lic
+  // Only the vulnerability limits depend on a scan, so only they can make an unscanned image fail.
+  if ((out.maxCritical != null || out.maxHigh != null) && p.unscannedFails) out.unscannedFails = true
   if (Object.keys(out).length && p.blockPulls) out.blockPulls = true
   return Object.keys(out).length ? out : null
 }
 
-export function evaluateImagePolicy(policy: ImagePolicy, f: Facts): { pass: boolean; checks: Check[] } {
+// verdict: fail if any check fails; else unknown if any check is unknown; else pass (no checks: pass).
+export function evaluateImagePolicy(policy: ImagePolicy, f: Facts): { verdict: Verdict; checks: Check[] } {
   const checks: Check[] = []
   const limit = (k: string, label: string, max: number | null | undefined, n: number | null) => {
     if (max == null) return
-    checks.push(n === null ? { key: k, label, pass: true, detail: "Not scanned yet" } : { key: k, label, pass: n <= max, detail: `${n} found, ${max} allowed` })
+    if (n === null) checks.push({ key: k, label, state: policy.unscannedFails ? "fail" : "unknown", detail: "Not scanned yet" })
+    else checks.push({ key: k, label, state: n <= max ? "pass" : "fail", detail: `${n} found, ${max} allowed` })
   }
   limit("maxCritical", "Critical vulnerabilities", policy.maxCritical, f.critical)
   limit("maxHigh", "High vulnerabilities", policy.maxHigh, f.high)
   if (policy.maxAgeDays != null)
     checks.push(
       f.ageDays === null
-        ? { key: "maxAgeDays", label: "Image age", pass: true, detail: "Age unknown" }
-        : { key: "maxAgeDays", label: "Image age", pass: f.ageDays <= policy.maxAgeDays, detail: `${Math.floor(f.ageDays)} days old, ${policy.maxAgeDays} allowed` }
+        ? { key: "maxAgeDays", label: "Image age", state: "unknown", detail: "Age unknown" }
+        : { key: "maxAgeDays", label: "Image age", state: f.ageDays <= policy.maxAgeDays ? "pass" : "fail", detail: `${Math.floor(f.ageDays)} days old, ${policy.maxAgeDays} allowed` }
     )
   if (policy.requireSigned)
-    checks.push(f.signed === null ? { key: "requireSigned", label: "Signed", pass: true, detail: "Unknown" } : { key: "requireSigned", label: "Signed", pass: f.signed, detail: f.signed ? "Signature found" : "No signature found" })
+    checks.push(
+      f.signed === null
+        ? { key: "requireSigned", label: "Signed", state: "unknown", detail: "Signature status unknown" }
+        : { key: "requireSigned", label: "Signed", state: f.signed ? "pass" : "fail", detail: f.signed ? "Signature found" : "No signature found" }
+    )
   if (policy.blockedLicenses?.length)
-    if (f.licenses === null) checks.push({ key: "blockedLicenses", label: "Licenses", pass: true, detail: "No package list yet" })
+    if (f.licenses === null) checks.push({ key: "blockedLicenses", label: "Licenses", state: "unknown", detail: "No package list yet" })
     else {
       const hits = blockedLicenseHits(policy.blockedLicenses, f.licenses)
-      checks.push({ key: "blockedLicenses", label: "Licenses", pass: !hits.length, detail: hits.length ? `Uses ${hits.join(", ")}` : "No blocked licenses" })
+      checks.push({ key: "blockedLicenses", label: "Licenses", state: hits.length ? "fail" : "pass", detail: hits.length ? `Uses ${hits.join(", ")}` : "No blocked licenses" })
     }
-  return { pass: checks.every((c) => c.pass), checks }
+  const verdict: Verdict = checks.some((c) => c.state === "fail") ? "fail" : checks.some((c) => c.state === "unknown") ? "unknown" : "pass"
+  return { verdict, checks }
 }
 
 // ---- Base-image advice ----

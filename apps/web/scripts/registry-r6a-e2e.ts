@@ -132,8 +132,8 @@ try {
   await db.update(registryNamespaces).set({ imagePolicy: { maxCritical: 0, maxHigh: 1000, requireSigned: true, blockedLicenses: ["GPL-2.0"], blockPulls: true } }).where(eq(registryNamespaces.id, ns.id))
   assert.deepEqual((await getPolicy(ns.id))?.maxCritical, 0)
   const ev = await evaluateTags(repoId, [d310, d320])
-  for (const [d, e] of Object.entries(ev)) console.log("  ", d.slice(7, 19), e.pass, e.checks.map((c) => `${c.key}:${c.pass ? "ok" : "FAIL"} (${c.detail})`).join("; "))
-  assert.equal(ev[d310].checks.find((c) => c.key === "requireSigned")!.pass, false)
+  for (const [d, e] of Object.entries(ev)) console.log("  ", d.slice(7, 19), e.verdict, e.checks.map((c) => `${c.key}:${c.state} (${c.detail})`).join("; "))
+  assert.equal(ev[d310].checks.find((c) => c.key === "requireSigned")!.state, "fail")
   const crit310 = s310.critical
   console.log("  3.10 criticals", crit310, "3.20 criticals", s320.critical)
   const redis = (await import("../lib/redis.ts")).redis
@@ -150,8 +150,8 @@ try {
   const evL = (await evaluateTags(repoId, [dIdx]))[dIdx]
   await db.update(registryNamespaces).set({ imagePolicy: { blockedLicenses: ["GPL-3.0"] } }).where(eq(registryNamespaces.id, ns.id))
   const evG = (await evaluateTags(repoId, [dIdx]))[dIdx]
-  console.log("  ", evG.checks.map((c) => `${c.key}:${c.pass} ${c.detail}`).join("; "))
-  assert.equal(evG.pass, false)
+  console.log("  ", evG.checks.map((c) => `${c.key}:${c.state} ${c.detail}`).join("; "))
+  assert.equal(evG.verdict, "fail")
   void evL
   console.log("OK")
 } catch (e) {

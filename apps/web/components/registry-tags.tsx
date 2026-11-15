@@ -10,7 +10,7 @@ import { deleteTags, restoreTrash } from "@/app/(app)/registry/actions"
 import { CopyButton } from "@/components/copy-button"
 import { MENU_ITEM } from "@/components/overlay-styles"
 import { PolicyBadge, type Verdict } from "@/components/registry-policy"
-import { ScanBadge, isScanning, type ScanSummary } from "@/components/registry-scan"
+import { SeverityCompact, isScanning, type ScanSummary } from "@/components/registry-scan"
 import { Code, Confirm, Empty, LIST, RowMenu, SECTION, SELECT, TOUCH, WHEN } from "@/components/registry-ui"
 import { useNotice } from "@/components/toaster"
 import { Badge } from "@/components/ui/badge"
@@ -25,8 +25,8 @@ export type TagExtra = { scan: ScanSummary | null; signed: boolean; sbom: boolea
 
 const FILTER_AT = 10
 // Rows are separate grids, so every column but the name ones has a fixed width to line up under the header.
-const COLS = "md:grid-cols-[minmax(0,2fr)_minmax(0,1.3fr)_4.5rem_10rem_4.5rem_9rem]"
-const GRID_WRITE = `grid-cols-[auto_minmax(0,1fr)_auto] md:grid-cols-[auto_minmax(0,2fr)_minmax(0,1.3fr)_4.5rem_10rem_4.5rem_9rem]`
+const COLS = "md:grid-cols-[minmax(0,2fr)_minmax(0,1.3fr)_4.5rem_6.5rem_10rem_4.5rem_9rem]"
+const GRID_WRITE = `grid-cols-[auto_minmax(0,1fr)_auto] md:grid-cols-[auto_minmax(0,2fr)_minmax(0,1.3fr)_4.5rem_6.5rem_10rem_4.5rem_9rem]`
 const GRID_READ = `grid-cols-[minmax(0,1fr)_auto] ${COLS}`
 const BOX = "grid size-5 shrink-0 cursor-pointer place-items-center pointer-coarse:size-11"
 
@@ -62,13 +62,19 @@ export function RepoTags({
   const ns = repo.fullName.split("/")[0]
   const writer = repo.canWrite && !repo.archived
   const [q, setQ] = useState("")
-  const [sort, setSort] = useState<"pushed" | "name">("pushed")
+  const [sort, setSort] = useState<"pushed" | "name" | "severity">("pushed")
   const [sel, setSel] = useState<Set<string>>(new Set())
   const many = repo.tags.length > FILTER_AT
   const tags = useMemo(() => {
     const t = repo.tags.filter((x) => x.name.toLowerCase().includes(q.trim().toLowerCase()))
-    return sort === "name" ? [...t].sort((a, b) => a.name.localeCompare(b.name)) : t
-  }, [repo.tags, q, sort])
+    if (sort === "name") return [...t].sort((a, b) => a.name.localeCompare(b.name))
+    // Worst first: criticals, then highs; unscanned images last. Ties keep newest first.
+    const rank = (n: string) => {
+      const s = extras[n]?.scan
+      return s?.status === "done" ? s.critical * 1_000_000 + s.high : -1
+    }
+    return sort === "severity" ? [...t].sort((a, b) => rank(b.name) - rank(a.name)) : t
+  }, [repo.tags, q, sort, extras])
   // Tags pointing at the same image: the newest one is "the" tag, the rest say so.
   const sameAs = useMemo(() => {
     const first = new Map<string, string>()
@@ -119,9 +125,10 @@ export function RepoTags({
             placeholder="Filter tags"
             className="min-w-0 flex-1 basis-48"
           />
-          <select aria-label="Sort tags" value={sort} onChange={(e) => setSort(e.target.value as "pushed" | "name")} className={cn(SELECT, "pointer-coarse:h-11")}>
+          <select aria-label="Sort tags" value={sort} onChange={(e) => setSort(e.target.value as "pushed" | "name" | "severity")} className={cn(SELECT, "pointer-coarse:h-11")}>
             <option value="pushed">Newest pushed</option>
             <option value="name">Name</option>
+            <option value="severity">Most vulnerabilities</option>
           </select>
         </div>
       )}
@@ -152,6 +159,7 @@ export function RepoTags({
             <span className="hidden md:block">Tag</span>
             <span className="hidden md:block">Platforms</span>
             <span className="hidden md:block">Size</span>
+            <span className="hidden md:block">Vulnerabilities</span>
             <span className="hidden md:block">Pushed</span>
             <span className="hidden md:block">Pulls (30d)</span>
             <span className="hidden md:block" />
@@ -267,7 +275,6 @@ function TagItem({
             {x?.signed && <Badge variant="outline">Signed</Badge>}
             {x?.sbom && <Badge variant="outline">SBOM</Badge>}
             {x?.attestation && <Badge variant="outline">Attestation</Badge>}
-            {scanOn && <ScanBadge s={x?.scan} />}
             <PolicyBadge v={x?.policy} />
           </p>
           {same && (
@@ -306,6 +313,7 @@ function TagItem({
             {t.platforms.length ? platformText(t.platforms) : <span aria-hidden className="max-md:hidden">—</span>}
           </span>
           <span className={cn("tabular-nums", cell)}>{sizeOf(t.bytes)}</span>
+          <span className={cell}>{scanOn || x?.scan ? <SeverityCompact s={x?.scan} /> : null}</span>
           <span className={cell}>
             <span className="md:hidden">Pushed </span>
             {WHEN.format(new Date(t.pushedAt))}

@@ -15,13 +15,14 @@ import { redis } from "@/lib/redis"
 import { logEvent } from "./activity.ts"
 import { MIRROR_REF, roleIn } from "./access.ts"
 import { artifactsFor } from "./artifacts.ts"
-import { cleanImagePolicy, evaluateImagePolicy, isArtifactManifest, type Check, type Facts, type ImagePolicy } from "./extras-rules.ts"
+import { cleanImagePolicy, evaluateImagePolicy, isArtifactManifest, type Check, type Facts, type ImagePolicy, type Verdict } from "./extras-rules.ts"
 import { readConfig, resolveImage, type Manifest } from "./insights.ts"
+import { namespaceLatestTags } from "./manage.ts"
 import { isInternalToken } from "./scan.ts"
 import { packagesFor } from "./sbom.ts"
 
-export type { ImagePolicy, Check }
-export type Evaluation = { pass: boolean; checks: Check[]; evaluatedAt: Date }
+export type { ImagePolicy, Check, Verdict }
+export type Evaluation = { verdict: Verdict; checks: Check[]; evaluatedAt: Date }
 
 export async function getPolicy(namespaceId: string): Promise<ImagePolicy | null> {
   const [r] = await db.select({ p: registryNamespaces.imagePolicy }).from(registryNamespaces).where(eq(registryNamespaces.id, namespaceId))
@@ -101,18 +102,43 @@ async function licensesOf(repoId: string, digest: string): Promise<string[] | nu
   return r.source ? r.packages.flatMap((p) => p.licenses) : null
 }
 
-// For the badge and panel: how each digest does against its namespace's policy (no policy: passes with no checks).
-export async function evaluateTags(repoId: string, digests: string[]): Promise<Record<string, Evaluation>> {
-  const [row] = await db.select({ p: registryNamespaces.imagePolicy }).from(registryRepos).innerJoin(registryNamespaces, eq(registryNamespaces.id, registryRepos.namespaceId)).where(eq(registryRepos.id, repoId))
-  const policy = row?.p ?? {}
+const NO_FACTS: Facts = { critical: null, high: null, ageDays: null, signed: null, licenses: null }
+
+// How each digest does against a given policy (no policy: passes with no checks). Nothing is saved.
+async function evaluateWith(repoId: string, policy: ImagePolicy, digests: string[]): Promise<Record<string, Evaluation>> {
   const now = new Date()
   const facts = Object.keys(policy).length && digests.length ? await factsFor(repoId, policy, digests) : {}
-  return Object.fromEntries(digests.map((d) => [d, { ...evaluateImagePolicy(policy, facts[d] ?? { critical: null, high: null, ageDays: null, signed: null, licenses: null }), evaluatedAt: now }]))
+  return Object.fromEntries(digests.map((d) => [d, { ...evaluateImagePolicy(policy, facts[d] ?? NO_FACTS), evaluatedAt: now }]))
+}
+
+// For the badge and panel: how each digest does against its namespace's saved policy.
+export async function evaluateTags(repoId: string, digests: string[]): Promise<Record<string, Evaluation>> {
+  const [row] = await db.select({ p: registryNamespaces.imagePolicy }).from(registryRepos).innerJoin(registryNamespaces, eq(registryNamespaces.id, registryRepos.namespaceId)).where(eq(registryRepos.id, repoId))
+  return evaluateWith(repoId, row?.p ?? {}, digests)
+}
+
+// What a policy (usually an unsaved draft) would say about the newest tag of each repository in a name.
+export type PolicyPreview = { total: number; failing: { repo: string; tag: string; reason: string }[]; unknown: number }
+export async function previewPolicy(namespaceId: string, draft: ImagePolicy | null): Promise<PolicyPreview> {
+  const policy = (draft && cleanImagePolicy(draft)) || {}
+  const [ns] = await db.select({ name: registryNamespaces.name }).from(registryNamespaces).where(eq(registryNamespaces.id, namespaceId))
+  const latest = await namespaceLatestTags(namespaceId)
+  const failing: PolicyPreview["failing"] = []
+  let unknown = 0
+  for (const l of latest) {
+    const e = (await evaluateWith(l.repoId, policy, [l.digest]))[l.digest]
+    if (e.verdict === "unknown") unknown++
+    if (e.verdict !== "fail") continue
+    const bad = e.checks.find((c) => c.state === "fail")
+    failing.push({ repo: `${ns?.name}/${l.repo}`, tag: l.tag, reason: bad ? `${bad.label}: ${bad.detail}` : "Failed" })
+  }
+  return { total: latest.length, failing, unknown }
 }
 
 // ---- Enforcement (manifest GET/HEAD) ----
 
-// The message to refuse the pull with, or null. Only when the name's policy has "block pulls". Never for the mirror,
+// The message to refuse the pull with, or null. Only when the name's policy has "block pulls", and only for a
+// real fail: facts that aren't known (not scanned yet) don't block unless the policy says unscanned images fail. Never for the mirror,
 // the scanner's and builder's own tokens, or signatures/SBOMs/attestations. A failure here never blocks a pull.
 export async function blockedByImagePolicy(repo: { id: string; namespaceId: string }, m: Manifest, tokenId: string | null, tag: string | null): Promise<string | null> {
   try {
@@ -125,7 +151,7 @@ export async function blockedByImagePolicy(repo: { id: string; namespaceId: stri
     let verdict = await redis.get(key).catch(() => null)
     if (verdict === null) {
       const ev = (await evaluateTags(repo.id, [m.digest]))[m.digest]
-      const bad = ev.checks.find((c) => !c.pass)
+      const bad = ev.checks.find((c) => c.state === "fail")
       verdict = bad ? `Image fails the ${ns.name} policy: ${bad.label} (${bad.detail})` : ""
       await redis.set(key, verdict, "EX", 60).catch(() => {})
     }

@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
-export type ScanSummary = { status: "pending" | "running" | "done" | "failed"; critical: number; high: number; medium: number; low: number }
+export type ScanSummary = { status: "pending" | "running" | "done" | "failed"; critical: number; high: number; medium: number; low: number; scannedAt?: Date | string | null }
 export type Vuln = { id: string; pkg: string; installed: string; fixed: string | null; severity: string; title: string | null }
 
 const SEVERITIES = ["critical", "high", "medium", "low", "unknown"] as const
@@ -34,6 +34,32 @@ export function SeverityCounts({ c, className }: { c: Counts; className?: string
           {c[s]} {LABEL[s]}
         </span>
       ))}
+    </span>
+  )
+}
+
+// "1 C · 2 H" for a tag row; each count muted when zero. Words for the states without counts.
+export function SeverityCompact({ s, className }: { s: ScanSummary | null | undefined; className?: string }) {
+  const quiet = cn("text-xs whitespace-nowrap text-muted-foreground", className)
+  if (!s) return <span className={quiet}>Not scanned</span>
+  if (isScanning(s)) return <span className={quiet}>Scanning…</span>
+  if (s.status === "failed") return <span className={quiet}>Scan failed</span>
+  return (
+    <span
+      role="group"
+      aria-label={`${s.critical} critical, ${s.high} high vulnerabilities`}
+      title="Critical (C) and high (H) vulnerabilities"
+      className={cn("inline-flex items-center gap-1.5 text-xs whitespace-nowrap tabular-nums", className)}
+    >
+      <span aria-hidden className={cn("inline-flex items-center gap-1", !s.critical && "text-muted-foreground")}>
+        <Dot sev="critical" />
+        {s.critical} C
+      </span>
+      <span aria-hidden className="text-muted-foreground">·</span>
+      <span aria-hidden className={cn("inline-flex items-center gap-1", !s.high && "text-muted-foreground")}>
+        <Dot sev="high" />
+        {s.high} H
+      </span>
     </span>
   )
 }
@@ -92,9 +118,17 @@ export function VulnList({
   canRescan,
   title = "Vulnerabilities",
   empty = "No known vulnerabilities found.",
+  level = 3,
+  filterLabel = "Filter by severity",
+  trimEmpty,
 }: {
+  // Hide the Medium, Low and Unknown filters when they have nothing in them (Critical and High always stay).
+  trimEmpty?: boolean
   title?: string
   empty?: string
+  // The heading level, so the list nests under whatever heading it sits in.
+  level?: 3 | 4
+  filterLabel?: string
   tag: string
   name: string
   summary: ScanSummary | null
@@ -108,16 +142,17 @@ export function VulnList({
   const setNotice = useNotice()
   const router = useRouter()
   const scanning = isScanning(summary)
+  const H = level === 3 ? "h3" : "h4"
   const rows = vulns.filter((v) => !sev || v.severity.toLowerCase() === sev)
   const shown = more ? rows : rows.slice(0, PAGE)
   const count = (s: Sev) => vulns.filter((v) => v.severity.toLowerCase() === s).length
   return (
     <div className="grid gap-2">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <h4 className="mr-auto flex items-center gap-1.5 text-sm font-medium">
-          <ShieldCheckIcon className="size-4 text-muted-foreground" />
+        <H className="mr-auto flex items-center gap-1.5 text-sm font-medium">
+          <ShieldCheckIcon aria-hidden className="size-4 text-muted-foreground" />
           {title}
-        </h4>
+        </H>
         {canRescan && (
           <Button
             type="button"
@@ -149,8 +184,8 @@ export function VulnList({
         <p className="text-sm text-muted-foreground">{empty}</p>
       ) : (
         <>
-          <div role="group" aria-label="Filter by severity" className="flex flex-wrap gap-1.5">
-            {SEVERITIES.map((s) => (
+          <div role="group" aria-label={filterLabel} className="flex flex-wrap gap-1.5">
+            {SEVERITIES.filter((s) => !trimEmpty || count(s) > 0 || s === "critical" || s === "high").map((s) => (
               <button
                 key={s}
                 type="button"

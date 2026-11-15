@@ -68,6 +68,24 @@ export async function packagesFor(repoId: string, digest: string, o: { platform?
   return { source: null, packages: [], truncated: false }
 }
 
+// Findings per package name from the stored scan (Scout's core table), or null when there is no finished scan.
+export async function vulnsByPackage(repoId: string, digest: string, platform?: string): Promise<Record<string, { critical: number; high: number; total: number }> | null> {
+  const img = await resolveImage(repoId, digest, platform)
+  if (!img) return null
+  const ids = [img.m.id, ...(img.index ? [img.index.id] : [])]
+  const rows = await db.select({ id: registryScans.manifestId, status: registryScans.status, report: registryScans.report }).from(registryScans).where(inArray(registryScans.manifestId, ids))
+  const r = rows.find((x) => x.id === img.m.id && x.status === "done") ?? rows.find((x) => x.status === "done")
+  if (!r) return null
+  const out: Record<string, { critical: number; high: number; total: number }> = {}
+  for (const v of (r.report as { pkg: string; severity: string }[] | null) ?? []) {
+    const c = (out[v.pkg] ??= { critical: 0, high: 0, total: 0 })
+    c.total++
+    if (/^critical$/i.test(v.severity)) c.critical++
+    else if (/^high$/i.test(v.severity)) c.high++
+  }
+  return out
+}
+
 export async function exportSbom(repoId: string, digest: string, format: "csv" | "spdx-json"): Promise<{ filename: string; contentType: string; body: string } | null> {
   const r = await packagesFor(repoId, digest)
   if (!r.source) return null
