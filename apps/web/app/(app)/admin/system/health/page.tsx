@@ -36,6 +36,7 @@ import {
   setHealthServices,
 } from "./actions"
 import { AutoRefresh, HealthList } from "./health-list"
+import { ResourcesCard } from "./resources-card"
 import { RootKeyCard } from "./root-key-card"
 
 export const metadata = { title: "Health · Admin · Nimbus" }
@@ -165,6 +166,8 @@ export default async function HealthPage({
       </section>
 
       <HealthList services={h.services} from={h.from} to={h.to} range={range} />
+
+      <ResourcesCard />
 
       <section
         aria-labelledby="orphans-title"

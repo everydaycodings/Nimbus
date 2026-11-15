@@ -243,6 +243,16 @@ export async function setMemberRegistry(targetId: string, on: boolean) {
   return { ok: true }
 }
 
+// Off stops new builds from this person (including their webhooks); builds already running finish.
+export async function setMemberBuilds(targetId: string, on: boolean) {
+  const target = await recoverable(targetId)
+  if (!target) return { error: "You can't change builds for this person." }
+  await db.update(user).set({ registryBuildsDisabled: !on }).where(eq(user.id, target.id))
+  await audit("registry_builds", { targetId, detail: on ? "on" : "off" })
+  revalidatePath("/admin", "layout")
+  return { ok: true }
+}
+
 export async function revokeMemberRegistryToken(targetId: string, id: string) {
   const target = await recoverable(targetId)
   if (!target) return { error: "You can't change this person's registry tokens." }

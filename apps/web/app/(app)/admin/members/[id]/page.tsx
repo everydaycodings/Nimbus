@@ -486,6 +486,7 @@ export default async function MemberPage({
               <MemberRegistry
                 id={p.id}
                 on={!p.registryDisabled}
+                buildsOn={process.env.BUILDKIT_HOST ? !p.registryBuildsDisabled : undefined}
                 editable={editable}
                 keys={regTokens.map((k) => ({
                   id: k.id,

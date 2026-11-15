@@ -199,7 +199,7 @@ export async function addHook(ns: string, repo: string, url: string, events: str
   if (!me) return NOT_ON
   const target = await svc.hookTarget(me.id, ns, repo || undefined)
   if (!target) return { error: "You can't add webhooks here." }
-  const ev = events.filter((e): e is "push" | "delete" | "scan" => e === "push" || e === "delete" || e === "scan")
+  const ev = events.filter((e): e is "push" | "delete" | "scan" | "build" => e === "push" || e === "delete" || e === "scan" || e === "build")
   if (!ev.length) return { error: "Pick at least one event." }
   try {
     const r = await createHook(me.id, { ...target, url: url.trim(), events: ev })

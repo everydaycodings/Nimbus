@@ -20,7 +20,12 @@ import { scanAvailable, scanReport, scanSummaries } from "@/lib/registry/scan"
 import { pullStats, tagPulls } from "@/lib/registry/stats"
 import { endpoint } from "@/lib/registry/rules"
 import { sizeOf } from "@/lib/registry/size"
-import { requireMember } from "@/lib/session"
+import { requireMember, isAdmin } from "@/lib/session"
+import { BuildDetail } from "@/components/registry-build-detail"
+import { BuildsOff, BuildsTab, LatestBuild } from "@/components/registry-builds"
+import { PLATFORMS, PRESETS, expandTags } from "@/lib/registry/build-rules"
+import { buildsAvailable, cosignPublicKey, getBuild, getSource, listBuilds, listRules } from "@/lib/registry/builds"
+import { toItem } from "@/lib/registry/build-view"
 
 export const metadata = { title: "Container registry · Nimbus" }
 
@@ -121,27 +126,28 @@ function Image({ img }: { img: ImageInfo }) {
   )
 }
 
-const TABS = ["overview", "tags", "activity", "settings"] as const
+const TABS = ["overview", "tags", "builds", "activity", "settings"] as const
 
 export default async function RepoPage({
   params,
   searchParams,
 }: {
   params: Promise<{ name: string[] }>
-  searchParams: Promise<{ tag?: string; tab?: string }>
+  searchParams: Promise<{ tag?: string; tab?: string; build?: string }>
 }) {
   const me = await requireMember()
-  const [{ name }, { tag, tab: rawTab }] = await Promise.all([params, searchParams])
+  const [{ name }, { tag, tab: rawTab, build }] = await Promise.all([params, searchParams])
   if ((await registryState(me.id)) !== "ready") redirect("/registry")
   const full = name.map(decodeURIComponent).join("/")
   const repo = await repoDetail(me.id, full)
   if (!repo) notFound()
-  const wanted = (TABS as readonly string[]).includes(rawTab ?? "") ? (rawTab as RepoTab) : tag ? "tags" : "overview"
-  const tab: RepoTab = (wanted === "activity" && !repo.canActivity) || (wanted === "settings" && !repo.canWrite) ? "overview" : wanted
+  const wanted = (TABS as readonly string[]).includes(rawTab ?? "") ? (rawTab as RepoTab) : tag ? "tags" : build ? "builds" : "overview"
+  const tab: RepoTab = (wanted === "activity" && !repo.canActivity) || (wanted === "settings" && !repo.canWrite) || (wanted === "builds" && !repo.canWrite) ? "overview" : wanted
   const host = endpoint()!.replace(/^https?:\/\//, "")
   const tabs: [RepoTab, string][] = [
     ["overview", "Overview"],
     ["tags", repo.tags.length ? `Tags (${repo.tags.length})` : "Tags"],
+    ...(repo.canWrite ? ([["builds", "Builds"]] as [RepoTab, string][]) : []),
     ...(repo.canActivity ? ([["activity", "Activity"]] as [RepoTab, string][]) : []),
     ...(repo.canWrite ? ([["settings", "Settings"]] as [RepoTab, string][]) : []),
   ]
@@ -158,8 +164,9 @@ export default async function RepoPage({
         <RepoHeader repo={repo} />
       </header>
       <RepoTabs name={repo.fullName} tab={tab} tabs={tabs} />
-      {tab === "overview" && <Overview repo={repo} host={host} />}
+      {tab === "overview" && <Overview repo={repo} host={host} meId={me.id} />}
       {tab === "tags" && <TagsTab repo={repo} host={host} tag={tag} meId={me.id} />}
+      {tab === "builds" && <BuildsPanel repo={repo} meId={me.id} build={build} />}
       {tab === "activity" && (
         <section className="flex flex-col gap-3" aria-label="Activity">
           <p className="max-w-prose text-sm text-pretty text-muted-foreground">Pushes, deletes and changes to this repository, kept for 90 days.</p>
@@ -171,8 +178,12 @@ export default async function RepoPage({
   )
 }
 
-async function Overview({ repo, host }: { repo: RepoDetail; host: string }) {
-  const [days, readme] = await Promise.all([pullStats(repo.id, 30), readmeFor(repo.id)])
+async function Overview({ repo, host, meId }: { repo: RepoDetail; host: string; meId: string }) {
+  const [days, readme, latest] = await Promise.all([
+    pullStats(repo.id, 30),
+    readmeFor(repo.id),
+    repo.canWrite && (await buildsAvailable(meId)).on ? listBuilds(repo.id, { limit: 1 }) : [],
+  ])
   const pullTag = repo.tags.find((t) => t.name === "latest") ?? repo.tags[0]
   const pulls = days.reduce((a, d) => a + d.count, 0)
   return (
@@ -196,6 +207,7 @@ async function Overview({ repo, host }: { repo: RepoDetail; host: string }) {
         </p>
       )}
       <RepoStats repo={repo} days={days} />
+      {latest[0] && <LatestBuild name={repo.fullName} b={toItem(latest[0])} />}
       <RepoReadme name={repo.fullName} canWrite={repo.canWrite && !repo.archived} readme={readme} />
       {pulls > 0 && (
         <section className={SECTION} aria-labelledby="pulls-heading">
@@ -208,13 +220,24 @@ async function Overview({ repo, host }: { repo: RepoDetail; host: string }) {
 }
 
 async function SettingsTab({ repo, meId, full }: { repo: RepoDetail; meId: string; full: string }) {
-  const [hooks, scanOn, access, owned] = await Promise.all([
+  const [hooks, scanOn, access, owned, builds, key] = await Promise.all([
     repo.isOwner ? listHooksFor(meId, repo.namespace, full.slice(repo.namespace.length + 1)) : [],
     scanAvailable(),
     repo.canAdmin ? adminRepoAccess(meId, repo.id) : null,
     repo.isOwner ? ownedNamespaces(meId) : [],
+    buildsAvailable(meId),
+    cosignPublicKey(),
   ])
-  return <RepoSettings repo={repo} hooks={hooks} scanOn={scanOn} access={access} targets={owned.length ? owned.map((n) => n.name) : [repo.namespace]} />
+  return (
+    <RepoSettings
+      repo={repo}
+      hooks={hooks}
+      scanOn={scanOn}
+      access={access}
+      targets={owned.length ? owned.map((n) => n.name) : [repo.namespace]}
+      signing={builds.on ? { host: endpoint()!.replace(/^https?:\/\//, ""), key } : undefined}
+    />
+  )
 }
 
 async function TagsTab({ repo, host, tag, meId }: { repo: RepoDetail; host: string; tag?: string; meId: string }) {
@@ -282,5 +305,83 @@ async function TagsTab({ repo, host, tag, meId }: { repo: RepoDetail; host: stri
         }
       />
     </div>
+  )
+}
+
+const arch = () => (process.arch === "arm64" ? "linux/arm64" : "linux/amd64")
+
+async function BuildsPanel({ repo, meId, build }: { repo: RepoDetail; meId: string; build?: string }) {
+  const av = await buildsAvailable(meId)
+  if (!av.on) {
+    const me = await requireMember()
+    const setup = !process.env.BUILDKIT_HOST
+    return (
+      <BuildsOff>
+        <p>
+          {setup
+            ? isAdmin(me.role)
+              ? "This server was set up without image builds. Re-run setup.sh and answer yes to “Turn on image builds”, then restart."
+              : "Builds are off on this server. An admin can turn them on."
+            : av.reason}
+        </p>
+        {setup && isAdmin(me.role) && (
+          <Link href="/admin/system/registry" className="underline underline-offset-4">
+            Registry settings
+          </Link>
+        )}
+      </BuildsOff>
+    )
+  }
+  const scanOn = await scanAvailable()
+  const b = build ? await getBuild(build) : null
+  if (b && b.repoId === repo.id) {
+    const tag = repo.tags.find((t) => b.tags.includes(t.name))
+    const [scans, arts] = await Promise.all([
+      scanOn && tag?.manifestId ? scanSummaries([tag.manifestId]) : ({} as Awaited<ReturnType<typeof scanSummaries>>),
+      b.digest ? artifactsFor(repo.id, [b.digest]) : {},
+    ])
+    const scan = tag?.manifestId ? scans[tag.manifestId] : undefined
+    const a = b.digest ? (arts as Awaited<ReturnType<typeof artifactsFor>>)[b.digest] : undefined
+    const { logTail, ruleSummary, ...row } = b
+    return (
+      <BuildDetail
+        key={b.id}
+        name={repo.fullName}
+        build={{ ...toItem(row), logTail, ruleSummary }}
+        canWrite={repo.canWrite}
+        archived={repo.archived}
+        scanOn={scanOn}
+        scan={scan ? { status: scan.status, critical: scan.critical, high: scan.high, medium: scan.medium, low: scan.low } : null}
+        attached={{ signed: (a?.signatures ?? 0) > 0, sbom: (a?.sboms ?? 0) > 0, provenance: (a?.attestations ?? 0) > 0 }}
+      />
+    )
+  }
+  const [source, rules, rows] = await Promise.all([getSource(repo.id), listRules(repo.id), listBuilds(repo.id, { limit: 31 })])
+  return (
+    <BuildsTab
+      repo={{ id: repo.id, fullName: repo.fullName, canAdmin: repo.canAdmin, archived: repo.archived }}
+      source={source && { kind: source.kind, url: source.url, hasCredential: source.hasCredential, webhookUrl: source.webhookUrl, lastDeliveryAt: source.lastDeliveryAt?.toISOString() ?? null }}
+      rules={rules.map((r) => ({
+        id: r.id,
+        sourceType: r.sourceType,
+        pattern: r.pattern,
+        tags: r.tags,
+        dockerfile: r.dockerfile,
+        context: r.context,
+        buildArgs: r.buildArgs,
+        secretRefs: r.secretRefs,
+        platforms: r.platforms,
+        failOnCritical: r.failOnCritical,
+        schedule: r.schedule,
+        enabled: r.enabled,
+        // What a typical push of this rule would tag, e.g. 1.2.3, 1.2, 1 for a semver tag.
+        preview: expandTags(r.tags, { sha: "a1b2c3d4e5f6", ...(r.sourceType === "tag" ? { tag: /^re:|[*?,]/.test(r.pattern) ? "v1.2.3" : r.pattern } : { branch: /^re:|[*?,]/.test(r.pattern) ? "main" : r.pattern }) }),
+      }))}
+      presets={PRESETS}
+      platforms={PLATFORMS}
+      initial={{ rows: rows.slice(0, 30).map(toItem), more: rows.length > 30 }}
+      scanOn={scanOn}
+      arch={arch()}
+    />
   )
 }

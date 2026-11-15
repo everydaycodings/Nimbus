@@ -4,7 +4,7 @@ import { useState, useTransition } from "react"
 
 import { FormError } from "@/components/two-factor"
 import { Button } from "@/components/ui/button"
-import { revokeMemberRegistryToken, setMemberRegistry } from "./actions"
+import { revokeMemberRegistryToken, setMemberBuilds, setMemberRegistry } from "./actions"
 
 type Key = { id: string; name: string; access: "pull" | "push" | "delete"; used: string }
 
@@ -12,11 +12,14 @@ type Key = { id: string; name: string; access: "pull" | "push" | "delete"; used:
 export function MemberRegistry({
   id,
   on,
+  buildsOn,
   keys,
   editable,
 }: {
   id: string
   on: boolean
+  // Undefined when this server has no image builds.
+  buildsOn?: boolean
   keys: Key[]
   editable: boolean
 }) {
@@ -72,6 +75,17 @@ export function MemberRegistry({
           onClick={() => run(() => setMemberRegistry(id, !on))}
         >
           {on ? "Turn the registry off for them" : "Turn the registry back on"}
+        </Button>
+      )}
+      {editable && on && buildsOn !== undefined && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="self-start"
+          disabled={pending}
+          onClick={() => run(() => setMemberBuilds(id, !buildsOn))}
+        >
+          {buildsOn ? "Turn image builds off for them" : "Turn image builds back on"}
         </Button>
       )}
       {editable && on && keys.length > 0 && (

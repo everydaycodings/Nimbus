@@ -4,11 +4,12 @@ import Link from "next/link"
 
 import { Hooks, PolicyEditor } from "@/components/registry-extra"
 import { AccessSection, ArchiveSection, DeleteSection, GeneralSection, ImmutableSection, RenameSection } from "@/components/registry-settings"
+import { SigningSection } from "@/components/registry-builds"
 import { Heading, SECTION } from "@/components/registry-ui"
 import type { HookRow, RepoAccess, RepoDetail } from "@/lib/registry/manage"
 import { cn } from "@/lib/utils"
 
-export type RepoTab = "overview" | "tags" | "activity" | "settings"
+export type RepoTab = "overview" | "tags" | "builds" | "activity" | "settings"
 
 // Same segmented look as the registry's own tabs; the choice lives in ?tab= so a tab can be linked to.
 export function RepoTabs({ name, tab, tabs }: { name: string; tab: RepoTab; tabs: [RepoTab, string][] }) {
@@ -42,12 +43,15 @@ export function RepoSettings({
   scanOn,
   access,
   targets,
+  signing,
 }: {
   repo: RepoDetail
   hooks: HookRow[]
   scanOn: boolean
   access: RepoAccess | null
   targets: string[]
+  // Set when builds are on: the host and the server's public cosign key.
+  signing?: { host: string; key: string | null }
 }) {
   if (!repo.canWrite) return null
   const links = NAV.filter(([id]) => (id === "access" ? access : id === "webhooks" ? repo.isOwner : true))
@@ -67,6 +71,8 @@ export function RepoSettings({
       <div className="flex min-w-0 flex-col gap-10">
         <GeneralSection repo={repo} scanOn={scanOn} />
 
+        {signing && <SigningSection host={signing.host} name={repo.fullName} publicKey={signing.key} />}
+
         {access && <AccessSection repo={repo} access={access} />}
 
         <div id="tags-cleanup" className="flex scroll-mt-20 flex-col gap-10">
@@ -84,7 +90,7 @@ export function RepoSettings({
             <Heading
               id="hooks-heading"
               title="Webhooks"
-              hint="Get a signed POST when an image is pushed, deleted or finishes scanning here. Webhooks on the registry name cover this repository too."
+              hint="Get a signed POST when an image is pushed, deleted, scanned or built here. Webhooks on the registry name cover this repository too."
             />
             <div className="rounded-xl border bg-card p-4">
               <Hooks namespace={repo.namespace} repo={repo.fullName.slice(repo.namespace.length + 1)} initial={hooks} />

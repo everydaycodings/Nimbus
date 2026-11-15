@@ -12,6 +12,7 @@ import { db } from "@/lib/db"
 import { user } from "@/lib/db/auth-schema"
 import {
   registryBlobs,
+  registryBuilds,
   registryManifestRefs,
   registryManifests,
   registryNamespaces,
@@ -27,6 +28,8 @@ import {
   registryUpstreams,
 } from "@/lib/db/schema"
 import { notify } from "@/lib/notify"
+import { buildCancelKey, buildChannel } from "./build-rules"
+import { buildsQueue, redis } from "@/lib/redis"
 import { getStream } from "@/lib/s3"
 import { isAdmin } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
@@ -647,6 +650,20 @@ export async function tagDetail(userId: string, fullName: string, tag: string): 
 async function writable(userId: string, fullName: string) {
   const r = await reach(userId, fullName)
   return r && r.role !== "read" ? r : null
+}
+
+// The repo a build belongs to ("namespace/name"), when the member can write to it. For build actions that only know the build.
+export async function writableBuildRepo(userId: string, buildId: string) {
+  if (!UUID.test(buildId)) return null
+  const [row] = await db
+    .select({ repoId: registryBuilds.repoId, ns: registryNamespaces.name, name: registryRepos.name })
+    .from(registryBuilds)
+    .innerJoin(registryRepos, eq(registryRepos.id, registryBuilds.repoId))
+    .innerJoin(registryNamespaces, eq(registryNamespaces.id, registryRepos.namespaceId))
+    .where(eq(registryBuilds.id, buildId))
+  if (!row) return null
+  const r = await writable(userId, `${row.ns}/${row.name}`)
+  return r ? { repoId: row.repoId, fullName: `${row.ns}/${row.name}`, role: r.role } : null
 }
 
 export type RepoAccess = {
@@ -1469,4 +1486,44 @@ export async function searchTags(userId: string, q: string) {
     .map((r) => ({ fullName: byId.get(r.repoId)!, tag: r.name }))
     .filter((r) => `${r.fullName}:${r.tag}`.toLowerCase().includes(needle))
     .slice(0, 5)
+}
+
+// ---- Builds, for the admin page ------------------------------------------------------------------
+
+// The last builds that failed or were stopped to protect the server, across every repository.
+export async function recentBuildFailures(limit = 8) {
+  const rows = await db
+    .select({
+      id: registryBuilds.id,
+      status: registryBuilds.status,
+      reason: registryBuilds.reason,
+      ref: registryBuilds.ref,
+      finishedAt: registryBuilds.finishedAt,
+      ns: registryNamespaces.name,
+      repo: registryRepos.name,
+    })
+    .from(registryBuilds)
+    .innerJoin(registryRepos, eq(registryRepos.id, registryBuilds.repoId))
+    .innerJoin(registryNamespaces, eq(registryNamespaces.id, registryRepos.namespaceId))
+    .where(inArray(registryBuilds.status, ["failed", "stopped"]))
+    .orderBy(desc(registryBuilds.finishedAt))
+    .limit(limit)
+  return rows.map((r) => ({ id: r.id, status: r.status, reason: r.reason, ref: r.ref, finishedAt: r.finishedAt?.toISOString() ?? null, name: `${r.ns}/${r.repo}` }))
+}
+
+// An admin ends someone's build. Site admins have no repository role, so this doesn't go through cancelBuild:
+// a queued build is ended here, a running or waiting one is stopped by the runner when it sees the cancel key.
+export async function adminCancelBuild(adminName: string, id: string): Promise<Result> {
+  if (!UUID.test(id)) return { error: "That build isn't here." }
+  const [b] = await db.select({ status: registryBuilds.status }).from(registryBuilds).where(eq(registryBuilds.id, id))
+  if (!b) return { error: "That build isn't here." }
+  if (!["queued", "waiting", "running"].includes(b.status)) return { error: "That build has already finished." }
+  const reason = `Cancelled by ${adminName}`
+  await redis.set(buildCancelKey(id), adminName, "EX", 3600)
+  if (b.status === "queued") {
+    await db.update(registryBuilds).set({ status: "cancelled", reason, finishedAt: new Date() }).where(and(eq(registryBuilds.id, id), eq(registryBuilds.status, "queued")))
+    await (await buildsQueue.getJob(id).catch(() => null))?.remove().catch(() => {})
+    await redis.publish(`events:${buildChannel(id)}`, JSON.stringify({ status: "cancelled", reason })).catch(() => {})
+  }
+  return {}
 }

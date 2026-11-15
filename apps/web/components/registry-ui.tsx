@@ -215,3 +215,36 @@ export function NameStatus({ id, check }: { id: string; check: NameCheck }) {
   )
 }
 
+
+// The pill-shaped either/or switch used for tabs and "Pull by".
+export function Segmented<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+  disabled,
+}: {
+  label: string
+  value: T
+  options: readonly (readonly [T, string])[]
+  onChange: (v: T) => void
+  disabled?: boolean
+}) {
+  return (
+    <div role="radiogroup" aria-label={label} className="flex w-fit max-w-full rounded-lg bg-muted p-[3px]">
+      {options.map(([v, text]) => (
+        <button
+          key={v}
+          type="button"
+          role="radio"
+          aria-checked={value === v}
+          disabled={disabled}
+          onClick={() => onChange(v)}
+          className="flex h-7 items-center rounded-md border border-transparent px-3 text-sm whitespace-nowrap text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50 pointer-coarse:h-11 aria-checked:border-input aria-checked:bg-input/30 aria-checked:text-foreground"
+        >
+          {text}
+        </button>
+      ))}
+    </div>
+  )
+}

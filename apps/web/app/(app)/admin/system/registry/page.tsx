@@ -8,15 +8,17 @@ import {
   sizeField,
   speedField,
 } from "@/components/admin/setting"
-import { GcCard, MirrorsAdmin } from "@/components/admin/registry-admin"
+import { BuildsAdmin, GcCard, MirrorsAdmin } from "@/components/admin/registry-admin"
 import { ConfirmAction, QuotaForm } from "@/components/admin/registry-actions"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { formatBytes } from "@/lib/file-rules"
-import { adminNamespaces, adminRepos, adminUpstreams, listTokens } from "@/lib/registry/manage"
+import { BUILD_DEFAULTS, buildQueue, cacheUsage } from "@/lib/registry/builds"
+import { toItem } from "@/lib/registry/build-view"
+import { adminNamespaces, adminRepos, adminUpstreams, listTokens, recentBuildFailures } from "@/lib/registry/manage"
 import { endpoint } from "@/lib/registry/rules"
 import { getSettings } from "@/lib/signup"
-import { deleteRegistryRepo, restoreRegistryRepo, revokeRegistryToken, setRegistry } from "../../actions"
+import { deleteRegistryRepo, restoreRegistryRepo, revokeRegistryToken, setRegistry, setRegistryBuilds } from "../../actions"
 
 export const metadata = { title: "Container registry · Admin · Nimbus" }
 
@@ -51,6 +53,9 @@ export default async function RegistryAdminPage() {
     adminNamespaces(),
     adminUpstreams(),
   ])
+  const buildsReady = Boolean(process.env.BUILDKIT_HOST)
+  const [queue, cache, failures] = buildsReady ? await Promise.all([buildQueue(), cacheUsage(), recentBuildFailures()]) : [[], null, []]
+  const cacheLimit = (Number(process.env.BUILD_CACHE_GB) || 10) * 1024 ** 3
   const reset = resettable(s)
   const scanReady = Boolean(process.env.REGISTRY_SCAN_URL)
   const quota = sizeField(s.registryDefaultQuotaBytes, "GB", "TB")
@@ -206,6 +211,126 @@ export default async function RegistryAdminPage() {
           </div>
         </SettingRow>
       </SettingsForm>
+
+      <section id="registry-builds" className="flex scroll-mt-24 flex-col gap-6">
+        {buildsReady ? (
+          <>
+            <SettingsForm
+              action={setRegistryBuilds}
+              title="Image builds"
+              description="Members build images from a Git repository or an uploaded folder. Builds queue and wait while the server is busy, and are stopped if it runs short of memory or disk."
+            >
+              <SettingRow
+                id="registry-builds-on"
+                label="Allow image builds"
+                htmlFor="registryBuilds"
+                hint="Turn it off for one member from their page in Members."
+                tip={{
+                  does: "Lets members with write access to a repository connect a source and build images on this server.",
+                  affects: "New builds. Off refuses new builds and webhooks; builds already running finish.",
+                  default: "On",
+                }}
+                reset={reset("registryBuilds")}
+              >
+                <input type="checkbox" id="registryBuilds" name="registryBuilds" defaultChecked={s.registryBuilds} className={CHECK} />
+              </SettingRow>
+              <SettingRow
+                id="registry-build-concurrency"
+                label="Builds at the same time"
+                htmlFor="registryBuildConcurrency"
+                hint="The rest wait in line. Restart the build runner after changing this."
+                tip={{
+                  does: "How many builds run together. Each build uses a lot of memory and CPU.",
+                  affects: "The build runner, the next time it starts.",
+                  default: String(BUILD_DEFAULTS.concurrency),
+                }}
+                reset={reset("registryBuildConcurrency")}
+              >
+                <select id="registryBuildConcurrency" name="registryBuildConcurrency" defaultValue={s.registryBuildConcurrency} className={SELECT}>
+                  {[1, 2, 3, 4].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </SettingRow>
+              <SettingRow
+                id="registry-build-timeout"
+                label="Stop a build after"
+                htmlFor="registryBuildTimeoutMin"
+                hint="Minutes. A build that runs longer is stopped."
+                tip={{ does: "Ends builds that hang or take far too long.", affects: "Every build, from the next one.", default: `${BUILD_DEFAULTS.timeoutMin} minutes` }}
+                reset={reset("registryBuildTimeoutMin")}
+              >
+                <Input id="registryBuildTimeoutMin" name="registryBuildTimeoutMin" type="number" min={1} max={720} step={1} defaultValue={s.registryBuildTimeoutMin} />
+              </SettingRow>
+              <SettingRow
+                id="registry-build-preflight-ram"
+                label="Wait to start while memory use is above"
+                htmlFor="registryBuildPreflightRamPct"
+                hint="Percent of the server's memory. The build waits in line and tries again every 30 seconds."
+                tip={{ does: "Keeps a new build from starting on a server that is already busy.", affects: "Builds that haven't started.", default: `${BUILD_DEFAULTS.preflightRamPct}%` }}
+                reset={reset("registryBuildPreflightRamPct")}
+              >
+                <Input id="registryBuildPreflightRamPct" name="registryBuildPreflightRamPct" type="number" min={10} max={99} step={1} defaultValue={s.registryBuildPreflightRamPct} />
+              </SettingRow>
+              <SettingRow
+                id="registry-build-guard-ram"
+                label="Stop a running build when memory use passes"
+                htmlFor="registryBuildGuardRamPct"
+                hint="Percent. The build is stopped with the reason shown, and can be retried."
+                tip={{ does: "Protects Nimbus from a build that eats all the memory.", affects: "Running builds, checked every 5 seconds.", default: `${BUILD_DEFAULTS.guardRamPct}%` }}
+                reset={reset("registryBuildGuardRamPct")}
+              >
+                <Input id="registryBuildGuardRamPct" name="registryBuildGuardRamPct" type="number" min={10} max={99} step={1} defaultValue={s.registryBuildGuardRamPct} />
+              </SettingRow>
+              <SettingRow
+                id="registry-build-min-disk"
+                label="Wait to start while free disk is below"
+                htmlFor="registryBuildMinDiskGb"
+                hint="GB."
+                tip={{ does: "Keeps a new build from starting when the disk is nearly full.", affects: "Builds that haven't started.", default: `${BUILD_DEFAULTS.minDiskGb} GB` }}
+                reset={reset("registryBuildMinDiskGb")}
+              >
+                <Input id="registryBuildMinDiskGb" name="registryBuildMinDiskGb" type="number" min={0} max={10000} step={1} defaultValue={s.registryBuildMinDiskGb} />
+              </SettingRow>
+              <SettingRow
+                id="registry-build-guard-disk"
+                label="Stop a running build when free disk drops below"
+                htmlFor="registryBuildGuardDiskGb"
+                hint="GB."
+                tip={{ does: "Protects Nimbus from a build that fills the disk.", affects: "Running builds, checked every 5 seconds.", default: `${BUILD_DEFAULTS.guardDiskGb} GB` }}
+                reset={reset("registryBuildGuardDiskGb")}
+              >
+                <Input id="registryBuildGuardDiskGb" name="registryBuildGuardDiskGb" type="number" min={0} max={10000} step={1} defaultValue={s.registryBuildGuardDiskGb} />
+              </SettingRow>
+              <SettingRow
+                id="registry-build-caps"
+                label="Memory and CPU for builds"
+                hint="Fixed when the server was set up, so a build can never use more. Change them in setup."
+              >
+                <p className="text-sm tabular-nums">
+                  {process.env.BUILD_MEM ?? "Set in setup"}
+                  {process.env.BUILD_CPUS ? `, ${process.env.BUILD_CPUS} CPUs` : ""}
+                </p>
+              </SettingRow>
+            </SettingsForm>
+            <BuildsAdmin
+              cacheBytes={cache?.bytes ?? null}
+              cacheLimit={cacheLimit}
+              queue={queue.map((b) => ({ ...toItem(b), name: b.repoName ?? "" }))}
+              failures={failures}
+            />
+          </>
+        ) : (
+          <div id="registry-builds-off" className="flex flex-col items-center gap-2 rounded-xl border border-dashed px-4 py-12 text-center">
+            <p className="font-medium">Image builds are not set up</p>
+            <p className="max-w-md text-sm text-pretty text-muted-foreground">
+              Re-run <code className="font-mono">setup.sh</code> and answer yes to “Turn on image builds”. It adds BuildKit and the build runner, with memory and CPU limits. This page then shows the build limits, the cache and the queue.
+            </p>
+          </div>
+        )}
+      </section>
 
       <MirrorsAdmin upstreams={upstreams} host={url.replace(/^https?:\/\//, "")} />
 

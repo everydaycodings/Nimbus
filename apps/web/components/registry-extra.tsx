@@ -498,6 +498,7 @@ const EVENTS = [
   ["push", "Push"],
   ["delete", "Delete"],
   ["scan", "Scan finished"],
+  ["build", "Build finished"],
 ] as const
 
 // `repo` is the part after the namespace; omit for namespace-wide hooks.

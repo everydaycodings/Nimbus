@@ -28,7 +28,8 @@ import {
 import { passkeyHost } from "@/lib/passkey-rules"
 import { POLICY_MAX, POLICY_MIN } from "@/lib/password-policy"
 import { runGc } from "@/lib/registry/gc"
-import { adminDeleteRepo, deleteUpstream, revokeToken, saveUpstream, setNamespaceQuota, type UpstreamInput } from "@/lib/registry/manage"
+import { BUILD_DEFAULTS, pruneCache } from "@/lib/registry/builds"
+import { adminCancelBuild as cancelAnyBuild, adminDeleteRepo, deleteUpstream, revokeToken, saveUpstream, setNamespaceQuota, type UpstreamInput } from "@/lib/registry/manage"
 import { revokeKey } from "@/lib/s3api/manage"
 import { turnCopiesOffAndDelete } from "@/lib/video-copies"
 import { enqueue, scheduleBackups, scheduleHealth } from "@/lib/redis"
@@ -164,6 +165,46 @@ export async function setRegistry(form: FormData) {
     updatedAt: new Date(),
   })
   revalidatePath("/", "layout")
+}
+
+// Image builds: the switch, the limits and the safety lines. The runner reads the concurrency when it starts.
+const whole = (form: FormData, field: string, min: number, max: number, fallback: number) => {
+  const n = Math.round(Number(form.get(field)))
+  return Number.isFinite(n) && String(form.get(field) ?? "").trim() ? Math.min(max, Math.max(min, n)) : fallback
+}
+
+export async function setRegistryBuilds(form: FormData) {
+  await requireAdmin()
+  await saveSettings({
+    registryBuilds: form.get("registryBuilds") === "on",
+    registryBuildConcurrency: whole(form, "registryBuildConcurrency", 1, 4, BUILD_DEFAULTS.concurrency),
+    registryBuildTimeoutMin: whole(form, "registryBuildTimeoutMin", 1, 720, BUILD_DEFAULTS.timeoutMin),
+    registryBuildPreflightRamPct: whole(form, "registryBuildPreflightRamPct", 10, 99, BUILD_DEFAULTS.preflightRamPct),
+    registryBuildGuardRamPct: whole(form, "registryBuildGuardRamPct", 10, 99, BUILD_DEFAULTS.guardRamPct),
+    registryBuildMinDiskGb: whole(form, "registryBuildMinDiskGb", 0, 10_000, BUILD_DEFAULTS.minDiskGb),
+    registryBuildGuardDiskGb: whole(form, "registryBuildGuardDiskGb", 0, 10_000, BUILD_DEFAULTS.guardDiskGb),
+    updatedAt: new Date(),
+  })
+  revalidatePath("/", "layout")
+}
+
+export async function cleanBuildCache(): Promise<{ error?: string; freed?: number }> {
+  await requireAdmin()
+  try {
+    const r = await pruneCache()
+    await audit("registry_build_cache", { detail: `freed ${r.freed} bytes` })
+    revalidatePath("/admin", "layout")
+    return r
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "The cache wasn't cleaned." }
+  }
+}
+
+export async function adminCancelBuild(id: string): Promise<{ error?: string }> {
+  const me = await requireAdmin()
+  const r = await cancelAnyBuild(me.name, String(id))
+  if (!r.error) revalidatePath("/admin", "layout")
+  return r
 }
 
 export async function revokeRegistryToken(id: string) {

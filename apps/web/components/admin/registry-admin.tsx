@@ -2,11 +2,13 @@
 
 import { Dialog } from "@base-ui/react/dialog"
 import { BroomIcon, PencilSimpleIcon, PlusIcon } from "@phosphor-icons/react"
+import Link from "next/link"
 import { useId, useState, useTransition } from "react"
 
-import { deleteRegistryMirror, runRegistryGc, saveRegistryMirror } from "@/app/(app)/admin/actions"
+import { adminCancelBuild, cleanBuildCache, deleteRegistryMirror, runRegistryGc, saveRegistryMirror } from "@/app/(app)/admin/actions"
 import { DIALOG_BACKDROP, DIALOG_POPUP } from "@/components/overlay-styles"
 import { ConfirmAction } from "@/components/admin/registry-actions"
+import { StatusChip, detailHref } from "@/components/registry-builds"
 import { Confirm } from "@/components/registry-ui"
 import { SubmitButton } from "@/components/submit-button"
 import { useNotice } from "@/components/toaster"
@@ -16,6 +18,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { formatBytes } from "@/lib/file-rules"
+import { ago, type BuildItem } from "@/lib/registry/build-view"
 import type { Upstream } from "@/lib/registry/manage"
 import { cn } from "@/lib/utils"
 
@@ -320,5 +323,118 @@ export function GcCard() {
         <FormError>{error}</FormError>
       </div>
     </section>
+  )
+}
+
+export type QueueItem = BuildItem & { name: string }
+export type FailureItem = { id: string; status: string; reason: string | null; ref: string | null; finishedAt: string | null; name: string }
+
+const LIST = "flex flex-col divide-y rounded-xl border bg-card"
+
+// Admin → Container registry → Builds: the cache, what is queued or running, and what went wrong lately.
+export function BuildsAdmin({ cacheBytes, cacheLimit, queue, failures }: { cacheBytes: number | null; cacheLimit: number; queue: QueueItem[]; failures: FailureItem[] }) {
+  const [pending, start] = useTransition()
+  const [error, setError] = useState<string>()
+  const setNotice = useNotice()
+  const pct = cacheBytes === null ? 0 : Math.min(100, Math.round((cacheBytes / cacheLimit) * 100))
+  return (
+    <div className="flex flex-col gap-6">
+      <section id="registry-build-cache" className="flex scroll-mt-24 flex-col gap-3" aria-labelledby="build-cache-heading">
+        <div className="grid gap-1">
+          <h3 id="build-cache-heading" className="text-sm font-semibold">
+            Build cache
+          </h3>
+          <p className="max-w-prose text-sm text-pretty text-muted-foreground">
+            Layers kept between builds so the next one is fast. Cleaning it makes the next builds slower, once.
+          </p>
+        </div>
+        <div className="flex flex-col gap-3 rounded-xl border bg-card p-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+            <span className="tabular-nums">
+              {cacheBytes === null ? "Not measured yet" : `${formatBytes(cacheBytes)} of ${formatBytes(cacheLimit)}`}
+            </span>
+            {cacheBytes !== null && <span className="text-muted-foreground tabular-nums">{pct}%</span>}
+          </div>
+          <div role="progressbar" aria-label="Build cache used" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} className="h-2 overflow-hidden rounded-full bg-muted">
+            <div className={cn("h-full rounded-full", pct >= 90 ? "bg-destructive" : "bg-primary")} style={{ width: `${pct}%` }} />
+          </div>
+          <div>
+            <Confirm
+              label="Clean build cache"
+              question="Deletes the cached layers."
+              yes="Clean the cache"
+              danger={false}
+              pending={pending}
+              onYes={() =>
+                start(async () => {
+                  setError(undefined)
+                  const r = await cleanBuildCache()
+                  if (r.error) return setError(r.error)
+                  setNotice({ text: `Cleaned the build cache. Freed ${formatBytes(r.freed ?? 0)}.` })
+                })
+              }
+            />
+          </div>
+          <FormError>{error}</FormError>
+        </div>
+      </section>
+
+      <section id="registry-build-queue" className="flex scroll-mt-24 flex-col gap-3" aria-labelledby="build-queue-heading">
+        <h3 id="build-queue-heading" className="text-sm font-semibold">
+          Running and waiting <span className="font-normal text-muted-foreground tabular-nums">{queue.length}</span>
+        </h3>
+        {queue.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-input px-6 py-8 text-center text-sm text-muted-foreground">No builds are running or waiting.</p>
+        ) : (
+          <ul className={LIST}>
+            {queue.map((b) => (
+              <li key={b.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+                <div className="grid min-w-0 flex-1 basis-56 gap-1">
+                  <Link href={detailHref(b.name, b.id)} className="w-fit max-w-full rounded-sm font-mono text-sm break-all underline-offset-4 outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50">
+                    {b.name}
+                    {b.ref ? `@${b.ref}` : ""}
+                  </Link>
+                  <p suppressHydrationWarning className="text-xs text-muted-foreground">
+                    {b.who ?? "A push or schedule"} · queued {ago(b.createdAt)}
+                    {b.reason ? ` · ${b.reason}` : ""}
+                  </p>
+                </div>
+                <StatusChip status={b.status} startedAt={b.startedAt} reason={b.reason} />
+                <ConfirmAction label="Cancel" aria={`Cancel the build of ${b.name}`} question="Stop this build?" yes="Stop build" done="Build cancelled." run={adminCancelBuild.bind(null, b.id)} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section id="registry-build-failures" className="flex scroll-mt-24 flex-col gap-3" aria-labelledby="build-fail-heading">
+        <h3 id="build-fail-heading" className="text-sm font-semibold">
+          Recent failures
+        </h3>
+        {failures.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-input px-6 py-8 text-center text-sm text-muted-foreground">No failed builds lately.</p>
+        ) : (
+          <ul className={LIST}>
+            {failures.map((f) => (
+              <li key={f.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
+                <div className="grid min-w-0 flex-1 basis-56 gap-0.5">
+                  <Link href={detailHref(f.name, f.id)} className="w-fit max-w-full rounded-sm font-mono text-sm break-all underline-offset-4 outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50">
+                    {f.name}
+                    {f.ref ? `@${f.ref}` : ""}
+                  </Link>
+                  <p className="text-xs text-pretty text-muted-foreground">{f.reason ?? (f.status === "stopped" ? "Stopped to protect the server" : "Failed")}</p>
+                </div>
+                <Badge variant="outline" className={f.status === "failed" ? "text-destructive" : "text-warning"}>
+                  {f.status === "stopped" ? "Stopped" : "Failed"}
+                </Badge>
+                <span suppressHydrationWarning className="text-xs text-muted-foreground">
+                  {f.finishedAt ? ago(f.finishedAt) : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
   )
 }

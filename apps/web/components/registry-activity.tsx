@@ -94,6 +94,32 @@ export function sentence(e: ActivityEvent): string {
       return `made a token “${text(d.name)}”`
     case "token_revoke":
       return `revoked the token “${text(d.name)}”`
+    case "build_source":
+      return d.kind === "github"
+        ? `connected GitHub ${text(d.repo)} for builds`
+        : d.kind === "git"
+          ? `connected ${text(d.url)} for builds`
+          : d.kind === "upload"
+            ? "set builds to uploads and the command line only"
+            : "disconnected the build source"
+    case "build_rule":
+      return d.deleted ? `deleted the build rule for ${text(d.rule)}` : d.created ? `added a build rule for ${text(d.rule)}` : `changed the build rule for ${text(d.rule)}`
+    case "build_start":
+      return d.retryOf ? "retried a build" : text(d.ref) ? `started a build of ${text(d.ref)}` : "started a build from an uploaded folder"
+    case "build_cancel":
+      return "cancelled a build"
+    case "build_finish": {
+      const tags = Array.isArray(d.tags) ? d.tags.filter((t): t is string => typeof t === "string") : []
+      const of = text(d.ref) ? ` of ${text(d.ref)}` : ""
+      const why = text(d.reason) ? `: ${text(d.reason)}` : ""
+      return d.status === "success"
+        ? `built${of}${tags.length ? ` as ${tags.join(", ")}` : ""}`
+        : d.status === "cancelled"
+          ? `ran a build${of} that was cancelled${why}`
+          : d.status === "stopped"
+            ? `ran a build${of} that was stopped to protect the server${why}`
+            : `ran a build${of} that failed${why}`
+    }
     case "token_use":
       return "used a token"
     default:
