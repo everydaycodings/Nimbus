@@ -1,7 +1,7 @@
 // The worker (scripts/worker.ts) hands queued and scheduled jobs here, because
 // they reuse the app's database, storage and email code. Anything but a 2xx
 // makes the worker try the job again later.
-import { eq, isNull } from "drizzle-orm"
+import { and, eq, isNull } from "drizzle-orm"
 
 import { db } from "@/lib/db"
 import { registryNamespaces, registryRepos } from "@/lib/db/schema"
@@ -17,6 +17,9 @@ import { checkRegistryQuota, namespaceOwners } from "@/lib/registry/events"
 import { runGc, purgeTrash } from "@/lib/registry/gc"
 import { deliver as deliverRegistryHook } from "@/lib/registry/hooks"
 import { expireMirror } from "@/lib/registry/mirror"
+import { purgeEvents } from "@/lib/registry/activity"
+import { purgeAliases } from "@/lib/registry/repo-admin"
+import { EVENT_DAYS } from "@/lib/registry/rules"
 import { applyPolicy, effectivePolicy } from "@/lib/registry/policy"
 import { runRescan, runScan } from "@/lib/registry/scan"
 import { abortStale as abortStaleUploads } from "@/lib/registry/uploads"
@@ -42,7 +45,7 @@ async function runPolicies() {
     .select({ id: registryRepos.id, name: registryRepos.name, namespaceId: registryRepos.namespaceId, ns: registryNamespaces.name })
     .from(registryRepos)
     .innerJoin(registryNamespaces, eq(registryNamespaces.id, registryRepos.namespaceId))
-    .where(isNull(registryRepos.deletedAt))
+    .where(and(isNull(registryRepos.deletedAt), isNull(registryRepos.archivedAt)))
   const removed = new Map<string, { name: string; tags: number; untagged: number }>()
   for (const r of repos) {
     if (!(await effectivePolicy(r.id))) continue
@@ -75,6 +78,8 @@ const jobs: Record<string, (data: never) => Promise<unknown>> = {
   "registry-gc": () => runGc(),
   "registry-trash-purge": purgeTrash,
   "registry-policy": runPolicies,
+  "registry-aliases-purge": purgeAliases,
+  "registry-events-purge": () => purgeEvents(EVENT_DAYS),
   "registry-mirror-expire": expireMirror,
   "registry-scan": ({ manifestId }: { manifestId: string }) => runScan(manifestId),
   "registry-rescan": runRescan,

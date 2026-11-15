@@ -16,9 +16,11 @@ import {
 } from "@/lib/db/schema"
 import type { registryRepos } from "@/lib/db/schema"
 
+import { logEvent } from "./activity.ts"
 import { announce, checkRegistryQuota } from "./events.ts"
 import type { C } from "./http.ts"
 import { RegError, errors, json, respond } from "./http.ts"
+import { refreshDescription } from "./repo-admin.ts"
 import { blockedByScan, requestScan, scanAvailable, scanSummaries } from "./scan.ts"
 import { MAX_MANIFEST_BYTES, matchPattern, parseDigest, validTag } from "./rules.ts"
 import { paginate } from "./wire.ts"
@@ -197,7 +199,9 @@ export async function putManifest(c: C, repo: Repo, name: string, ref: string) {
     } catch (e) {
       console.error("[registry] scan request:", e)
     }
+  if (tag && !subject && !artifactType) await refreshDescription(repo.id, digest)
   await auditAs({ id: c.actor.userId, name: c.who.name }, "registry_push", `${name}:${tag ?? digest}`, { ip: c.who.ip })
+  if (tag) await logEvent({ namespaceId: repo.namespaceId, repoId: repo.id, actorId: c.actor.userId, actorName: c.who.name, action: "push", detail: { tag, digest, size: bytes.length }, ip: c.who.ip })
   await announce("push", repo.id, name, { tag, digest, mediaType, size: bytes.length, pushedBy: c.who.name })
   await checkRegistryQuota(repo.namespaceId)
   return respond(201, null, {
@@ -222,6 +226,7 @@ export async function deleteManifest(c: C, repo: Repo, name: string, ref: string
       .returning({ id: registryTags.id, digest: registryTags.digest })
     if (!gone.length) throw errors.manifestUnknown(ref)
     await announce("delete", repo.id, name, { tag: ref, digest: gone[0].digest, pushedBy: c.who.name })
+    await logEvent({ namespaceId: repo.namespaceId, repoId: repo.id, actorId: c.actor.userId, actorName: c.who.name, action: "tag_delete", detail: { tag: ref, digest: gone[0].digest }, ip: c.who.ip })
   } else {
     const m = await find(repo.id, ref)
     if (!m) throw errors.manifestUnknown(ref)
@@ -234,6 +239,7 @@ export async function deleteManifest(c: C, repo: Repo, name: string, ref: string
     await db.update(registryTags).set({ deletedAt: now }).where(and(eq(registryTags.repoId, repo.id), eq(registryTags.digest, ref), isNull(registryTags.deletedAt)))
     await db.update(registryManifests).set({ deletedAt: now }).where(eq(registryManifests.id, m.id))
     await announce("delete", repo.id, name, { digest: m.digest, mediaType: m.mediaType, size: m.size, pushedBy: c.who.name })
+    await logEvent({ namespaceId: repo.namespaceId, repoId: repo.id, actorId: c.actor.userId, actorName: c.who.name, action: "manifest_delete", detail: { digest: m.digest, tags: tags.map((t) => t.name) }, ip: c.who.ip })
   }
   await auditAs({ id: c.actor.userId, name: c.who.name }, "registry_delete", `${name}:${ref}`, { ip: c.who.ip })
   return respond(202, null, { "Content-Length": "0" })

@@ -148,3 +148,25 @@ export function untaggedToDelete(
     .filter((m) => !m.tagged && now.getTime() - m.createdAt.getTime() > policy.untaggedDays! * DAY)
     .map((m) => m.digest)
 }
+
+export type Role = "read" | "write" | "admin" | "owner"
+const RANK: Record<Role, number> = { read: 1, write: 2, admin: 3, owner: 4 }
+
+// The highest of several roles (nulls are "no role"); null when there are none.
+export function maxRole(...roles: (Role | null | undefined)[]): Role | null {
+  let best: Role | null = null
+  for (const r of roles) if (r && (!best || RANK[r] > RANK[best])) best = r
+  return best
+}
+
+export const atLeast = (role: Role | null, min: Role) => !!role && RANK[role] >= RANK[min]
+
+// What a token scope allows: push includes pull, delete includes push.
+export function scopeAllows(access: "pull" | "push" | "delete", op: "pull" | "push" | "delete") {
+  return op === "pull" || (op === "push" && access !== "pull") || access === "delete"
+}
+
+// How long a renamed repo's old name keeps answering reads.
+export const ALIAS_DAYS = 30
+export const EVENT_DAYS = 90
+export const DESCRIPTION_MAX = 100

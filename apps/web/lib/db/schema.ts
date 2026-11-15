@@ -17,6 +17,7 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  varchar,
   vector,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core"
@@ -2821,11 +2822,116 @@ export const registryRepos = pgTable(
     policy: jsonb("policy").$type<Policy>(),
     readme: text("readme"),
     blockCritical: boolean("block_critical").notNull().default(false),
+    // Archived: read-only (pulls work, pushes and deletes are refused).
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    // Short description; follows the image label until someone types one.
+    description: varchar("description", { length: 100 }),
+    descriptionCustom: boolean("description_custom").notNull().default(false),
     createdAt: createdAt(),
     // Soft delete (registry trash); purged after 7 days.
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (t) => [uniqueIndex("registry_repos_ns_name_idx").on(t.namespaceId, t.name)]
+)
+
+// Per-repo access for a member who isn't in the org (or needs more than their org role).
+export const registryRepoCollaborators = pgTable(
+  "registry_repo_collaborators",
+  {
+    repoId: uuid("repo_id")
+      .notNull()
+      .references(() => registryRepos.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    role: text("role").$type<"read" | "write" | "admin">().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.repoId, t.userId] }),
+    index("registry_repo_collaborators_user_idx").on(t.userId),
+    check("registry_repo_collaborators_role_check", sql`${t.role} in ('read', 'write', 'admin')`),
+  ]
+)
+
+export const registryTeams = pgTable(
+  "registry_teams",
+  {
+    id: id(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => registryOrgs.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("registry_teams_org_name_idx").on(t.orgId, sql`lower(${t.name})`)]
+)
+
+export const registryTeamMembers = pgTable(
+  "registry_team_members",
+  {
+    teamId: uuid("team_id")
+      .notNull()
+      .references(() => registryTeams.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.teamId, t.userId] }), index("registry_team_members_user_idx").on(t.userId)]
+)
+
+export const registryTeamRepos = pgTable(
+  "registry_team_repos",
+  {
+    teamId: uuid("team_id")
+      .notNull()
+      .references(() => registryTeams.id, { onDelete: "cascade" }),
+    repoId: uuid("repo_id")
+      .notNull()
+      .references(() => registryRepos.id, { onDelete: "cascade" }),
+    role: text("role").$type<"read" | "write" | "admin">().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.teamId, t.repoId] }),
+    index("registry_team_repos_repo_idx").on(t.repoId),
+    check("registry_team_repos_role_check", sql`${t.role} in ('read', 'write', 'admin')`),
+  ]
+)
+
+// A repo's old name after a rename or move: it keeps answering reads until expiresAt.
+export const registryRepoAliases = pgTable(
+  "registry_repo_aliases",
+  {
+    id: id(),
+    namespaceId: uuid("namespace_id")
+      .notNull()
+      .references(() => registryNamespaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    repoId: uuid("repo_id")
+      .notNull()
+      .references(() => registryRepos.id, { onDelete: "cascade" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [uniqueIndex("registry_repo_aliases_ns_name_idx").on(t.namespaceId, sql`lower(${t.name})`), index("registry_repo_aliases_repo_idx").on(t.repoId)]
+)
+
+// Activity log for a namespace and its repos (kept 90 days). The repo is kept as null when it's purged.
+export const registryEvents = pgTable(
+  "registry_events",
+  {
+    id: id(),
+    namespaceId: uuid("namespace_id")
+      .notNull()
+      .references(() => registryNamespaces.id, { onDelete: "cascade" }),
+    repoId: uuid("repo_id").references(() => registryRepos.id, { onDelete: "set null" }),
+    actorId: text("actor_id").references(() => user.id, { onDelete: "set null" }),
+    actorName: text("actor_name").notNull(),
+    action: text("action").notNull(),
+    detail: jsonb("detail").$type<Record<string, unknown>>(),
+    ip: text("ip"),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("registry_events_ns_idx").on(t.namespaceId, t.at.desc()), index("registry_events_repo_idx").on(t.repoId, t.at.desc())]
 )
 
 // Layers and configs, stored once by digest at registry/b/<uuid> in the main bucket.
@@ -2952,7 +3058,7 @@ export const registryTokens = pgTable(
     // The NMCR… id part used as the lookup key.
     prefix: text("prefix").notNull().unique(),
     secretEnc: text("secret_enc").notNull(),
-    access: text("access").$type<"pull" | "push">().notNull(),
+    access: text("access").$type<"pull" | "push" | "delete">().notNull(),
     // Off: only the repos in registry_token_repos.
     allRepos: boolean("all_repos").notNull().default(true),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
@@ -2962,7 +3068,7 @@ export const registryTokens = pgTable(
   },
   (t) => [
     index("registry_tokens_user_idx").on(t.userId),
-    check("registry_tokens_access_check", sql`${t.access} in ('pull', 'push')`),
+    check("registry_tokens_access_check", sql`${t.access} in ('pull', 'push', 'delete')`),
   ]
 )
 

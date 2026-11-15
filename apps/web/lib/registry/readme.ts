@@ -9,7 +9,7 @@ import { db } from "@/lib/db"
 import { registryBlobs, registryManifests, registryNamespaces, registryRepos, registryTags } from "@/lib/db/schema"
 import { getStream } from "@/lib/s3"
 
-import { roleIn } from "./access.ts"
+import { repoRole } from "./access.ts"
 import { README_MAX, safeUrl } from "./extras-rules.ts"
 import { INDEXES } from "./manifests.ts"
 
@@ -18,7 +18,7 @@ const SOURCE = "org.opencontainers.image.source"
 
 type Anns = Record<string, string> | null | undefined
 
-async function labels(repoId: string, digest: string, depth = 0): Promise<Anns> {
+export async function labels(repoId: string, digest: string, depth = 0): Promise<Anns> {
   const [m] = await db.select().from(registryManifests).where(and(eq(registryManifests.repoId, repoId), eq(registryManifests.digest, digest), isNull(registryManifests.deletedAt)))
   if (!m) return null
   const doc = JSON.parse(m.bytes.toString("utf8")) as { manifests?: { digest?: string }[]; config?: { digest?: string }; annotations?: Anns }
@@ -60,8 +60,8 @@ export async function setReadme(actorUserId: string, repoId: string, markdown: s
     .from(registryRepos)
     .innerJoin(registryNamespaces, eq(registryNamespaces.id, registryRepos.namespaceId))
     .where(and(eq(registryRepos.id, repoId), isNull(registryRepos.deletedAt)))
-  const role = row && (await roleIn(actorUserId, row.ns))
-  if (!row || (role !== "owner" && role !== "write")) return { error: "You can only read this repository." }
+  const role = row && (await repoRole(actorUserId, row.ns, row.repo))
+  if (!row || (role !== "owner" && role !== "admin" && role !== "write")) return { error: "You can only read this repository." }
   const text = markdown?.trim() ? markdown : null
   if (text && Buffer.byteLength(text) > README_MAX) return { error: "The README can be 64 KB at most." }
   await db.update(registryRepos).set({ readme: text }).where(eq(registryRepos.id, repoId))

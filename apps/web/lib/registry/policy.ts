@@ -41,6 +41,9 @@ async function select(repoId: string, policy: Policy | null | undefined) {
 export const previewPolicy = (repoId: string, policy?: Policy | null) => select(repoId, policy)
 
 export async function applyPolicy(repoId: string) {
+  // Archived repos are read-only, cleanup included.
+  const [r] = await db.select({ archivedAt: registryRepos.archivedAt }).from(registryRepos).where(eq(registryRepos.id, repoId))
+  if (!r || r.archivedAt) return { tags: [], untagged: [] }
   const sel = await select(repoId, undefined)
   const now = new Date()
   if (sel.tags.length)

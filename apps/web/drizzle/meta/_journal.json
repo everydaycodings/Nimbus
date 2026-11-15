@@ -393,6 +393,13 @@
       "when": 1796200000000,
       "tag": "0055_registry",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1796300000000,
+      "tag": "0056_registry_access",
+      "breakpoints": true
     }
   ]
 }

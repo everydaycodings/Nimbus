@@ -2,7 +2,8 @@
 // slashes, so the route is read from the end of the path.
 import "server-only"
 
-import { canPull, canPush, catalogFor, createRepoOnPush, resolveRepo } from "./access.ts"
+import { logTokenUse } from "./activity.ts"
+import { aliasTarget, canDelete, canPull, canPush, catalogFor, createRepoOnPush, resolveRepo } from "./access.ts"
 import { getBlob, linked, linkExisting, throttle, unlinkBlob } from "./blobs.ts"
 import { RegError, errors, json, respond, type C } from "./http.ts"
 import { deleteManifest, getManifest, listTags, page, putManifest, referrers } from "./manifests.ts"
@@ -27,29 +28,41 @@ async function readable(c: C, name: string): Promise<Resolved> {
   if (!splitName(name)) throw errors.nameInvalid(name)
   // The pull-through mirror's cached copies (tags/list, referrers); blobs and manifests are handled before this.
   if (isMirror(name)) return { repo: await mirrorRepo(c, name), namespace: null as never }
-  const r = await resolveRepo(name)
+  // A renamed repo's old name still answers reads for a while.
+  const r = await resolveRepo(name, true)
   if (!r || !(await canPull(c.actor, r.repo, r.namespace))) {
     if (!c.actor.userId) throw errors.unauthorized()
     throw errors.nameUnknown(name)
   }
+  await used(c, r)
   return r
 }
 
-async function writable(c: C, name: string, create: boolean): Promise<Resolved> {
+const used = (c: C, r: Resolved) =>
+  logTokenUse({ tokenId: c.actor.tokenId, userId: c.actor.userId, name: c.who.name, ip: c.who.ip, namespaceId: r.namespace.id, repoId: r.repo.id })
+
+async function writable(c: C, name: string, create: boolean, op: "push" | "delete" = "push"): Promise<Resolved> {
   if (!splitName(name)) throw errors.nameInvalid(name)
   if (!c.actor.userId) throw errors.unauthorized()
   if (isMirror(name)) throw errors.denied("The pull-through mirror is read-only.")
   const r = await resolveRepo(name)
   if (r) {
-    if (!(await canPush(c.actor, r.namespace, r.repo))) throw errors.denied()
+    if (!(await (op === "delete" ? canDelete(c.actor, r.namespace, r.repo) : canPush(c.actor, r.namespace, r.repo)))) throw errors.denied()
+    if (r.repo.archivedAt) throw errors.denied("The repository is archived.")
+    await used(c, r)
     return r
   }
-  if (create) {
+  // The old name of a renamed repo is read-only: say where it went.
+  const moved = await aliasTarget(name)
+  if (moved && (await canPull(c.actor, moved.target.repo, moved.target.namespace))) throw errors.denied(`This repository moved to ${moved.now}.`)
+  if (create && !moved) {
     const made = await createRepoOnPush(c.actor, name)
     if (made) return made
   }
   throw errors.denied()
 }
+
+const deletable = (c: C, name: string) => writable(c, name, false, "delete")
 
 const base = (name: string, id: string) => `/v2/${name}/blobs/uploads/${id}`
 const range = (offset: number) => `0-${Math.max(offset - 1, 0)}`
@@ -141,7 +154,7 @@ export async function dispatch(c: C): Promise<Response> {
     if (read && isMirror(name)) return mirrorBlob(c, name, digest, c.req.headers.get("range"), head)
     if (read) return getBlob((await readable(c, name)).repo.id, digest, c.req.headers.get("range"), head, c.actor.tokenId)
     if (m === "DELETE") {
-      await unlinkBlob((await writable(c, name, false)).repo.id, digest)
+      await unlinkBlob((await deletable(c, name)).repo.id, digest)
       return respond(202, null, { "Content-Length": "0" })
     }
   }
@@ -150,7 +163,7 @@ export async function dispatch(c: C): Promise<Response> {
     if (read && isMirror(name)) return mirrorManifest(c, name, ref, head)
     if (read) return getManifest((await readable(c, name)).repo, ref, head, c.actor.tokenId)
     if (m === "PUT") return putManifest(c, (await writable(c, name, true)).repo, name, ref)
-    if (m === "DELETE") return deleteManifest(c, (await writable(c, name, false)).repo, name, ref)
+    if (m === "DELETE") return deleteManifest(c, (await deletable(c, name)).repo, name, ref)
   }
   if (read && (g = /^\/v2\/(.+)\/tags\/list$/.exec(path))) {
     const name = decode(g[1])

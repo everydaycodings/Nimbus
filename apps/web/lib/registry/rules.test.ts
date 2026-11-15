@@ -3,6 +3,9 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 
 import {
+  atLeast,
+  maxRole,
+  scopeAllows,
   endpoint,
   evaluatePolicy,
   matchPattern,
@@ -101,4 +104,20 @@ test("untagged manifests", () => {
   ]
   assert.deepEqual(untaggedToDelete({ untaggedDays: 7 }, ms, now), ["a"])
   assert.deepEqual(untaggedToDelete({}, ms, now), [])
+})
+
+test("maxRole picks the highest and ignores nulls", () => {
+  assert.equal(maxRole(), null)
+  assert.equal(maxRole(null, undefined), null)
+  assert.equal(maxRole("read", null, "write"), "write")
+  assert.equal(maxRole("write", "admin", "read"), "admin")
+  assert.equal(maxRole("admin", "owner"), "owner")
+  assert.ok(atLeast("admin", "write") && atLeast("write", "write") && !atLeast("read", "write") && !atLeast(null, "read"))
+})
+
+test("token scopes: push includes pull, delete includes push", () => {
+  const ok = (a: "pull" | "push" | "delete") => (["pull", "push", "delete"] as const).filter((op) => scopeAllows(a, op))
+  assert.deepEqual(ok("pull"), ["pull"])
+  assert.deepEqual(ok("push"), ["pull", "push"])
+  assert.deepEqual(ok("delete"), ["pull", "push", "delete"])
 })
