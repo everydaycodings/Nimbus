@@ -159,7 +159,7 @@ async function keep(repo: Repo, bytes: Buffer, type: string | null, ref: string)
     .returning({ id: registryManifests.id })
   if (refs.length) await db.insert(registryManifestRefs).values(refs.map((r) => ({ manifestId: m.id, ...r }))).onConflictDoNothing()
   if (!want) {
-    const set = { digest, pushedBy: null, pushedAt: new Date(), lastPulledAt: null }
+    const set = { digest, pushedBy: null, pushedAt: new Date(), lastPulledAt: new Date() }
     await db
       .insert(registryTags)
       .values({ repoId: repo.id, name: ref, ...set })

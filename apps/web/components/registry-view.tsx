@@ -1,7 +1,7 @@
 "use client"
 
 import { Dialog } from "@base-ui/react/dialog"
-import { BuildingsIcon, KeyIcon, LockSimpleIcon, GlobeIcon, PackageIcon, PlusIcon, UsersIcon } from "@phosphor-icons/react"
+import { BuildingsIcon, CheckCircleIcon, KeyIcon, LockSimpleIcon, GlobeIcon, PackageIcon, PlusIcon, UsersIcon } from "@phosphor-icons/react"
 import Link from "next/link"
 import { useEffect, useId, useState, useTransition } from "react"
 
@@ -20,7 +20,7 @@ import {
 import { CopyButton } from "@/components/copy-button"
 import { DIALOG_BACKDROP, DIALOG_POPUP } from "@/components/overlay-styles"
 import { MirrorsTab, NamespacesSection, RegistryTabs, TrashTab, type Tab } from "@/components/registry-extra"
-import { Code, Confirm, DAY, Empty, Heading, LIST, RADIO, SECTION, SELECT, WHEN } from "@/components/registry-ui"
+import { Code, Confirm, DAY, Empty, Heading, LIST, RADIO, SECTION, SELECT, TOUCH, WHEN } from "@/components/registry-ui"
 import { SubmitButton } from "@/components/submit-button"
 import { useNotice } from "@/components/toaster"
 import { FormError } from "@/components/two-factor"
@@ -28,7 +28,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { formatBytes } from "@/lib/file-types"
+import { sizeOf } from "@/lib/registry/size"
 import type { CachedRepo, OrgMember, OrgRow, OwnedNamespace, RepoRow, TokenRow, TrashRow } from "@/lib/registry/manage"
 import { cn } from "@/lib/utils"
 
@@ -39,6 +39,74 @@ const EXPIRY = [
   ["365", "In a year"],
 ]
 const ROLE_LABEL = { owner: "Owner", write: "Can push", read: "Read only" }
+
+// The commands a member runs once they have a token. One block, so Copy takes all of it.
+const connectCommands = (host: string, me: string) =>
+  [
+    `docker login ${host} -u ${me}`,
+    "# paste a token as the password",
+    "",
+    `docker pull ${host}/${me}/<repo>:<tag>`,
+    `docker push ${host}/${me}/<repo>:<tag>`,
+  ].join("\n")
+
+const githubAction = (host: string, me: string) =>
+  [
+    "- uses: docker/login-action@v3",
+    "  with:",
+    `    registry: ${host}`,
+    `    username: ${me}`,
+    "    password: ${{ secrets.NIMBUS_REGISTRY_TOKEN }}",
+  ].join("\n")
+
+function CodeCopy({ text, label }: { text: string; label: string }) {
+  return (
+    <div className="relative">
+      <Code copy>{text}</Code>
+      <div className="absolute top-2 right-2">
+        <CopyButton value={text} label={label} className={TOUCH} />
+      </div>
+    </div>
+  )
+}
+
+// First-run card: shown until the member has a token and a repository.
+function SetupCard({ host, me, tokens, onNewToken }: { host: string; me: string; tokens: number; onNewToken: () => void }) {
+  return (
+    <section aria-labelledby="setup-heading" className="flex flex-col gap-4 rounded-xl border bg-card p-4 sm:p-5">
+      <Heading
+        id="setup-heading"
+        title="Connect Docker"
+        hint="Two steps and your first image is here. This card goes away once you have a token and a repository."
+      />
+      <ol className="flex flex-col gap-4">
+        <li className="grid grid-cols-[minmax(0,1fr)] gap-2">
+          <p className="text-sm font-medium">1. Make a token</p>
+          <p className="text-sm text-pretty text-muted-foreground">Docker uses it as the password, never your account password.</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button variant={tokens ? "outline" : "default"} className={TOUCH} onClick={onNewToken}>
+              <PlusIcon />
+              New token
+            </Button>
+            {tokens > 0 && (
+              <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <CheckCircleIcon className="size-4 text-brand" />
+                {tokens === 1 ? "You have a token" : `You have ${tokens} tokens`}
+              </span>
+            )}
+          </div>
+        </li>
+        <li className="grid grid-cols-[minmax(0,1fr)] gap-2">
+          <p className="text-sm font-medium">2. Log in and push</p>
+          <CodeCopy
+            label="Copy login and push commands"
+            text={`docker login ${host} -u ${me}\ndocker tag myimage ${host}/${me}/myimage:latest\ndocker push ${host}/${me}/myimage:latest`}
+          />
+        </li>
+      </ol>
+    </section>
+  )
+}
 
 // Shown until a member picks their registry name; the name is the first part of every image they push.
 export function ClaimName({ suggestion }: { suggestion: string }) {
@@ -126,6 +194,7 @@ export function RegistryView({
   const [newToken, setNewToken] = useState(false)
   const [managing, setManaging] = useState<OrgRow | null>(null)
   const setNotice = useNotice()
+  const firstRun = tokens.length === 0 || repos.length === 0
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-10">
       <header className="grid gap-1">
@@ -138,11 +207,9 @@ export function RegistryView({
 
       <RegistryTabs tab={tab} trash={trash.length} />
 
-      {tab === "trash" ? (
-        <TrashTab rows={trash} days={trashDays} />
-      ) : tab === "mirrors" ? (
-        <MirrorsTab host={host} upstreams={upstreams} cached={cached} />
-      ) : (
+      {tab === "repos" && firstRun && <SetupCard host={host} me={me} tokens={tokens.length} onNewToken={() => setNewToken(true)} />}
+
+      {tab === "repos" && (
         <>
           <section className={SECTION} aria-labelledby="repos-heading">
             <Heading
@@ -156,8 +223,7 @@ export function RegistryView({
             />
             {repos.length === 0 ? (
               <Empty icon={PackageIcon} title="No repositories yet">
-                Make a token below, then push your first image:
-                <Code>{`docker login ${host} -u ${me}\ndocker tag myimage ${host}/${me}/myimage:latest\ndocker push ${host}/${me}/myimage:latest`}</Code>
+                Your first push makes one, under <span className="font-mono">{me}/</span>.
               </Empty>
             ) : (
               <ul className={LIST}>
@@ -176,8 +242,7 @@ export function RegistryView({
                           </Badge>
                         </span>
                         <span suppressHydrationWarning className="text-xs text-muted-foreground">
-                          {r.tags === 1 ? "1 tag" : `${r.tags} tags`} ·{" "}
-                          <span className="tabular-nums">{formatBytes(r.bytes)}</span>
+                          {r.tags === 1 ? "1 tag" : `${r.tags} tags`} · <span className="tabular-nums">{sizeOf(r.bytes)}</span>
                           {r.pushedAt ? ` · Pushed ${WHEN.format(new Date(r.pushedAt))}` : ""}
                         </span>
                       </span>
@@ -187,6 +252,50 @@ export function RegistryView({
               </ul>
             )}
           </section>
+        </>
+      )}
+
+      {tab === "access" && (
+        <>
+          <section className={SECTION} aria-labelledby="tokens-heading">
+            <Heading
+              id="tokens-heading"
+              title="Tokens"
+              hint={`Docker signs in with a token as the password, never your account password. Make one per machine so you can revoke it alone. ${tokens.length} of ${maxTokens} used.`}
+            >
+              <Button className={TOUCH} onClick={() => setNewToken(true)} disabled={tokens.length >= maxTokens}>
+                <PlusIcon />
+                New token
+              </Button>
+            </Heading>
+            {tokens.length === 0 ? (
+              <Empty icon={KeyIcon} title="No tokens yet">
+                Make a token to docker login. You see it once, right after it&apos;s made.
+              </Empty>
+            ) : (
+              <ul className={LIST}>
+                {tokens.map((t) => (
+                  <TokenItem key={t.id} t={t} />
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className={SECTION} aria-labelledby="connect-heading">
+            <Heading
+              id="connect-heading"
+              title="Connect Docker"
+              hint="Log in with your registry name and a token, then push and pull as usual."
+            />
+            <CodeCopy text={connectCommands(host, me)} label="Copy Docker commands" />
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-2">
+              <p className="text-sm font-medium">GitHub Actions</p>
+              <p className="max-w-prose text-sm text-pretty text-muted-foreground">
+                Save a pull &amp; push token as the repository secret <span className="font-mono">NIMBUS_REGISTRY_TOKEN</span>.
+              </p>
+              <CodeCopy text={githubAction(host, me)} label="Copy GitHub Actions step" />
+            </div>
+          </section>
 
           <section className={SECTION} aria-labelledby="orgs-heading">
             <Heading
@@ -195,7 +304,7 @@ export function RegistryView({
               hint="A shared registry name for a team. Members push and pull under it by role."
             >
               {canCreateOrg && (
-                <Button onClick={() => setNewOrg(true)}>
+                <Button className={TOUCH} onClick={() => setNewOrg(true)}>
                   <PlusIcon />
                   New org
                 </Button>
@@ -222,7 +331,7 @@ export function RegistryView({
                         {o.repos === 1 ? "1 repository" : `${o.repos} repositories`}
                       </p>
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => setManaging(o)}>
+                    <Button variant="outline" size="sm" className={TOUCH} onClick={() => setManaging(o)}>
                       <UsersIcon />
                       {o.role === "owner" ? "Manage" : "Members"}
                     </Button>
@@ -233,52 +342,11 @@ export function RegistryView({
           </section>
 
           <NamespacesSection owned={owned} />
-
-          <section className={SECTION} aria-labelledby="tokens-heading">
-            <Heading
-              id="tokens-heading"
-              title="Tokens"
-              hint={`Docker signs in with a token as the password, never your account password. Make one per machine so you can revoke it alone. ${tokens.length} of ${maxTokens} used.`}
-            >
-              <Button onClick={() => setNewToken(true)} disabled={tokens.length >= maxTokens}>
-                <PlusIcon />
-                New token
-              </Button>
-            </Heading>
-            {tokens.length === 0 ? (
-              <Empty icon={KeyIcon} title="No tokens yet">
-                Make a token to docker login. You see it once, right after it&apos;s made.
-              </Empty>
-            ) : (
-              <ul className={LIST}>
-                {tokens.map((t) => (
-                  <TokenItem key={t.id} t={t} />
-                ))}
-              </ul>
-            )}
-          </section>
-
-          <section className={SECTION} aria-labelledby="connect-heading">
-            <Heading
-              id="connect-heading"
-              title="Connect Docker"
-              hint="Log in with your registry name and a token, then push and pull as usual."
-            />
-            <div className="relative flex flex-col gap-3 rounded-xl border bg-card p-4">
-              <div className="relative">
-                <Code copy>{`docker login ${host} -u ${me}
-    # paste a token as the password
-
-    docker pull ${host}/${me}/<repo>:<tag>
-    docker push ${host}/${me}/<repo>:<tag>`}</Code>
-                <div className="absolute top-2 right-2">
-                  <CopyButton value={`docker login ${host} -u ${me}`} />
-                </div>
-              </div>
-            </div>
-          </section>
         </>
       )}
+
+      {tab === "trash" && <TrashTab rows={trash} days={trashDays} />}
+      {tab === "mirrors" && <MirrorsTab host={host} upstreams={upstreams} cached={cached} />}
 
       <NewOrg
         open={newOrg}
@@ -482,6 +550,7 @@ function ManageOrg({ org, meId, onClose }: { org: OrgRow | null; meId: string; o
                       <Button
                         variant="ghost"
                         size="sm"
+                        className={TOUCH}
                         disabled={pending}
                         onClick={() => run(() => removeOrgMember(org.id, m.userId), `${m.name} removed.`)}
                       >
@@ -585,6 +654,7 @@ function NewToken({
   const [error, setError] = useState<string | null>(null)
   const [all, setAll] = useState(true)
   const [chosen, setChosen] = useState<string[]>([])
+  const [expiry, setExpiry] = useState("90")
   const [pending, start] = useTransition()
   const id = useId()
 
@@ -595,6 +665,7 @@ function NewToken({
       setError(null)
       setAll(true)
       setChosen([])
+      setExpiry("90")
     }, 200)
   }
 
@@ -647,7 +718,7 @@ function NewToken({
                     access: String(f.get("access") ?? ""),
                     allRepos: all,
                     repoIds: chosen,
-                    expiry: String(f.get("expiry") ?? "never"),
+                    expiry,
                   })
                   if (r.error || !r.token) return setError(r.error ?? "Couldn't make the token.")
                   setMade(r.token)
@@ -681,7 +752,9 @@ function NewToken({
                   <input type="radio" name="scope" checked={all} onChange={() => setAll(true)} className="size-4 accent-primary" />
                   <span className="grid">
                     <span className="font-medium">All repositories</span>
-                    <span className="text-xs text-muted-foreground">Including ones made later.</span>
+                    <span className="text-xs text-pretty text-muted-foreground">
+                      Every repository you can reach, yours and your orgs&apos;, including ones made later. With Pull &amp; push it can also create new repositories.
+                    </span>
                   </span>
                 </label>
                 <label className={cn(RADIO, !repos.length && "cursor-not-allowed opacity-60")}>
@@ -696,7 +769,7 @@ function NewToken({
                   <span className="grid">
                     <span className="font-medium">Only some repositories</span>
                     <span className="text-xs text-muted-foreground">
-                      {repos.length ? "Pick which. It can't make new ones." : "Push an image first."}
+                      {repos.length ? "Pick which. It can't create new repositories." : "Push an image first."}
                     </span>
                   </span>
                 </label>
@@ -704,7 +777,7 @@ function NewToken({
                   <ul className="flex max-h-40 flex-col gap-0.5 overflow-y-auto rounded-lg border p-1">
                     {repos.map((r) => (
                       <li key={r.id}>
-                        <label className="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-sm hover:bg-accent/50">
+                        <label className="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-sm hover:bg-accent/50 pointer-coarse:h-11">
                           <input
                             type="checkbox"
                             checked={chosen.includes(r.id)}
@@ -720,13 +793,18 @@ function NewToken({
               </fieldset>
               <div className="grid gap-2">
                 <Label htmlFor={`${id}-expiry`}>Expires</Label>
-                <select id={`${id}-expiry`} name="expiry" defaultValue="90" className={SELECT}>
+                <select id={`${id}-expiry`} name="expiry" value={expiry} onChange={(e) => setExpiry(e.target.value)} className={SELECT}>
                   {EXPIRY.map(([v, l]) => (
                     <option key={v} value={v}>
                       {l}
                     </option>
                   ))}
                 </select>
+                {expiry === "never" && (
+                  <p className="text-xs text-pretty text-muted-foreground">
+                    It works until you revoke it. If it leaks, anyone can push and pull with it. Pick a date for CI jobs and shared machines.
+                  </p>
+                )}
               </div>
               <FormError>{error}</FormError>
               <div className="flex justify-end gap-2">

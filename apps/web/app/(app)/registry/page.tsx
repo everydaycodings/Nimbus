@@ -101,7 +101,7 @@ export default async function RegistryPage({ searchParams }: { searchParams: Pro
       maxTokens={MAX_TOKENS}
       canCreateOrg={s.registryOrgCreate === "anyone" || isAdmin(me.role)}
       publicAllowed={s.registryPublic}
-      tab={tab === "trash" || tab === "mirrors" ? tab : "repos"}
+      tab={tab === "access" || tab === "trash" || tab === "mirrors" ? tab : "repos"}
       trash={trash}
       trashDays={TRASH_DAYS}
       owned={owned}

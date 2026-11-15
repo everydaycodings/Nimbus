@@ -14,6 +14,7 @@ import {
 import { BucketDialog, QUIET_HINT } from "@/components/s3-bucket-dialog"
 import { CopyButton } from "@/components/copy-button"
 import { DIALOG_BACKDROP, DIALOG_POPUP } from "@/components/overlay-styles"
+import { Confirm, Empty, Heading, LIST, SECTION } from "@/components/registry-ui"
 import { SubmitButton } from "@/components/submit-button"
 import { useNotice } from "@/components/toaster"
 import { FormError } from "@/components/two-factor"
@@ -35,89 +36,6 @@ const EXPIRY = [
   ["365", "In a year"],
   ["date", "On a date…"],
 ]
-const SECTION = "flex flex-col gap-3"
-const LIST = "divide-y overflow-hidden rounded-xl border bg-card"
-
-function Heading({
-  id,
-  title,
-  hint,
-  children,
-}: {
-  id: string
-  title: string
-  hint: React.ReactNode
-  children?: React.ReactNode
-}) {
-  return (
-    <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
-      <div className="mr-auto grid min-w-0 gap-1">
-        <h2 id={id} className="text-base font-semibold">{title}</h2>
-        <p className="max-w-prose text-sm text-pretty text-muted-foreground">{hint}</p>
-      </div>
-      {children}
-    </div>
-  )
-}
-
-function Empty({
-  icon: Icon,
-  title,
-  children,
-}: {
-  icon: typeof CubeIcon
-  title: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed px-4 py-12 text-center">
-      <Icon className="size-8 text-muted-foreground" />
-      <p className="font-medium">{title}</p>
-      <p className="max-w-sm text-sm text-pretty text-muted-foreground">{children}</p>
-    </div>
-  )
-}
-
-// Confirms inline, like the other lists: the button turns into "Sure? Yes / No".
-function Confirm({
-  label,
-  question,
-  yes,
-  pending,
-  onYes,
-}: {
-  label: string
-  question: string
-  yes: string
-  pending: boolean
-  onYes: () => void
-}) {
-  const [sure, setSure] = useState(false)
-  if (!sure)
-    return (
-      <Button variant="outline" size="sm" onClick={() => setSure(true)}>
-        {label}
-      </Button>
-    )
-  return (
-    <span className="flex flex-wrap items-center gap-1.5">
-      <span className="text-xs text-muted-foreground">{question}</span>
-      <Button variant="destructive" size="sm" disabled={pending} onClick={onYes}>
-        {yes}
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        autoFocus
-        disabled={pending}
-        onClick={() => setSure(false)}
-      >
-        Keep
-      </Button>
-    </span>
-  )
-}
-
 export function BucketsView({
   buckets,
   keys,

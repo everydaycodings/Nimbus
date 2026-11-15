@@ -12,7 +12,7 @@ import {
   TrashIcon,
 } from "@phosphor-icons/react"
 import Link from "next/link"
-import { useId, useState, useTransition } from "react"
+import { useEffect, useId, useState, useTransition } from "react"
 
 import {
   addHook,
@@ -24,6 +24,7 @@ import {
   repoHooks,
   restoreTrash,
   runCleanup,
+  runNamespaceCleanup,
   saveNamespacePolicy,
   saveRepoPolicy,
   sendTestHook,
@@ -32,7 +33,7 @@ import {
 } from "@/app/(app)/registry/actions"
 import { CopyButton } from "@/components/copy-button"
 import { DIALOG_BACKDROP, DIALOG_POPUP } from "@/components/overlay-styles"
-import { Code, Confirm, Empty, Heading, LIST, SECTION, WHEN } from "@/components/registry-ui"
+import { Code, Confirm, Empty, Heading, LIST, SECTION, Switch, TOUCH, WHEN } from "@/components/registry-ui"
 import { SubmitButton } from "@/components/submit-button"
 import { useNotice } from "@/components/toaster"
 import { FormError } from "@/components/two-factor"
@@ -40,29 +41,30 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { formatBytes } from "@/lib/file-types"
+import { sizeOf } from "@/lib/registry/size"
 import type { CachedRepo, DeliveryRow, HookRow, OwnedNamespace, TrashRow } from "@/lib/registry/manage"
 import type { Policy } from "@/lib/registry/rules"
 import { cn } from "@/lib/utils"
 
 // ---- Tabs ----------------------------------------------------------------
 
-export type Tab = "repos" | "trash" | "mirrors"
+export type Tab = "repos" | "access" | "trash" | "mirrors"
 
 export function RegistryTabs({ tab, trash }: { tab: Tab; trash: number }) {
   const items: [Tab, string, string][] = [
     ["repos", "Repositories", "/registry"],
+    ["access", "Access", "/registry?tab=access"],
     ["trash", trash ? `Trash (${trash})` : "Trash", "/registry?tab=trash"],
     ["mirrors", "Mirrors", "/registry?tab=mirrors"],
   ]
   return (
-    <nav aria-label="Registry sections" className="flex flex-wrap gap-1">
+    <nav aria-label="Registry sections" className="flex w-fit max-w-full overflow-x-auto rounded-lg bg-muted p-[3px]">
       {items.map(([id, label, href]) => (
         <Link
           key={id}
           href={href}
           aria-current={tab === id ? "page" : undefined}
-          className="rounded-md px-2.5 py-1 text-sm text-muted-foreground outline-none hover:bg-accent/50 focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-[current=page]:bg-accent aria-[current=page]:text-foreground"
+          className="flex h-7 items-center rounded-md border border-transparent px-3 text-sm whitespace-nowrap text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:h-11 aria-[current=page]:border-input aria-[current=page]:bg-input/30 aria-[current=page]:text-foreground"
         >
           {label}
         </Link>
@@ -77,12 +79,10 @@ const KIND_ICON = { repo: PackageIcon, tag: GitBranchIcon, manifest: CubeIcon }
 
 export function TrashTab({ rows, days }: { rows: TrashRow[]; days: number }) {
   return (
-    <section className={SECTION} aria-labelledby="trash-heading">
-      <Heading
-        id="trash-heading"
-        title="Trash"
-        hint={`Deleted repositories and tags stay here for ${days} days, then they are removed for good. Restore brings one back as it was.`}
-      />
+    <section className={SECTION} aria-label="Trash">
+      <p className="max-w-prose text-sm text-pretty text-muted-foreground">
+        {`Deleted repositories and tags stay here for ${days} days, then they are removed for good. Restore brings one back as it was.`}
+      </p>
       {rows.length === 0 ? (
         <Empty icon={TrashIcon} title="Trash is empty">
           Deleted repositories and tags show up here until they are purged.
@@ -136,7 +136,7 @@ function TrashItem({ r }: { r: TrashRow }) {
             </span>
           </p>
         </div>
-        <Button variant="outline" size="sm" disabled={pending} onClick={() => restore()}>
+        <Button variant="outline" size="sm" className={TOUCH} disabled={pending} onClick={() => restore()}>
           <ArrowCounterClockwiseIcon />
           Restore
         </Button>
@@ -170,10 +170,10 @@ function TrashItem({ r }: { r: TrashRow }) {
             autoFocus
             className="max-w-64 font-mono"
           />
-          <SubmitButton pending={pending} variant="outline" size="sm">
+          <SubmitButton pending={pending} variant="outline" size="sm" className={TOUCH}>
             Restore as
           </SubmitButton>
-          <Button type="button" variant="ghost" size="sm" onClick={() => setRename(null)}>
+          <Button type="button" variant="ghost" size="sm" className={TOUCH} onClick={() => setRename(null)}>
             Cancel
           </Button>
         </form>
@@ -198,12 +198,10 @@ export function MirrorsTab({
 }) {
   return (
     <>
-      <section className={SECTION} aria-labelledby="mirrors-heading">
-        <Heading
-          id="mirrors-heading"
-          title="Mirrors"
-          hint="Pull public images through Nimbus. The first pull fetches and keeps a copy; later pulls come from here."
-        />
+      <section className={SECTION} aria-label="Mirrors">
+        <p className="max-w-prose text-sm text-pretty text-muted-foreground">
+          Pull public images through Nimbus. The first pull fetches and keeps a copy; later pulls come from here.
+        </p>
         {upstreams.length === 0 ? (
           <Empty icon={PackageIcon} title="No mirrors yet">
             An admin sets up mirrors for Docker Hub, GitHub and others under Admin → Container registry.
@@ -216,9 +214,8 @@ export function MirrorsTab({
                 <li key={u.name} className="flex flex-col gap-2 px-4 py-3">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                     <span className="font-mono text-sm font-medium">{u.name}</span>
-                    <span className="min-w-0 truncate text-xs text-muted-foreground">{u.url}</span>
-                    <span className="ml-auto text-xs text-muted-foreground">
-                      Kept {u.ttlDays === 1 ? "1 day" : `${u.ttlDays} days`} after the last pull
+                    <span className="min-w-0 text-xs text-muted-foreground">
+                      <span className="break-all">{u.url}</span> · Kept {u.ttlDays === 1 ? "1 day" : `${u.ttlDays} days`} after the last pull
                     </span>
                   </div>
                   <div className="relative">
@@ -245,7 +242,7 @@ export function MirrorsTab({
               <li key={c.fullName} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
                 <span className="min-w-0 flex-1 basis-56 font-mono text-sm break-all">{c.fullName}</span>
                 <span suppressHydrationWarning className="text-xs text-muted-foreground">
-                  {c.tags === 1 ? "1 tag" : `${c.tags} tags`} · <span className="tabular-nums">{formatBytes(c.bytes)}</span> ·{" "}
+                  {c.tags === 1 ? "1 tag" : `${c.tags} tags`} · <span className="tabular-nums">{sizeOf(c.bytes)}</span> ·{" "}
                   {c.lastPulledAt ? `Last pulled ${WHEN.format(new Date(c.lastPulledAt))}` : "Never pulled"}
                 </span>
               </li>
@@ -305,6 +302,17 @@ export function PolicyEditor({
   const id = useId()
   const [custom, setCustom] = useState(!repo || initial !== null)
   const [f, setF] = useState<Form>(toForm(initial))
+  // What is stored, so Run now (which runs the stored rules) knows when the form has moved on.
+  const [saved, setSaved] = useState({ custom: !repo || initial !== null, f: toForm(initial) })
+  const dirty = custom !== saved.custom || (custom && JSON.stringify(f) !== JSON.stringify(saved.f))
+  useEffect(() => {
+    if (!dirty) return
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault()
+    window.addEventListener("beforeunload", warn)
+    return () => window.removeEventListener("beforeunload", warn)
+  }, [dirty])
+  const stored = repo && !saved.custom ? toForm(inherited ?? null) : saved.f
+  const hasRules = Object.values(stored).some(Boolean)
   const [error, setError] = useState<string>()
   const [preview, setPreview] = useState<Preview | null>(null)
   const [pending, start] = useTransition()
@@ -323,6 +331,7 @@ export function PolicyEditor({
         start(async () => {
           const r = repo ? await saveRepoPolicy(repo, custom ? f : null) : await saveNamespacePolicy(namespace, f)
           if (r.error) return setError(r.error)
+          setSaved({ custom, f })
           setNotice({ text: repo && !custom ? `Cleanup follows ${namespace} again.` : "Cleanup rules saved." })
         })
       }}
@@ -330,8 +339,8 @@ export function PolicyEditor({
       {repo && (
         <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Cleanup rules for this repository">
           {[
-            [false, `Inherit from ${namespace}`, inherited ? `Currently: ${describePolicy(inherited)}.` : "The namespace has no rules, so nothing is cleaned up."],
-            [true, "Custom rules", "Rules just for this repository replace the namespace's."],
+            [false, `Inherit from ${namespace}`, inherited ? `Currently: ${describePolicy(inherited)}.` : "This registry name has no rules, so nothing is cleaned up."],
+            [true, "Custom rules", `Rules just for this repository replace the ones from ${namespace}.`],
           ].map(([v, title, hint]) => (
             <label
               key={String(v)}
@@ -369,12 +378,12 @@ export function PolicyEditor({
           </div>
           <div className="grid content-start gap-1.5">
             <Label htmlFor={`${id}-keepPattern`}>Always keep tags matching</Label>
-            <Input id={`${id}-keepPattern`} value={f.keepPattern} onChange={set("keepPattern")} placeholder="v*,latest" className="font-mono" />
+            <Input id={`${id}-keepPattern`} value={f.keepPattern} onChange={set("keepPattern")} className="font-mono" />
             <p className="text-xs text-pretty text-muted-foreground">Kept even if another rule would delete them. {PATTERN_HELP}</p>
           </div>
           <div className="grid content-start gap-1.5">
             <Label htmlFor={`${id}-deletePattern`}>Delete tags matching</Label>
-            <Input id={`${id}-deletePattern`} value={f.deletePattern} onChange={set("deletePattern")} placeholder="pr-*,dev-*" className="font-mono" />
+            <Input id={`${id}-deletePattern`} value={f.deletePattern} onChange={set("deletePattern")} className="font-mono" />
             <p className="text-xs text-pretty text-muted-foreground">{PATTERN_HELP}</p>
           </div>
           <div className="grid content-start gap-1.5">
@@ -389,10 +398,13 @@ export function PolicyEditor({
         before they are purged. Immutable tags are never touched.
       </p>
       <div className="flex flex-wrap items-center gap-2">
-        <SubmitButton pending={pending}>Save</SubmitButton>
+        <SubmitButton pending={pending} className={TOUCH}>
+          Save
+        </SubmitButton>
         <Button
           type="button"
           variant="outline"
+          className={TOUCH}
           disabled={pending}
           onClick={() => {
             setError(undefined)
@@ -405,9 +417,8 @@ export function PolicyEditor({
         >
           Preview
         </Button>
-        {repo && (
-          <RunNow name={repo} />
-        )}
+        <RunNow scope={repo ?? namespace} isRepo={Boolean(repo)} disabled={dirty || !hasRules} />
+        <span className="text-xs text-muted-foreground">{dirty ? "Save first. Run now uses the saved rules." : "Run now runs the saved rules."}</span>
       </div>
       <FormError>{error}</FormError>
       {preview && <PreviewList p={preview} scope={repo ? "repo" : "namespace"} />}
@@ -415,7 +426,7 @@ export function PolicyEditor({
   )
 }
 
-function RunNow({ name }: { name: string }) {
+function RunNow({ scope, isRepo, disabled }: { scope: string; isRepo: boolean; disabled: boolean }) {
   const [pending, start] = useTransition()
   const [error, setError] = useState<string>()
   const setNotice = useNotice()
@@ -423,12 +434,15 @@ function RunNow({ name }: { name: string }) {
     <span className="flex flex-col gap-1">
       <Confirm
         label="Run now"
+        danger={false}
+        size="default"
+        disabled={disabled}
         question="Moves everything the saved rules select to Trash."
         yes="Run cleanup"
         pending={pending}
         onYes={() =>
           start(async () => {
-            const r = await runCleanup(name)
+            const r = await (isRepo ? runCleanup(scope) : runNamespaceCleanup(scope))
             if (r.error) return setError(r.error)
             setNotice({ text: "Cleanup ran. Anything it removed is in Trash." })
           })
@@ -448,7 +462,12 @@ function PreviewList({ p, scope }: { p: Preview; scope: "repo" | "namespace" }) 
       <p className="font-medium">
         {rows.length === 0
           ? "Nothing would be moved to Trash."
-          : `${tags.length} ${tags.length === 1 ? "tag" : "tags"} and ${untagged.length} untagged ${untagged.length === 1 ? "image" : "images"} would move to Trash.`}
+          : `${[
+              tags.length && `${tags.length} ${tags.length === 1 ? "tag" : "tags"}`,
+              untagged.length && `${untagged.length} untagged ${untagged.length === 1 ? "image" : "images"}`,
+            ]
+              .filter(Boolean)
+              .join(" and ")} would move to Trash.`}
       </p>
       {scope === "namespace" && (
         <p className="text-xs text-muted-foreground">
@@ -475,7 +494,6 @@ function PreviewList({ p, scope }: { p: Preview; scope: "repo" | "namespace" }) 
 const EVENTS = [
   ["push", "Push"],
   ["delete", "Delete"],
-  ["scan", "Scan finished"],
 ] as const
 
 // `repo` is the part after the namespace; omit for namespace-wide hooks.
@@ -512,10 +530,10 @@ export function Hooks({ namespace, repo, initial }: { namespace: string; repo?: 
             required
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://example.com/hooks/registry"
+            placeholder="https://ci.example/registry-hook"
             className="min-w-0 flex-1 basis-64"
           />
-          <Button type="submit" variant="outline" disabled={pending}>
+          <Button type="submit" variant="outline" className={TOUCH} disabled={pending}>
             <PlusIcon />
             Add webhook
           </Button>
@@ -524,7 +542,7 @@ export function Hooks({ namespace, repo, initial }: { namespace: string; repo?: 
           <legend className="sr-only">Events</legend>
           <span className="text-xs text-muted-foreground">Send on</span>
           {EVENTS.map(([v, label]) => (
-            <label key={v} className="flex items-center gap-1.5 text-sm">
+            <label key={v} className="flex items-center gap-1.5 text-sm pointer-coarse:min-h-11">
               <input
                 type="checkbox"
                 className="size-4 accent-primary"
@@ -597,11 +615,9 @@ function HookItem({ h, onChange, notice }: { h: HookRow; onChange: () => Promise
             {h.repo && <Badge variant="secondary">{h.repo}</Badge>}
           </span>
         </div>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            role="switch"
-            className="size-4 accent-primary"
+        <label className="flex items-center gap-2 text-sm pointer-coarse:min-h-11">
+          <Switch
+            aria-label={`Send to ${h.url}`}
             checked={h.enabled}
             disabled={pending}
             onChange={(e) =>
@@ -617,6 +633,7 @@ function HookItem({ h, onChange, notice }: { h: HookRow; onChange: () => Promise
         <Button
           variant="outline"
           size="sm"
+          className={TOUCH}
           disabled={pending}
           onClick={() =>
             start(async () => {
@@ -633,7 +650,7 @@ function HookItem({ h, onChange, notice }: { h: HookRow; onChange: () => Promise
           <PaperPlaneTiltIcon />
           Test
         </Button>
-        <Button variant="ghost" size="sm" onClick={() => (log ? setLog(null) : showLog())}>
+        <Button variant="ghost" size="sm" className={TOUCH} onClick={() => (log ? setLog(null) : showLog())}>
           {log ? "Hide log" : "Log"}
         </Button>
         <Confirm
@@ -701,9 +718,11 @@ export function NamespacesSection({ owned }: { owned: OwnedNamespace[] }) {
                 <span className="font-mono break-all">{n.name}</span>
                 <Badge variant="outline">{n.kind === "org" ? "Org" : "You"}</Badge>
               </p>
-              <p className="text-xs text-muted-foreground">Cleanup: {describePolicy(n.policy)}</p>
+              <p className="text-xs text-muted-foreground">
+                Cleanup: {describePolicy(n.policy)} · {n.hooks === 1 ? "1 webhook" : `${n.hooks} webhooks`}
+              </p>
             </div>
-            <Button variant="outline" size="sm" onClick={() => pick(n)}>
+            <Button variant="outline" size="sm" className={TOUCH} onClick={() => pick(n)}>
               <BroomIcon />
               Settings
             </Button>
@@ -717,7 +736,9 @@ export function NamespacesSection({ owned }: { owned: OwnedNamespace[] }) {
             {open && (
               <>
                 <div className="grid gap-1.5">
-                  <Dialog.Title className="font-mono text-base font-semibold break-all">{open.name}</Dialog.Title>
+                  <Dialog.Title className="text-base font-semibold break-all">
+                    <span className="font-mono">{open.name}</span> · Cleanup and webhooks
+                  </Dialog.Title>
                   <Dialog.Description className="text-sm text-pretty text-muted-foreground">
                     Applies to every repository here that doesn&apos;t set its own rules.
                   </Dialog.Description>

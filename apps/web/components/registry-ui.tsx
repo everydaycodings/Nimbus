@@ -1,9 +1,24 @@
 "use client"
 
-import { useState } from "react"
+import { useId, useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+
+// Small buttons and links grow to a 44px target on touch screens.
+export const TOUCH = "pointer-coarse:h-11 pointer-coarse:px-3.5"
+
+export const Switch = ({ className, ...props }: Omit<React.ComponentProps<"input">, "type" | "role">) => (
+  <input
+    {...props}
+    type="checkbox"
+    role="switch"
+    className={cn(
+      "relative h-5 w-9 shrink-0 cursor-pointer appearance-none rounded-full border border-input bg-input/30 transition-colors outline-none before:absolute before:top-0.5 before:left-0.5 before:size-3.5 before:rounded-full before:bg-muted-foreground before:transition-transform checked:border-transparent checked:bg-primary checked:before:translate-x-4 checked:before:bg-primary-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none motion-reduce:before:transition-none",
+      className
+    )}
+  />
+)
 
 export const SECTION = "flex flex-col gap-3"
 export const LIST = "divide-y overflow-hidden rounded-xl border bg-card"
@@ -58,34 +73,53 @@ export function Empty({
   )
 }
 
-// Confirms inline: the button turns into "Sure? Yes / Keep".
+// Confirms inline: the button turns into "question  Yes / Keep". `danger` colours the first step too.
 export function Confirm({
   label,
   question,
   yes,
   pending,
   onYes,
+  danger = true,
+  size = "sm",
+  disabled,
+  ariaLabel,
 }: {
   label: string
   question: string
   yes: string
   pending: boolean
   onYes: () => void
+  danger?: boolean
+  size?: "sm" | "default"
+  disabled?: boolean
+  ariaLabel?: string
 }) {
   const [sure, setSure] = useState(false)
+  const id = useId()
   if (!sure)
     return (
-      <Button type="button" variant="outline" size="sm" onClick={() => setSure(true)}>
+      <Button
+        type="button"
+        variant="outline"
+        size={size}
+        disabled={disabled}
+        aria-label={ariaLabel}
+        className={cn(size === "sm" && TOUCH, danger && "text-destructive hover:text-destructive")}
+        onClick={() => setSure(true)}
+      >
         {label}
       </Button>
     )
   return (
-    <span className="flex flex-wrap items-center gap-1.5">
-      <span className="text-xs text-muted-foreground">{question}</span>
-      <Button type="button" variant="destructive" size="sm" disabled={pending} onClick={onYes}>
+    <span role="group" aria-describedby={id} className="flex flex-wrap items-center gap-1.5">
+      <span id={id} className="text-xs text-muted-foreground">
+        {question}
+      </span>
+      <Button type="button" variant="destructive" size="sm" className={TOUCH} disabled={pending} onClick={onYes}>
         {yes}
       </Button>
-      <Button type="button" variant="ghost" size="sm" autoFocus disabled={pending} onClick={() => setSure(false)}>
+      <Button type="button" variant="ghost" size="sm" className={TOUCH} autoFocus disabled={pending} onClick={() => setSure(false)}>
         Keep
       </Button>
     </span>

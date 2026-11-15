@@ -138,6 +138,19 @@ export async function runCleanup(name: string): Promise<Result> {
   return done({})
 }
 
+// Runs the saved namespace rules on every repository that follows them.
+export async function runNamespaceCleanup(ns: string): Promise<Result> {
+  const me = await member()
+  if (!me) return NOT_ON
+  const repos = await svc.inheritingRepos(me.id, ns)
+  try {
+    for (const r of repos) await applyPolicy(r.id)
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "The cleanup didn't run." }
+  }
+  return done({})
+}
+
 export async function namespaceSettings(ns: string) {
   const me = await member()
   if (!me) return null

@@ -357,7 +357,7 @@ export default async function AppLayout({
             <NavLink href="/buckets" icon={<CubeIcon />} label="S3 buckets" />
           )}
           {(registry === "ready" || registry === "unclaimed" || (admin && registry !== "disabled")) && (
-            <NavLink href="/registry" icon={<PackageIcon />} label="Registry" />
+            <NavLink href="/registry" icon={<PackageIcon />} label="Container registry" />
           )}
           <NavLink href="/trash" icon={<TrashIcon />} label="Trash" />
         </div>

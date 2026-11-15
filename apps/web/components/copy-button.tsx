@@ -5,7 +5,7 @@ import { useState } from "react"
 
 import { Button } from "@/components/ui/button"
 
-export function CopyButton({ value }: { value: string }) {
+export function CopyButton({ value, label, className }: { value: string; label?: string; className?: string }) {
   const [copied, setCopied] = useState(false)
 
   async function copy() {
@@ -15,7 +15,7 @@ export function CopyButton({ value }: { value: string }) {
   }
 
   return (
-    <Button type="button" variant="outline" size="sm" onClick={copy}>
+    <Button type="button" variant="outline" size="sm" className={className} aria-label={label} onClick={copy}>
       {copied ? <CheckIcon /> : <CopyIcon />}
       <span aria-live="polite">{copied ? "Copied" : "Copy"}</span>
     </Button>

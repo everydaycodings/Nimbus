@@ -4,9 +4,9 @@ import { notFound, redirect } from "next/navigation"
 
 import { RepoSettings, RepoTags } from "@/components/registry-repo"
 import { Badge } from "@/components/ui/badge"
-import { formatBytes } from "@/lib/file-rules"
 import { listHooksFor, repoDetail, registryState, tagDetail, type ImageInfo } from "@/lib/registry/manage"
 import { endpoint } from "@/lib/registry/rules"
+import { sizeOf } from "@/lib/registry/size"
 import { requireMember } from "@/lib/session"
 
 export const metadata = { title: "Container registry · Nimbus" }
@@ -28,13 +28,13 @@ const MONO = "overflow-x-auto rounded-md bg-input/20 px-3 py-2 font-mono text-xs
 function Image({ img }: { img: ImageInfo }) {
   const total = img.layers.reduce((a, l) => a + l.size, 0)
   return (
-    <div className="flex flex-col gap-4 rounded-xl border bg-card p-4">
+    <div className="flex flex-col gap-4 py-4 first:pt-0 last:pb-0">
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="outline" className="font-mono">
           {img.platform ?? "image"}
         </Badge>
         <span className="text-xs text-muted-foreground tabular-nums">
-          {img.layers.length === 1 ? "1 layer" : `${img.layers.length} layers`} · {formatBytes(total)}
+          {img.layers.length === 1 ? "1 layer" : `${img.layers.length} layers`} · {sizeOf(total)}
           {img.created ? ` · Built ${dateTime.format(new Date(img.created))}` : ""}
         </span>
         <code className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">{img.digest}</code>
@@ -75,6 +75,9 @@ function Image({ img }: { img: ImageInfo }) {
             </Block>
           )}
           <Block title="Layers">
+            {img.layers.length === 0 ? (
+              <p className="text-sm text-muted-foreground">This image has no layers, only its config.</p>
+            ) : (
             <ol className="divide-y overflow-hidden rounded-md border text-xs">
               {img.layers.map((l, i) => (
                 <li key={l.digest} className="flex items-center gap-3 px-3 py-1.5">
@@ -82,10 +85,11 @@ function Image({ img }: { img: ImageInfo }) {
                   <code className="min-w-0 flex-1 truncate font-mono text-muted-foreground" title={l.digest}>
                     {l.digest}
                   </code>
-                  <span className="shrink-0 tabular-nums">{formatBytes(l.size)}</span>
+                  <span className="shrink-0 tabular-nums">{sizeOf(l.size)}</span>
                 </li>
               ))}
             </ol>
+            )}
           </Block>
           {img.history.length > 0 && (
             <Block title="History">
@@ -133,28 +137,31 @@ export default async function RepoPage({
         <h1 className="font-mono text-2xl font-semibold tracking-tight break-all">{repo.fullName}</h1>
         <p className="text-sm text-muted-foreground">
           {repo.isPublic ? "Public" : "Private"} · {repo.tags.length === 1 ? "1 tag" : `${repo.tags.length} tags`} ·{" "}
-          <span className="tabular-nums">{formatBytes(repo.bytes)}</span> stored
+          <span className="tabular-nums">{sizeOf(repo.bytes)}</span> stored
         </p>
       </header>
 
-      <RepoTags repo={repo} host={host} selected={detail?.tag} />
-
-      {detail && (
-        <section id="detail" className="flex scroll-mt-24 flex-col gap-3" aria-labelledby="detail-heading">
-          <div className="grid gap-1">
-            <h2 id="detail-heading" className="text-base font-semibold">
-              <span className="font-mono">{detail.tag}</span>
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              <span className="font-mono">{detail.mediaType.replace("application/vnd.", "")}</span> ·{" "}
-              {detail.images.length > 1 ? `${detail.images.length} platforms` : "1 image"}
-            </p>
-          </div>
-          {detail.images.map((img) => (
-            <Image key={img.digest} img={img} />
-          ))}
-        </section>
-      )}
+      <RepoTags
+        repo={repo}
+        host={host}
+        selected={detail?.tag}
+        detail={
+          detail && (
+            <div id="detail" className="flex flex-col gap-3">
+              <h3 className="sr-only">Details for {detail.tag}</h3>
+              <p className="text-xs text-muted-foreground">
+                <span className="font-mono">{detail.mediaType.replace("application/vnd.", "")}</span> ·{" "}
+                {detail.images.length > 1 ? `${detail.images.length} platforms` : "1 image"}
+              </p>
+              <div className="divide-y">
+                {detail.images.map((img) => (
+                  <Image key={img.digest} img={img} />
+                ))}
+              </div>
+            </div>
+          )
+        }
+      />
 
       <RepoSettings repo={repo} hooks={hooks} />
     </div>

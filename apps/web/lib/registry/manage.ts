@@ -841,15 +841,17 @@ export function parsePolicy(raw: Record<string, unknown>): { policy: Policy | nu
 }
 
 // Namespaces the member owns: their own and orgs they own.
-export type OwnedNamespace = { id: string; name: string; kind: "user" | "org"; policy: Policy | null }
+export type OwnedNamespace = { id: string; name: string; kind: "user" | "org"; policy: Policy | null; hooks: number }
 
 export async function ownedNamespaces(userId: string): Promise<OwnedNamespace[]> {
-  const rows = await db.execute<{ id: string; name: string; kind: "user" | "org"; policy: Policy | null }>(sql`
-    select n.id, n.name, n.kind, n.policy from registry_namespaces n
+  const rows = await db.execute<{ id: string; name: string; kind: "user" | "org"; policy: Policy | null; hooks: string }>(sql`
+    select n.id, n.name, n.kind, n.policy,
+      (select count(*) from registry_hooks h where h.namespace_id = n.id and h.repo_id is null)::text as hooks
+    from registry_namespaces n
     left join registry_org_members m on n.kind = 'org' and m.org_id::text = n.ref_id and m.user_id = ${userId}
     where (n.kind = 'user' and n.ref_id = ${userId}) or m.role = 'owner'
     order by n.kind desc, n.name`)
-  return rows.map((r) => ({ id: r.id, name: r.name, kind: r.kind, policy: r.policy ?? null }))
+  return rows.map((r) => ({ id: r.id, name: r.name, kind: r.kind, policy: r.policy ?? null, hooks: Number(r.hooks) }))
 }
 
 async function owned(userId: string, nsName: string) {
