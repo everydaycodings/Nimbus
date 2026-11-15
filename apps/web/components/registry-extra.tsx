@@ -494,6 +494,7 @@ function PreviewList({ p, scope }: { p: Preview; scope: "repo" | "namespace" }) 
 const EVENTS = [
   ["push", "Push"],
   ["delete", "Delete"],
+  ["scan", "Scan finished"],
 ] as const
 
 // `repo` is the part after the namespace; omit for namespace-wide hooks.

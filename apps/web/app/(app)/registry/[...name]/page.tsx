@@ -2,9 +2,17 @@ import { ArrowLeftIcon } from "@phosphor-icons/react/dist/ssr"
 import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
 
-import { RepoSettings, RepoTags } from "@/components/registry-repo"
+import { ArtifactList, PullsChart } from "@/components/registry-insights"
+import { RepoReadme } from "@/components/registry-readme"
+import { RepoSettings, RepoTags, type TagExtra } from "@/components/registry-repo"
+import { VulnList } from "@/components/registry-scan"
+import { Heading, SECTION } from "@/components/registry-ui"
 import { Badge } from "@/components/ui/badge"
 import { listHooksFor, repoDetail, registryState, tagDetail, type ImageInfo } from "@/lib/registry/manage"
+import { artifactsFor } from "@/lib/registry/artifacts"
+import { readmeFor } from "@/lib/registry/readme"
+import { scanAvailable, scanReport, scanSummaries } from "@/lib/registry/scan"
+import { pullStats, tagPulls } from "@/lib/registry/stats"
 import { endpoint } from "@/lib/registry/rules"
 import { sizeOf } from "@/lib/registry/size"
 import { requireMember } from "@/lib/session"
@@ -123,6 +131,33 @@ export default async function RepoPage({
   if (!repo) notFound()
   const hooks = repo.isOwner ? await listHooksFor(me.id, repo.namespace, full.slice(repo.namespace.length + 1)) : []
   const detail = tag ? await tagDetail(me.id, full, tag) : null
+  const scanOn = await scanAvailable()
+  const manifestIds = repo.tags.flatMap((t) => (t.manifestId ? [t.manifestId] : []))
+  const [scans, arts, perTag, days, readme] = await Promise.all([
+    scanOn ? scanSummaries(manifestIds) : ({} as Awaited<ReturnType<typeof scanSummaries>>),
+    artifactsFor(repo.id, repo.tags.map((t) => t.digest)),
+    tagPulls(repo.id),
+    pullStats(repo.id, 30),
+    readmeFor(repo.id),
+  ])
+  const extras: Record<string, TagExtra> = Object.fromEntries(
+    repo.tags.map((t) => {
+      const a = arts[t.digest]
+      const scan = t.manifestId ? scans[t.manifestId] : undefined
+      return [
+        t.name,
+        {
+          scan: scan ? { status: scan.status, critical: scan.critical, high: scan.high, medium: scan.medium, low: scan.low } : null,
+          signed: (a?.signatures ?? 0) > 0,
+          sbom: (a?.sboms ?? 0) > 0,
+          attestation: (a?.attestations ?? 0) > 0,
+          pulls: perTag[t.name] ?? 0,
+        },
+      ]
+    })
+  )
+  const picked = tag ? repo.tags.find((t) => t.name === tag) : undefined
+  const report = scanOn && picked?.manifestId ? await scanReport(picked.manifestId) : null
   const host = endpoint()!.replace(/^https?:\/\//, "")
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
@@ -145,6 +180,8 @@ export default async function RepoPage({
         repo={repo}
         host={host}
         selected={detail?.tag}
+        scanOn={scanOn}
+        extras={extras}
         detail={
           detail && (
             <div id="detail" className="flex flex-col gap-3">
@@ -153,6 +190,17 @@ export default async function RepoPage({
                 <span className="font-mono">{detail.mediaType.replace("application/vnd.", "")}</span> ·{" "}
                 {detail.images.length > 1 ? `${detail.images.length} platforms` : "1 image"}
               </p>
+              {scanOn && picked && (
+                <VulnList
+                  tag={detail.tag}
+                  name={repo.fullName}
+                  summary={extras[picked.name].scan}
+                  vulns={report?.vulns ?? []}
+                  error={report?.error ?? null}
+                  canRescan={repo.canWrite}
+                />
+              )}
+              {picked && <ArtifactList tag={detail.tag} items={arts[picked.digest]?.items ?? []} />}
               <div className="divide-y">
                 {detail.images.map((img) => (
                   <Image key={img.digest} img={img} />
@@ -163,7 +211,14 @@ export default async function RepoPage({
         }
       />
 
-      <RepoSettings repo={repo} hooks={hooks} />
+      <section className={SECTION} aria-labelledby="pulls-heading">
+        <Heading id="pulls-heading" title="Pulls" hint="Pulls of every tag in this repository, by day." />
+        <PullsChart days={days} />
+      </section>
+
+      <RepoReadme name={repo.fullName} canWrite={repo.canWrite} readme={readme} />
+
+      <RepoSettings repo={repo} hooks={hooks} scanOn={scanOn} />
     </div>
   )
 }

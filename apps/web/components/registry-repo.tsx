@@ -3,11 +3,12 @@
 import { CaretDownIcon, GlobeIcon, LockSimpleIcon, PackageIcon, TrashIcon } from "@phosphor-icons/react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useMemo, useState, useTransition } from "react"
+import { useEffect, useMemo, useState, useTransition } from "react"
 
-import { deleteRepo, deleteTag, restoreTrash, setImmutable, setRepoPublic } from "@/app/(app)/registry/actions"
+import { deleteRepo, deleteTag, restoreTrash, setBlockCritical, setImmutable, setRepoPublic } from "@/app/(app)/registry/actions"
 import { CopyButton } from "@/components/copy-button"
 import { Hooks, PolicyEditor } from "@/components/registry-extra"
+import { ScanBadge, isScanning, type ScanSummary } from "@/components/registry-scan"
 import { Code, Confirm, Empty, Heading, LIST, SECTION, SELECT, Switch, TOUCH, WHEN } from "@/components/registry-ui"
 import { SubmitButton } from "@/components/submit-button"
 import { useNotice } from "@/components/toaster"
@@ -19,11 +20,36 @@ import { sizeOf } from "@/lib/registry/size"
 import type { HookRow, RepoDetail, TagRow } from "@/lib/registry/manage"
 import { cn } from "@/lib/utils"
 
+// What the page knows about a tag beyond its row: scan result, attachments, pulls.
+export type TagExtra = { scan: ScanSummary | null; signed: boolean; sbom: boolean; attestation: boolean; pulls: number }
+
 const FILTER_AT = 10
 const shortDigest = (d: string) => `${d.slice(0, 11)}…${d.slice(-4)}`
 
 // `detail` is the server-rendered layers and config of the selected tag; it opens under that tag's row.
-export function RepoTags({ repo, host, selected, detail }: { repo: RepoDetail; host: string; selected?: string; detail?: React.ReactNode }) {
+export function RepoTags({
+  repo,
+  host,
+  selected,
+  detail,
+  scanOn,
+  extras,
+}: {
+  repo: RepoDetail
+  host: string
+  selected?: string
+  detail?: React.ReactNode
+  scanOn: boolean
+  extras: Record<string, TagExtra>
+}) {
+  const router = useRouter()
+  const waiting = scanOn && Object.values(extras).some((x) => isScanning(x.scan))
+  // A scan finishes in the worker; look again while any tag is waiting for one.
+  useEffect(() => {
+    if (!waiting) return
+    const t = setInterval(() => router.refresh(), 5000)
+    return () => clearInterval(t)
+  }, [waiting, router])
   const empty = repo.tags.length === 0
   const ns = repo.fullName.split("/")[0]
   const [q, setQ] = useState("")
@@ -62,7 +88,7 @@ export function RepoTags({ repo, host, selected, detail }: { repo: RepoDetail; h
       ) : (
         <ul className={LIST}>
           {tags.map((t) => (
-            <TagItem key={t.name} t={t} repo={repo} host={host} selected={selected === t.name} detail={selected === t.name ? detail : null} />
+            <TagItem key={t.name} t={t} x={extras[t.name]} scanOn={scanOn} repo={repo} host={host} selected={selected === t.name} detail={selected === t.name ? detail : null} />
           ))}
         </ul>
       )}
@@ -72,12 +98,16 @@ export function RepoTags({ repo, host, selected, detail }: { repo: RepoDetail; h
 
 function TagItem({
   t,
+  x,
+  scanOn,
   repo,
   host,
   selected,
   detail,
 }: {
   t: TagRow
+  x: TagExtra | undefined
+  scanOn: boolean
   repo: RepoDetail
   host: string
   selected: boolean
@@ -109,11 +139,16 @@ function TagItem({
                   {p}
                 </Badge>
               ))}
+              {x?.signed && <Badge variant="outline">Signed</Badge>}
+              {x?.sbom && <Badge variant="outline">SBOM</Badge>}
+              {x?.attestation && <Badge variant="outline">Attestation</Badge>}
+              {scanOn && <ScanBadge s={x?.scan} />}
             </p>
             <p suppressHydrationWarning className="text-xs text-pretty text-muted-foreground">
               <span className="tabular-nums">{sizeOf(t.bytes)}</span> · Pushed {WHEN.format(new Date(t.pushedAt))}
               {t.pushedBy ? ` by ${t.pushedBy}` : ""} ·{" "}
-              {t.lastPulledAt ? `Last pulled ${WHEN.format(new Date(t.lastPulledAt))}` : "Never pulled"} ·{" "}
+              {t.lastPulledAt ? `Last pulled ${WHEN.format(new Date(t.lastPulledAt))}` : "Never pulled"}
+              {x && x.pulls > 0 ? ` · ${x.pulls === 1 ? "1 pull" : `${x.pulls.toLocaleString()} pulls`} (30d)` : ""} ·{" "}
               <code className="font-mono" title={t.digest}>
                 {shortDigest(t.digest)}
               </code>
@@ -152,10 +187,11 @@ function TagItem({
   )
 }
 
-export function RepoSettings({ repo, hooks }: { repo: RepoDetail; hooks: HookRow[] }) {
+export function RepoSettings({ repo, hooks, scanOn }: { repo: RepoDetail; hooks: HookRow[]; scanOn: boolean }) {
   const [pending, start] = useTransition()
   const [error, setError] = useState<string>()
   const [isPublic, setPublic] = useState(repo.isPublic)
+  const [block, setBlock] = useState(repo.blockCritical)
   const router = useRouter()
   const setNotice = useNotice()
   if (!repo.canWrite) return null
@@ -195,6 +231,35 @@ export function RepoSettings({ repo, hooks }: { repo: RepoDetail; hooks: HookRow
               </span>
             </span>
           </label>
+
+          {scanOn && (
+            <label className="flex cursor-pointer items-start gap-3 text-sm">
+              <Switch
+                checked={block}
+                disabled={pending}
+                onChange={(e) => {
+                  const next = e.target.checked
+                  setBlock(next)
+                  setError(undefined)
+                  start(async () => {
+                    const r = await setBlockCritical(repo.fullName, next)
+                    if (r.error) {
+                      setBlock(!next)
+                      return setError(r.error)
+                    }
+                    setNotice({ text: next ? "Pulls of images with critical vulnerabilities are blocked." : "Images with critical vulnerabilities can be pulled again." })
+                  })
+                }}
+                className="mt-0.5"
+              />
+              <span className="grid gap-0.5">
+                <span className="font-medium">Block pulls of images with critical vulnerabilities</span>
+                <span className="text-xs text-pretty text-muted-foreground">
+                  A scanned image with a critical finding fails to pull. Images that haven&apos;t been scanned yet still pull.
+                </span>
+              </span>
+            </label>
+          )}
 
           <form
             className="grid gap-2"
@@ -274,7 +339,7 @@ export function RepoSettings({ repo, hooks }: { repo: RepoDetail; hooks: HookRow
           <Heading
             id="hooks-heading"
             title="Webhooks"
-            hint="Get a signed POST when an image is pushed or deleted here. Webhooks on the registry name cover this repository too."
+            hint="Get a signed POST when an image is pushed, deleted or finishes scanning here. Webhooks on the registry name cover this repository too."
           />
           <div className="rounded-xl border bg-card p-4">
             <Hooks namespace={repo.namespace} repo={repo.fullName.slice(repo.namespace.length + 1)} initial={hooks} />

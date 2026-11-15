@@ -5,6 +5,9 @@ import { revalidatePath } from "next/cache"
 import { audit } from "@/lib/audit"
 import { createHook, deleteHook, testHook } from "@/lib/registry/hooks"
 import * as svc from "@/lib/registry/manage"
+import { requestScan } from "@/lib/registry/scan"
+import { saveTokenToSecret } from "@/lib/registry/secrets-pull"
+import { setReadme } from "@/lib/registry/readme"
 import { applyPolicy, previewPolicy } from "@/lib/registry/policy"
 import { requireMember } from "@/lib/session"
 
@@ -64,6 +67,10 @@ export async function setRepoPublic(name: string, isPublic: boolean) {
 export async function setImmutable(name: string, pattern: string) {
   const me = await member()
   return me ? done(await svc.setImmutable(me.id, name, pattern)) : NOT_ON
+}
+export async function setBlockCritical(name: string, on: boolean) {
+  const me = await member()
+  return me ? done(await svc.setBlockCritical(me.id, name, on)) : NOT_ON
 }
 export async function deleteRepo(name: string) {
   const me = await member()
@@ -209,4 +216,42 @@ export async function hookLog(id: string) {
 
 export async function searchRepos(q: string) {
   return svc.searchRepos((await requireMember()).id, q)
+}
+
+export async function searchRegistryTags(q: string) {
+  return svc.searchTags((await requireMember()).id, q)
+}
+
+export async function rescanTag(name: string, tag: string): Promise<Result> {
+  const me = await member()
+  if (!me) return NOT_ON
+  const id = await svc.writableTagManifest(me.id, name, tag)
+  if (!id) return { error: "You can only read this repository." }
+  await requestScan(id)
+  return done({})
+}
+
+// Blank (null) goes back to the image label.
+export async function saveReadme(name: string, markdown: string | null): Promise<Result> {
+  const me = await member()
+  if (!me) return NOT_ON
+  const id = await svc.writableRepoId(me.id, name)
+  if (!id) return { error: "You can only read this repository." }
+  try {
+    await setReadme(me.id, id, markdown)
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Couldn't save the README." }
+  }
+  return done({})
+}
+
+// Repositories the member can pick when setting up a Secrets "registry pull" connection.
+export async function registryRepoChoices() {
+  const me = await member()
+  return me ? (await svc.listRepos(me.id)).map((r) => ({ id: r.id, fullName: r.fullName })) : []
+}
+
+export async function saveRegistryTokenToSecret(o: { token: string; name: string; projectId: string; envId: string }) {
+  const me = await member()
+  return me ? saveTokenToSecret(me.id, o) : { ...NOT_ON, locked: false, requested: false }
 }

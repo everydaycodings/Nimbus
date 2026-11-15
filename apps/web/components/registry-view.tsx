@@ -17,6 +17,7 @@ import {
   revokeToken,
   setOrgRole,
 } from "@/app/(app)/registry/actions"
+import { SaveToSecrets } from "@/components/registry-save-secret"
 import { CopyButton } from "@/components/copy-button"
 import { DIALOG_BACKDROP, DIALOG_POPUP } from "@/components/overlay-styles"
 import { MirrorsTab, NamespacesSection, RegistryTabs, TrashTab, type Tab } from "@/components/registry-extra"
@@ -701,6 +702,7 @@ function NewToken({
                   </code>
                 </div>
               </div>
+              <SaveToSecrets token={made} />
               <div className="flex justify-end">
                 <Button onClick={close}>Done</Button>
               </div>

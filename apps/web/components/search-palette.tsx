@@ -24,7 +24,7 @@ import { useRouter } from "next/navigation"
 import { Fragment, useEffect, useRef, useState } from "react"
 
 import { quickSearch } from "@/app/(app)/search-actions"
-import { searchRepos } from "@/app/(app)/registry/actions"
+import { searchRegistryTags, searchRepos } from "@/app/(app)/registry/actions"
 import { DocChips } from "@/components/doc-bits"
 import { DIALOG_BACKDROP } from "@/components/overlay-styles"
 import { canEditItem, Previewer } from "@/components/previewer"
@@ -73,7 +73,7 @@ export function SearchPalette({ admin }: { admin: boolean }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState("")
   const [found, setFound] = useState<{ q: string; hits: Hit[] } | null>(null)
-  const [repos, setRepos] = useState<{ q: string; hits: { fullName: string; tags: number }[] } | null>(null)
+  const [repos, setRepos] = useState<{ q: string; hits: { fullName: string; tags: number }[]; tagHits: { fullName: string; tag: string }[] } | null>(null)
   const [active, setActive] = useState(0)
   const [recent, setRecent] = useState<string[]>([])
   const [hasLayout, setHasLayout] = useState(false)
@@ -124,7 +124,11 @@ export function SearchPalette({ admin }: { admin: boolean }) {
     if (!query) return
     let live = true
     const t = setTimeout(
-      () => searchRepos(query).then((hits) => live && setRepos({ q: query, hits }), () => {}),
+      () =>
+        Promise.all([searchRepos(query), searchRegistryTags(query)]).then(
+          ([hits, tagHits]) => live && setRepos({ q: query, hits, tagHits }),
+          () => {}
+        ),
       120
     )
     return () => {
@@ -296,13 +300,22 @@ export function SearchPalette({ admin }: { admin: boolean }) {
         },
         {
           title: "Container images",
-          rows: (repos?.q === query ? repos.hits : []).map((r) => ({
-            key: `repo:${r.fullName}`,
-            label: <span className="font-mono">{r.fullName}</span>,
-            icon: PackageIcon,
-            detail: r.tags === 1 ? "1 tag" : `${r.tags} tags`,
-            run: go(`/registry/${r.fullName}`),
-          })),
+          rows: [
+            ...(repos?.q === query ? repos.hits : []).map((r) => ({
+              key: `repo:${r.fullName}`,
+              label: <span className="font-mono">{r.fullName}</span>,
+              icon: PackageIcon,
+              detail: r.tags === 1 ? "1 tag" : `${r.tags} tags`,
+              run: go(`/registry/${r.fullName}`),
+            })),
+            ...(repos?.q === query ? repos.tagHits : []).map((r) => ({
+              key: `tag:${r.fullName}:${r.tag}`,
+              label: <span className="font-mono">{`${r.fullName}:${r.tag}`}</span>,
+              icon: PackageIcon,
+              detail: "Tag",
+              run: go(`/registry/${r.fullName}?tag=${encodeURIComponent(r.tag)}`),
+            })),
+          ],
         },
         {
           title: "Commands",

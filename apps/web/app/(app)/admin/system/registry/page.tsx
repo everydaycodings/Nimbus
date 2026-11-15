@@ -52,6 +52,7 @@ export default async function RegistryAdminPage() {
     adminUpstreams(),
   ])
   const reset = resettable(s)
+  const scanReady = Boolean(process.env.REGISTRY_SCAN_URL)
   const quota = sizeField(s.registryDefaultQuotaBytes, "GB", "TB")
   const bps = speedField(s.registryBpsLimit)
 
@@ -102,6 +103,24 @@ export default async function RegistryAdminPage() {
           reset={reset("registryRedirect")}
         >
           <input type="checkbox" id="registryRedirect" name="registryRedirect" defaultChecked={s.registryRedirect} className={CHECK} />
+        </SettingRow>
+        <SettingRow
+          id="registry-scan"
+          label="Image scanning"
+          htmlFor="registryScan"
+          hint={
+            scanReady
+              ? "Scans pushed images for known vulnerabilities and shows the result on each tag."
+              : "The scanner isn't running. Turn on scanning in setup."
+          }
+          tip={{
+            does: "Checks every pushed image against a vulnerability database, again each day, and lists what it finds. Repositories can also refuse pulls of images with critical findings.",
+            affects: "New pushes and the daily rescan. Existing results stay while this is off.",
+            default: "Off",
+          }}
+          reset={reset("registryScan")}
+        >
+          <input type="checkbox" id="registryScan" name="registryScan" defaultChecked={s.registryScan} disabled={!scanReady} className={CHECK} />
         </SettingRow>
         <SettingRow
           id="registry-rate-limit"

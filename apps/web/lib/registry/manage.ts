@@ -335,6 +335,7 @@ export async function listRepos(userId: string): Promise<RepoRow[]> {
 export type TagRow = {
   name: string
   digest: string
+  manifestId: string | null
   mediaType: string
   bytes: number
   platforms: string[]
@@ -349,6 +350,7 @@ export type RepoDetail = {
   fullName: string
   isPublic: boolean
   immutablePattern: string | null
+  blockCritical: boolean
   // The repo's own cleanup policy (null inherits) and the namespace default it would inherit.
   policy: Policy | null
   nsPolicy: Policy | null
@@ -407,6 +409,9 @@ function manifestBytes(
   return total
 }
 
+// cosign and similar tools store signatures and SBOMs under tags like sha256-<hex>.sig; they belong to their image, not the tag list.
+const ATTACHMENT_TAG = /^sha256-[0-9a-f]{64}(\.[a-z0-9-]+)?$/
+
 export async function repoDetail(userId: string, fullName: string): Promise<RepoDetail | null> {
   const r = await reach(userId, fullName)
   if (!r) return null
@@ -451,6 +456,7 @@ export async function repoDetail(userId: string, fullName: string): Promise<Repo
     fullName,
     isPublic: r.repo.isPublic,
     immutablePattern: pat,
+    blockCritical: r.repo.blockCritical,
     policy: r.repo.policy ?? null,
     nsPolicy: r.ns.policy ?? null,
     namespace: r.ns.name,
@@ -458,11 +464,12 @@ export async function repoDetail(userId: string, fullName: string): Promise<Repo
     isOwner: r.role === "owner",
     bytes: blobRows.reduce((a, b) => a + b.size, 0),
     publicAllowed: s.registryPublic,
-    tags: tags.map(({ t, by }) => {
+    tags: tags.filter(({ t }) => !ATTACHMENT_TAG.test(t.name)).map(({ t, by }) => {
       const m = mf.get(t.digest)
       return {
         name: t.name,
         digest: t.digest,
+        manifestId: m?.id ?? null,
         mediaType: m?.mediaType ?? "",
         bytes: m ? manifestBytes(m.id, refs, blob, byDigest) : 0,
         platforms: m?.platforms ?? [],
@@ -623,6 +630,26 @@ export async function setImmutable(userId: string, fullName: string, raw: string
     .set({ immutablePattern: pattern || null })
     .where(eq(registryRepos.id, r.repo.id))
   await audit("registry_repo_immutable", { detail: `${fullName}: ${pattern || "none"}` })
+  return {}
+}
+
+// The manifest a writer's tag points at, for actions that work on one image.
+export async function writableTagManifest(userId: string, fullName: string, tag: string) {
+  const r = await writable(userId, fullName)
+  if (!r) return null
+  const [row] = await db
+    .select({ id: registryManifests.id })
+    .from(registryTags)
+    .innerJoin(registryManifests, and(eq(registryManifests.repoId, registryTags.repoId), eq(registryManifests.digest, registryTags.digest), isNull(registryManifests.deletedAt)))
+    .where(and(eq(registryTags.repoId, r.repo.id), eq(registryTags.name, tag), isNull(registryTags.deletedAt)))
+  return row?.id ?? null
+}
+
+export async function setBlockCritical(userId: string, fullName: string, on: boolean): Promise<Result> {
+  const r = await writable(userId, fullName)
+  if (!r) return NO_WRITE
+  await db.update(registryRepos).set({ blockCritical: on }).where(eq(registryRepos.id, r.repo.id))
+  await audit("registry_repo_block_critical", { detail: `${fullName}: ${on ? "on" : "off"}` })
   return {}
 }
 
@@ -1266,4 +1293,31 @@ export async function searchRepos(userId: string, q: string) {
     .filter((r) => r.fullName.toLowerCase().includes(needle))
     .slice(0, 5)
     .map((r) => ({ fullName: r.fullName, tags: r.tags }))
+}
+
+// Tags the search box should offer, as "namespace/repo:tag", within what the member can reach.
+export async function searchTags(userId: string, q: string) {
+  const needle = q.trim().toLowerCase()
+  if (!needle || (await registryState(userId)) !== "ready") return []
+  const colon = needle.lastIndexOf(":")
+  const [repoPart, tagPart] = colon < 0 ? ["", needle] : [needle.slice(0, colon), needle.slice(colon + 1)]
+  const repos = (await listRepos(userId)).filter((r) => r.fullName.toLowerCase().includes(repoPart))
+  if (!repos.length) return []
+  const byId = new Map(repos.map((r) => [r.id, r.fullName]))
+  const rows = await db
+    .select({ repoId: registryTags.repoId, name: registryTags.name })
+    .from(registryTags)
+    .where(
+      and(
+        inArray(registryTags.repoId, [...byId.keys()]),
+        isNull(registryTags.deletedAt),
+        sql`lower(${registryTags.name}) like ${`%${tagPart.replace(/[\\%_]/g, "\\$&")}%`}`
+      )
+    )
+    .limit(200)
+  return rows
+    .filter((r) => !ATTACHMENT_TAG.test(r.name))
+    .map((r) => ({ fullName: byId.get(r.repoId)!, tag: r.name }))
+    .filter((r) => `${r.fullName}:${r.tag}`.toLowerCase().includes(needle))
+    .slice(0, 5)
 }

@@ -10,17 +10,22 @@ import { Confirm, Modal, SELECT, CHECKBOX } from "@/components/secrets/ui"
 import { SubmitButton } from "@/components/submit-button"
 import { useNotice } from "@/components/toaster"
 import { Button } from "@/components/ui/button"
+import { RegistryPullDialog, type PullConn } from "@/components/secrets/registry-pull-dialog"
 import { GuideLink } from "@/components/secrets/guide-link"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { DEFAULT_PORT, DEFAULT_TEMPLATE, ENGINES, ENGINE_LABEL, fmtTtl, type Engine } from "@/lib/secrets/dyn-consts"
 import { cn } from "@/lib/utils"
 
-type Conn = { id: string; name: string; engine: Engine; host: string; port: number; database: string; tls: boolean; ca: string; adminUser: string; createSql: string; revokeSql: string; defaultTtl: number; maxTtl: number }
-type Lease = { id: string; connection: string; engine: Engine; username: string; issuedBy: string; createdAt: string; expiresAt: string; state: "active" | "expired" | "revoked" | "failed"; error: string | null }
+// "registry-pull" has no host or login: its leases are registry tokens.
+type Kind = Engine | "registry-pull"
+const PULL = "registry-pull"
+const kindLabel = (k: Kind) => (k === PULL ? "Registry pull tokens" : ENGINE_LABEL[k])
+type Conn = { repos?: "all" | string[]; id: string; name: string; engine: Kind; host: string; port: number; database: string; tls: boolean; ca: string; adminUser: string; createSql: string; revokeSql: string; defaultTtl: number; maxTtl: number }
+type Lease = { id: string; connection: string; engine: Kind; username: string; issuedBy: string; createdAt: string; expiresAt: string; state: "active" | "expired" | "revoked" | "failed"; error: string | null }
 type Rotation = { id: string; key: string; env: string; connection: string; engine: Engine; username: string; usernameB: string | null; usernameKey: string | null; mode: "single" | "alternate"; active: string | null; intervalDays: number | null; nextAt: string | null; lastAt: string | null; error: string | null; connectionId: string; secretId: string }
 type Data = { connections: Conn[]; leases: Lease[]; rotations: Rotation[] }
-type Issued = { username: string; password: string; url: string; host: string; port: number; database: string; expiresAt: string; engine: Engine }
+type Issued = { username: string; password: string; url: string; host: string; port: number; database: string; expiresAt: string; engine: Kind }
 
 const when = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" })
 const left = (iso: string) => {
@@ -41,7 +46,7 @@ export function DynamicView({ projectId, role }: { projectId: string; role: stri
   const admin = role === "admin"
   const canIssue = role !== "viewer"
   const [tab, setTab] = useState<"connections" | "leases" | "rotations">("connections")
-  const [dlg, setDlg] = useState<{ kind: "conn"; conn?: Conn } | { kind: "generate"; conn: Conn } | { kind: "rotation" } | { kind: "delete"; conn: Conn } | { kind: "revoke"; lease: Lease } | { kind: "renew"; lease: Lease } | { kind: "stop"; rot: Rotation } | { kind: "issued"; issued: Issued; fresh: boolean } | null>(null)
+  const [dlg, setDlg] = useState<{ kind: "conn"; conn?: Conn } | { kind: "pull"; conn?: Conn } | { kind: "generate"; conn: Conn } | { kind: "rotation" } | { kind: "delete"; conn: Conn } | { kind: "revoke"; lease: Lease } | { kind: "renew"; lease: Lease } | { kind: "stop"; rot: Rotation } | { kind: "issued"; issued: Issued; fresh: boolean } | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [testing, setTesting] = useState<string | null>(null)
   const notify = useNotice()
@@ -76,13 +81,19 @@ export function DynamicView({ projectId, role }: { projectId: string; role: stri
           </p>
         </div>
         {admin && tab === "connections" && (
-          <Button onClick={() => setDlg({ kind: "conn" })}>
-            <PlusIcon />
-            Add connection
-          </Button>
+          <>
+            <Button variant="outline" onClick={() => setDlg({ kind: "pull" })}>
+              <PlusIcon />
+              Add registry pull tokens
+            </Button>
+            <Button onClick={() => setDlg({ kind: "conn" })}>
+              <PlusIcon />
+              Add connection
+            </Button>
+          </>
         )}
         {admin && tab === "rotations" && (
-          <Button onClick={() => setDlg({ kind: "rotation" })} disabled={!data?.connections.length}>
+          <Button onClick={() => setDlg({ kind: "rotation" })} disabled={!data?.connections.some((c) => c.engine !== PULL)}>
             <PlusIcon />
             Add rotation
           </Button>
@@ -104,12 +115,16 @@ export function DynamicView({ projectId, role }: { projectId: string; role: stri
                 <div className="min-w-0 flex-1">
                   <p className="flex flex-wrap items-center gap-2 font-medium">
                     {c.name}
-                    <span className="rounded bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">{ENGINE_LABEL[c.engine]}</span>
+                    <span className="rounded bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">{kindLabel(c.engine)}</span>
                     {c.tls && <span className="rounded bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">TLS</span>}
                   </p>
                   <p className="truncate text-xs text-muted-foreground">
-                    {c.host}:{c.port}
-                    {c.database && ` / ${c.database}`} · lease {fmtTtl(c.defaultTtl)}, up to {fmtTtl(c.maxTtl)}
+                    {c.engine === PULL
+                      ? c.repos === "all"
+                        ? "All repositories"
+                        : `${c.repos?.length ?? 0} ${c.repos?.length === 1 ? "repository" : "repositories"}`
+                      : `${c.host}:${c.port}${c.database ? ` / ${c.database}` : ""}`}{" "}
+                    · lease {fmtTtl(c.defaultTtl)}, up to {fmtTtl(c.maxTtl)}
                   </p>
                 </div>
                 <div className="flex items-center gap-1">
@@ -141,7 +156,7 @@ export function DynamicView({ projectId, role }: { projectId: string; role: stri
                         <PlugsConnectedIcon />
                         {testing === c.id ? "Testing…" : "Test"}
                       </Button>
-                      <Button variant="ghost" size="icon-sm" aria-label={`Edit ${c.name}`} onClick={() => setDlg({ kind: "conn", conn: c })}>
+                      <Button variant="ghost" size="icon-sm" aria-label={`Edit ${c.name}`} onClick={() => setDlg({ kind: c.engine === PULL ? "pull" : "conn", conn: c })}>
                         <PencilSimpleIcon />
                       </Button>
                       <Button variant="ghost" size="icon-sm" aria-label={`Delete ${c.name}`} onClick={() => setDlg({ kind: "delete", conn: c })}>
@@ -247,6 +262,7 @@ export function DynamicView({ projectId, role }: { projectId: string; role: stri
         </>
       )}
 
+      {dlg?.kind === "pull" && <RegistryPullDialog base={base} conn={dlg.conn as PullConn | undefined} onClose={() => setDlg(null)} onDone={reload} />}
       {dlg?.kind === "conn" && <ConnDialog base={base} conn={dlg.conn} onClose={() => setDlg(null)} onDone={reload} />}
       {dlg?.kind === "generate" && (
         <GenerateDialog
@@ -260,7 +276,7 @@ export function DynamicView({ projectId, role }: { projectId: string; role: stri
         />
       )}
       {dlg?.kind === "issued" && <IssuedDialog issued={dlg.issued} fresh={dlg.fresh} onClose={() => setDlg(null)} />}
-      {dlg?.kind === "rotation" && data && <RotationDialog base={base} projectId={projectId} conns={data.connections} onClose={() => setDlg(null)} onDone={reload} />}
+      {dlg?.kind === "rotation" && data && <RotationDialog base={base} projectId={projectId} conns={data.connections.filter((c) => c.engine !== PULL)} onClose={() => setDlg(null)} onDone={reload} />}
       {dlg?.kind === "delete" && (
         <Confirm title={`Delete ${dlg.conn.name}?`} description="Nimbus forgets the admin login. Users it already made on the database aren't touched." action="Delete connection" danger run={() => api(`${base}/${dlg.conn.id}`, "DELETE").then(reload)} onClose={() => setDlg(null)} />
       )}
@@ -278,7 +294,7 @@ export function DynamicView({ projectId, role }: { projectId: string; role: stri
 function ConnDialog({ base, conn, onClose, onDone }: { base: string; conn?: Conn; onClose: () => void; onDone: () => void }) {
   const { busy, error, setError, setBusy } = useBusy()
   const [fields, setFields] = useState<Record<string, string>>({})
-  const [engine, setEngine] = useState<Engine>(conn?.engine ?? "postgres")
+  const [engine, setEngine] = useState<Engine>((conn?.engine as Engine) ?? "postgres")
   const [port, setPort] = useState(String(conn?.port ?? DEFAULT_PORT.postgres))
   const [create, setCreate] = useState(conn?.createSql ?? DEFAULT_TEMPLATE.postgres.create)
   const [revoke, setRevoke] = useState(conn?.revokeSql ?? DEFAULT_TEMPLATE.postgres.revoke)
@@ -420,7 +436,7 @@ const FieldError = ({ text }: { text?: string }) => <p role="alert" className="t
 function GenerateDialog({ base, conn, onClose, onIssued }: { base: string; conn: Conn; onClose: () => void; onIssued: (i: Issued) => void }) {
   const { busy, error, setError, setBusy } = useBusy()
   return (
-    <Modal title={`Generate credentials on ${conn.name}`} description="Nimbus creates a new database user now and removes it when the lease ends." onClose={onClose}>
+    <Modal title={`Generate credentials on ${conn.name}`} description={conn.engine === PULL ? "Nimbus makes a pull token now. It stops working when the lease ends." : "Nimbus creates a new database user now and removes it when the lease ends."} onClose={onClose}>
       <form
         className="grid gap-4"
         onSubmit={async (e) => {
@@ -472,11 +488,22 @@ function IssuedDialog({ issued, fresh, onClose }: { issued: Issued; fresh: boole
   return (
     <Modal title={fresh ? "Credentials ready" : "Credentials"} description={`Valid until ${when.format(new Date(issued.expiresAt))}. ${fresh ? "Copy them now. Opening them again is recorded in the audit log." : "Viewing them is recorded in the audit log."}`} onClose={onClose}>
       <div className="grid gap-3">
-        {line("Host", `${issued.host}:${issued.port}`)}
-        {issued.database && line("Database", issued.database)}
-        {line("Username", issued.username)}
-        {line("Password", issued.password, true)}
-        {line("Connection URL", issued.url, true)}
+        {issued.engine === PULL ? (
+          <>
+            {line("Registry", issued.host)}
+            {line("Username", issued.username)}
+            {line("Token", issued.password, true)}
+            {line("Login command", `docker login ${issued.host} -u ${issued.username}`)}
+          </>
+        ) : (
+          <>
+            {line("Host", `${issued.host}:${issued.port}`)}
+            {issued.database && line("Database", issued.database)}
+            {line("Username", issued.username)}
+            {line("Password", issued.password, true)}
+            {line("Connection URL", issued.url, true)}
+          </>
+        )}
       </div>
       <div className="flex justify-end">
         <Button onClick={onClose}>Done</Button>
@@ -602,7 +629,7 @@ function RotationDialog({ base, projectId, conns, onClose, onDone }: { base: str
           <div className="grid gap-2">
             <Label htmlFor="rt-conn">Connection</Label>
             <select id="rt-conn" className={SELECT} value={connId} onChange={(e) => setConnId(e.target.value)}>
-              {conns.map((c) => <option key={c.id} value={c.id}>{c.name} ({ENGINE_LABEL[c.engine]})</option>)}
+              {conns.map((c) => <option key={c.id} value={c.id}>{c.name} ({kindLabel(c.engine)})</option>)}
             </select>
           </div>
           <div className="grid gap-2">
