@@ -9,6 +9,7 @@ import { TOUCH } from "@/components/registry-ui"
 import { useNotice } from "@/components/toaster"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { isScanning } from "@/components/registry-links"
 import { cn } from "@/lib/utils"
 
 export type ScanSummary = { status: "pending" | "running" | "done" | "failed"; critical: number; high: number; medium: number; low: number; scannedAt?: Date | string | null }
@@ -64,7 +65,6 @@ export function SeverityCompact({ s, className }: { s: ScanSummary | null | unde
   )
 }
 
-export const isScanning = (s?: ScanSummary | null) => s?.status === "pending" || s?.status === "running"
 
 // A scan summary as it sits in a tag row.
 export function ScanBadge({ s }: { s: ScanSummary | null | undefined }) {

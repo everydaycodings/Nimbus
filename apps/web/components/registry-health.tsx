@@ -3,9 +3,9 @@ import Link from "next/link"
 
 import { CopyButton } from "@/components/copy-button"
 import type { AdviceData } from "@/components/registry-advice"
-import { baseName, fixSummary } from "@/components/registry-links"
-import { CheckList, reasonOf, type Verdict } from "@/components/registry-policy"
-import { SeverityCounts, isScanning, type ScanSummary } from "@/components/registry-scan"
+import { baseName, fixSummary, isScanning, reasonOf } from "@/components/registry-links"
+import { CheckList, type Verdict } from "@/components/registry-policy"
+import { SeverityCounts, type ScanSummary } from "@/components/registry-scan"
 import { TOUCH } from "@/components/registry-ui"
 import { Badge } from "@/components/ui/badge"
 

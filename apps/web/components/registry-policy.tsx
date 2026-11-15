@@ -9,6 +9,7 @@ import {
   saveImagePolicy,
   type PolicyPreview,
 } from "@/app/(app)/registry/actions"
+import { reasonOf } from "@/components/registry-links"
 import { Confirm, Heading, LIST, SECTION, Switch, TOUCH } from "@/components/registry-ui"
 import { SubmitButton } from "@/components/submit-button"
 import { useNotice } from "@/components/toaster"
@@ -37,14 +38,6 @@ export type Check = {
   detail: string
 }
 export type Verdict = { verdict: CheckState; checks: Check[] }
-
-// The reason in words: the first failing check, else the first unknown one.
-export function reasonOf(v: Verdict): string {
-  const c =
-    v.checks.find((x) => x.state === "fail") ??
-    v.checks.find((x) => x.state === "unknown")
-  return c ? `${c.label}: ${c.detail}` : "Meets the image policy"
-}
 
 const STATE_WORD = { pass: "Passes", fail: "Fails", unknown: "Not checked" } as const
 

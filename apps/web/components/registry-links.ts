@@ -1,6 +1,17 @@
-import type { Counts } from "@/components/registry-scan"
+import type { Verdict } from "@/components/registry-policy"
+import type { Counts, ScanSummary } from "@/components/registry-scan"
 
 // Shared by server pages and client views, so not in a "use client" file.
+export const isScanning = (s?: ScanSummary | null) => s?.status === "pending" || s?.status === "running"
+
+// The reason in words: the first failing check, else the first unknown one.
+export function reasonOf(v: Verdict): string {
+  const c =
+    v.checks.find((x) => x.state === "fail") ??
+    v.checks.find((x) => x.state === "unknown")
+  return c ? `${c.label}: ${c.detail}` : "Meets the image policy"
+}
+
 export const VIEWS = [
   ["overview", "Overview"],
   ["packages", "Packages"],
