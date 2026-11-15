@@ -4,6 +4,7 @@ import { Dialog } from "@base-ui/react/dialog"
 import {
   ArrowCounterClockwiseIcon,
   BroomIcon,
+  ClockCounterClockwiseIcon,
   CubeIcon,
   GitBranchIcon,
   PackageIcon,
@@ -15,6 +16,7 @@ import Link from "next/link"
 import { useEffect, useId, useState, useTransition } from "react"
 
 import {
+  activityPage,
   addHook,
   hookLog,
   namespaceSettings,
@@ -32,6 +34,7 @@ import {
   type Preview,
 } from "@/app/(app)/registry/actions"
 import { CopyButton } from "@/components/copy-button"
+import { ActivityList, type ActivityPage } from "@/components/registry-activity"
 import { DIALOG_BACKDROP, DIALOG_POPUP } from "@/components/overlay-styles"
 import { Code, Confirm, Empty, Heading, LIST, SECTION, Switch, TOUCH, WHEN } from "@/components/registry-ui"
 import { SubmitButton } from "@/components/submit-button"
@@ -42,7 +45,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { sizeOf } from "@/lib/registry/size"
-import type { CachedRepo, DeliveryRow, HookRow, OwnedNamespace, TrashRow } from "@/lib/registry/manage"
+import type { CachedRepo, DeliveryRow, HookRow, OwnedNamespace, RepoRow, TrashRow } from "@/lib/registry/manage"
 import type { Policy } from "@/lib/registry/rules"
 import { cn } from "@/lib/utils"
 
@@ -696,8 +699,14 @@ function HookItem({ h, onChange, notice }: { h: HookRow; onChange: () => Promise
 // ---- Namespace settings ------------------------------------------------------
 
 // One row per namespace the member owns, opening cleanup rules and webhooks.
-export function NamespacesSection({ owned }: { owned: OwnedNamespace[] }) {
+export function NamespacesSection({ owned, repos }: { owned: OwnedNamespace[]; repos: RepoRow[] }) {
   const [open, setOpen] = useState<OwnedNamespace | null>(null)
+  const [log, setLog] = useState<{ ns: OwnedNamespace; page: ActivityPage | null } | null>(null)
+  const showLog = async (n: OwnedNamespace) => {
+    setLog({ ns: n, page: null })
+    const page = await activityPage({ namespaceId: n.id }, {})
+    setLog((cur) => (cur?.ns.id === n.id ? { ns: n, page } : cur))
+  }
   const [data, setData] = useState<{ policy: Policy | null; hooks: HookRow[] } | null>(null)
   const pick = async (n: OwnedNamespace) => {
     setData(null)
@@ -708,8 +717,8 @@ export function NamespacesSection({ owned }: { owned: OwnedNamespace[] }) {
     <section className={SECTION} aria-labelledby="ns-heading">
       <Heading
         id="ns-heading"
-        title="Cleanup and webhooks"
-        hint="Rules that tidy old tags for every repository in a registry name, and webhooks that tell your tools when images change."
+        title="Cleanup, webhooks and activity"
+        hint="Rules that tidy old tags for every repository in a registry name, webhooks that tell your tools when images change, and who did what there."
       />
       <ul className={LIST}>
         {owned.map((n) => (
@@ -723,6 +732,10 @@ export function NamespacesSection({ owned }: { owned: OwnedNamespace[] }) {
                 Cleanup: {describePolicy(n.policy)} · {n.hooks === 1 ? "1 webhook" : `${n.hooks} webhooks`}
               </p>
             </div>
+            <Button variant="outline" size="sm" className={TOUCH} aria-label={`Activity for ${n.name}`} onClick={() => showLog(n)}>
+              <ClockCounterClockwiseIcon />
+              View activity
+            </Button>
             <Button variant="outline" size="sm" className={TOUCH} onClick={() => pick(n)}>
               <BroomIcon />
               Settings
@@ -730,6 +743,38 @@ export function NamespacesSection({ owned }: { owned: OwnedNamespace[] }) {
           </li>
         ))}
       </ul>
+      <Dialog.Root open={Boolean(log)} onOpenChange={(o) => !o && setLog(null)}>
+        <Dialog.Portal>
+          <Dialog.Backdrop className={DIALOG_BACKDROP} />
+          <Dialog.Popup className={cn(DIALOG_POPUP, "max-h-[calc(100svh-2rem)] max-w-2xl overflow-y-auto")}>
+            {log && (
+              <>
+                <div className="grid gap-1.5">
+                  <Dialog.Title className="text-base font-semibold break-all">
+                    <span className="font-mono">{log.ns.name}</span> · Activity
+                  </Dialog.Title>
+                  <Dialog.Description className="text-sm text-pretty text-muted-foreground">
+                    Everything in this registry name, for the last 90 days.
+                  </Dialog.Description>
+                </div>
+                {log.page ? (
+                  <ActivityList
+                    key={log.ns.id}
+                    scope={{ namespaceId: log.ns.id }}
+                    initial={log.page}
+                    repos={repos.filter((r) => r.namespace === log.ns.name).map((r) => ({ id: r.id, name: r.name }))}
+                  />
+                ) : (
+                  <p className="py-8 text-center text-sm text-muted-foreground">Loading…</p>
+                )}
+                <div className="flex justify-end">
+                  <Dialog.Close render={<Button variant="outline" />}>Close</Dialog.Close>
+                </div>
+              </>
+            )}
+          </Dialog.Popup>
+        </Dialog.Portal>
+      </Dialog.Root>
       <Dialog.Root open={Boolean(open)} onOpenChange={(o) => !o && setOpen(null)}>
         <Dialog.Portal>
           <Dialog.Backdrop className={DIALOG_BACKDROP} />

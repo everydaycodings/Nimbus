@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState, useTransition } from "react"
 import { deleteRepo, deleteTag, restoreTrash, setBlockCritical, setImmutable, setRepoPublic } from "@/app/(app)/registry/actions"
 import { CopyButton } from "@/components/copy-button"
 import { Hooks, PolicyEditor } from "@/components/registry-extra"
+import { AccessSection, ArchiveSection, DescriptionForm, RenameSection } from "@/components/registry-settings"
 import { ScanBadge, isScanning, type ScanSummary } from "@/components/registry-scan"
 import { Code, Confirm, Empty, Heading, LIST, SECTION, SELECT, Switch, TOUCH, WHEN } from "@/components/registry-ui"
 import { SubmitButton } from "@/components/submit-button"
@@ -17,7 +18,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { sizeOf } from "@/lib/registry/size"
-import type { HookRow, RepoDetail, TagRow } from "@/lib/registry/manage"
+import type { HookRow, RepoAccess, RepoDetail, TagRow } from "@/lib/registry/manage"
 import { cn } from "@/lib/utils"
 
 // What the page knows about a tag beyond its row: scan result, attachments, pulls.
@@ -125,7 +126,7 @@ function TagItem({
           <div className="grid min-w-0 flex-1 basis-64 gap-1">
             <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
               <Link
-                href={selected ? `/registry/${repo.fullName}` : `/registry/${repo.fullName}?tag=${encodeURIComponent(t.name)}`}
+                href={selected ? `/registry/${repo.fullName}?tab=tags` : `/registry/${repo.fullName}?tab=tags&tag=${encodeURIComponent(t.name)}`}
                 scroll={false}
                 aria-current={selected ? "true" : undefined}
                 className="inline-flex items-center gap-1 rounded-sm font-mono break-all underline-offset-4 outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:min-h-11"
@@ -155,7 +156,7 @@ function TagItem({
             </p>
           </div>
           <CopyButton value={pull} label={`Copy pull command for ${t.name}`} className={TOUCH} />
-          {repo.canWrite && (
+          {repo.canWrite && !repo.archived && (
             <Confirm
               label="Delete"
               ariaLabel={`Delete ${t.name}`}
@@ -174,7 +175,7 @@ function TagItem({
                         router.refresh()
                       }),
                   })
-                  if (selected) router.replace(`/registry/${repo.fullName}`)
+                  if (selected) router.replace(`/registry/${repo.fullName}?tab=tags`)
                 })
               }
             />
@@ -187,20 +188,54 @@ function TagItem({
   )
 }
 
-export function RepoSettings({ repo, hooks, scanOn }: { repo: RepoDetail; hooks: HookRow[]; scanOn: boolean }) {
+export type RepoTab = "overview" | "tags" | "activity" | "settings"
+
+// Same segmented look as the registry's own tabs; the choice lives in ?tab= so a tab can be linked to.
+export function RepoTabs({ name, tab, tabs }: { name: string; tab: RepoTab; tabs: [RepoTab, string][] }) {
+  return (
+    <nav aria-label="Repository sections" className="flex w-fit max-w-full overflow-x-auto rounded-lg bg-muted p-[3px]">
+      {tabs.map(([id, label]) => (
+        <Link
+          key={id}
+          href={id === "overview" ? `/registry/${name}` : `/registry/${name}?tab=${id}`}
+          aria-current={tab === id ? "page" : undefined}
+          className="flex h-7 items-center rounded-md border border-transparent px-3 text-sm whitespace-nowrap text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:h-11 aria-[current=page]:border-input aria-[current=page]:bg-input/30 aria-[current=page]:text-foreground"
+        >
+          {label}
+        </Link>
+      ))}
+    </nav>
+  )
+}
+
+export function RepoSettings({
+  repo,
+  hooks,
+  scanOn,
+  access,
+  targets,
+}: {
+  repo: RepoDetail
+  hooks: HookRow[]
+  scanOn: boolean
+  access: RepoAccess | null
+  targets: string[]
+}) {
   const [pending, start] = useTransition()
   const [error, setError] = useState<string>()
+  const [dangerError, setDangerError] = useState<string>()
   const [isPublic, setPublic] = useState(repo.isPublic)
   const [block, setBlock] = useState(repo.blockCritical)
   const router = useRouter()
   const setNotice = useNotice()
   if (!repo.canWrite) return null
   return (
-    <>
-      <section className={SECTION} aria-labelledby="settings-heading">
-        <Heading id="settings-heading" title="Settings" hint="Who can pull this repository, which tags are locked, and deleting it." />
+    <div className="flex flex-col gap-10">
+      <section id="general" className={cn(SECTION, "scroll-mt-20")} aria-labelledby="general-heading">
+        <Heading id="general-heading" title="General" hint="What this repository is called in lists, and who can pull it." />
         <div className="flex flex-col gap-5 rounded-xl border bg-card p-4">
-          <label className="flex cursor-pointer items-start gap-3 text-sm">
+          <DescriptionForm repo={repo} />
+          <label className="flex cursor-pointer items-start gap-3 text-sm pointer-coarse:min-h-11">
             <Switch
               checked={isPublic}
               disabled={pending || (!repo.publicAllowed && !isPublic)}
@@ -233,7 +268,7 @@ export function RepoSettings({ repo, hooks, scanOn }: { repo: RepoDetail; hooks:
           </label>
 
           {scanOn && (
-            <label className="flex cursor-pointer items-start gap-3 text-sm">
+            <label className="flex cursor-pointer items-start gap-3 text-sm pointer-coarse:min-h-11">
               <Switch
                 checked={block}
                 disabled={pending}
@@ -260,67 +295,41 @@ export function RepoSettings({ repo, hooks, scanOn }: { repo: RepoDetail; hooks:
               </span>
             </label>
           )}
-
-          <form
-            className="grid gap-2"
-            onSubmit={(e) => {
-              e.preventDefault()
-              const v = String(new FormData(e.currentTarget).get("pattern") ?? "")
-              setError(undefined)
-              start(async () => {
-                const r = await setImmutable(repo.fullName, v)
-                if (r.error) return setError(r.error)
-                setNotice({ text: v.trim() ? "Immutable tags saved." : "No tags are immutable now." })
-                router.refresh()
-              })
-            }}
-          >
-            <Label htmlFor="immutable">Immutable tags</Label>
-            <p className="text-xs text-pretty text-muted-foreground">
-              Tags matching this can&apos;t be overwritten or deleted, and cleanup skips them. A glob like{" "}
-              <code className="font-mono">v*</code>, several separated by commas (<code className="font-mono">v*,release-*</code>
-              ), or <code className="font-mono">re:^v\d+$</code> for a regular expression. Blank for none.
-            </p>
-            <div className="flex gap-2">
-              <Input id="immutable" name="pattern" defaultValue={repo.immutablePattern ?? ""} className="font-mono" />
-              <SubmitButton pending={pending} variant="outline" className={TOUCH}>
-                Save
-              </SubmitButton>
-            </div>
-          </form>
-
           <FormError>{error}</FormError>
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/30 p-4">
-          <span className="grid gap-0.5 text-sm">
-            <span className="flex items-center gap-1.5 font-medium">
-              <TrashIcon className="size-4 text-destructive" />
-              Delete repository
-            </span>
-            <span className="text-xs text-muted-foreground">Moves it and every tag to Trash. Restore it from there within 7 days.</span>
-          </span>
-          <Confirm
-            label="Delete repository"
-            question="Pulls and pushes stop. It waits in Trash for 7 days."
-            yes="Move to Trash"
-            pending={pending}
-            onYes={() =>
-              start(async () => {
-                const r = await deleteRepo(repo.fullName)
-                if (r.error) return setError(r.error)
-                setNotice({
-                  text: `Moved ${repo.fullName} to Trash.`,
-                  undo: () =>
-                    restoreTrash("repo", r.id!).then((u) => {
-                      setNotice(u.error ? { text: u.error, error: true } : { text: `Restored ${repo.fullName}.` })
-                      router.replace(`/registry/${repo.fullName}`)
-                    }),
-                })
-                router.replace("/registry")
-              })
-            }
-          />
-        </div>
+      </section>
+
+      {access && <AccessSection repo={repo} access={access} />}
+
+      <section id="immutable" className={cn(SECTION, "scroll-mt-20")} aria-labelledby="immutable-heading">
+        <Heading id="immutable-heading" title="Immutable tags" hint="Lock tags so a release can't be overwritten or deleted." />
+        <form
+          className="grid gap-2 rounded-xl border bg-card p-4"
+          onSubmit={(e) => {
+            e.preventDefault()
+            const v = String(new FormData(e.currentTarget).get("pattern") ?? "")
+            setError(undefined)
+            start(async () => {
+              const r = await setImmutable(repo.fullName, v)
+              if (r.error) return setError(r.error)
+              setNotice({ text: v.trim() ? "Immutable tags saved." : "No tags are immutable now." })
+              router.refresh()
+            })
+          }}
+        >
+          <Label htmlFor="immutable">Pattern</Label>
+          <p className="text-xs text-pretty text-muted-foreground">
+            Tags matching this can&apos;t be overwritten or deleted, and cleanup skips them. A glob like{" "}
+            <code className="font-mono">v*</code>, several separated by commas (<code className="font-mono">v*,release-*</code>
+            ), or <code className="font-mono">re:^v\d+$</code> for a regular expression. Blank for none.
+          </p>
+          <div className="flex gap-2">
+            <Input id="immutable" name="pattern" defaultValue={repo.immutablePattern ?? ""} className="font-mono pointer-coarse:h-11" />
+            <SubmitButton pending={pending} variant="outline" className={TOUCH}>
+              Save
+            </SubmitButton>
+          </div>
+        </form>
       </section>
 
       <section className={SECTION} aria-labelledby="cleanup-heading">
@@ -346,6 +355,50 @@ export function RepoSettings({ repo, hooks, scanOn }: { repo: RepoDetail; hooks:
           </div>
         </section>
       )}
-    </>
+
+      {repo.canAdmin && <RenameSection repo={repo} targets={targets} />}
+      {repo.canAdmin && <ArchiveSection repo={repo} />}
+
+      <section className={SECTION} aria-labelledby="danger-heading">
+        <Heading id="danger-heading" title="Danger zone" hint="Deleting is the only change here that stops pulls." />
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/30 p-4">
+          <span className="grid min-w-0 flex-1 basis-56 gap-0.5 text-sm">
+            <span className="flex items-center gap-1.5 font-medium">
+              <TrashIcon className="size-4 text-destructive" />
+              Delete repository
+            </span>
+            <span className="text-xs text-pretty text-muted-foreground">
+              {repo.archived
+                ? "Unarchive it first. Deleting moves it and every tag to Trash."
+                : "Moves it and every tag to Trash. Restore it from there within 7 days."}
+            </span>
+          </span>
+          <Confirm
+            label="Delete repository"
+            question="Pulls and pushes stop. It waits in Trash for 7 days."
+            yes="Move to Trash"
+            disabled={repo.archived}
+            pending={pending}
+            onYes={() =>
+              start(async () => {
+                setDangerError(undefined)
+                const r = await deleteRepo(repo.fullName)
+                if (r.error) return setDangerError(r.error)
+                setNotice({
+                  text: `Moved ${repo.fullName} to Trash.`,
+                  undo: () =>
+                    restoreTrash("repo", r.id!).then((u) => {
+                      setNotice(u.error ? { text: u.error, error: true } : { text: `Restored ${repo.fullName}.` })
+                      router.replace(`/registry/${repo.fullName}`)
+                    }),
+                })
+                router.replace("/registry")
+              })
+            }
+          />
+        </div>
+        <FormError>{dangerError}</FormError>
+      </section>
+    </div>
   )
 }

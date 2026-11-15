@@ -4,11 +4,15 @@ import { notFound, redirect } from "next/navigation"
 
 import { ArtifactList, PullsChart } from "@/components/registry-insights"
 import { RepoReadme } from "@/components/registry-readme"
-import { RepoSettings, RepoTags, type TagExtra } from "@/components/registry-repo"
+import { ActivityList } from "@/components/registry-activity"
+import { MovedBanner, PullCommand, RepoHeader, RepoStats } from "@/components/registry-overview"
+import { RepoSettings, RepoTabs, RepoTags, type RepoTab, type TagExtra } from "@/components/registry-repo"
+import { ArchivedStrip } from "@/components/registry-settings"
+import { activityPage } from "@/app/(app)/registry/actions"
 import { VulnList } from "@/components/registry-scan"
 import { Heading, SECTION } from "@/components/registry-ui"
 import { Badge } from "@/components/ui/badge"
-import { listHooksFor, repoDetail, registryState, tagDetail, type ImageInfo } from "@/lib/registry/manage"
+import { adminRepoAccess, listHooksFor, ownedNamespaces, repoDetail, registryState, tagDetail, type ImageInfo, type RepoDetail } from "@/lib/registry/manage"
 import { artifactsFor } from "@/lib/registry/artifacts"
 import { readmeFor } from "@/lib/registry/readme"
 import { scanAvailable, scanReport, scanSummaries } from "@/lib/registry/scan"
@@ -116,29 +120,102 @@ function Image({ img }: { img: ImageInfo }) {
   )
 }
 
+const TABS = ["overview", "tags", "activity", "settings"] as const
+
 export default async function RepoPage({
   params,
   searchParams,
 }: {
   params: Promise<{ name: string[] }>
-  searchParams: Promise<{ tag?: string }>
+  searchParams: Promise<{ tag?: string; tab?: string }>
 }) {
   const me = await requireMember()
-  const [{ name }, { tag }] = await Promise.all([params, searchParams])
+  const [{ name }, { tag, tab: rawTab }] = await Promise.all([params, searchParams])
   if ((await registryState(me.id)) !== "ready") redirect("/registry")
   const full = name.map(decodeURIComponent).join("/")
   const repo = await repoDetail(me.id, full)
   if (!repo) notFound()
-  const hooks = repo.isOwner ? await listHooksFor(me.id, repo.namespace, full.slice(repo.namespace.length + 1)) : []
-  const detail = tag ? await tagDetail(me.id, full, tag) : null
+  const wanted = (TABS as readonly string[]).includes(rawTab ?? "") ? (rawTab as RepoTab) : tag ? "tags" : "overview"
+  const tab: RepoTab = (wanted === "activity" && !repo.canActivity) || (wanted === "settings" && !repo.canWrite) ? "overview" : wanted
+  const host = endpoint()!.replace(/^https?:\/\//, "")
+  const tabs: [RepoTab, string][] = [
+    ["overview", "Overview"],
+    ["tags", repo.tags.length ? `Tags (${repo.tags.length})` : "Tags"],
+    ...(repo.canActivity ? ([["activity", "Activity"]] as [RepoTab, string][]) : []),
+    ...(repo.canWrite ? ([["settings", "Settings"]] as [RepoTab, string][]) : []),
+  ]
+  return (
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
+      <header className="grid gap-3">
+        <Link
+          href="/registry"
+          className="flex w-fit items-center gap-1 rounded-sm text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:min-h-11"
+        >
+          <ArrowLeftIcon className="size-3.5" />
+          Container registry
+        </Link>
+        <RepoHeader repo={repo} />
+      </header>
+      <RepoTabs name={repo.fullName} tab={tab} tabs={tabs} />
+      {tab === "overview" && <Overview repo={repo} host={host} />}
+      {tab === "tags" && <TagsTab repo={repo} host={host} tag={tag} meId={me.id} />}
+      {tab === "activity" && (
+        <section className="flex flex-col gap-3" aria-labelledby="activity-heading">
+          <Heading id="activity-heading" title="Activity" hint="Pushes, deletes and changes to this repository, kept for 90 days." />
+          <ActivityList scope={{ repoId: repo.id }} initial={await activityPage({ repoId: repo.id }, {})} />
+        </section>
+      )}
+      {tab === "settings" && <SettingsTab repo={repo} meId={me.id} full={full} />}
+    </div>
+  )
+}
+
+async function Overview({ repo, host }: { repo: RepoDetail; host: string }) {
+  const [days, readme] = await Promise.all([pullStats(repo.id, 30), readmeFor(repo.id)])
+  const tagName = repo.tags.find((t) => t.name === "latest")?.name ?? repo.tags[0]?.name
+  return (
+    <div className="flex flex-col gap-8">
+      {repo.moved && <MovedBanner from={repo.moved.from} until={repo.moved.until} />}
+      <ArchivedStrip repo={repo} />
+      {tagName ? (
+        <PullCommand command={`docker pull ${host}/${repo.fullName}:${tagName}`} />
+      ) : (
+        <p className="rounded-xl border border-dashed px-4 py-6 text-sm text-pretty text-muted-foreground">
+          Nothing pushed yet. Log in with <span className="font-mono">docker login {host} -u {repo.namespace}</span>, then push an image to{" "}
+          <span className="font-mono break-all">
+            {host}/{repo.fullName}
+          </span>
+          .
+        </p>
+      )}
+      <RepoStats repo={repo} days={days} />
+      <RepoReadme name={repo.fullName} canWrite={repo.canWrite && !repo.archived} readme={readme} />
+      <section className={SECTION} aria-labelledby="pulls-heading">
+        <Heading id="pulls-heading" title="Pulls" hint="Pulls of every tag in this repository, by day." />
+        <PullsChart days={days} />
+      </section>
+    </div>
+  )
+}
+
+async function SettingsTab({ repo, meId, full }: { repo: RepoDetail; meId: string; full: string }) {
+  const [hooks, scanOn, access, owned] = await Promise.all([
+    repo.isOwner ? listHooksFor(meId, repo.namespace, full.slice(repo.namespace.length + 1)) : [],
+    scanAvailable(),
+    repo.canAdmin ? adminRepoAccess(meId, repo.id) : null,
+    repo.isOwner ? ownedNamespaces(meId) : [],
+  ])
+  return <RepoSettings repo={repo} hooks={hooks} scanOn={scanOn} access={access} targets={owned.length ? owned.map((n) => n.name) : [repo.namespace]} />
+}
+
+async function TagsTab({ repo, host, tag, meId }: { repo: RepoDetail; host: string; tag?: string; meId: string }) {
+  const detail = tag ? await tagDetail(meId, repo.fullName, tag) : null
   const scanOn = await scanAvailable()
   const manifestIds = repo.tags.flatMap((t) => (t.manifestId ? [t.manifestId] : []))
-  const [scans, arts, perTag, days, readme] = await Promise.all([
+  const [scans, arts, perTag] = await Promise.all([
     scanOn ? scanSummaries(manifestIds) : ({} as Awaited<ReturnType<typeof scanSummaries>>),
     artifactsFor(repo.id, repo.tags.map((t) => t.digest)),
     tagPulls(repo.id),
-    pullStats(repo.id, 30),
-    readmeFor(repo.id),
   ])
   const extras: Record<string, TagExtra> = Object.fromEntries(
     repo.tags.map((t) => {
@@ -158,24 +235,9 @@ export default async function RepoPage({
   )
   const picked = tag ? repo.tags.find((t) => t.name === tag) : undefined
   const report = scanOn && picked?.manifestId ? await scanReport(picked.manifestId) : null
-  const host = endpoint()!.replace(/^https?:\/\//, "")
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
-      <header className="grid gap-2">
-        <Link
-          href="/registry"
-          className="flex w-fit items-center gap-1 rounded-sm text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
-        >
-          <ArrowLeftIcon className="size-3.5" />
-          Container registry
-        </Link>
-        <h1 className="font-mono text-2xl font-semibold tracking-tight break-all">{repo.fullName}</h1>
-        <p className="text-sm text-muted-foreground">
-          {repo.isPublic ? "Public" : "Private"} · {repo.tags.length === 1 ? "1 tag" : `${repo.tags.length} tags`} ·{" "}
-          <span className="tabular-nums">{sizeOf(repo.bytes)}</span> stored
-        </p>
-      </header>
-
+    <div className="flex flex-col gap-6">
+      <ArchivedStrip repo={repo} />
       <RepoTags
         repo={repo}
         host={host}
@@ -210,15 +272,6 @@ export default async function RepoPage({
           )
         }
       />
-
-      <section className={SECTION} aria-labelledby="pulls-heading">
-        <Heading id="pulls-heading" title="Pulls" hint="Pulls of every tag in this repository, by day." />
-        <PullsChart days={days} />
-      </section>
-
-      <RepoReadme name={repo.fullName} canWrite={repo.canWrite} readme={readme} />
-
-      <RepoSettings repo={repo} hooks={hooks} scanOn={scanOn} />
     </div>
   )
 }

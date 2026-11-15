@@ -6,7 +6,7 @@ import { FormError } from "@/components/two-factor"
 import { Button } from "@/components/ui/button"
 import { revokeMemberRegistryToken, setMemberRegistry } from "./actions"
 
-type Key = { id: string; name: string; access: "pull" | "push"; used: string }
+type Key = { id: string; name: string; access: "pull" | "push" | "delete"; used: string }
 
 // Member page: their registry switch and tokens, for a lost laptop or a leaked token.
 export function MemberRegistry({
@@ -44,7 +44,7 @@ export function MemberRegistry({
                   {k.name}
                   <span className="text-muted-foreground">
                     {" "}
-                    · {k.access === "pull" ? "Pull only" : "Pull & push"}
+                    · {{ pull: "Pull", push: "Push", delete: "Push + Delete" }[k.access]}
                   </span>
                 </span>
                 <span className="text-xs text-muted-foreground tabular-nums">{k.used}</span>

@@ -31,9 +31,11 @@ import { getStream } from "@/lib/s3"
 import { isAdmin } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
 import { isClash } from "@/lib/uploads"
-import { roleIn } from "./access"
+import { repoRole, roleIn, type Role as RepoRole } from "./access"
+import { aliasFor, listCollaborators, listTeams, teamsForRepo } from "./repo-admin"
+import { canSeeActivity, logEvent } from "./activity"
 import { registryUsage } from "./quota"
-import { EXPIRY_DAYS, TRASH_DAYS, endpoint, matchPattern, newToken, registryNameError, splitName, validTag, type Policy } from "./rules"
+import { EXPIRY_DAYS, TRASH_DAYS, endpoint, matchPattern, newToken, registryNameError, splitName, validRepoName, validTag, type Policy } from "./rules"
 
 type Result = { error?: string }
 type Role = "owner" | "write" | "read"
@@ -298,10 +300,12 @@ export type RepoRow = {
   namespace: string
   name: string
   isPublic: boolean
-  role: Role
+  role: RepoRole
   tags: number
   bytes: number
   pushedAt: string | null
+  description: string | null
+  archived: boolean
 }
 
 // Everything the member can pull through their own namespace and orgs.
@@ -311,13 +315,17 @@ export async function listRepos(userId: string): Promise<RepoRow[]> {
     ns: string
     name: string
     is_public: boolean
-    role: Role
+    role: RepoRole
     tags: string
     bytes: string
     pushed_at: string | null
+    description: string | null
+    archived_at: string | null
   }>(sql`
-    select r.id, n.name as ns, r.name, r.is_public,
-      case when n.kind = 'user' then 'owner' else m.role end as role,
+    select r.id, n.name as ns, r.name, r.is_public, r.description, r.archived_at,
+      case when n.kind = 'user' and n.ref_id = ${userId} then 'owner'
+        when m.role is not null then m.role
+        else coalesce((select c.role from registry_repo_collaborators c where c.repo_id = r.id and c.user_id = ${userId}), 'read') end as role,
       (select count(*) from registry_tags t where t.repo_id = r.id and t.deleted_at is null)::text as tags,
       (select coalesce(sum(b.size), 0) from registry_repo_blobs rb
         join registry_blobs b on b.digest = rb.digest where rb.repo_id = r.id)::text as bytes,
@@ -326,8 +334,11 @@ export async function listRepos(userId: string): Promise<RepoRow[]> {
     join registry_namespaces n on n.id = r.namespace_id
     left join registry_org_members m on n.kind = 'org' and m.org_id::text = n.ref_id and m.user_id = ${userId}
     where r.deleted_at is null
-      and ((n.kind = 'user' and n.ref_id = ${userId}) or m.user_id is not null)
-    order by n.name, r.name`)
+      and ((n.kind = 'user' and n.ref_id = ${userId}) or m.user_id is not null
+        or exists (select 1 from registry_repo_collaborators c where c.repo_id = r.id and c.user_id = ${userId})
+        or exists (select 1 from registry_team_repos tr join registry_team_members tm on tm.team_id = tr.team_id
+          where tr.repo_id = r.id and tm.user_id = ${userId}))
+    order by (r.archived_at is not null), n.name, r.name`)
   return rows.map((r) => ({
     id: r.id,
     fullName: `${r.ns}/${r.name}`,
@@ -338,6 +349,8 @@ export async function listRepos(userId: string): Promise<RepoRow[]> {
     tags: Number(r.tags),
     bytes: Number(r.bytes),
     pushedAt: r.pushed_at ? new Date(r.pushed_at).toISOString() : null,
+    description: r.description,
+    archived: Boolean(r.archived_at),
   }))
 }
 
@@ -367,6 +380,17 @@ export type RepoDetail = {
   // Writers can change settings and delete; only owners manage webhooks.
   canWrite: boolean
   isOwner: boolean
+  // The member's highest role here (name or org role, team, collaborator). Admins manage access and rename.
+  role: RepoRole
+  canAdmin: boolean
+  canActivity: boolean
+  namespaceId: string
+  orgId: string | null
+  description: string | null
+  descriptionCustom: boolean
+  archived: boolean
+  // Set while the old name still answers pulls after a rename or move.
+  moved: { from: string; until: string } | null
   bytes: number
   tags: TagRow[]
   publicAllowed: boolean
@@ -388,7 +412,7 @@ async function reach(userId: string, fullName: string) {
       )
     )
   if (!row) return null
-  const role = await roleIn(userId, row.ns)
+  const role = await repoRole(userId, row.ns, row.repo)
   return role ? { ...row, role } : null
 }
 
@@ -471,6 +495,15 @@ export async function repoDetail(userId: string, fullName: string): Promise<Repo
     namespace: r.ns.name,
     canWrite: r.role !== "read",
     isOwner: r.role === "owner",
+    role: r.role,
+    canAdmin: r.role === "admin" || r.role === "owner",
+    canActivity: await canSeeActivity(userId, r.ns.id, r.repo.id),
+    namespaceId: r.ns.id,
+    orgId: r.ns.kind === "org" ? r.ns.refId : null,
+    description: r.repo.description,
+    descriptionCustom: r.repo.descriptionCustom,
+    archived: Boolean(r.repo.archivedAt),
+    moved: await aliasFor(r.repo.id).then((a) => (a ? { from: a.fullName, until: new Date(a.expiresAt).toISOString() } : null)),
     bytes: blobRows.reduce((a, b) => a + b.size, 0),
     publicAllowed: s.registryPublic,
     tags: tags.filter(({ t }) => !ATTACHMENT_TAG.test(t.name)).map(({ t, by }) => {
@@ -612,6 +645,85 @@ async function writable(userId: string, fullName: string) {
   return r && r.role !== "read" ? r : null
 }
 
+export type RepoAccess = {
+  collaborators: Awaited<ReturnType<typeof listCollaborators>>
+  // Teams that already reach this repo, and every team in its org (for the picker). Empty for personal repos.
+  granted: Awaited<ReturnType<typeof teamsForRepo>>
+  teams: { id: string; name: string }[]
+}
+
+// What the Access section shows; only for someone who can change it.
+export async function adminRepoAccess(userId: string, repoId: string): Promise<RepoAccess | null> {
+  if (!UUID.test(repoId)) return null
+  const [row] = await db
+    .select({ repo: registryRepos, ns: registryNamespaces })
+    .from(registryRepos)
+    .innerJoin(registryNamespaces, eq(registryNamespaces.id, registryRepos.namespaceId))
+    .where(and(eq(registryRepos.id, repoId), isNull(registryRepos.deletedAt)))
+  const role = row && (await repoRole(userId, row.ns, row.repo))
+  if (!row || (role !== "admin" && role !== "owner")) return null
+  const org = row.ns.kind === "org"
+  const [collaborators, granted, teams] = await Promise.all([
+    listCollaborators(repoId),
+    org ? teamsForRepo(repoId) : [],
+    org ? listTeams(row.ns.refId) : [],
+  ])
+  return { collaborators, granted, teams: teams.map((t) => ({ id: t.id, name: t.name })) }
+}
+
+// Adds `who` (the name behind detail.userId) to log rows, so "removed a collaborator" can say who.
+export async function withNames<T extends { detail: Record<string, unknown> | null }>(rows: T[]): Promise<T[]> {
+  const ids = [...new Set(rows.flatMap((r) => (typeof r.detail?.userId === "string" ? [r.detail.userId] : [])))]
+  if (!ids.length) return rows
+  const names = new Map((await db.select({ id: user.id, name: user.name, email: user.email }).from(user).where(inArray(user.id, ids))).map((u) => [u.id, u.name || u.email]))
+  return rows.map((r) => (typeof r.detail?.userId === "string" && names.has(r.detail.userId) ? { ...r, detail: { ...r.detail, who: names.get(r.detail.userId) } } : r))
+}
+
+export async function isOrgOwner(userId: string, orgId: string) {
+  if (!UUID.test(orgId)) return false
+  const [m] = await db
+    .select({ role: registryOrgMembers.role })
+    .from(registryOrgMembers)
+    .where(and(eq(registryOrgMembers.orgId, orgId), eq(registryOrgMembers.userId, userId)))
+  return m?.role === "owner"
+}
+
+export async function canSeeScope(userId: string, scope: { repoId: string } | { namespaceId: string }) {
+  if ("namespaceId" in scope) return UUID.test(scope.namespaceId) && canSeeActivity(userId, scope.namespaceId)
+  if (!UUID.test(scope.repoId)) return false
+  const [r] = await db.select({ ns: registryRepos.namespaceId }).from(registryRepos).where(eq(registryRepos.id, scope.repoId))
+  return Boolean(r) && canSeeActivity(userId, r.ns, scope.repoId)
+}
+
+// Live "is this repo name free?" for the rename form: format, then clashes (trash and held old names included).
+export async function checkRepoName(nsName: string, raw: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const name = raw.trim()
+  if (!validRepoName(name)) return { ok: false, error: "Use lowercase letters, numbers, dots, hyphens and underscores." }
+  const [taken] = await db
+    .select({ id: registryRepos.id })
+    .from(registryRepos)
+    .innerJoin(registryNamespaces, eq(registryNamespaces.id, registryRepos.namespaceId))
+    .where(and(sql`lower(${registryNamespaces.name}) = ${nsName.toLowerCase()}`, sql`lower(${registryRepos.name}) = ${name.toLowerCase()}`))
+  if (taken) return { ok: false, error: "A repository with that name already exists there." }
+  return { ok: true }
+}
+
+// One activity line for a web action. Give the repo or the namespace; the other is looked up.
+export async function log(userId: string, where: { repoId?: string | null; namespaceId?: string }, action: string, detail: Record<string, unknown> = {}) {
+  try {
+    let namespaceId = where.namespaceId
+    if (!namespaceId && where.repoId) [{ namespaceId }] = await db.select({ namespaceId: registryRepos.namespaceId }).from(registryRepos).where(eq(registryRepos.id, where.repoId))
+    if (!namespaceId) return
+    const [u] = await db.select({ name: user.name, email: user.email }).from(user).where(eq(user.id, userId))
+    const ip = await headers().then(ipFrom).catch(() => "")
+    await logEvent({ namespaceId, repoId: where.repoId ?? null, actorId: userId, actorName: u?.name || u?.email || "A member", action, detail, ip: ip || null })
+  } catch (e) {
+    console.error("[registry] log:", e)
+  }
+}
+
+const ARCHIVED = { error: "This repository is archived. Unarchive it in Settings first." }
+
 const NO_WRITE = { error: "You can only read this repository." }
 
 export async function setRepoPublic(userId: string, fullName: string, isPublic: boolean): Promise<Result> {
@@ -621,6 +733,7 @@ export async function setRepoPublic(userId: string, fullName: string, isPublic: 
     return { error: "An admin turned off public repositories on this server." }
   await db.update(registryRepos).set({ isPublic }).where(eq(registryRepos.id, r.repo.id))
   await audit("registry_repo_visibility", { detail: `${fullName}: ${isPublic ? "public" : "private"}` })
+  await log(userId, { repoId: r.repo.id }, "visibility", { public: isPublic })
   return {}
 }
 
@@ -639,6 +752,7 @@ export async function setImmutable(userId: string, fullName: string, raw: string
     .set({ immutablePattern: pattern || null })
     .where(eq(registryRepos.id, r.repo.id))
   await audit("registry_repo_immutable", { detail: `${fullName}: ${pattern || "none"}` })
+  await log(userId, { repoId: r.repo.id }, "immutable", { pattern: pattern || null })
   return {}
 }
 
@@ -659,6 +773,7 @@ export async function setBlockCritical(userId: string, fullName: string, on: boo
   if (!r) return NO_WRITE
   await db.update(registryRepos).set({ blockCritical: on }).where(eq(registryRepos.id, r.repo.id))
   await audit("registry_repo_block_critical", { detail: `${fullName}: ${on ? "on" : "off"}` })
+  await log(userId, { repoId: r.repo.id }, "block_critical", { on })
   return {}
 }
 
@@ -666,14 +781,17 @@ export async function setBlockCritical(userId: string, fullName: string, on: boo
 export async function deleteRepo(userId: string, fullName: string): Promise<Result & { id?: string }> {
   const r = await writable(userId, fullName)
   if (!r) return NO_WRITE
+  if (r.repo.archivedAt) return ARCHIVED
   await db.update(registryRepos).set({ deletedAt: new Date() }).where(eq(registryRepos.id, r.repo.id))
   await audit("registry_repo_delete", { detail: fullName })
+  await log(userId, { repoId: r.repo.id }, "repo_delete", { name: fullName })
   return { id: r.repo.id }
 }
 
 export async function deleteTag(userId: string, fullName: string, tag: string): Promise<Result & { id?: string }> {
   const r = await writable(userId, fullName)
   if (!r) return NO_WRITE
+  if (r.repo.archivedAt) return ARCHIVED
   if (r.repo.immutablePattern && matchPattern(r.repo.immutablePattern, tag))
     return { error: "That tag is immutable. Change the pattern in Settings first." }
   const [t] = await db
@@ -682,6 +800,7 @@ export async function deleteTag(userId: string, fullName: string, tag: string): 
     .where(and(eq(registryTags.repoId, r.repo.id), eq(registryTags.name, tag), isNull(registryTags.deletedAt)))
     .returning({ id: registryTags.id })
   await audit("registry_tag_delete", { detail: `${fullName}:${tag}` })
+  await log(userId, { repoId: r.repo.id }, "tag_delete", { tag })
   return { id: t?.id }
 }
 
@@ -785,6 +904,7 @@ export async function restoreFromTrash(
   if (kind === "repo" && "repo" in x && !("tag" in x)) {
     await db.update(registryRepos).set({ deletedAt: null }).where(eq(registryRepos.id, x.repo.id))
     await audit("registry_repo_restore", { detail: x.repo.name })
+    await log(userId, { repoId: x.repo.id }, "restore", { name: x.repo.name })
     return {}
   }
   if ("tag" in x) {
@@ -806,11 +926,13 @@ export async function restoreFromTrash(
       await tx.update(registryTags).set({ deletedAt: null, name }).where(eq(registryTags.id, x.tag.id))
     })
     await audit("registry_tag_restore", { detail: `${x.repo.name}:${name}` })
+    await log(userId, { repoId: x.repo.id }, "restore", { tag: name })
     return {}
   }
   if ("manifest" in x) {
     await db.update(registryManifests).set({ deletedAt: null }).where(eq(registryManifests.id, x.manifest.id))
     await audit("registry_tag_restore", { detail: `${x.repo.name}@${x.manifest.digest.slice(0, 19)}` })
+    await log(userId, { repoId: x.repo.id }, "restore", { digest: x.manifest.digest })
     return {}
   }
   return GONE
@@ -823,6 +945,7 @@ export async function purgeFromTrash(userId: string, kind: string, id: string): 
   if ("tag" in x) {
     await db.delete(registryTags).where(eq(registryTags.id, x.tag.id))
     await audit("registry_trash_purge", { detail: `${x.repo.name}:${x.tag.name}` })
+    await log(userId, { repoId: x.repo.id }, "trash_purge", { tag: x.tag.name })
   } else if ("manifest" in x) {
     // Same rule as purgeTrash: a manifest a live index in the repo still lists must stay.
     const gone = await db.execute(sql`delete from registry_manifests m where m.id = ${x.manifest.id}
@@ -831,9 +954,11 @@ export async function purgeFromTrash(userId: string, kind: string, id: string): 
       returning m.id`)
     if (!gone.length) return { error: "A multi-platform image in this repository still uses this manifest, so it can't be deleted yet." }
     await audit("registry_trash_purge", { detail: `${x.repo.name}@${x.manifest.digest.slice(0, 19)}` })
+    await log(userId, { repoId: x.repo.id }, "trash_purge", { digest: x.manifest.digest })
   } else {
     await db.delete(registryRepos).where(eq(registryRepos.id, x.repo.id))
     await audit("registry_trash_purge", { detail: x.repo.name })
+    await log(userId, { namespaceId: x.repo.namespaceId }, "trash_purge", { name: x.repo.name })
   }
   return {}
 }
@@ -901,6 +1026,7 @@ export async function setNamespacePolicy(userId: string, nsName: string, raw: Re
   if (error) return { error }
   await db.update(registryNamespaces).set({ policy }).where(eq(registryNamespaces.id, ns.id))
   await audit("registry_policy", { detail: `${nsName}: ${policy ? JSON.stringify(policy) : "none"}` })
+  await log(userId, { namespaceId: ns.id }, "policy", { scope: nsName })
   return {}
 }
 
@@ -912,6 +1038,7 @@ export async function setRepoPolicy(userId: string, fullName: string, raw: Recor
   if (error) return { error }
   await db.update(registryRepos).set({ policy }).where(eq(registryRepos.id, r.repo.id))
   await audit("registry_policy", { detail: `${fullName}: ${raw ? (policy ? JSON.stringify(policy) : "none") : "inherit"}` })
+  await log(userId, { repoId: r.repo.id }, "policy", { inherit: !raw })
   return {}
 }
 
@@ -963,6 +1090,12 @@ export async function listHooksFor(userId: string, nsName: string, repoName?: st
 export async function hookTarget(userId: string, nsName: string, repoName?: string) {
   const sc = await hookScope(userId, nsName, repoName)
   return sc ? { namespaceId: sc.nsId, repoId: sc.repoId ?? undefined } : null
+}
+
+export async function hookNamespace(hookId: string) {
+  if (!UUID.test(hookId)) return null
+  const [h] = await db.select({ namespaceId: registryHooks.namespaceId, repoId: registryHooks.repoId }).from(registryHooks).where(eq(registryHooks.id, hookId))
+  return h ? { namespaceId: h.namespaceId, repoId: h.repoId } : null
 }
 
 // Whether the member may manage this hook.
@@ -1124,7 +1257,7 @@ export type TokenRow = {
   id: string
   name: string
   prefix: string
-  access: "pull" | "push"
+  access: "pull" | "push" | "delete"
   allRepos: boolean
   repos: string[]
   expiresAt: string | null
@@ -1189,7 +1322,7 @@ function expiryDate(raw: string): Date | null | undefined {
 export async function createToken(userId: string, o: NewToken): Promise<Result & { token?: string; prefix?: string }> {
   const name = String(o.name ?? "").trim().slice(0, 60)
   if (!name) return { error: "Name the token, like “CI” or “Laptop”." }
-  if (o.access !== "pull" && o.access !== "push") return { error: "Pick an access level." }
+  if (o.access !== "pull" && o.access !== "push" && o.access !== "delete") return { error: "Pick an access level." }
   const expiresAt = expiryDate(String(o.expiry))
   if (expiresAt === undefined) return { error: "Pick when it expires." }
   const ids = [...new Set(o.repoIds ?? [])].filter((i) => UUID.test(i))
@@ -1209,7 +1342,7 @@ export async function createToken(userId: string, o: NewToken): Promise<Result &
         name,
         prefix,
         secretEnc: encrypt(secret),
-        access: o.access as "pull" | "push",
+        access: o.access as "pull" | "push" | "delete",
         allRepos: o.allRepos,
         expiresAt,
       })
@@ -1217,6 +1350,7 @@ export async function createToken(userId: string, o: NewToken): Promise<Result &
     if (!o.allRepos) await tx.insert(registryTokenRepos).values(ids.map((repoId) => ({ tokenId: k.id, repoId })))
   })
   await audit("registry_token_create", { detail: `${name} (${prefix})` })
+  await log(userId, { namespaceId: (await myNamespace(userId))?.id }, "token_create", { name, access: o.access })
   await notify(userId, "registry_token", { data: { name, ip: ipFrom(await headers()) || "" } })
   return { token, prefix }
 }
@@ -1233,6 +1367,7 @@ export async function revokeToken(userId: string | null, id: string, byAdmin = f
       targetId: byAdmin ? gone[0].owner : undefined,
       detail: `${gone[0].name} (${gone[0].prefix})`,
     })
+  if (gone[0]) await log(userId ?? gone[0].owner, { namespaceId: (await myNamespace(gone[0].owner))?.id }, "token_revoke", { name: gone[0].name })
   return {}
 }
 
@@ -1300,8 +1435,9 @@ export async function searchRepos(userId: string, q: string) {
   if (!needle || (await registryState(userId)) !== "ready") return []
   return (await listRepos(userId))
     .filter((r) => r.fullName.toLowerCase().includes(needle))
+    .sort((a, b) => Number(a.archived) - Number(b.archived))
     .slice(0, 5)
-    .map((r) => ({ fullName: r.fullName, tags: r.tags }))
+    .map((r) => ({ fullName: r.fullName, tags: r.tags, description: r.description, archived: r.archived }))
 }
 
 // Tags the search box should offer, as "namespace/repo:tag", within what the member can reach.

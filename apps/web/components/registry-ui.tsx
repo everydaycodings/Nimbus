@@ -1,6 +1,7 @@
 "use client"
 
-import { useId, useState } from "react"
+import { CheckCircleIcon } from "@phosphor-icons/react"
+import { useEffect, useId, useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -130,3 +131,44 @@ export function Confirm({
 export function Code({ children, copy }: { children: string; copy?: boolean }) {
   return <code className={cn(CODE, copy && "pt-12 sm:pt-3 sm:pr-20")}>{children}</code>
 }
+
+export type NameCheck = { state: "idle" | "checking" | "ok" | "bad"; error?: string }
+
+// Debounced "is this name free?" while typing. The claim itself re-checks on the server.
+export function useNameCheck(name: string, check: (name: string) => Promise<{ ok: true } | { ok: false; error: string }>): NameCheck {
+  const [result, setCheck] = useState<NameCheck>({ state: "idle" })
+  useEffect(() => {
+    if (!name) return setCheck({ state: "idle" })
+    let live = true
+    setCheck({ state: "checking" })
+    const t = setTimeout(async () => {
+      const r = await check(name).catch(() => null)
+      if (!live) return
+      if (!r) setCheck({ state: "idle" })
+      else setCheck(r.ok ? { state: "ok" } : { state: "bad", error: r.error })
+    }, 300)
+    return () => {
+      live = false
+      clearTimeout(t)
+    }
+    // `check` is a stable server action.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [name])
+  return result
+}
+
+export function NameStatus({ id, check }: { id: string; check: NameCheck }) {
+  return (
+    <p id={id} aria-live="polite" className="flex min-h-5 items-center gap-1.5 text-sm">
+      {check.state === "checking" && <span className="text-muted-foreground">Checking…</span>}
+      {check.state === "ok" && (
+        <>
+          <CheckCircleIcon aria-hidden className="size-4 text-brand" />
+          <span className="text-muted-foreground">Available</span>
+        </>
+      )}
+      {check.state === "bad" && <span className="text-destructive">{check.error}</span>}
+    </p>
+  )
+}
+

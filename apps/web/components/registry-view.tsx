@@ -21,8 +21,9 @@ import {
 import { SaveToSecrets } from "@/components/registry-save-secret"
 import { CopyButton } from "@/components/copy-button"
 import { DIALOG_BACKDROP, DIALOG_POPUP } from "@/components/overlay-styles"
+import { OrgTeams } from "@/components/registry-teams"
 import { MirrorsTab, NamespacesSection, RegistryTabs, TrashTab, type Tab } from "@/components/registry-extra"
-import { Code, Confirm, DAY, Empty, Heading, LIST, RADIO, SECTION, SELECT, TOUCH, WHEN } from "@/components/registry-ui"
+import { Code, Confirm, DAY, Empty, Heading, LIST, NameStatus, RADIO, SECTION, SELECT, TOUCH, WHEN, useNameCheck } from "@/components/registry-ui"
 import { SubmitButton } from "@/components/submit-button"
 import { useNotice } from "@/components/toaster"
 import { FormError } from "@/components/two-factor"
@@ -40,6 +41,7 @@ const EXPIRY = [
   ["90", "In 90 days"],
   ["365", "In a year"],
 ]
+const ACCESS_LABEL = { pull: "Pull", push: "Push", delete: "Push + Delete" }
 const ROLE_LABEL = { owner: "Owner", write: "Can push", read: "Read only" }
 
 // The commands a member runs once they have a token. One block, so Copy takes all of it.
@@ -110,50 +112,12 @@ function SetupCard({ host, me, tokens, onNewToken }: { host: string; me: string;
   )
 }
 
-type NameCheck = { state: "idle" | "checking" | "ok" | "bad"; error?: string }
-
-// Debounced "is this name free?" while typing. The claim itself re-checks on the server.
-function useNameCheck(name: string): NameCheck {
-  const [check, setCheck] = useState<NameCheck>({ state: "idle" })
-  useEffect(() => {
-    if (!name) return setCheck({ state: "idle" })
-    let live = true
-    setCheck({ state: "checking" })
-    const t = setTimeout(async () => {
-      const r = await checkName(name).catch(() => null)
-      if (!live) return
-      if (!r) setCheck({ state: "idle" })
-      else setCheck(r.ok ? { state: "ok" } : { state: "bad", error: r.error })
-    }, 300)
-    return () => {
-      live = false
-      clearTimeout(t)
-    }
-  }, [name])
-  return check
-}
-
-function NameStatus({ id, check }: { id: string; check: NameCheck }) {
-  return (
-    <p id={id} aria-live="polite" className="flex min-h-5 items-center gap-1.5 text-sm">
-      {check.state === "checking" && <span className="text-muted-foreground">Checking…</span>}
-      {check.state === "ok" && (
-        <>
-          <CheckCircleIcon aria-hidden className="size-4 text-brand" />
-          <span className="text-muted-foreground">Available</span>
-        </>
-      )}
-      {check.state === "bad" && <span className="text-destructive">{check.error}</span>}
-    </p>
-  )
-}
-
 // Shown until a member picks their registry name; the name is the first part of every image they push.
 export function ClaimName({ suggestion }: { suggestion: string }) {
   const [error, setError] = useState<string>()
   const [pending, start] = useTransition()
   const [name, setName] = useState(suggestion)
-  const check = useNameCheck(name)
+  const check = useNameCheck(name, checkName)
   return (
     <div className="mx-auto flex w-full max-w-xl flex-col gap-6">
       <header className="grid gap-1">
@@ -273,7 +237,7 @@ export function RegistryView({
             ) : (
               <ul className={LIST}>
                 {repos.map((r) => (
-                  <li key={r.id}>
+                  <li key={r.id} className={cn(r.archived && "opacity-80")}>
                     <Link
                       href={`/registry/${r.fullName}`}
                       className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 outline-none hover:bg-accent/40 focus-visible:bg-accent/40"
@@ -285,7 +249,9 @@ export function RegistryView({
                             {r.isPublic ? <GlobeIcon /> : <LockSimpleIcon />}
                             {r.isPublic ? "Public" : "Private"}
                           </Badge>
+                          {r.archived && <Badge variant="secondary">Archived</Badge>}
                         </span>
+                        {r.description && <span className="text-xs text-pretty break-words text-muted-foreground">{r.description}</span>}
                         <span suppressHydrationWarning className="text-xs text-muted-foreground">
                           {r.tags === 1 ? "1 tag" : `${r.tags} tags`} · <span className="tabular-nums">{sizeOf(r.bytes)}</span>
                           {r.pushedAt ? ` · Pushed ${WHEN.format(new Date(r.pushedAt))}` : ""}
@@ -306,7 +272,7 @@ export function RegistryView({
             <Heading
               id="tokens-heading"
               title="Tokens"
-              hint={`Docker signs in with a token as the password, never your account password. Make one per machine so you can revoke it alone. ${tokens.length} of ${maxTokens} used.`}
+              hint={`Docker signs in with a token as the password, never your account password. Make one per machine so you can revoke it alone. Push tokens made before the Delete scope existed count as Push + Delete. ${tokens.length} of ${maxTokens} used.`}
             >
               <Button className={TOUCH} onClick={() => setNewToken(true)} disabled={tokens.length >= maxTokens}>
                 <PlusIcon />
@@ -336,7 +302,7 @@ export function RegistryView({
             <div className="grid grid-cols-[minmax(0,1fr)] gap-2">
               <p className="text-sm font-medium">GitHub Actions</p>
               <p className="max-w-prose text-sm text-pretty text-muted-foreground">
-                Save a pull &amp; push token as the repository secret <span className="font-mono">NIMBUS_REGISTRY_TOKEN</span>.
+                Save a Push token as the repository secret <span className="font-mono">NIMBUS_REGISTRY_TOKEN</span>.
               </p>
               <CodeCopy text={githubAction(host, me)} label="Copy GitHub Actions step" />
             </div>
@@ -386,7 +352,7 @@ export function RegistryView({
             )}
           </section>
 
-          <NamespacesSection owned={owned} />
+          <NamespacesSection owned={owned} repos={repos} />
         </>
       )}
 
@@ -403,7 +369,7 @@ export function RegistryView({
         }}
       />
       <NewToken open={newToken} repos={repos} onClose={() => setNewToken(false)} host={host} me={me} />
-      <ManageOrg org={managing} meId={meId} onClose={() => setManaging(null)} />
+      <ManageOrg org={managing} meId={meId} repos={repos} onClose={() => setManaging(null)} />
     </div>
   )
 }
@@ -418,7 +384,7 @@ function TokenItem({ t }: { t: TokenRow }) {
         <div className="grid min-w-0 flex-1 basis-64 gap-1">
           <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
             <span className="min-w-0 break-words">{t.name}</span>
-            <Badge variant="outline">{t.access === "push" ? "Pull & push" : "Pull only"}</Badge>
+            <Badge variant="outline">{ACCESS_LABEL[t.access]}</Badge>
             {t.expired && <Badge variant="secondary">Expired</Badge>}
           </p>
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
@@ -458,7 +424,7 @@ function NewOrg({ open, onClose, onDone }: { open: boolean; onClose: () => void;
   const [error, setError] = useState<string>()
   const [pending, start] = useTransition()
   const [orgName, setOrgName] = useState("")
-  const check = useNameCheck(orgName)
+  const check = useNameCheck(orgName, checkName)
   const id = useId()
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && !pending && onClose()}>
@@ -520,7 +486,8 @@ function NewOrg({ open, onClose, onDone }: { open: boolean; onClose: () => void;
   )
 }
 
-function ManageOrg({ org, meId, onClose }: { org: OrgRow | null; meId: string; onClose: () => void }) {
+function ManageOrg({ org, meId, repos, onClose }: { org: OrgRow | null; meId: string; repos: RepoRow[]; onClose: () => void }) {
+  const [view, setView] = useState<"members" | "teams">("members")
   const [members, setMembers] = useState<OrgMember[]>([])
   const [error, setError] = useState<string>()
   const [pending, start] = useTransition()
@@ -534,6 +501,7 @@ function ManageOrg({ org, meId, onClose }: { org: OrgRow | null; meId: string; o
     if (!orgId) return
     let live = true
     setError(undefined)
+    setView("members")
     setDisplay(org?.displayName ?? "")
     orgMembers(orgId).then((m) => live && setMembers(m))
     return () => {
@@ -569,6 +537,29 @@ function ManageOrg({ org, meId, onClose }: { org: OrgRow | null; meId: string; o
               </div>
 
               {owner && (
+                <nav aria-label="Org sections" className="flex w-fit rounded-lg bg-muted p-[3px]">
+                  {(
+                    [
+                      ["members", "Members"],
+                      ["teams", "Teams"],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      aria-pressed={view === id}
+                      onClick={() => setView(id)}
+                      className="flex h-7 items-center rounded-md border border-transparent px-3 text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:h-11 aria-pressed:border-input aria-pressed:bg-input/30 aria-pressed:text-foreground"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </nav>
+              )}
+
+              {owner && view === "teams" && <OrgTeams orgId={org.id} orgName={org.name} members={members} repos={repos} />}
+
+              {owner && view === "members" && (
                 <form
                   className="flex gap-2"
                   onSubmit={(e) => {
@@ -583,6 +574,7 @@ function ManageOrg({ org, meId, onClose }: { org: OrgRow | null; meId: string; o
                 </form>
               )}
 
+              {(view === "members" || !owner) && (
               <ul className="divide-y overflow-hidden rounded-lg border">
                 {members.map((m) => (
                   <li key={m.userId} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2">
@@ -621,8 +613,9 @@ function ManageOrg({ org, meId, onClose }: { org: OrgRow | null; meId: string; o
                   </li>
                 ))}
               </ul>
+              )}
 
-              {owner && (
+              {owner && view === "members" && (
                 <form
                   className="flex flex-wrap gap-2"
                   onSubmit={(e) => {
@@ -795,12 +788,13 @@ function NewToken({
                 <legend className="mb-2 text-sm font-medium">Access</legend>
                 {(
                   [
-                    ["pull", "Pull only", "Download images, nothing else."],
-                    ["push", "Pull & push", "Download and upload images."],
+                    ["pull", "Pull", "Download images."],
+                    ["push", "Push", "Download and upload images."],
+                    ["delete", "Push + Delete", "Download and upload images, and delete tags and images."],
                   ] as const
-                ).map(([value, label, hint], i) => (
-                  <label key={value} className={RADIO}>
-                    <input type="radio" name="access" value={value} defaultChecked={i === 1} className="size-4 accent-primary" />
+                ).map(([value, label, hint]) => (
+                  <label key={value} className={cn(RADIO, "min-h-11 py-2.5")}>
+                    <input type="radio" name="access" value={value} defaultChecked={value === "push"} className="size-4 accent-primary" />
                     <span className="grid">
                       <span className="font-medium">{label}</span>
                       <span className="text-xs text-muted-foreground">{hint}</span>
@@ -815,7 +809,7 @@ function NewToken({
                   <span className="grid">
                     <span className="font-medium">All repositories</span>
                     <span className="text-xs text-pretty text-muted-foreground">
-                      Every repository you can reach, yours and your orgs&apos;, including ones made later. With Pull &amp; push it can also create new repositories.
+                      Every repository you can reach, yours and your orgs&apos;, including ones made later. With Push it can also create new repositories.
                     </span>
                   </span>
                 </label>

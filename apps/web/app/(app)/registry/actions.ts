@@ -3,8 +3,10 @@
 import { revalidatePath } from "next/cache"
 
 import { audit } from "@/lib/audit"
+import { listEvents } from "@/lib/registry/activity"
 import { createHook, deleteHook, testHook } from "@/lib/registry/hooks"
 import * as svc from "@/lib/registry/manage"
+import * as admin from "@/lib/registry/repo-admin"
 import { requestScan } from "@/lib/registry/scan"
 import { saveTokenToSecret } from "@/lib/registry/secrets-pull"
 import { setReadme } from "@/lib/registry/readme"
@@ -147,6 +149,7 @@ export async function runCleanup(name: string): Promise<Result> {
   } catch (e) {
     return { error: e instanceof Error ? e.message : "The cleanup didn't run." }
   }
+  await svc.log(me.id, { repoId: id }, "cleanup_run")
   return done({})
 }
 
@@ -186,6 +189,7 @@ export async function addHook(ns: string, repo: string, url: string, events: str
   try {
     const r = await createHook(me.id, { ...target, url: url.trim(), events: ev })
     await audit("registry_hook", { detail: `added ${repo ? `${ns}/${repo}` : ns}: ${url.trim()}` })
+    await svc.log(me.id, target, "hook_add", { url: url.trim() })
     return { secret: r.secret }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Couldn't add the webhook." }
@@ -195,8 +199,10 @@ export async function removeHook(id: string): Promise<Result> {
   const me = await member()
   if (!me) return NOT_ON
   if (!(await svc.canManageHook(me.id, id))) return { error: "You can't change that webhook." }
+  const at = await svc.hookNamespace(id)
   await deleteHook(me.id, id)
   await audit("registry_hook", { detail: "removed a webhook" })
+  if (at) await svc.log(me.id, at, "hook_remove")
   return {}
 }
 export async function toggleHook(id: string, enabled: boolean) {
@@ -259,4 +265,87 @@ export async function registryRepoChoices() {
 export async function saveRegistryTokenToSecret(o: { token: string; name: string; projectId: string; envId: string }) {
   const me = await member()
   return me ? saveTokenToSecret(me.id, o) : { ...NOT_ON, locked: false, requested: false }
+}
+
+// ---- Repo administration (role checks live in repo-admin) ----
+
+export async function checkRepoName(ns: string, name: string) {
+  await requireMember()
+  return svc.checkRepoName(String(ns).slice(0, 64), String(name).slice(0, 255))
+}
+export async function renameRepo(repoId: string, to: { namespace: string; name: string }) {
+  const me = await member()
+  return me ? done(await admin.renameRepo(me.id, repoId, to)) : { error: NOT_ON.error }
+}
+export async function setArchived(repoId: string, archived: boolean) {
+  const me = await member()
+  return me ? done(await admin.setArchived(me.id, repoId, archived)) : NOT_ON
+}
+export async function setDescription(repoId: string, text: string | null) {
+  const me = await member()
+  return me ? done(await admin.setDescription(me.id, repoId, text)) : NOT_ON
+}
+export async function addCollaborator(repoId: string, email: string, role: string) {
+  const me = await member()
+  return me ? done(await admin.addCollaborator(me.id, repoId, email, role)) : NOT_ON
+}
+export async function setCollaboratorRole(repoId: string, userId: string, role: string) {
+  const me = await member()
+  return me ? done(await admin.setCollaboratorRole(me.id, repoId, userId, role)) : NOT_ON
+}
+export async function removeCollaborator(repoId: string, userId: string) {
+  const me = await member()
+  return me ? done(await admin.removeCollaborator(me.id, repoId, userId)) : NOT_ON
+}
+// Both read-only lists below are for admins of the repo (or owners of its name).
+export async function repoAccess(repoId: string) {
+  const me = await member()
+  const r = me && (await svc.adminRepoAccess(me.id, repoId))
+  return r || null
+}
+export async function setTeamRepo(teamId: string, repoId: string, role: string | null) {
+  const me = await member()
+  return me ? done(await admin.setTeamRepo(me.id, teamId, repoId, role)) : NOT_ON
+}
+
+export async function orgTeams(orgId: string) {
+  const me = await member()
+  return me && (await svc.isOrgOwner(me.id, orgId)) ? admin.listTeams(orgId) : []
+}
+export async function createTeam(orgId: string, name: string) {
+  const me = await member()
+  return me ? done(await admin.createTeam(me.id, orgId, name)) : NOT_ON
+}
+export async function renameTeam(teamId: string, name: string) {
+  const me = await member()
+  return me ? done(await admin.renameTeam(me.id, teamId, name)) : NOT_ON
+}
+export async function deleteTeam(teamId: string) {
+  const me = await member()
+  return me ? done(await admin.deleteTeam(me.id, teamId)) : NOT_ON
+}
+export async function addTeamMember(teamId: string, userId: string) {
+  const me = await member()
+  return me ? done(await admin.addTeamMember(me.id, teamId, userId)) : NOT_ON
+}
+export async function removeTeamMember(teamId: string, userId: string) {
+  const me = await member()
+  return me ? done(await admin.removeTeamMember(me.id, teamId, userId)) : NOT_ON
+}
+
+// One page of the activity log for a repo or a whole registry name; `before` is the last row's time.
+export type ActivityScope = { repoId: string } | { namespaceId: string }
+const PAGE = 30
+export async function activityPage(scope: ActivityScope, o: { actorId?: string; repoId?: string; before?: string }) {
+  const me = await member()
+  if (!me || !(await svc.canSeeScope(me.id, scope))) return { rows: [], more: false }
+  const before = o.before ? new Date(o.before) : undefined
+  const rows = await listEvents({
+    ...("repoId" in scope ? { repoId: scope.repoId } : { namespaceId: scope.namespaceId, repoId: o.repoId }),
+    actorId: o.actorId,
+    before: before && !Number.isNaN(before.getTime()) ? before : undefined,
+    limit: PAGE + 1,
+  })
+  const named = await svc.withNames(rows.slice(0, PAGE))
+  return { rows: named.map((e) => ({ ...e, at: e.at.toISOString() })), more: rows.length > PAGE }
 }

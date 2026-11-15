@@ -73,7 +73,7 @@ export function SearchPalette({ admin }: { admin: boolean }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState("")
   const [found, setFound] = useState<{ q: string; hits: Hit[] } | null>(null)
-  const [repos, setRepos] = useState<{ q: string; hits: { fullName: string; tags: number }[]; tagHits: { fullName: string; tag: string }[] } | null>(null)
+  const [repos, setRepos] = useState<{ q: string; hits: { fullName: string; tags: number; description: string | null; archived: boolean }[]; tagHits: { fullName: string; tag: string }[] } | null>(null)
   const [active, setActive] = useState(0)
   const [recent, setRecent] = useState<string[]>([])
   const [hasLayout, setHasLayout] = useState(false)
@@ -303,9 +303,14 @@ export function SearchPalette({ admin }: { admin: boolean }) {
           rows: [
             ...(repos?.q === query ? repos.hits : []).map((r) => ({
               key: `repo:${r.fullName}`,
-              label: <span className="font-mono">{r.fullName}</span>,
+              label: (
+                <>
+                  <span className="font-mono">{r.fullName}</span>
+                  {r.description && <span className="ml-2 text-xs text-muted-foreground">{r.description}</span>}
+                </>
+              ),
               icon: PackageIcon,
-              detail: r.tags === 1 ? "1 tag" : `${r.tags} tags`,
+              detail: `${r.tags === 1 ? "1 tag" : `${r.tags} tags`}${r.archived ? " · Archived" : ""}`,
               run: go(`/registry/${r.fullName}`),
             })),
             ...(repos?.q === query ? repos.tagHits : []).map((r) => ({

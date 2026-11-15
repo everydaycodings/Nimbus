@@ -21,7 +21,7 @@ import { deleteRegistryRepo, restoreRegistryRepo, revokeRegistryToken, setRegist
 export const metadata = { title: "Container registry · Admin · Nimbus" }
 
 const CHECK = "size-4 pointer-coarse:size-6 shrink-0 accent-primary self-start sm:self-end"
-const ACCESS = { pull: "Pull only", push: "Pull & push" }
+const ACCESS = { pull: "Pull", push: "Push", delete: "Push + Delete" }
 const when = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" })
 const day = new Intl.DateTimeFormat("en", { dateStyle: "medium" })
 
