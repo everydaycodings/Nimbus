@@ -14,6 +14,7 @@ import { audit, auditAs } from "@/lib/audit"
 import { db } from "@/lib/db"
 import { secretDbConnections, secretDbLeases, secretEnvs, secretRotations, secrets, secretMembers, type DbEngine } from "@/lib/db/schema"
 import { enqueue } from "@/lib/redis"
+import { PULL_TYPE, configText, extendPullToken, mintPullToken, parseConfig, registryHost, revokePullToken } from "@/lib/registry/secrets-pull"
 import { endSessions, execute, ping, setPassword, userExists, type Target } from "./dyn-drivers"
 import {
   DEFAULT_PORT, DEFAULT_TEMPLATE, ENGINES, MAX_TTL_LIMIT, MIN_TTL, USER_RE, checkSyntax, clampTtl, fmtTtl, leaseUrl,
@@ -49,7 +50,7 @@ type Conn = typeof secretDbConnections.$inferSelect
 type Admin = { username: string; password: string; ca?: string }
 
 const adminOf = (c: Ctx, conn: Conn) => JSON.parse(unseal(c, conn.adminEnc)) as Admin
-const targetOf = (conn: Conn, a: Admin): Target => ({ engine: conn.engine, host: conn.host, port: conn.port, database: conn.database, tls: conn.tls, ca: a.ca || undefined, username: a.username, password: a.password })
+const targetOf = (conn: Conn, a: Admin): Target => ({ engine: conn.engine as DbEngine, host: conn.host, port: conn.port, database: conn.database, tls: conn.tls, ca: a.ca || undefined, username: a.username, password: a.password })
 const adminTarget = (c: Ctx, conn: Conn) => targetOf(conn, adminOf(c, conn))
 
 async function loadConn(c: Ctx, id: string) {
@@ -74,6 +75,8 @@ const shapeConn = (r: Conn, adminUser: string, ca = "") => ({
   revokeSql: r.revokeSql,
   defaultTtl: r.defaultTtl,
   maxTtl: r.maxTtl,
+  // registry-pull connections: "all" or repository ids.
+  ...(r.engine === PULL_TYPE && { repos: parseConfig(r.createSql).repos }),
 })
 
 export type ConnInput = {
@@ -90,6 +93,8 @@ export type ConnInput = {
   revokeSql?: string
   defaultTtl?: string | number
   maxTtl?: string | number
+  // registry-pull only: "all" or repository ids.
+  repos?: "all" | string[]
 }
 
 // Checks what was given and returns the columns to write (only those that were given).
@@ -156,7 +161,34 @@ export async function listConnections(c: Ctx) {
   })
 }
 
+// A registry-pull connection: a name, which repositories, and how long a lease lives. No host or login.
+async function saveRegistryConnection(c: Ctx, input: ConnInput, log: Log, existing?: Conn) {
+  const errors: Record<string, string> = {}
+  const name = (input.name ?? existing?.name ?? "").trim().slice(0, 60)
+  if (!name) errors.name = "Name the connection."
+  const cfg = input.repos === undefined && existing ? { text: existing.createSql } : configText(input.repos)
+  if ("error" in cfg) errors.repos = cfg.error
+  const ttl = (v: string | number | undefined, field: "defaultTtl" | "maxTtl", fallback: number) => {
+    if (v === undefined || v === "") return fallback
+    const n = parseTtl(v)
+    if (!n || n < MIN_TTL || n > MAX_TTL_LIMIT) errors[field] = "Use a time like 30m, 2h or 7d (1 minute to 90 days)."
+    return n ?? fallback
+  }
+  const defaultTtl = ttl(input.defaultTtl, "defaultTtl", existing?.defaultTtl ?? 3600)
+  const maxTtl = ttl(input.maxTtl, "maxTtl", existing?.maxTtl ?? 86400)
+  if (Object.keys(errors).length) throw bad("Some fields need fixing.", 422, errors)
+  const [dup] = await db.select({ id: secretDbConnections.id }).from(secretDbConnections).where(and(eq(secretDbConnections.projectId, c.projectId), eq(secretDbConnections.name, name)))
+  if (dup && dup.id !== existing?.id) throw bad("A connection with that name exists.", 409, { name: "A connection with that name exists." })
+  const fields = { name, createSql: (cfg as { text: string }).text, defaultTtl, maxTtl: Math.max(maxTtl, defaultTtl) }
+  const [row] = existing
+    ? await db.update(secretDbConnections).set(fields).where(eq(secretDbConnections.id, existing.id)).returning()
+    : await db.insert(secretDbConnections).values({ ...fields, projectId: c.projectId, engine: PULL_TYPE, host: "registry", port: 0, revokeSql: "-", adminEnc: seal(c, "{}"), createdBy: c.userId || null }).returning()
+  await log("secrets_dyn_conn_save", `${row.name} (registry pull tokens): ${existing ? "edited" : "added"}`)
+  return shapeConn(row, "")
+}
+
 export async function createConnection(c: Ctx, input: ConnInput, log: Log) {
+  if (input.engine === PULL_TYPE) return saveRegistryConnection(c, input, log)
   if (!ENGINES.includes(input.engine as DbEngine)) throw bad("Pick a database type.", 422, { engine: "Pick a database type." })
   const engine = input.engine as DbEngine
   const fields = connFields(input, engine, true)
@@ -178,6 +210,7 @@ export async function createConnection(c: Ctx, input: ConnInput, log: Log) {
 
 export async function updateConnection(c: Ctx, id: string, input: ConnInput, log: Log) {
   const conn = await loadConn(c, id)
+  if (conn.engine === PULL_TYPE) return saveRegistryConnection(c, input, log, conn)
   const fields = connFields(input, conn.engine, false)
   const a = adminOf(c, conn)
   // The stored admin password only ever goes to the server it was typed for.
@@ -210,6 +243,11 @@ export async function deleteConnection(c: Ctx, id: string, log: Log) {
 
 export async function testConnection(c: Ctx, id: string, log: Log) {
   const conn = await loadConn(c, id)
+  if (conn.engine === PULL_TYPE) {
+    const ok = Boolean(registryHost())
+    await log("secrets_dyn_conn_test", `${conn.name}: ${ok ? "registry is on" : "registry is off"}`)
+    return { ok, message: ok ? `The registry answers at ${registryHost()}.` : "The container registry isn't turned on on this server." }
+  }
   const a = adminOf(c, conn)
   try {
     const version = await ping(targetOf(conn, a))
@@ -227,7 +265,7 @@ type Lease = typeof secretDbLeases.$inferSelect
 
 const stateOf = (l: Lease) => (l.revokedAt ? "revoked" : l.error ? "failed" : l.expiresAt.getTime() <= Date.now() ? "expired" : "active")
 
-const shapeLease = (l: Lease, connection: string, engine: DbEngine) => ({
+const shapeLease = (l: Lease, connection: string, engine: Conn["engine"]) => ({
   id: l.id,
   connectionId: l.connectionId,
   connection,
@@ -259,6 +297,22 @@ async function scheduleExpiry(l: Pick<Lease, "id" | "expiresAt">) {
   await enqueue("secrets-lease-expire", { id: l.id }, { delay: Math.max(0, l.expiresAt.getTime() - Date.now()) + 1000, jobId: `lease-${l.id}-${l.expiresAt.getTime()}` }).catch((e) => console.error("lease expiry job:", e))
 }
 
+// A registry pull token as a lease: the lease row holds the token (sealed), the registry holds the token row.
+async function generatePull(c: Ctx, conn: Conn, ttl: number, expiresAt: Date, issuedBy: string, log: Log) {
+  if (!conn.createdBy) throw bad("This connection has no owner left to mint tokens for. Create it again.", 409)
+  const [lease] = await db.insert(secretDbLeases).values({ projectId: c.projectId, connectionId: conn.id, username: "pending", passwordEnc: seal(c, ""), issuedBy, expiresAt }).returning()
+  try {
+    const t = await mintPullToken({ leaseId: lease.id, userId: conn.createdBy, repos: parseConfig(conn.createSql).repos, expiresAt })
+    const [row] = await db.update(secretDbLeases).set({ username: t.username, passwordEnc: seal(c, t.password) }).where(eq(secretDbLeases.id, lease.id)).returning()
+    await scheduleExpiry(row)
+    await log("secrets_dyn_lease", `${conn.name}: issued a pull token for ${fmtTtl(ttl)}, to ${issuedBy}`)
+    return { lease: shapeLease(row, conn.name, conn.engine), username: t.username, password: t.password, host: t.registry, registry: t.registry, url: `docker login ${t.registry} -u ${t.username}`, ttl, expiresAt: row.expiresAt.toISOString(), engine: conn.engine }
+  } catch (e) {
+    await db.delete(secretDbLeases).where(eq(secretDbLeases.id, lease.id))
+    throw e
+  }
+}
+
 export async function generate(c: Ctx, connectionId: string, ttlIn: unknown, issuedBy: string, log: Log) {
   const conn = await loadConn(c, connectionId)
   const want = ttlIn === undefined || ttlIn === null || ttlIn === "" ? conn.defaultTtl : parseTtl(ttlIn)
@@ -268,6 +322,7 @@ export async function generate(c: Ctx, connectionId: string, ttlIn: unknown, iss
   const username = newUsername()
   const password = newPassword()
   const expiresAt = new Date(now.getTime() + ttl * 1000)
+  if (conn.engine === PULL_TYPE) return generatePull(c, conn, ttl, expiresAt, issuedBy, log)
   const target = adminTarget(c, conn)
   const text = render(conn.createSql, { username, password, expiry: isoSecond(new Date(now.getTime() + conn.maxTtl * 1000)) })
   const [lease] = await db
@@ -315,6 +370,7 @@ export async function revealLease(c: Ctx, id: string, log: Log) {
   if (stateOf(l) !== "active") throw bad("This lease has ended; its password is gone.", 410)
   const password = unseal(c, l.passwordEnc)
   await log("secrets_dyn_reveal", `${conn.name}: showed the password of ${l.username}`)
+  if (conn.engine === PULL_TYPE) return { username: l.username, password, host: registryHost(), registry: registryHost(), engine: conn.engine, expiresAt: l.expiresAt.toISOString(), url: `docker login ${registryHost()} -u ${l.username}` }
   return {
     username: l.username,
     password,
@@ -337,6 +393,7 @@ export async function renewLease(c: Ctx, id: string, ttlIn: unknown, log: Log) {
   if (next <= l.expiresAt.getTime() + 1000)
     throw bad(next >= ceiling ? `This lease is at its maximum life (${fmtTtl(conn.maxTtl)} from issue).` : "It already runs at least that long.", 409)
   const [row] = await db.update(secretDbLeases).set({ expiresAt: new Date(next) }).where(eq(secretDbLeases.id, id)).returning()
+  if (conn.engine === PULL_TYPE) await extendPullToken(id, row.expiresAt)
   await scheduleExpiry(row)
   await log("secrets_dyn_renew", `${conn.name}: ${l.username} now ends ${row.expiresAt.toISOString()}`)
   return shapeLease(row, conn.name, conn.engine)
@@ -344,6 +401,11 @@ export async function renewLease(c: Ctx, id: string, ttlIn: unknown, log: Log) {
 
 // Idempotent: a user that's already gone counts as revoked.
 async function endLease(c: Ctx, conn: Conn, l: Lease, why: string, log: Log) {
+  if (conn.engine === PULL_TYPE) {
+    await revokePullToken(l.id)
+    await db.update(secretDbLeases).set({ revokedAt: new Date(), error: null }).where(eq(secretDbLeases.id, l.id))
+    return log("secrets_dyn_revoke", `${conn.name}: pull token ${l.id.slice(0, 8)} revoked (${why})`)
+  }
   const target = adminTarget(c, conn)
   try {
     await execute(target, render(conn.revokeSql, { username: l.username })).catch((e) => {
@@ -380,7 +442,7 @@ export async function expireLease(id: string) {
 
 type Rot = typeof secretRotations.$inferSelect
 
-const shapeRot = (r: Rot, extra: { key: string; env: string; folder: string | null; connection: string; engine: DbEngine }) => ({
+const shapeRot = (r: Rot, extra: { key: string; env: string; folder: string | null; connection: string; engine: Conn["engine"] }) => ({
   id: r.id,
   secretId: r.secretId,
   ...extra,
@@ -444,6 +506,7 @@ async function rotFields(c: Ctx, input: RotInput, conn: Conn) {
 
 export async function createRotation(c: Ctx, input: RotInput, log: Log) {
   const conn = await loadConn(c, String(input.connectionId ?? ""))
+  if (conn.engine === PULL_TYPE) throw bad("Rotation works with databases, not registry pull tokens.", 422)
   const [sec] = /^[0-9a-f-]{36}$/i.test(String(input.secretId))
     ? await db.select({ s: secrets, env: secretEnvs.name }).from(secrets).innerJoin(secretEnvs, eq(secretEnvs.id, secrets.envId)).where(and(eq(secrets.id, input.secretId!), eq(secrets.projectId, c.projectId), isNull(secrets.deletedAt)))
     : []

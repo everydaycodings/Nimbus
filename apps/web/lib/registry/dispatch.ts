@@ -148,7 +148,7 @@ export async function dispatch(c: C): Promise<Response> {
   if ((g = /^\/v2\/(.+)\/manifests\/([^/]+)$/.exec(path))) {
     const [name, ref] = [decode(g[1]), decode(g[2])]
     if (read && isMirror(name)) return mirrorManifest(c, name, ref, head)
-    if (read) return getManifest((await readable(c, name)).repo, ref, head)
+    if (read) return getManifest((await readable(c, name)).repo, ref, head, c.actor.tokenId)
     if (m === "PUT") return putManifest(c, (await writable(c, name, true)).repo, name, ref)
     if (m === "DELETE") return deleteManifest(c, (await writable(c, name, false)).repo, name, ref)
   }

@@ -256,7 +256,9 @@ echo "its own subdomain and also under https://$DOMAIN/v2/ (members make tokens 
 PROFILES=$(tr ',' '\n' <<<"$PROFILES" | grep -vx -e registry -e '' | paste -sd, || true)
 default=n
 [ "$write_env" = n ] && [[ ",$(env_value COMPOSE_PROFILES)," == *",registry,"* ]] && default=y
+PROFILES=$(tr ',' '\n' <<<"$PROFILES" | grep -vx -e scan -e '' | paste -sd, || true)
 REGISTRY_DOMAIN=""
+REGISTRY_SCAN=n
 if confirm "Turn on the container registry?" "$default"; then
   PROFILES="${PROFILES:+$PROFILES,}registry"
   REGISTRY_DOMAIN=$(env_value REGISTRY_DOMAIN)
@@ -264,6 +266,13 @@ if confirm "Turn on the container registry?" "$default"; then
     ask REGISTRY_DOMAIN "Registry domain" "${REGISTRY_DOMAIN:-cr.$DOMAIN}"
     valid_domain "$REGISTRY_DOMAIN" && [ "$REGISTRY_DOMAIN" != "$DOMAIN" ] && [ "$REGISTRY_DOMAIN" != "$S3_DOMAIN" ] && [ "$REGISTRY_DOMAIN" != "$S3API_DOMAIN" ] && break
   done
+  echo "Image scanning shows known vulnerabilities per image and can refuse pulls with Critical ones."
+  default=n
+  [ "$write_env" = n ] && [[ ",$(env_value COMPOSE_PROFILES)," == *",scan,"* ]] && default=y
+  if confirm "Turn on image scanning (Trivy, ~1 GB)?" "$default"; then
+    PROFILES="${PROFILES:+$PROFILES,}scan"
+    REGISTRY_SCAN=y
+  fi
 fi
 
 bold "nginx and HTTPS"
@@ -354,6 +363,15 @@ set_env COMPOSE_PROFILES "$PROFILES"
 [ -n "$(env_value ML_TOKEN)" ] || set_env ML_TOKEN "$(openssl rand -hex 24)"
 set_env S3API_DOMAIN "$S3API_DOMAIN"
 set_env REGISTRY_DOMAIN "$REGISTRY_DOMAIN"
+if [ "$REGISTRY_SCAN" = y ]; then
+  # The scanner reads images through the registry service on the compose network (plain http).
+  set_env REGISTRY_SCAN_URL "http://registry-scan:4954"
+  set_env REGISTRY_SCAN_REGISTRY "registry:3408"
+  [ -n "$(env_value REGISTRY_SCAN_SECRET)" ] || set_env REGISTRY_SCAN_SECRET "$(openssl rand -hex 24)"
+else
+  set_env REGISTRY_SCAN_URL ""
+  set_env REGISTRY_SCAN_REGISTRY ""
+fi
 [ "$NGINX" = y ] && set_env CERTBOT_EMAIL "$CERTBOT_EMAIL"
 chmod 600 .env
 [ "$write_env" = y ] && echo "Saved .env (readable only by you)."

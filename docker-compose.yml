@@ -11,6 +11,7 @@ name: nimbus
 #   push      run ntfy, a push server for the Android app (README, "Android app")
 #   s3api     run the S3-compatible API (README, "S3-compatible API")
 #   registry  run the container registry (docker push/pull)
+#   scan      scan registry images with Trivy (needs registry; ~1 GB)
 #   ml        run nimbus-ml, the optional AI service (speech, photo and face search)
 
 x-nimbus: &nimbus
@@ -25,6 +26,10 @@ x-nimbus: &nimbus
     TUS_URL: https://${DOMAIN}/files/
     ML_URL: http://ml:8000
     ML_TOKEN: ${ML_TOKEN:-}
+    # Set by setup.sh when image scanning is on; the scanner reads the registry through the registry service.
+    REGISTRY_SCAN_URL: ${REGISTRY_SCAN_URL:-}
+    REGISTRY_SCAN_SECRET: ${REGISTRY_SCAN_SECRET:-}
+    REGISTRY_SCAN_REGISTRY: ${REGISTRY_SCAN_REGISTRY:-}
   # Reach the public names through this host's nginx, not a hairpin through the
   # router; host.docker.internal is this host, for a Postgres running on it.
   extra_hosts: &hosts
@@ -202,6 +207,20 @@ services:
     depends_on:
       app: { condition: service_started }
 
+  # Image scanning (profile scan): Trivy behind a tiny HTTP front, reachable only from this
+  # compose network (no host port). The app and worker call it through REGISTRY_SCAN_URL.
+  # Its vulnerability database lives in the trivy-cache volume and updates itself.
+  registry-scan:
+    build: { context: ., dockerfile: docker/registry-scan/Dockerfile }
+    image: nimbus-registry-scan:latest
+    profiles: [scan]
+    restart: unless-stopped
+    environment:
+      REGISTRY_SCAN_SECRET: ${REGISTRY_SCAN_SECRET:-}
+    volumes: [trivy-cache:/cache]
+    depends_on:
+      registry: { condition: service_started }
+
   # Browser SSH terminal (Secrets → SSH): WebSockets from xterm.js to ssh2. nginx forwards
   # /ssh-ws here. Next can't upgrade WebSockets itself.
   ssh-terminal:
@@ -241,3 +260,4 @@ volumes:
   redis:
   ntfy:
   ml-models:
+  trivy-cache:

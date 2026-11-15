@@ -80,7 +80,7 @@ export async function scheduleHealth(minutes: number | null) {
 }
 
 export type JobName =
-  "email" | "leak-scan" | "leak-scan-user" | "secrets-rotate-root" | "secrets-sweep" | "secrets-push" | "secrets-webhook" | "secrets-lease-expire" | "delete-keys" | "tus-finish" | "backup-alert" | "orphan-sweep" | "push" | "ocr-langs" | "s3-etags" | "s3-multipart-stale" | "registry-uploads-stale" | "registry-gc" | "registry-trash-purge" | "registry-policy" | "registry-mirror-expire" | "registry-webhook"
+  "email" | "leak-scan" | "leak-scan-user" | "secrets-rotate-root" | "secrets-sweep" | "secrets-push" | "secrets-webhook" | "secrets-lease-expire" | "delete-keys" | "tus-finish" | "backup-alert" | "orphan-sweep" | "push" | "ocr-langs" | "s3-etags" | "s3-multipart-stale" | "registry-uploads-stale" | "registry-gc" | "registry-trash-purge" | "registry-policy" | "registry-mirror-expire" | "registry-webhook" | "registry-scan" | "registry-rescan"
 
 // Work the request shouldn't wait for, retried by `npm run worker` until it lands.
 // Failed jobs stay a week for a look; done ones go, since emails carry file names.
@@ -187,6 +187,11 @@ export async function scheduleJobs() {
     "registry-mirror-expire",
     { every: 24 * 3600_000 },
     { name: "registry-mirror-expire", opts }
+  )
+  await jobsQueue.upsertJobScheduler(
+    "registry-rescan",
+    { every: 24 * 3600_000 },
+    { name: "registry-rescan", opts }
   )
   await jobsQueue.upsertJobScheduler(
     "face-cluster",

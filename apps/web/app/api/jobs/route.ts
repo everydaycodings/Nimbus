@@ -18,6 +18,7 @@ import { runGc, purgeTrash } from "@/lib/registry/gc"
 import { deliver as deliverRegistryHook } from "@/lib/registry/hooks"
 import { expireMirror } from "@/lib/registry/mirror"
 import { applyPolicy, effectivePolicy } from "@/lib/registry/policy"
+import { runRescan, runScan } from "@/lib/registry/scan"
 import { abortStale as abortStaleUploads } from "@/lib/registry/uploads"
 import { abortStale } from "@/lib/s3api/multipart"
 import { scanNode, scanUser } from "@/lib/secrets/leaks"
@@ -75,6 +76,8 @@ const jobs: Record<string, (data: never) => Promise<unknown>> = {
   "registry-trash-purge": purgeTrash,
   "registry-policy": runPolicies,
   "registry-mirror-expire": expireMirror,
+  "registry-scan": ({ manifestId }: { manifestId: string }) => runScan(manifestId),
+  "registry-rescan": runRescan,
   "registry-webhook": ({ id }: { id: string }) => deliverRegistryHook(id),
   "phone-backup-stale": alertStalePhones,
   "documents-remind": remindExpiring,

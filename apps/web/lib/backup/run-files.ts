@@ -64,6 +64,16 @@ async function pool<T>(items: T[], n: number, work: (x: T) => Promise<void>) {
   )
 }
 
+// Every key Nimbus keeps that a backup must hold: file versions and registry layers
+// (the pull-through mirror's cache is left out; it can be fetched again).
+const keys = () => sql`(
+  select s3_key as key from file_versions
+  union select b.key from registry_blobs b where exists (
+    select 1 from registry_repo_blobs rb
+      join registry_repos r on r.id = rb.repo_id
+      join registry_namespaces n on n.id = r.namespace_id
+    where rb.digest = b.digest and n.ref_id <> 'system'))`
+
 const gb = (n: number) => `${(n / 1e9).toFixed(2)} GB`
 
 export async function backupFiles(run: Run) {
@@ -83,12 +93,12 @@ export async function backupFiles(run: Run) {
       await sql`update settings set backup_mirror_at = ${target}`
     }
     const wanted = await sql<{ key: string }[]>`
-      select distinct s3_key as key from file_versions
+      select distinct key from ${keys()} k
       except select key from backup_objects where gone_at is null`
     // Back in Nimbus (a restore from the backup, say): no longer gone.
     const back = await sql`
       update backup_objects set gone_at = null
-      where gone_at is not null and key in (select s3_key from file_versions)
+      where gone_at is not null and key in (select key from ${keys()} k)
       returning key`
     const backKeys = new Set(back.map((r) => r.key as string))
     const todo = wanted.filter((w) => !backKeys.has(w.key))
@@ -136,7 +146,7 @@ export async function backupFiles(run: Run) {
     await step(ctx, "prune")
     const marked = await sql`
       update backup_objects set gone_at = now()
-      where gone_at is null and key not in (select s3_key from file_versions)
+      where gone_at is null and key not in (select key from ${keys()} k)
       returning key`
     const expired = (
       await sql<{ key: string }[]>`

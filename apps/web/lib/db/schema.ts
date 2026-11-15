@@ -2513,7 +2513,7 @@ export const secretDbConnections = pgTable(
       .notNull()
       .references(() => secretProjects.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    engine: text("engine").$type<DbEngine>().notNull(),
+    engine: text("engine").$type<DbEngine | "registry-pull">().notNull(),
     host: text("host").notNull(),
     port: integer("port").notNull(),
     // Postgres/MySQL database, Mongo auth database; empty for Redis.

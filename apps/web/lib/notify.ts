@@ -218,7 +218,7 @@ async function describe(userId: string, ids?: string[]) {
       registry_token: `A new registry token “${d.name ?? "unnamed"}” was made for your account${d.ip ? ` from ${d.ip}` : ""}. Revoke it in Registry if it wasn't you.`,
       registry_cleanup: `Registry cleanup removed ${d.tags ?? "0"} tag${d.tags === "1" ? "" : "s"}${Number(d.untagged) ? ` and ${d.untagged} untagged image${d.untagged === "1" ? "" : "s"}` : ""} from ${d.name ?? "your namespace"}. They stay in the trash for 7 days.`,
       registry_quota: `Registry storage for ${d.name ?? "your namespace"} is ${d.percent ?? 90}% full. Delete old images or ask an admin for more.`,
-      registry_scan: `A registry scan found ${d.critical ?? "critical"} vulnerabilities in ${d.name ?? "an image"}`,
+      registry_scan: `A registry scan found ${d.critical ?? "some"} critical vulnerabilit${d.critical === "1" ? "y" : "ies"} in ${d.name ?? "an image"}`,
       secrets: d.text ?? "Something needs a look in Secrets",
     }[r.kind]
     const seen = r.nodeId ? access.get(r.nodeId) : undefined

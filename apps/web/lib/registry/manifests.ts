@@ -19,6 +19,7 @@ import type { registryRepos } from "@/lib/db/schema"
 import { announce, checkRegistryQuota } from "./events.ts"
 import type { C } from "./http.ts"
 import { RegError, errors, json, respond } from "./http.ts"
+import { blockedByScan, requestScan, scanAvailable, scanSummaries } from "./scan.ts"
 import { MAX_MANIFEST_BYTES, matchPattern, parseDigest, validTag } from "./rules.ts"
 import { paginate } from "./wire.ts"
 
@@ -69,9 +70,11 @@ export async function find(repoId: string, ref: string) {
 
 const today = () => new Date().toISOString().slice(0, 10)
 
-export async function getManifest(repo: Repo, ref: string, head: boolean) {
+export async function getManifest(repo: Repo, ref: string, head: boolean, tokenId: string | null = null) {
   const m = await find(repo.id, ref)
   if (!m) throw errors.manifestUnknown(ref)
+  const blocked = await blockedByScan(repo, m.id, tokenId)
+  if (blocked) throw errors.denied(blocked)
   if (!head && !parseDigest(ref)) {
     // ponytail: Accept isn't negotiated; clients always get the stored type.
     await db.update(registryTags).set({ lastPulledAt: new Date() }).where(and(eq(registryTags.repoId, repo.id), eq(registryTags.name, ref), isNull(registryTags.deletedAt)))
@@ -187,6 +190,13 @@ export async function putManifest(c: C, repo: Repo, name: string, ref: string) {
       .returning({ id: registryTags.id })
     if (!moved.length) await db.insert(registryTags).values({ repoId: repo.id, name: tag, ...set })
   }
+  // A tagged image (not a signature, SBOM or attestation) is scanned when scanning is on; the same digest isn't redone on every push.
+  if (tag && !subject && !artifactType)
+    try {
+      if ((await scanAvailable()) && !(await scanSummaries([m.id]))[m.id]) await requestScan(m.id)
+    } catch (e) {
+      console.error("[registry] scan request:", e)
+    }
   await auditAs({ id: c.actor.userId, name: c.who.name }, "registry_push", `${name}:${tag ?? digest}`, { ip: c.who.ip })
   await announce("push", repo.id, name, { tag, digest, mediaType, size: bytes.length, pushedBy: c.who.name })
   await checkRegistryQuota(repo.namespaceId)

@@ -3,7 +3,7 @@ import { z } from "zod"
 
 export const connSchema = z.object({
   name: z.string().max(60).optional(),
-  engine: z.string().max(12).optional(),
+  engine: z.string().max(16).optional(),
   host: z.string().max(255).optional(),
   port: z.number().optional(),
   database: z.string().max(63).optional(),
@@ -15,6 +15,8 @@ export const connSchema = z.object({
   revokeSql: z.string().max(5000).optional(),
   defaultTtl: z.union([z.string().max(10), z.number()]).optional(),
   maxTtl: z.union([z.string().max(10), z.number()]).optional(),
+  // registry-pull: "all" or repository ids.
+  repos: z.union([z.literal("all"), z.array(z.string().max(40)).max(200)]).optional(),
 })
 
 export const rotSchema = z.object({
