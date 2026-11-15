@@ -1,0 +1,13 @@
+# AppArmor profile for Nimbus's rootless BuildKit container (compose service "buildkitd").
+# Ubuntu 23.10+ blocks unprivileged user namespaces (kernel.apparmor_restrict_unprivileged_userns=1),
+# which rootless BuildKit needs. This profile allows them for this one container only, so the
+# host-wide protection stays on. setup.sh installs it; by hand:
+#   sudo install -m 644 docker/buildkit/apparmor-nimbus-buildkit /etc/apparmor.d/nimbus-buildkit
+#   sudo apparmor_parser -r /etc/apparmor.d/nimbus-buildkit
+#   echo BUILDKIT_APPARMOR=nimbus-buildkit >> .env && docker compose up -d buildkitd
+abi <abi/4.0>,
+include <tunables/global>
+
+profile nimbus-buildkit flags=(unconfined) {
+  userns,
+}

@@ -295,6 +295,18 @@ if confirm "Turn on the container registry?" "$default"; then
     if confirm "Install QEMU support for other architectures now (runs a privileged container once)?" n; then
       docker run --privileged --rm tonistiigi/binfmt --install arm64,amd64 || warn "QEMU support didn't install; same-architecture builds still work."
     fi
+    # Ubuntu 23.10+ blocks unprivileged user namespaces, which rootless BuildKit needs. A tiny
+    # AppArmor profile (docker/buildkit/apparmor-nimbus-buildkit) allows them for that container only.
+    BUILDKIT_APPARMOR=""
+    if [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" = 1 ]; then
+      echo "This server restricts user namespaces, so BuildKit needs a small AppArmor profile (asks for sudo)."
+      if sudo install -m 644 docker/buildkit/apparmor-nimbus-buildkit /etc/apparmor.d/nimbus-buildkit &&
+        sudo apparmor_parser -r /etc/apparmor.d/nimbus-buildkit; then
+        BUILDKIT_APPARMOR=nimbus-buildkit
+      else
+        warn "The AppArmor profile didn't install, so builds won't start. See docker/buildkit/apparmor-nimbus-buildkit."
+      fi
+    fi
   fi
 fi
 
@@ -401,6 +413,7 @@ if [ "$REGISTRY_BUILD" = y ]; then
   set_env BUILD_MEM "$BUILD_MEM"
   set_env BUILD_CACHE_GB "$BUILD_CACHE_GB"
   set_env BUILD_CACHE_MB "$(( BUILD_CACHE_GB * 1000 ))"
+  set_env BUILDKIT_APPARMOR "$BUILDKIT_APPARMOR"
 else
   set_env BUILDKIT_HOST ""
 fi

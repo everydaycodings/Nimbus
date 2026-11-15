@@ -237,7 +237,8 @@ services:
       - --config=/etc/buildkit/buildkitd.toml
       - --oci-worker-no-process-sandbox
       - --oci-worker-gc-keepstorage=${BUILD_CACHE_MB:-10240}
-    security_opt: [seccomp=unconfined, apparmor=unconfined]
+    # apparmor: "nimbus-buildkit" on hosts that restrict user namespaces (setup.sh sets it), else unconfined.
+    security_opt: [seccomp=unconfined, "apparmor=${BUILDKIT_APPARMOR:-unconfined}"]
     mem_limit: ${BUILD_MEM:-2g}
     memswap_limit: ${BUILD_MEM:-2g}
     cpus: ${BUILD_CPUS:-1}
