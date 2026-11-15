@@ -31,7 +31,7 @@ import { getStream } from "@/lib/s3"
 import { isAdmin } from "@/lib/session"
 import { getSettings } from "@/lib/signup"
 import { isClash } from "@/lib/uploads"
-import { roleIn as roleInRaw } from "./access"
+import { roleIn } from "./access"
 import { registryUsage } from "./quota"
 import { EXPIRY_DAYS, TRASH_DAYS, endpoint, matchPattern, newToken, registryNameError, splitName, validTag, type Policy } from "./rules"
 
@@ -40,8 +40,6 @@ type Role = "owner" | "write" | "read"
 type Ns = typeof registryNamespaces.$inferSelect
 
 export const MAX_TOKENS = 50
-// The system `mirror` namespace is an org row whose ref_id isn't a uuid; nobody holds a role in it.
-const roleIn = (userId: string, ns: Ns) => (ns.kind === "org" && !UUID.test(ns.refId) ? Promise.resolve(null) : roleInRaw(userId, ns))
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 // Why the page can't be used, or "ready". "unset": setup never turned the registry on.
@@ -790,7 +788,12 @@ export async function purgeFromTrash(userId: string, kind: string, id: string): 
     await db.delete(registryTags).where(eq(registryTags.id, x.tag.id))
     await audit("registry_trash_purge", { detail: `${x.repo.name}:${x.tag.name}` })
   } else if ("manifest" in x) {
-    await db.delete(registryManifests).where(eq(registryManifests.id, x.manifest.id))
+    // Same rule as purgeTrash: a manifest a live index in the repo still lists must stay.
+    const gone = await db.execute(sql`delete from registry_manifests m where m.id = ${x.manifest.id}
+      and not exists (select 1 from registry_manifest_refs r join registry_manifests p on p.id = r.manifest_id
+        where r.kind = 'manifest' and r.digest = m.digest and p.repo_id = m.repo_id and p.deleted_at is null)
+      returning m.id`)
+    if (!gone.length) return { error: "A multi-platform image in this repository still uses this manifest, so it can't be deleted yet." }
     await audit("registry_trash_purge", { detail: `${x.repo.name}@${x.manifest.digest.slice(0, 19)}` })
   } else {
     await db.delete(registryRepos).where(eq(registryRepos.id, x.repo.id))

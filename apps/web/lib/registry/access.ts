@@ -39,8 +39,11 @@ export async function resolveRepo(fullName: string): Promise<{ repo: Repo; names
 }
 
 // The member's role in the namespace: "owner" for their own, an org role, or null.
+export const MIRROR_REF = "system"
+
 export async function roleIn(userId: string, ns: Ns): Promise<"owner" | "write" | "read" | null> {
   if (ns.kind === "user") return ns.refId === userId ? "owner" : null
+  if (ns.refId === MIRROR_REF) return null // system mirror namespace: no members, and refId isn't a uuid
   const [m] = await db
     .select({ role: registryOrgMembers.role })
     .from(registryOrgMembers)
