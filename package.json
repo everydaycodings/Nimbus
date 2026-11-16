@@ -28,5 +28,6 @@
   },
   "devDependencies": {
     "turbo": "^2.11.10"
-  }
+  },
+  "license": "AGPL-3.0-only"
 }

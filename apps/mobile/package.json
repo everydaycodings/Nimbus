@@ -76,5 +76,6 @@
     "release:android": "bash scripts/release-android.sh",
     "e2e:android": "MAESTRO_CLI_NO_ANALYTICS=1 JAVA_HOME=${JAVA_HOME:-$HOME/Android/jdk} ~/.maestro/bin/maestro test .maestro"
   },
-  "private": true
+  "private": true,
+  "license": "AGPL-3.0-only"
 }

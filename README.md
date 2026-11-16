@@ -56,3 +56,9 @@ npm run worker                                      # second terminal, required
 
 [CONTRIBUTING.md](CONTRIBUTING.md) covers the monorepo layout, migrations, tests and commit style.
 [DESIGN.md](DESIGN.md) is the design system. Found a security issue? See [SECURITY.md](SECURITY.md).
+
+## License
+
+Nimbus is free software under the [GNU Affero General Public License v3.0](LICENSE). You can use,
+change and share it. If you run a modified version for other people over a network, you must
+offer them its source code too.

@@ -11,5 +11,6 @@
     "typecheck": "tsc -p . --noEmit",
     "test": "node --test test/*.test.ts"
   },
-  "devDependencies": { "@types/node": "^20", "typescript": "^5.9.3" }
+  "devDependencies": { "@types/node": "^20", "typescript": "^5.9.3" },
+  "license": "AGPL-3.0-only"
 }
