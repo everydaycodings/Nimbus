@@ -3,6 +3,9 @@
 Open-source, self-hosted file storage you own. See [PRODUCT.md](PRODUCT.md) for what it is,
 [ROADMAP.md](ROADMAP.md) for what's built, and [DESIGN.md](DESIGN.md) for the design system.
 
+To learn how Nimbus is built and why, read the **[system design guide (PDF)](docs/nimbus-system-design.pdf)**.
+It walks through the architecture, the data flows, security and crypto, and the engineering trade-offs, with hand-drawn diagrams.
+
 ## Run it locally
 
 ```bash
