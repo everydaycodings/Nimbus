@@ -31,7 +31,7 @@ The `nimbus` command comes in three forms. Pick one:
 | Form | Install | Has |
 |---|---|---|
 | Node CLI | Node 20 or newer | Everything |
-| Go binary | One static file, no runtime | Everything, plus `version` |
+| Go binary | One static file, no runtime | Everything except `registry build`, plus `version` |
 | `nimbus.sh` | `curl` and `bash`, plus `jq` or `python3` | `run`, `export`, `agent`, `ssh cert`, `dynamic`, `kms` with a token (no `login`, `share`, `webhooks`, `push`) |
 
 ### Install
@@ -871,7 +871,7 @@ In the web app press **Issue certificate** on the SSH CA tab. The tab lists ever
 
 ### Browser terminal and saved hosts
 
-On the **SSH** tab, hosts store a name, address, user and a key or a certificate from the CA. **Open terminal** starts a shell in the browser (xterm.js). It needs an unlocked Secrets session and the Developer or Admin role. Start, end, host and duration are audited, and the host key seen first is pinned. A host can have a jump host (one hop): Nimbus connects to the jump host and opens the shell on the target through it, so the target only needs to be reachable from the jump host. **Export** gives a `~/.ssh/config` block, with `ProxyJump` for such hosts, so `ssh <name>` works the same way from a laptop. Self-hosters: the terminal needs the `ssh-terminal` service from `docker-compose.yml` and the `/ssh-ws` block in nginx (see the README).
+On the **SSH** tab, hosts store a name, address, user and a key or a certificate from the CA. **Open terminal** starts a shell in the browser (xterm.js). It needs an unlocked Secrets session and the Developer or Admin role. Start, end, host and duration are audited, and the host key seen first is pinned. A host can have a jump host (one hop): Nimbus connects to the jump host and opens the shell on the target through it, so the target only needs to be reachable from the jump host. **Export** gives a `~/.ssh/config` block, with `ProxyJump` for such hosts, so `ssh <name>` works the same way from a laptop. Self-hosters: the terminal needs the `ssh-terminal` service from `docker-compose.yml` and the `/ssh-ws` block in nginx (see [SSH keys, CA and browser terminal](#ssh-keys-ca-and-browser-terminal)).
 
 ## Certificates
 
@@ -977,3 +977,31 @@ nimbus share revoke SHARE_ID
 - **Leaks.** Nimbus can scan for secrets that have been exposed (the Leaks page in the top bar). If a token or secret leaks, revoke the token, rotate the value, then check the audit log.
 - **Transport.** Use `https://` for your server. A token sent over plain HTTP can be read by anyone on the path.
 - **The `.env` file** the agent writes is mode 600. Keep it out of images, backups and version control.
+
+## SSH keys, CA and browser terminal
+
+This part is for whoever runs the Nimbus server. How members use the SSH CA, certificates and saved hosts is in [SSH](#ssh) above.
+
+Each Secrets project can store SSH keys and hosts, run an SSH certificate authority and open a terminal to a saved host in the browser.
+
+### The ssh-terminal service
+
+The browser terminal needs the `ssh-terminal` service. It ships in `docker-compose.yml` and listens on port 3406. Next can't upgrade WebSockets, so this small process bridges xterm.js in the browser to an `ssh2` shell on the server, and nginx forwards `/ssh-ws` to it. See [install.md](install.md) for the services.
+
+- Sites set up before this feature need `sudo production_script/setup-nginx.sh` run again to get the `/ssh-ws` block.
+- The browser opens its WebSocket at `wss://<DOMAIN>/ssh-ws`. To change that address, set `SSH_TERMINAL_URL` ([configuration.md](configuration.md)).
+- At most `SSH_TERMINAL_MAX` sessions run at once (default 100).
+
+### Who can do what
+
+| Role | Can |
+|---|---|
+| Admin, Developer | Open a terminal, ask for SSH certificates, see private keys |
+| Viewer, or limited to some environments | See public keys only |
+
+A terminal session needs an unlocked Secrets session as well as the role.
+
+### What is recorded
+
+- Each session's start, end, host and duration are audited.
+- The first host key seen for a host is pinned. If the host's key changes later, the connection is refused. If that is expected, edit the host and tick **Trust a new host key**.
