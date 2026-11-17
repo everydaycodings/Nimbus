@@ -1,3 +1,4 @@
+import { BucketChips } from "@/components/buckets/bucket-chips"
 import {
   AdminPage,
   Section,
@@ -143,7 +144,7 @@ export default async function S3Page() {
                     {k.allBuckets
                       ? "All buckets"
                       : k.buckets.length
-                        ? k.buckets.join(", ")
+                        ? <BucketChips names={k.buckets} />
                         : "No buckets left"}
                     <br />
                     <span className="tabular-nums">

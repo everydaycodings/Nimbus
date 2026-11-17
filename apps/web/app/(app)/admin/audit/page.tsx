@@ -51,6 +51,8 @@ function sentence(e: typeof auditEvents.$inferSelect, who: string) {
       return e.targetName ? `revoked ${who}'s S3 access key ${d}` : `revoked the S3 access key ${d}`
     case "s3_bucket_add":
       return `made the folder “${d}” an S3 bucket`
+    case "s3_bucket_rename":
+      return `renamed the S3 bucket ${d}`
     case "s3_bucket_remove":
       return `stopped using “${d}” as an S3 bucket`
     case "registry_name_claim":

@@ -7,9 +7,10 @@ import { and, asc, count, desc, eq, inArray, isNull, sql } from "drizzle-orm"
 
 import { accessOne, accessTo, type Access } from "@/lib/access"
 import { audit } from "@/lib/audit"
-import { encrypt } from "@/lib/crypto"
+import { decrypt, encrypt } from "@/lib/crypto"
 import { db } from "@/lib/db"
 import {
+  fileVersions,
   nodes,
   s3Buckets,
   s3KeyBuckets,
@@ -22,12 +23,18 @@ import { notify } from "@/lib/notify"
 import { getSettings } from "@/lib/signup"
 import { createFolderAs } from "@/lib/tree-ops"
 import { isClash } from "@/lib/uploads"
-import { enqueueBucketEtags } from "./etags"
+import type { Who } from "./auth"
+import { enqueueBucketEtags, etagOf } from "./etags"
+import { entries } from "./list"
+import { bucketFor } from "./resolve"
+import { S3Error } from "./xml"
+import { presignGet } from "./sigv4"
 import {
   BUCKETS_FOLDER,
   EXPIRY_DAYS,
   MAX_KEYS_PER_MEMBER,
   bucketNameError,
+  REGION,
   endpoint,
   newKeyPair,
 } from "./rules"
@@ -57,23 +64,33 @@ export type BucketRow = {
   // My files / path, or the owner's folder name when shared.
   path: string
   bytes: number
+  objects: number
+  createdAt: string
   // The folder is in the trash or no longer shared with them: the bucket is hidden from clients.
   gone: boolean
 }
 
-async function folderBytes(nodeId: string) {
-  const [r] = await db.execute<{ bytes: string }>(sql`
+// Files under a folder (not trashed), their bytes, and with `versions` the bytes of every version of them.
+async function folderStats(nodeId: string, versions = false) {
+  const [r] = await db.execute<{ bytes: string; objects: string; all_bytes: string }>(sql`
     with recursive d as (
       select id, kind, size from nodes where id = ${nodeId}
       union all
       select n.id, n.kind, n.size from nodes n join d on n.parent_id = d.id
         where n.trashed_at is null
     )
-    select coalesce(sum(size) filter (where kind = 'file'), 0)::text as bytes from d`)
-  return Number(r?.bytes ?? 0)
+    select coalesce(sum(size) filter (where kind = 'file'), 0)::text as bytes,
+      count(*) filter (where kind = 'file')::text as objects,
+      ${
+        versions
+          ? sql`coalesce((select sum(v.size) from file_versions v where v.node_id in (select id from d where kind = 'file')), 0)::text`
+          : sql`'0'`
+      } as all_bytes from d`)
+  return { bytes: Number(r?.bytes ?? 0), objects: Number(r?.objects ?? 0), allBytes: Number(r?.all_bytes ?? 0) }
 }
 
-export async function listBuckets(userId: string): Promise<BucketRow[]> {
+// `only`: just the bucket with that name.
+export async function listBuckets(userId: string, only?: string): Promise<BucketRow[]> {
   const rows = await db
     .select({
       id: s3Buckets.id,
@@ -84,11 +101,12 @@ export async function listBuckets(userId: string): Promise<BucketRow[]> {
       ownerId: nodes.ownerId,
       owner: user.name,
       trashedAt: nodes.trashedAt,
+      createdAt: s3Buckets.createdAt,
     })
     .from(s3Buckets)
     .innerJoin(nodes, eq(nodes.id, s3Buckets.nodeId))
     .innerJoin(user, eq(user.id, nodes.ownerId))
-    .where(eq(s3Buckets.userId, userId))
+    .where(and(eq(s3Buckets.userId, userId), only ? eq(s3Buckets.name, only) : undefined))
     .orderBy(asc(s3Buckets.name))
   const access = await accessTo(
     userId,
@@ -98,6 +116,7 @@ export async function listBuckets(userId: string): Promise<BucketRow[]> {
     rows.map(async (r) => {
       const a = access.get(r.nodeId)
       const mine = r.ownerId === userId
+      const stats = a && !r.trashedAt ? await folderStats(r.nodeId) : { bytes: 0, objects: 0 }
       return {
         id: r.id,
         nodeId: r.nodeId,
@@ -108,11 +127,112 @@ export async function listBuckets(userId: string): Promise<BucketRow[]> {
         path: mine
           ? ["My files", ...(await getPath(r.nodeId)).map((p) => p.name)].join(" / ")
           : r.folder,
-        bytes: a && !r.trashedAt ? await folderBytes(r.nodeId) : 0,
+        bytes: stats.bytes,
+        objects: stats.objects,
+        createdAt: r.createdAt.toISOString(),
         gone: !a || Boolean(r.trashedAt),
       }
     })
   )
+}
+
+// One of the member's buckets by name, for its own page, with the size of every version.
+export async function bucketDetail(userId: string, name: string) {
+  const [b] = await listBuckets(userId, name)
+  if (!b) return null
+  return { ...b, allBytes: b.gone ? 0 : (await folderStats(b.nodeId, true)).allBytes }
+}
+
+export type ObjectRow = {
+  key: string
+  folder: boolean
+  size: number
+  etag: string
+  at: string
+  nodeId: string
+  versions: number
+}
+
+const PAGE = 100
+
+// One page of a bucket's keys under `prefix` (empty or ending in "/"), folders first as they sort,
+// after `cursor` (the last key of the previous page). `next` is that cursor when there is more.
+export async function listObjects(
+  userId: string,
+  bucketId: string,
+  prefix: string,
+  cursor = ""
+): Promise<{ items: ObjectRow[]; next: string | null } | null> {
+  if (!UUID.test(bucketId)) return null
+  const [row] = await db
+    .select({ name: s3Buckets.name, nodeId: s3Buckets.nodeId })
+    .from(s3Buckets)
+    .where(and(eq(s3Buckets.id, bucketId), eq(s3Buckets.userId, userId)))
+  if (!row) return null
+  // The member browsing their own bucket: the same walk a key with full access gets.
+  const who: Who = { keyId: "", userId, write: false, all: true, bucketIds: new Set(), rps: null }
+  let got
+  try {
+    got = await entries(await bucketFor(who, row.name), prefix, cursor, PAGE + 1, false)
+  } catch (e) {
+    if (e instanceof S3Error) return null
+    throw e
+  }
+  const more = got.length > PAGE
+  const page = got.slice(0, PAGE)
+  const files = page.filter((e) => !e.folder).map((e) => e.nodeId)
+  const counts = files.length
+    ? await db
+        .select({ nodeId: fileVersions.nodeId, n: count() })
+        .from(fileVersions)
+        .where(inArray(fileVersions.nodeId, files))
+        .groupBy(fileVersions.nodeId)
+    : []
+  if (page.some((e) => !e.folder && !e.etag)) await enqueueBucketEtags(row.nodeId)
+  return {
+    items: page.map((e) => ({
+      key: e.key,
+      folder: e.folder,
+      size: e.size,
+      etag: e.folder ? "" : etagOf({ id: e.versionId ?? "", etag: e.etag }),
+      at: e.at.toISOString(),
+      nodeId: e.nodeId,
+      versions: counts.find((c) => c.nodeId === e.nodeId)?.n ?? 0,
+    })),
+    next: more ? page[page.length - 1].key : null,
+  }
+}
+
+// A link anyone can open until it runs out, signed with one of the member's own live keys that reaches the bucket.
+export async function presign(
+  userId: string,
+  bucketId: string,
+  key: string,
+  seconds: number
+): Promise<Result & { url?: string }> {
+  if (!UUID.test(bucketId) || !key || key.endsWith("/")) return { error: "Pick a file." }
+  if (!Number.isInteger(seconds) || seconds < 1 || seconds > 604_800) return { error: "Pick how long the link lasts." }
+  const base = endpoint()
+  const [b] = await db
+    .select({ name: s3Buckets.name })
+    .from(s3Buckets)
+    .where(and(eq(s3Buckets.id, bucketId), eq(s3Buckets.userId, userId)))
+  if (!base || !b) return { error: "That bucket is gone. Refresh and try again." }
+  const [k] = await db
+    .select({ accessKeyId: s3Keys.accessKeyId, secret: s3Keys.secretEnc })
+    .from(s3Keys)
+    .where(
+      and(
+        eq(s3Keys.userId, userId),
+        sql`(${s3Keys.expiresAt} is null or ${s3Keys.expiresAt} > now())`,
+        sql`(${s3Keys.allBuckets} or exists (select 1 from s3_key_buckets kb where kb.key_id = ${s3Keys.id} and kb.bucket_id = ${bucketId}))`
+      )
+    )
+    .orderBy(desc(s3Keys.createdAt))
+    .limit(1)
+  const secret = k && decrypt(k.secret)
+  if (!k || !secret) return { error: "Make an access key to share links." }
+  return { url: presignGet({ endpoint: base, bucket: b.name, key, accessKeyId: k.accessKeyId, secret, region: REGION, seconds }) }
 }
 
 // The bucket on one folder, for the Details panel.
@@ -220,6 +340,28 @@ export async function setQuiet(userId: string, id: string, quiet: boolean): Prom
     .set({ quiet })
     .where(and(eq(s3Buckets.id, id), eq(s3Buckets.userId, userId)))
   return {}
+}
+
+// Rename: apps that use the old name stop working until they're told the new one.
+export async function renameBucket(userId: string, id: string, rawName: string): Promise<Result & { name?: string }> {
+  if (!UUID.test(id)) return { error: "That bucket is gone." }
+  const name = rawName.trim()
+  const bad = bucketNameError(name)
+  if (bad) return { error: bad }
+  const [old] = await db
+    .select({ name: s3Buckets.name })
+    .from(s3Buckets)
+    .where(and(eq(s3Buckets.id, id), eq(s3Buckets.userId, userId)))
+  if (!old) return { error: "That bucket is gone." }
+  if (old.name === name) return { name }
+  try {
+    await db.update(s3Buckets).set({ name }).where(and(eq(s3Buckets.id, id), eq(s3Buckets.userId, userId)))
+  } catch (e) {
+    if (!isClash(e)) throw e
+    return { error: "You already have a bucket with that name." }
+  }
+  await audit("s3_bucket_rename", { detail: `${old.name} → ${name}` })
+  return { name }
 }
 
 export type KeyRow = {

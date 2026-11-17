@@ -59,3 +59,19 @@ export async function myBucketNames() {
   const me = await requireMember()
   return (await svc.listBuckets(me.id)).map((b) => b.name)
 }
+
+export async function renameBucket(id: string, name: string) {
+  const me = await member()
+  return me ? done(await svc.renameBucket(me.id, id, name)) : NOT_ON
+}
+
+// The object browser's "Load more".
+export async function moreObjects(bucketId: string, prefix: string, cursor: string) {
+  const me = await member()
+  return me ? svc.listObjects(me.id, bucketId, prefix, cursor) : null
+}
+
+export async function presignObject(bucketId: string, key: string, seconds: number) {
+  const me = await member()
+  return me ? svc.presign(me.id, bucketId, key, seconds) : NOT_ON
+}

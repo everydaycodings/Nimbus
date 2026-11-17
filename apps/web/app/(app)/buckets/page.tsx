@@ -1,7 +1,8 @@
 import { CubeIcon } from "@phosphor-icons/react/dist/ssr"
 import Link from "next/link"
 
-import { BucketsView } from "@/components/buckets-view"
+import { BucketsShell } from "@/components/buckets/shell"
+import { TABS, type Tab } from "@/components/buckets/tabs"
 import { isAdmin, requireMember } from "@/lib/session"
 import { listBuckets, listKeys, s3State, type S3State } from "@/lib/s3api/manage"
 import { MAX_KEYS_PER_MEMBER, REGION, endpoint } from "@/lib/s3api/rules"
@@ -38,7 +39,7 @@ const COPY = (admin: boolean): Record<Exclude<S3State, "ready">, { title: string
   },
 })
 
-export default async function BucketsPage() {
+export default async function BucketsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const me = await requireMember()
   const state = await s3State(me.id)
   if (state !== "ready") {
@@ -54,9 +55,11 @@ export default async function BucketsPage() {
       </div>
     )
   }
+  const { tab } = await searchParams
   const [buckets, keys] = await Promise.all([listBuckets(me.id), listKeys(me.id)])
   return (
-    <BucketsView
+    <BucketsShell
+      tab={TABS.some(([t]) => t === tab) ? (tab as Tab) : "overview"}
       buckets={buckets}
       keys={keys}
       url={endpoint()!}

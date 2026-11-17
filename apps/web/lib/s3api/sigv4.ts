@@ -182,6 +182,19 @@ export function verifyPresigned(r: Signed, p: NonNullable<ReturnType<typeof pars
   return verifyParsed({ ...r, payload: "UNSIGNED-PAYLOAD" }, p.parsed, secret, p.amzDate, sent, "X-Amz-Signature")
 }
 
+// A presigned GET link for one object, as the AWS SDKs make them: only the host is signed.
+export function presignGet(o: { endpoint: string; bucket: string; key: string; accessKeyId: string; secret: string; region: string; seconds: number; now?: number }) {
+  const u = new URL(o.endpoint)
+  const amzDate = new Date(o.now ?? Date.now()).toISOString().replace(/[-:]|\.\d{3}/g, "")
+  const date = amzDate.slice(0, 8)
+  const scope = [date, o.region, "s3", "aws4_request"].join("/")
+  const path = "/" + [o.bucket, ...o.key.split("/")].map(enc).join("/")
+  const query = `X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=${enc(`${o.accessKeyId}/${scope}`)}&X-Amz-Date=${amzDate}&X-Amz-Expires=${o.seconds}&X-Amz-SignedHeaders=host`
+  const canonical = ["GET", path, canonicalQuery(query), `host:${u.host}\n`, "host", "UNSIGNED-PAYLOAD"].join("\n")
+  const sig = createHmac("sha256", signingKey(o.secret, date, o.region)).update(stringToSign(amzDate, scope, canonical)).digest("hex")
+  return `${u.origin}${path}?${query}&X-Amz-Signature=${sig}`
+}
+
 // ---- aws-chunked bodies ---------------------------------------------------
 
 // Checksums a trailer (or header) may carry. crc32c and crc64nvme aren't in

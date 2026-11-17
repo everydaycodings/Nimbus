@@ -53,3 +53,7 @@ export function endpoint(env: Record<string, string | undefined> = process.env) 
   if (!d) return null
   return /^https?:\/\//.test(d) ? d.replace(/\/+$/, "") : `https://${d}`
 }
+
+// Whether a key opens the bucket called `name`: all buckets, or that one among its picks; expired keys open nothing.
+export const keyReaches = (k: { allBuckets: boolean; buckets: string[]; expired: boolean }, name: string) =>
+  !k.expired && (k.allBuckets || k.buckets.includes(name))

@@ -11,12 +11,12 @@ import { xml, type C } from "./http.ts"
 import { walk, type Bucket } from "./resolve.ts"
 import { encodeKey, isoDate, S3Error, tag } from "./xml.ts"
 
-type Entry = { key: string; folder: boolean; size: number; etag: string | null; versionId: string | null; at: Date }
+export type Entry = { nodeId: string; key: string; folder: boolean; size: number; etag: string | null; versionId: string | null; at: Date }
 
 // Up to `limit` entries with a key above `after` that start with `prefix`,
 // in key order. With `flat`, every file under the prefix and every empty
 // folder as "path/"; otherwise only the direct children (folders as "path/").
-async function entries(b: Bucket, prefix: string, after: string, limit: number, flat: boolean): Promise<Entry[]> {
+export async function entries(b: Bucket, prefix: string, after: string, limit: number, flat: boolean): Promise<Entry[]> {
   const slash = prefix.lastIndexOf("/")
   const dir = prefix.slice(0, slash + 1)
   const rest = prefix.slice(slash + 1)
@@ -25,7 +25,7 @@ async function entries(b: Bucket, prefix: string, after: string, limit: number, 
   const { folder, missing } = await walk(b, names)
   if (missing) return []
   const owner = b.ownerId
-  type Row = { key: string; kind: "file" | "folder"; size: string; etag: string | null; vid: string | null; at: Date }
+  type Row = { nid: string; key: string; kind: "file" | "folder"; size: string; etag: string | null; vid: string | null; at: Date }
   const rows = flat
     ? await db.execute<Row>(sql`
         with recursive t as (
@@ -38,7 +38,7 @@ async function entries(b: Bucket, prefix: string, after: string, limit: number, 
           where t.kind = 'folder' and c.trashed_at is null and c.vault_id is null
             and (starts_with(${prefix}::text, t.path || '/') or starts_with(t.path || '/', ${prefix}::text))
         )
-        select * from (select case when t.kind = 'folder' then t.path || '/' else t.path end as key,
+        select * from (select t.id as nid, case when t.kind = 'folder' then t.path || '/' else t.path end as key,
           t.kind, t.size::text, v.etag, v.id as vid, coalesce(v.created_at, t.updated_at) as at
         from t left join file_versions v on v.id = t.current_version_id
         where starts_with(case when t.kind = 'folder' then t.path || '/' else t.path end, ${prefix}::text)
@@ -47,7 +47,7 @@ async function entries(b: Bucket, prefix: string, after: string, limit: number, 
             select 1 from nodes k where k.parent_id = t.id and k.trashed_at is null and k.vault_id is null))) q
         order by key collate "C" limit ${limit}`)
     : await db.execute<Row>(sql`
-        select * from (select ${dir}::text || n.name || case when n.kind = 'folder' then '/' else '' end as key,
+        select * from (select n.id as nid, ${dir}::text || n.name || case when n.kind = 'folder' then '/' else '' end as key,
           n.kind, n.size::text, v.etag, v.id as vid, coalesce(v.created_at, n.updated_at) as at
         from nodes n left join file_versions v on v.id = n.current_version_id
         where n.owner_id = ${owner} and n.parent_id = ${folder}
@@ -56,6 +56,7 @@ async function entries(b: Bucket, prefix: string, after: string, limit: number, 
           and (${dir}::text || n.name || case when n.kind = 'folder' then '/' else '' end) collate "C" > ${after}::text collate "C") q
         order by key collate "C" limit ${limit}`)
   return rows.map((r) => ({
+    nodeId: r.nid,
     key: r.key,
     folder: r.kind === "folder",
     size: r.kind === "folder" ? 0 : Number(r.size),

@@ -10,6 +10,7 @@ import {
   SigError,
   signingKey,
   parsePresigned,
+  presignGet,
   verifyHeaderAuth,
   verifyPresigned,
 } from "./sigv4.ts"
@@ -165,4 +166,13 @@ test("AWS presigned GET example verifies, and expires", () => {
 
 test("presigned expiry over a week is refused", () => {
   assert.throws(() => presigned(presignedQuery.replace("86400", "604801")), { code: "AuthorizationQueryParametersError" })
+})
+
+test("presignGet makes a link that verifies for its key, and only that", () => {
+  const link = new URL(presignGet({ endpoint: "http://localhost:3407", bucket: "my-bucket", key: "a b/c+d (1).txt", accessKeyId: "AKID", secret: SECRET, region: "us-east-1", seconds: 3600, now: NOW }))
+  const req = { method: "GET", url: link.pathname + link.search, headers: { host: link.host }, payload: "UNSIGNED-PAYLOAD" }
+  const p = parsePresigned(link.searchParams)!
+  verifyPresigned(req, p, SECRET, NOW + 3_600_000)
+  assert.throws(() => verifyPresigned(req, p, SECRET, NOW + 3_600_001), { message: "Request has expired." })
+  assert.throws(() => verifyPresigned({ ...req, url: req.url.replace("c%2Bd", "c%2Be") }, p, SECRET, NOW), { code: "SignatureDoesNotMatch" })
 })
