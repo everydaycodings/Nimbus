@@ -62,7 +62,9 @@ export async function runLifecycle(bucketId: string, now = new Date()): Promise<
           with recursive ${files(a.ownerId, b.nodeId, r.prefix)}
           select v.id from t join file_versions v on v.node_id = t.id
           where t.kind = 'file' and starts_with(t.path, ${r.prefix}::text) and v.id <> t.current_version_id and not v.keep
-            and v.created_at < ${ago(r.noncurrentDays)}`)
+            -- Old since the next version replaced it, like S3's noncurrent days.
+            and (select n.created_at from file_versions n where n.node_id = v.node_id and n.number > v.number order by n.number limit 1)
+              < ${ago(r.noncurrentDays)}`)
         for (const ids of chunks(old.map((o) => o.id))) {
           // Re-checked in the delete: a version that became current meanwhile stays.
           const gone = await db.execute<{ s3_key: string }>(sql`

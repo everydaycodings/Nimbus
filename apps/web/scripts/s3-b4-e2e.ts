@@ -153,7 +153,12 @@ try {
         and ${which === "all" ? sql`true` : sql`v.id <> n.current_version_id`}`)
   await ago("old.txt", 40, "all")
   await ago("new.txt", 5, "all")
-  await ago("keep.txt", 20, "noncurrent")
+  // The old versions were made 30 and 20 days ago. The first was replaced 20 days ago; the second
+  // only now (by the current one), so only the first has been noncurrent for 10+ days.
+  await db.execute(sql`update file_versions v set created_at = now() - (case when r.rn = 1 then interval '30 days' else interval '20 days' end)
+    from (select v2.id, row_number() over (partition by v2.node_id order by v2.number) rn from file_versions v2 join nodes n on n.id = v2.node_id
+      where n.owner_id = ${USER} and n.name = 'keep.txt' and n.trashed_at is null and v2.id <> n.current_version_id) r
+    where v.id = r.id`)
   const old = await S.send(new CreateMultipartUploadCommand({ Bucket: BUCKET, Key: "old-upload.bin" }))
   await S.send(new CreateMultipartUploadCommand({ Bucket: BUCKET, Key: "fresh-upload.bin" }))
   await db.execute(sql`update s3_multipart set created_at = now() - interval '5 days' where id = ${old.UploadId!}`)
@@ -161,13 +166,13 @@ try {
   assert.equal(before.Versions!.length, 3)
 
   const res = await runLifecycle(bucketId)
-  assert.deepEqual([res.trashed, res.versions, res.uploads, res.error], [1, 2, 1, null])
+  assert.deepEqual([res.trashed, res.versions, res.uploads, res.error], [1, 1, 1, null])
   const keys = ((await S.send(new ListObjectsV2Command({ Bucket: BUCKET }))).Contents ?? []).map((o) => o.Key).sort()
   assert.deepEqual(keys, ["a.bin", "b.bin", "keep.txt", "logs/new.txt"])
-  assert.equal((await S.send(new ListObjectVersionsCommand({ Bucket: BUCKET, Prefix: "keep.txt" }))).Versions!.length, 1)
+  assert.equal((await S.send(new ListObjectVersionsCommand({ Bucket: BUCKET, Prefix: "keep.txt" }))).Versions!.length, 2)
   assert.deepEqual(((await S.send(new ListMultipartUploadsCommand({ Bucket: BUCKET }))).Uploads ?? []).map((u) => u.Key), ["fresh-upload.bin"])
   const last = (await getBucketConfig(USER, bucketId))!.lastRun!
-  assert.deepEqual([last.trashed, last.versions, last.uploads, last.error], [1, 2, 1, null])
+  assert.deepEqual([last.trashed, last.versions, last.uploads, last.error], [1, 1, 1, null])
   const again = await runLifecycle(bucketId)
   assert.deepEqual([again.trashed, again.versions, again.uploads], [0, 0, 0])
   const [trashed] = await db.select({ t: nodes.trashedAt }).from(nodes).where(and(eq(nodes.ownerId, USER), eq(nodes.name, "old.txt")))

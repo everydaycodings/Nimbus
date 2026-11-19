@@ -151,7 +151,16 @@ export function KeyTable({ keys, buckets, url, region }: { keys: KeyRow[]; bucke
           {all ? `Show the first ${FIRST}` : `Show all ${keys.length} keys`}
         </Button>
       )}
-      <KeyPanel k={keys.find((k) => k.id === panel) ?? null} onClose={() => setPanel(null)} />
+      <KeyPanel
+        k={keys.find((k) => k.id === panel) ?? null}
+        onClose={() => setPanel(null)}
+        onAction={(a, k) => {
+          if (a === "toggle") return toggle(k)
+          if (a === "revoke") return setError(undefined), setRevoking(k)
+          setTarget(k)
+          setDialog(a)
+        }}
+      />
       <KeyDialog open={dialog === "edit"} editing={target} buckets={buckets} onClose={() => setDialog(null)} />
       <RotateDialog
         k={target}

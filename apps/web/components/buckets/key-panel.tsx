@@ -1,7 +1,7 @@
 "use client"
 
 import { Dialog } from "@base-ui/react/dialog"
-import { XIcon } from "@phosphor-icons/react"
+import { ArrowsClockwiseIcon, PauseCircleIcon, PencilSimpleIcon, PlayCircleIcon, TrashIcon, XIcon } from "@phosphor-icons/react"
 import { useEffect, useState } from "react"
 
 import { keyUsage } from "@/app/(app)/buckets/actions"
@@ -9,7 +9,7 @@ import { ChartSkeleton, Unavailable, UsageChart, type Series } from "@/component
 
 import { KeyBadges } from "@/components/buckets/key-badges"
 import { CopyButton } from "@/components/copy-button"
-import { DAY, WHEN } from "@/components/registry-ui"
+import { DAY, TOUCH, WHEN } from "@/components/registry-ui"
 import { Button } from "@/components/ui/button"
 import { permsLabel } from "@/lib/s3api/perms"
 import type { KeyRow } from "@/lib/s3api/manage"
@@ -91,7 +91,9 @@ function Usage({ keyId }: { keyId: string }) {
 }
 
 // A side sheet with everything about one key.
-export function KeyPanel({ k, onClose }: { k: KeyRow | null; onClose: () => void }) {
+export type PanelAction = "rotate" | "edit" | "toggle" | "revoke"
+
+export function KeyPanel({ k, onClose, onAction }: { k: KeyRow | null; onClose: () => void; onAction: (a: PanelAction, k: KeyRow) => void }) {
   return (
     <Dialog.Root open={k !== null} onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
@@ -129,6 +131,27 @@ export function KeyPanel({ k, onClose }: { k: KeyRow | null; onClose: () => void
                 <Row label="Last IP">{k.lastIp ? <span className="font-mono">{k.lastIp}</span> : none}</Row>
               </dl>
               <Usage keyId={k.id} />
+            </div>
+          )}
+          {k && (
+            // The same actions as the row's ⋯ menu; the sheet closes first so dialogs never stack.
+            <div className="flex flex-wrap gap-2 border-t p-4">
+              {(
+                [
+                  ["rotate", "Rotate secret", ArrowsClockwiseIcon],
+                  ["edit", "Edit", PencilSimpleIcon],
+                  ["toggle", k.disabled ? "Enable" : "Disable", k.disabled ? PlayCircleIcon : PauseCircleIcon],
+                ] as const
+              ).map(([a, label, Icon]) => (
+                <Button key={a} type="button" variant="outline" size="sm" className={TOUCH} onClick={() => (onClose(), onAction(a, k))}>
+                  <Icon aria-hidden />
+                  {label}
+                </Button>
+              ))}
+              <Button type="button" variant="ghost" size="sm" className={`${TOUCH} ml-auto text-destructive hover:text-destructive`} onClick={() => (onClose(), onAction("revoke", k))}>
+                <TrashIcon aria-hidden />
+                Revoke
+              </Button>
             </div>
           )}
         </Dialog.Popup>
