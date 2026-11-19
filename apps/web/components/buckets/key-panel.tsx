@@ -1,7 +1,11 @@
 "use client"
 
 import { Dialog } from "@base-ui/react/dialog"
-import { ChartLineIcon, XIcon } from "@phosphor-icons/react"
+import { XIcon } from "@phosphor-icons/react"
+import { useEffect, useState } from "react"
+
+import { keyUsage } from "@/app/(app)/buckets/actions"
+import { ChartSkeleton, Unavailable, UsageChart, type Series } from "@/components/buckets/chart"
 
 import { KeyBadges } from "@/components/buckets/key-badges"
 import { CopyButton } from "@/components/copy-button"
@@ -9,6 +13,7 @@ import { DAY, WHEN } from "@/components/registry-ui"
 import { Button } from "@/components/ui/button"
 import { permsLabel } from "@/lib/s3api/perms"
 import type { KeyRow } from "@/lib/s3api/manage"
+import type { ActivityRow, Point } from "@/lib/s3api/stats"
 
 const at = (d: string | null, fmt = WHEN) => (d ? fmt.format(new Date(d)) : null)
 
@@ -23,7 +28,69 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 const none = <span className="text-muted-foreground">None</span>
 
-// A side sheet with everything about one key. Usage charts and recent calls arrive with metrics.
+const REQUESTS: Series[] = [
+  { key: "reads", label: "Reads", color: 1 },
+  { key: "writes", label: "Writes", color: 2 },
+  { key: "lists", label: "Lists", color: 3 },
+  { key: "deletes", label: "Deletes", color: 4 },
+]
+
+// Loaded when the panel opens: a week of requests and the last ten logged calls.
+function Usage({ keyId }: { keyId: string }) {
+  // Keyed by key id, so switching keys shows the skeleton again without setting state in the effect.
+  const [data, setData] = useState<{ id: string; r: { points: Point[]; rows: ActivityRow[] } | null } | null>(null)
+  useEffect(() => {
+    let live = true
+    keyUsage(keyId).then(
+      (r) => live && setData({ id: keyId, r }),
+      () => live && setData({ id: keyId, r: null })
+    )
+    return () => {
+      live = false
+    }
+  }, [keyId])
+  if (data?.id !== keyId) return <ChartSkeleton />
+  if (!data.r) return <Unavailable what="usage" />
+  const { points, rows } = data.r
+  return (
+    <section aria-labelledby="key-usage" className="grid gap-3">
+      <h3 id="key-usage" className="text-sm font-semibold">
+        Usage
+      </h3>
+      <UsageChart
+        title="Requests"
+        points={points}
+        series={REQUESTS}
+        format="count"
+        range="7d"
+        empty="No requests yet. Numbers appear about a minute after your first request."
+      />
+      <div className="grid gap-1.5">
+        <h4 className="text-xs font-medium text-muted-foreground">Last calls</h4>
+        {rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Writes and failed requests show here.</p>
+        ) : (
+          <ul className="divide-y rounded-xl border text-xs tabular-nums">
+            {rows.map((r) => (
+              <li key={r.id} className="grid gap-0.5 px-3 py-2">
+                <span className="flex flex-wrap items-baseline gap-x-2">
+                  <span className="font-mono font-medium">{r.op}</span>
+                  <span className={r.status >= 400 ? "text-destructive" : "text-muted-foreground"}>{r.status}</span>
+                  <time dateTime={r.at} suppressHydrationWarning className="ml-auto text-muted-foreground">
+                    {WHEN.format(new Date(r.at))}
+                  </time>
+                </span>
+                <span className="font-mono break-all text-muted-foreground">{r.bucket}{r.objectKey ? `/${r.objectKey}` : ""}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
+  )
+}
+
+// A side sheet with everything about one key.
 export function KeyPanel({ k, onClose }: { k: KeyRow | null; onClose: () => void }) {
   return (
     <Dialog.Root open={k !== null} onOpenChange={(o) => !o && onClose()}>
@@ -61,11 +128,7 @@ export function KeyPanel({ k, onClose }: { k: KeyRow | null; onClose: () => void
                 <Row label="Last used">{at(k.lastUsedAt) ?? "Never"}</Row>
                 <Row label="Last IP">{k.lastIp ? <span className="font-mono">{k.lastIp}</span> : none}</Row>
               </dl>
-              <div className="flex flex-col items-center gap-1.5 rounded-xl border border-dashed px-4 py-8 text-center">
-                <ChartLineIcon aria-hidden className="size-6 text-muted-foreground" />
-                <p className="text-sm font-medium">Usage</p>
-                <p className="text-xs text-pretty text-muted-foreground">Usage charts arrive with metrics.</p>
-              </div>
+              <Usage keyId={k.id} />
             </div>
           )}
         </Dialog.Popup>

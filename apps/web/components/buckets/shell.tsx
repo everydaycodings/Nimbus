@@ -4,6 +4,7 @@ import { CubeIcon, PlusIcon } from "@phosphor-icons/react"
 import Link from "next/link"
 import { useEffect, useRef, useState } from "react"
 
+import { ActivityView } from "@/components/buckets/activity"
 import { BucketTable } from "@/components/buckets/bucket-table"
 import { Connect } from "@/components/buckets/connect"
 import { KeyTable } from "@/components/buckets/key-table"
@@ -15,6 +16,7 @@ import { Empty, Heading, SECTION } from "@/components/registry-ui"
 import { useNotice } from "@/components/toaster"
 import { Button } from "@/components/ui/button"
 import type { BucketRow, KeyRow } from "@/lib/s3api/manage"
+import type { ActivityRow, Counts } from "@/lib/s3api/stats"
 
 // Same segmented look as the registry's repository tabs; the choice lives in ?tab= so a tab can be linked to.
 export function BucketTabs<T extends string>({ base, tab, tabs, label }: { base: string; tab: T; tabs: [T, string][]; label: string }) {
@@ -57,6 +59,8 @@ export function BucketTabs<T extends string>({ base, tab, tabs, label }: { base:
 
 export function BucketsShell({
   tab,
+  totals,
+  feed,
   buckets,
   keys,
   url,
@@ -64,6 +68,8 @@ export function BucketsShell({
   maxKeys,
 }: {
   tab: Tab
+  totals: (Counts & { requests: number }) | null
+  feed: { rows: ActivityRow[]; next: string | null } | null
   buckets: BucketRow[]
   keys: KeyRow[]
   url: string
@@ -88,7 +94,7 @@ export function BucketsShell({
       <BucketTabs base="/buckets" tab={tab} tabs={TABS} label="S3 sections" />
 
       {tab === "overview" && (
-        <Overview buckets={buckets} keys={keys} onNewBucket={() => setNewBucket(true)} onNewKey={() => openKey(null)} />
+        <Overview totals={totals} buckets={buckets} keys={keys} onNewBucket={() => setNewBucket(true)} onNewKey={() => openKey(null)} />
       )}
 
       {tab === "buckets" && (
@@ -134,9 +140,7 @@ export function BucketsShell({
       {tab === "activity" && (
         <section className={SECTION} aria-labelledby="activity-heading">
           <Heading id="activity-heading" title="Activity" hint="What apps do with your buckets." />
-          <Empty icon={CubeIcon} title="Nothing yet">
-            Activity shows up here once apps start using your buckets.
-          </Empty>
+          <ActivityView initial={feed} keys={keys} />
         </section>
       )}
 

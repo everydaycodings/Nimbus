@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache"
 import { saveTokenToSecret } from "@/lib/registry/secrets-pull"
 import { requireMember } from "@/lib/session"
 import * as svc from "@/lib/s3api/manage"
+import { activity, usage, type ActivityFilter } from "@/lib/s3api/stats"
 
 const NOT_ON = { error: "S3 isn't available for your account right now." }
 
@@ -96,4 +97,28 @@ export async function moreObjects(bucketId: string, prefix: string, cursor: stri
 export async function presignObject(bucketId: string, key: string, seconds: number) {
   const me = await member()
   return me ? svc.presign(me.id, bucketId, key, seconds) : NOT_ON
+}
+
+// Activity filters and "Load more". The scope is always the signed-in member's own.
+export async function moreActivity(filter: ActivityFilter, cursor?: string) {
+  const me = await member()
+  if (!me) return null
+  try {
+    return await activity({ userId: me.id }, filter, cursor)
+  } catch {
+    return null
+  }
+}
+
+// The key panel: a week of requests and the last ten calls for one key.
+export async function keyUsage(keyId: string) {
+  const me = await member()
+  if (!me) return null
+  const scope = { userId: me.id, keyId }
+  try {
+    const [points, recent] = await Promise.all([usage(scope, "7d"), activity(scope, {}, undefined, 10)])
+    return { points, rows: recent.rows }
+  } catch {
+    return null
+  }
 }

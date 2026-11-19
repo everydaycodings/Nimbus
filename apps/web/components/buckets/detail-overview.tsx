@@ -22,7 +22,7 @@ function Field({ label, value }: { label: string; value: string }) {
   )
 }
 
-export function DetailOverview({ b, url, region }: { b: BucketRow & { allBytes: number }; url: string; region: string }) {
+export function DetailOverview({ b, url, region, usage }: { b: BucketRow & { allBytes: number }; url: string; region: string; usage: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-8">
       {b.gone && (
@@ -47,6 +47,7 @@ export function DetailOverview({ b, url, region }: { b: BucketRow & { allBytes: 
           ))}
         </dl>
       </section>
+      {usage}
       <section className={SECTION} aria-labelledby="addr-heading">
         <Heading id="addr-heading" title="Connect" hint="Use these in an app, together with an access key." />
         <dl className="grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-2">

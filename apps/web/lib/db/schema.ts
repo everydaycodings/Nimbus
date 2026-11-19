@@ -15,6 +15,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
   varchar,
@@ -2790,6 +2791,72 @@ export const s3Multipart = pgTable(
     index("s3_multipart_bucket_idx").on(t.bucketId),
     index("s3_multipart_created_idx").on(t.createdAt),
   ]
+)
+
+// S3 request counts per bucket, key and hour ('h'), or per day ('d') once rolled up after
+// 30 days. Written by the worker from Redis counters. key_id has no foreign key: revoking
+// a key keeps its history (the page shows "Deleted key"); null would mean a request no key made.
+export const s3Usage = pgTable(
+  "s3_usage",
+  {
+    id: id(),
+    bucketId: uuid("bucket_id")
+      .notNull()
+      .references(() => s3Buckets.id, { onDelete: "cascade" }),
+    keyId: uuid("key_id"),
+    hour: timestamp("hour", { withTimezone: true }).notNull(),
+    granularity: text("granularity").$type<"h" | "d">().notNull(),
+    reads: bigint("reads", { mode: "number" }).notNull().default(0),
+    writes: bigint("writes", { mode: "number" }).notNull().default(0),
+    lists: bigint("lists", { mode: "number" }).notNull().default(0),
+    deletes: bigint("deletes", { mode: "number" }).notNull().default(0),
+    bytesIn: bigint("bytes_in", { mode: "number" }).notNull().default(0),
+    bytesOut: bigint("bytes_out", { mode: "number" }).notNull().default(0),
+    e4xx: bigint("e4xx", { mode: "number" }).notNull().default(0),
+    e5xx: bigint("e5xx", { mode: "number" }).notNull().default(0),
+    // Requests per user-agent family and per client address (the busiest 20).
+    agents: jsonb("agents").$type<Record<string, number>>().notNull().default(sql`'{}'`),
+    ips: jsonb("ips").$type<Record<string, number>>().notNull().default(sql`'{}'`),
+  },
+  (t) => [
+    unique("s3_usage_row_idx").on(t.bucketId, t.keyId, t.hour, t.granularity).nullsNotDistinct(),
+    index("s3_usage_hour_idx").on(t.hour),
+    check("s3_usage_granularity_check", sql`${t.granularity} in ('h', 'd')`),
+  ]
+)
+
+// Writes and failed requests, kept 30 days.
+export const s3Activity = pgTable(
+  "s3_activity",
+  {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    bucketId: uuid("bucket_id")
+      .notNull()
+      .references(() => s3Buckets.id, { onDelete: "cascade" }),
+    keyId: uuid("key_id"),
+    at: timestamp("at", { withTimezone: true }).notNull(),
+    op: text("op").notNull(),
+    objectKey: text("object_key"),
+    status: integer("status").notNull(),
+    bytes: bigint("bytes", { mode: "number" }).notNull().default(0),
+    ip: text("ip"),
+    agent: text("agent"),
+  },
+  (t) => [index("s3_activity_bucket_idx").on(t.bucketId, t.at), index("s3_activity_key_idx").on(t.keyId, t.at)]
+)
+
+// A bucket's size once a day, for the storage trend.
+export const s3StorageDaily = pgTable(
+  "s3_storage_daily",
+  {
+    bucketId: uuid("bucket_id")
+      .notNull()
+      .references(() => s3Buckets.id, { onDelete: "cascade" }),
+    day: date("day").notNull(),
+    bytes: bigint("bytes", { mode: "number" }).notNull(),
+    objects: bigint("objects", { mode: "number" }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.bucketId, t.day] })]
 )
 
 // Container registry (lib/registry). A namespace is the first path part

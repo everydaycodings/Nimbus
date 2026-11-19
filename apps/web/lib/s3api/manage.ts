@@ -27,6 +27,7 @@ import type { Who } from "./auth"
 import { cidrError } from "./cidr"
 import { enqueueBucketEtags, etagOf } from "./etags"
 import { EXPIRING_SOON_DAYS, GRACES, MAX_IPS, MAX_ROTATE_DAYS, PERMS, legacyAccess, prefixError } from "./perms"
+import { folderStats } from "./folder-stats"
 import { entries } from "./list"
 import { bucketFor } from "./resolve"
 import { S3Error } from "./xml"
@@ -70,25 +71,6 @@ export type BucketRow = {
   createdAt: string
   // The folder is in the trash or no longer shared with them: the bucket is hidden from clients.
   gone: boolean
-}
-
-// Files under a folder (not trashed), their bytes, and with `versions` the bytes of every version of them.
-async function folderStats(nodeId: string, versions = false) {
-  const [r] = await db.execute<{ bytes: string; objects: string; all_bytes: string }>(sql`
-    with recursive d as (
-      select id, kind, size from nodes where id = ${nodeId}
-      union all
-      select n.id, n.kind, n.size from nodes n join d on n.parent_id = d.id
-        where n.trashed_at is null
-    )
-    select coalesce(sum(size) filter (where kind = 'file'), 0)::text as bytes,
-      count(*) filter (where kind = 'file')::text as objects,
-      ${
-        versions
-          ? sql`coalesce((select sum(v.size) from file_versions v where v.node_id in (select id from d where kind = 'file')), 0)::text`
-          : sql`'0'`
-      } as all_bytes from d`)
-  return { bytes: Number(r?.bytes ?? 0), objects: Number(r?.objects ?? 0), allBytes: Number(r?.all_bytes ?? 0) }
 }
 
 // `only`: just the bucket with that name.

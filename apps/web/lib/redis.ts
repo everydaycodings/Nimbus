@@ -86,7 +86,7 @@ export async function scheduleHealth(minutes: number | null) {
 }
 
 export type JobName =
-  "email" | "leak-scan" | "leak-scan-user" | "secrets-rotate-root" | "secrets-sweep" | "secrets-push" | "secrets-webhook" | "secrets-lease-expire" | "delete-keys" | "tus-finish" | "backup-alert" | "orphan-sweep" | "push" | "ocr-langs" | "s3-etags" | "s3-multipart-stale" | "s3-key-reminders" | "registry-uploads-stale" | "registry-gc" | "registry-trash-purge" | "registry-policy" | "registry-aliases-purge" | "registry-events-purge" | "registry-mirror-expire" | "registry-webhook" | "registry-scan" | "registry-rescan" | "registry-advice"
+  "email" | "leak-scan" | "leak-scan-user" | "secrets-rotate-root" | "secrets-sweep" | "secrets-push" | "secrets-webhook" | "secrets-lease-expire" | "delete-keys" | "tus-finish" | "backup-alert" | "orphan-sweep" | "push" | "ocr-langs" | "s3-etags" | "s3-multipart-stale" | "s3-key-reminders" | "s3-usage-flush" | "s3-usage-rollup" | "registry-uploads-stale" | "registry-gc" | "registry-trash-purge" | "registry-policy" | "registry-aliases-purge" | "registry-events-purge" | "registry-mirror-expire" | "registry-webhook" | "registry-scan" | "registry-rescan" | "registry-advice"
 
 // Work the request shouldn't wait for, retried by `npm run worker` until it lands.
 // Failed jobs stay a week for a look; done ones go, since emails carry file names.
@@ -136,7 +136,7 @@ export async function enqueueTranscode(nodeId: string) {
   )
 }
 
-// Trash and old link events hourly, orphaned objects weekly, stale phone backups, expiring documents, S3 key reminders and stale S3 multipart uploads daily; the indexer sweeps every minute.
+// Trash and old link events hourly, orphaned objects weekly, stale phone backups, expiring documents, S3 key reminders, S3 usage rollup and stale S3 multipart uploads daily; S3 usage flushes every minute; the indexer sweeps every minute.
 export async function scheduleJobs() {
   const opts = { removeOnComplete: true, removeOnFail: 50 }
   await jobsQueue.upsertJobScheduler(
@@ -173,6 +173,16 @@ export async function scheduleJobs() {
     "s3-key-reminders",
     { every: 24 * 3600_000 },
     { name: "s3-key-reminders", opts }
+  )
+  await jobsQueue.upsertJobScheduler(
+    "s3-usage-flush",
+    { every: 60_000 },
+    { name: "s3-usage-flush", opts }
+  )
+  await jobsQueue.upsertJobScheduler(
+    "s3-usage-rollup",
+    { every: 24 * 3600_000 },
+    { name: "s3-usage-rollup", opts }
   )
   await jobsQueue.upsertJobScheduler(
     "registry-uploads-stale",

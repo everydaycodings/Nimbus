@@ -3,10 +3,12 @@
 import { CheckCircleIcon, CircleIcon } from "@phosphor-icons/react"
 import Link from "next/link"
 
+import { TotalCards, Unavailable } from "@/components/buckets/chart"
 import { Heading, SECTION, TOUCH } from "@/components/registry-ui"
 import { Button } from "@/components/ui/button"
 import { formatBytes } from "@/lib/file-types"
 import type { BucketRow, KeyRow } from "@/lib/s3api/manage"
+import type { Counts } from "@/lib/s3api/stats"
 import { cn } from "@/lib/utils"
 
 const NUM = new Intl.NumberFormat("en")
@@ -27,11 +29,13 @@ function Stat({ label, value, sub, href }: { label: string; value: string; sub?:
 }
 
 export function Overview({
+  totals,
   buckets,
   keys,
   onNewBucket,
   onNewKey,
 }: {
+  totals: (Counts & { requests: number }) | null
   buckets: BucketRow[]
   keys: KeyRow[]
   onNewBucket: () => void
@@ -96,6 +100,11 @@ export function Overview({
             />
           )}
         </dl>
+      </section>
+
+      <section className={SECTION} aria-labelledby="use-heading">
+        <Heading id="use-heading" title="Last 30 days" hint="What apps did with all your buckets." />
+        {totals ? <TotalCards t={totals} /> : <Unavailable what="usage" />}
       </section>
 
       {steps.some((s) => !s.done) && (

@@ -6,6 +6,7 @@ import { TABS, type Tab } from "@/components/buckets/tabs"
 import { isAdmin, requireMember } from "@/lib/session"
 import { listBuckets, listKeys, s3State, type S3State } from "@/lib/s3api/manage"
 import { MAX_KEYS_PER_MEMBER, REGION, endpoint } from "@/lib/s3api/rules"
+import { activity, totals } from "@/lib/s3api/stats"
 
 export const metadata = { title: "S3 buckets · Nimbus" }
 
@@ -55,11 +56,19 @@ export default async function BucketsPage({ searchParams }: { searchParams: Prom
       </div>
     )
   }
-  const { tab } = await searchParams
+  const { tab: asked } = await searchParams
+  const tab: Tab = TABS.some(([t]) => t === asked) ? (asked as Tab) : "overview"
   const [buckets, keys] = await Promise.all([listBuckets(me.id), listKeys(me.id)])
+  // null when the stats can't be read: the tab shows an error instead of numbers.
+  const [totalsNow, feed] = await Promise.all([
+    tab === "overview" ? totals({ userId: me.id }, "30d").catch(() => null) : null,
+    tab === "activity" ? activity({ userId: me.id }, {}).catch(() => null) : null,
+  ])
   return (
     <BucketsShell
-      tab={TABS.some(([t]) => t === tab) ? (tab as Tab) : "overview"}
+      tab={tab}
+      totals={totalsNow}
+      feed={feed}
       buckets={buckets}
       keys={keys}
       url={endpoint()!}

@@ -11,6 +11,8 @@ import { header, readXml, unwrap, type C } from "@/lib/s3api/http"
 import * as mp from "@/lib/s3api/multipart"
 import * as objects from "@/lib/s3api/objects"
 import { listVersions } from "@/lib/s3api/versions"
+import { record } from "@/lib/s3api/record"
+import { plainIp } from "@/lib/s3api/record-rules"
 import { bucketFor } from "@/lib/s3api/resolve"
 import { endpoint } from "@/lib/s3api/rules"
 import { S3Error, errorXml } from "@/lib/s3api/xml"
@@ -29,18 +31,38 @@ export async function POST(req: Request) {
   const url = req.headers.get("x-s3-url") ?? "/"
   const [rawPath, rawQuery = ""] = [url.split("?")[0], url.split("?").slice(1).join("?")]
   const resource = rawPath
+  const ip = plainIp(req.headers.get("x-s3-ip") || null)
+  // Filled in as the request gets far enough to know who asked and which bucket.
+  const seen: { keyId?: string; bucketId?: string; objectKey?: string | null; q?: URLSearchParams } = {}
+  let res: Response
   try {
-    return await handle()
+    res = await handle()
   } catch (e) {
     const s = e instanceof S3Error ? e : unwrap(e)
     if (!s) console.error(`[s3] ${method} ${url}:`, e)
     const status = s?.status ?? 500
     const body = errorXml(s?.code ?? "InternalError", s?.message ?? "We encountered an internal error. Please try again.", resource, rid)
-    return new Response(method === "HEAD" ? null : body, {
+    res = new Response(method === "HEAD" ? null : body, {
       status,
       headers: { "Content-Type": "application/xml", ...s?.headers, "x-amz-request-id": rid, "x-amz-id-2": rid, ...(status === 503 && { "Retry-After": "1" }) },
     })
   }
+  // Requests that never reach a bucket (ListBuckets, failed sign-in) aren't counted.
+  if (seen.keyId && seen.bucketId)
+    record({
+      bucketId: seen.bucketId,
+      keyId: seen.keyId,
+      method,
+      objectKey: seen.objectKey ?? null,
+      q: seen.q ?? new URLSearchParams(),
+      copy: Boolean(req.headers.get("x-amz-copy-source")),
+      status: res.status,
+      bytesIn: Number(req.headers.get("x-amz-decoded-content-length") ?? req.headers.get("content-length")) || 0,
+      bytesOut: method === "HEAD" ? 0 : Number(res.headers.get("content-length")) || 0,
+      agent: req.headers.get("user-agent"),
+      ip,
+    })
+  return res
 
   async function handle() {
     if (!endpoint()) throw new S3Error("ServiceUnavailable", "The S3 API isn't set up on this server.", 503)
@@ -52,9 +74,10 @@ export async function POST(req: Request) {
     const { who, checked } = await s3SignIn(
       { method, url, headers, payload },
       headers.authorization,
-      req.headers.get("x-s3-ip") || null
+      ip
     )
     await rateLimit(who)
+    seen.keyId = who.keyId
 
     const segs = rawPath.replace(/^\/+/, "")
     const slash = segs.indexOf("/")
@@ -70,6 +93,8 @@ export async function POST(req: Request) {
     if (key === "") key = null
     const c: C = { who, checked, req, rid, q: new URLSearchParams(rawQuery), bucket: name, key, payload }
     const q = c.q
+    seen.q = q
+    seen.objectKey = key
     const unsupported = [...q.keys()].find((k) => objects.UNSUPPORTED.has(k))
 
     if (!name) {
@@ -86,6 +111,7 @@ export async function POST(req: Request) {
       if (method === "GET" && q.has("location")) return buckets.location(c, name)
       if (method === "GET" && q.has("versioning")) return buckets.versioning(c, name)
       const b = await bucketFor(who, name)
+      seen.bucketId = b.id
       if (method === "GET" && q.has("uploads")) return mp.listUploads(c, b)
       if (method === "GET" && q.has("versions")) return listVersions(c, b)
       if (method === "GET") return list(c, b, q.get("list-type") === "2")
@@ -94,6 +120,7 @@ export async function POST(req: Request) {
     }
 
     const b = await bucketFor(who, name)
+    seen.bucketId = b.id
     if (unsupported) throw notImplemented(`The ${unsupported} sub-resource`)
     const uploadId = q.has("uploadId")
     switch (method) {

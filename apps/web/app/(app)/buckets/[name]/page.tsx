@@ -1,17 +1,20 @@
-import { ArrowLeftIcon, ChartLineIcon, CubeIcon } from "@phosphor-icons/react/dist/ssr"
+import { ArrowLeftIcon, CubeIcon } from "@phosphor-icons/react/dist/ssr"
 import Link from "next/link"
+import { Suspense } from "react"
 import { notFound, redirect } from "next/navigation"
 
 import { DetailAccess } from "@/components/buckets/detail-access"
 import { DetailOverview } from "@/components/buckets/detail-overview"
+import { BucketMetrics, BucketUsage, MetricsHeading, UsageSkeleton } from "@/components/buckets/detail-usage"
 import { DetailSettings } from "@/components/buckets/detail-settings"
 import { ObjectBrowser } from "@/components/buckets/objects"
 import { BucketTabs } from "@/components/buckets/shell"
-import { Empty, Heading, SECTION } from "@/components/registry-ui"
+import { Empty, SECTION } from "@/components/registry-ui"
 import { Badge } from "@/components/ui/badge"
 import { requireMember } from "@/lib/session"
 import { bucketDetail, listBuckets, listKeys, listObjects, s3State } from "@/lib/s3api/manage"
 import { MAX_KEYS_PER_MEMBER, REGION, endpoint, keyReaches } from "@/lib/s3api/rules"
+import type { Range } from "@/lib/s3api/stats"
 
 export async function generateMetadata({ params }: { params: Promise<{ name: string }> }) {
   return { title: `${(await params).name} · S3 buckets · Nimbus` }
@@ -31,7 +34,7 @@ export default async function BucketPage({
   searchParams,
 }: {
   params: Promise<{ name: string }>
-  searchParams: Promise<{ tab?: string; prefix?: string }>
+  searchParams: Promise<{ tab?: string; prefix?: string; range?: string }>
 }) {
   const me = await requireMember()
   // The list page explains why S3 isn't usable.
@@ -40,6 +43,7 @@ export default async function BucketPage({
   const [b, sp] = [await bucketDetail(me.id, name), await searchParams]
   if (!b) notFound()
   const tab: Tab = TABS.find(([t]) => t === sp.tab)?.[0] ?? "overview"
+  const range = (["24h", "7d", "30d", "1y"] as const).find((r) => r === sp.range) ?? ("7d" satisfies Range)
   const url = endpoint()!
   const allKeys = tab === "objects" || tab === "access" ? await listKeys(me.id) : []
   const keys = allKeys.filter((k) => keyReaches(k, b.name))
@@ -65,7 +69,20 @@ export default async function BucketPage({
       </header>
       <BucketTabs base={`/buckets/${b.name}`} tab={tab} tabs={TABS.map(([t, l]) => [t, l])} label="Bucket sections" />
 
-      {tab === "overview" && <DetailOverview b={b} url={url} region={REGION} />}
+      {tab === "overview" && (
+        <DetailOverview
+          b={b}
+          url={url}
+          region={REGION}
+          usage={
+            b.gone ? null : (
+              <Suspense fallback={<UsageSkeleton cards />}>
+                <BucketUsage userId={me.id} bucketId={b.id} bytes={b.bytes} />
+              </Suspense>
+            )
+          }
+        />
+      )}
       {tab === "objects" &&
         (objects ? (
           <ObjectBrowser key={prefix} bucket={{ id: b.id, name: b.name }} prefix={prefix} initial={objects} canShare={keys.length > 0} />
@@ -76,10 +93,10 @@ export default async function BucketPage({
         ))}
       {tab === "metrics" && (
         <section className={SECTION} aria-labelledby="metrics-heading">
-          <Heading id="metrics-heading" title="Metrics" hint="Requests and data moved in and out." />
-          <Empty icon={ChartLineIcon} title="Nothing to chart yet">
-            Charts appear here once apps start using this bucket.
-          </Empty>
+          <MetricsHeading base={`/buckets/${b.name}?tab=metrics`} range={range} />
+          <Suspense key={range} fallback={<UsageSkeleton />}>
+            <BucketMetrics userId={me.id} bucketId={b.id} range={range} />
+          </Suspense>
         </section>
       )}
       {tab === "access" && (
