@@ -41,6 +41,9 @@ icon and word take `--warning`. Disabled and Expired stay neutral (`secondary`);
 status code in an outline badge tinted `--destructive`. Usage charts stack series in `--chart-1`…`--chart-5` with a legend
 that names every colour.
 
+Git Backup uses the same pattern for repos that need attention: "Source gone" and a token that is expiring are an outline badge whose
+icon and word take `--warning`; failed runs and repos use `--destructive`.
+
 Tags are user-chosen labels with their own `--tag-*` hues (red, orange, yellow, green, blue,
 purple, pink, teal, indigo, brown, gray; `TAG_DOT` in `lib/file-types.ts`), shown only as small dots: after an item's
 name, in menus and on the Tags filter.

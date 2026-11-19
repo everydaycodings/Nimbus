@@ -11,6 +11,9 @@ import { sweepJunk } from "@/lib/dav/locks"
 import { sendNow, type Message } from "@/lib/email"
 import { purgeExpiredTrash } from "@/lib/files"
 import { sweepOrphans } from "@/lib/orphan-sweep"
+import { warnExpiring as warnGitTokens } from "@/lib/gitbackup/alerts"
+import { runJob as runGitBackup } from "@/lib/gitbackup/runner"
+import { tick as gitBackupTick } from "@/lib/gitbackup/scheduler"
 import { sendPush } from "@/lib/push"
 import { computeEtags } from "@/lib/s3api/etags"
 import { checkRegistryQuota, namespaceOwners } from "@/lib/registry/events"
@@ -97,6 +100,9 @@ const jobs: Record<string, (data: never) => Promise<unknown>> = {
   "registry-connections-backfill": (d?: { force?: boolean }) => backfillConnections(d ?? {}),
   "registry-connections-expiry": warnExpiring,
   "registry-webhook": ({ id }: { id: string }) => deliverRegistryHook(id),
+  "git-backup-tick": gitBackupTick,
+  "git-backup-expiry": warnGitTokens,
+  "git-backup-run": ({ runId, repoIds }: { runId: string; repoIds: string[] }) => runGitBackup(runId, repoIds),
   "phone-backup-stale": alertStalePhones,
   "documents-remind": remindExpiring,
   email: (m: Message) => sendNow(m),

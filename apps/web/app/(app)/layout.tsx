@@ -15,6 +15,7 @@ import {
   ShieldIcon,
   ShieldCheckIcon,
   SignOutIcon,
+  SquaresFourIcon,
   StarIcon,
   TrashIcon,
   UsersIcon,
@@ -70,6 +71,7 @@ import { savedOnBrowser } from "@/lib/saved-logins"
 import { registryState } from "@/lib/registry/manage"
 import { s3State } from "@/lib/s3api/manage"
 import { getSettings } from "@/lib/signup"
+import { moreTools } from "@/lib/more-tools"
 import { signOut } from "./actions"
 
 const ROLE_LABEL = { owner: "Owner", admin: "Admin", member: "Member" }
@@ -358,6 +360,9 @@ export default async function AppLayout({
           )}
           {(registry === "ready" || registry === "unclaimed" || (admin && registry !== "disabled")) && (
             <NavLink href="/registry" icon={<PackageIcon />} label="Container registry" />
+          )}
+          {moreTools(settings).length > 0 && (
+            <NavLink href="/more" icon={<SquaresFourIcon />} label="More" />
           )}
           <NavLink href="/trash" icon={<TrashIcon />} label="Trash" />
         </div>

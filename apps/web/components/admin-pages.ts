@@ -21,6 +21,7 @@ import {
   PaletteIcon,
   ScanIcon,
   SparkleIcon,
+  SquaresFourIcon,
   TrashIcon,
   UploadSimpleIcon,
   UserCheckIcon,
@@ -113,6 +114,7 @@ export const ADMIN_GROUPS: { title: string; pages: AdminPage[] }[] = [
       { href: "/admin/system/webdav", label: "WebDAV", icon: HardDriveIcon },
       { href: "/admin/system/s3", label: "S3 API", icon: CubeIcon },
       { href: "/admin/system/registry", label: "Container registry", icon: PackageIcon },
+      { href: "/admin/system/more-tools", label: "More tools", icon: SquaresFourIcon },
       { href: "/admin/system/ocr", label: "Text in images", icon: ScanIcon },
       { href: "/admin/system/ai", label: "AI features", icon: SparkleIcon },
       { href: "/admin/system/photos", label: "Photos map", icon: MapTrifoldIcon },
@@ -476,6 +478,12 @@ export const ADMIN_SETTINGS: {
     label: "S3 access keys",
     href: "/admin/system/s3",
     keywords: "s3 keys revoke access key secret members",
+  },
+  {
+    id: "git-backup-enabled",
+    label: "Allow Git Backup",
+    href: "/admin/system/more-tools",
+    keywords: "git backup github repos more tools oauth interval concurrent",
   },
   {
     id: "allow-registry",

@@ -5,6 +5,7 @@
 // thumbnails (scripts/derive.ts) and video copies (scripts/transcode.ts) run here, since they're heavy and native.
 // Run: npm run worker
 import { Worker } from "bullmq"
+import { request } from "node:http"
 import postgres from "postgres"
 
 import {
@@ -13,6 +14,7 @@ import {
   HEARTBEAT_KEY,
   INDEXER_KEY,
   DOCS_KEY,
+  GIT_BACKUP_QUEUE,
   ML_KEY,
   JOBS_QUEUE,
   redis,
@@ -34,9 +36,8 @@ const app = process.env.BETTER_AUTH_URL ?? "http://localhost:3000"
 // Saving a new interval in the admin panel reschedules too, so this only
 // matters for the first start.
 const sql = postgres(process.env.DATABASE_URL!)
-const [{ minutes }] =
-  await sql`select health_interval_min as minutes from settings`
-await sql.end()
+const [{ minutes, gitConcurrency }] =
+  await sql`select health_interval_min as minutes, git_backup_concurrency as "gitConcurrency" from settings`
 await scheduleHealth(minutes)
 await scheduleJobs()
 console.log(
@@ -77,6 +78,42 @@ derives.on("failed", (job, e) =>
   console.error(
     `${new Date().toISOString()} derive ${job?.data.versionId} failed: ${e.message}`
   )
+)
+
+// Git Backup: the app does the work (it has the database, S3 and git); a run can take hours, so this
+// holds the request open (node:http has no response timeout) and marks the run failed if the app drops it.
+const gitRuns = new Worker(
+  GIT_BACKUP_QUEUE,
+  (job) =>
+    new Promise<void>((resolve, reject) => {
+      const body = JSON.stringify({ name: "git-backup-run", data: job.data })
+      const req = request(
+        new URL("/api/jobs", app),
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${signToken("job", {}, 60_000)}`,
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(body),
+          },
+        },
+        (res) => {
+          let text = ""
+          res.on("data", (c) => (text += c))
+          res.on("end", () => (res.statusCode! < 300 ? resolve() : reject(new Error(`${app} answered ${res.statusCode}: ${text}`))))
+          res.on("error", reject)
+        }
+      )
+      req.on("error", reject)
+      req.end(body)
+    }).catch(async (e) => {
+      await sql`update git_backup_runs set status = 'failed', finished_at = now() where id = ${job.data.runId} and status = 'running'`
+      throw e
+    }),
+  { connection: workerConnection(), concurrency: Math.max(1, gitConcurrency) }
+)
+gitRuns.on("failed", (job, e) =>
+  console.error(`${new Date().toISOString()} git backup ${job?.data.runId} failed: ${e.message}`)
 )
 
 // Data-saver video copies, one at a time: ffmpeg is heavy.
@@ -121,6 +158,8 @@ async function index() {
       const [{ n }] =
         await indexSql`select derive_concurrency as n from settings`
       derives.concurrency = Math.max(1, n)
+      const [{ g }] = await indexSql`select git_backup_concurrency as g from settings`
+      gitRuns.concurrency = Math.max(1, g)
     })().finally(() => (sweeping = undefined)))
   await redis.set(DOCS_KEY, JSON.stringify({ at: Date.now(), ...docsStatus }), "PX", 3 * 60_000)
   // Admin → Health shows the indexer as running while this key lives.

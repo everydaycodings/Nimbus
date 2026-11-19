@@ -21,6 +21,7 @@ const globalForRedis = globalThis as unknown as {
   deriveQueue?: Queue
   transcodeQueue?: Queue
   buildsQueue?: Queue
+  gitBackupQueue?: Queue
 }
 export const redis =
   globalForRedis.redis ??
@@ -47,6 +48,8 @@ export const DERIVE_QUEUE = "derive"
 export const TRANSCODE_QUEUE = "transcode"
 // Image builds, run by scripts/registry-build.ts (the build-runner service).
 export const BUILDS_QUEUE = "registry-builds"
+// Git Backup runs (lib/gitbackup/runner.ts), one job per run, started by the worker.
+export const GIT_BACKUP_QUEUE = "git-backup"
 // Set by npm run worker:backup while it's up.
 export const BACKUP_HEARTBEAT_KEY = "backups:heartbeat"
 
@@ -63,6 +66,8 @@ export const transcodeQueue =
   new Queue(TRANSCODE_QUEUE, { connection: redis })
 export const buildsQueue =
   globalForRedis.buildsQueue ?? new Queue(BUILDS_QUEUE, { connection: redis })
+export const gitBackupQueue =
+  globalForRedis.gitBackupQueue ?? new Queue(GIT_BACKUP_QUEUE, { connection: redis })
 if (process.env.NODE_ENV !== "production")
   Object.assign(globalForRedis, {
     redis,
@@ -72,6 +77,7 @@ if (process.env.NODE_ENV !== "production")
     deriveQueue,
     transcodeQueue,
     buildsQueue,
+    gitBackupQueue,
   })
 
 // Runs the checks every `minutes`, or stops the schedule when null.
@@ -86,7 +92,7 @@ export async function scheduleHealth(minutes: number | null) {
 }
 
 export type JobName =
-  "email" | "leak-scan" | "leak-scan-user" | "secrets-rotate-root" | "secrets-sweep" | "secrets-push" | "secrets-webhook" | "secrets-lease-expire" | "delete-keys" | "tus-finish" | "backup-alert" | "orphan-sweep" | "push" | "ocr-langs" | "s3-etags" | "s3-multipart-stale" | "s3-key-reminders" | "s3-lifecycle" | "s3-usage-flush" | "s3-usage-rollup" | "registry-uploads-stale" | "registry-gc" | "registry-trash-purge" | "registry-policy" | "registry-aliases-purge" | "registry-events-purge" | "registry-mirror-expire" | "registry-webhook" | "registry-scan" | "registry-rescan" | "registry-advice"
+  "email" | "leak-scan" | "leak-scan-user" | "secrets-rotate-root" | "secrets-sweep" | "secrets-push" | "secrets-webhook" | "secrets-lease-expire" | "delete-keys" | "tus-finish" | "backup-alert" | "orphan-sweep" | "push" | "ocr-langs" | "s3-etags" | "s3-multipart-stale" | "s3-key-reminders" | "s3-lifecycle" | "s3-usage-flush" | "s3-usage-rollup" | "registry-uploads-stale" | "registry-gc" | "registry-trash-purge" | "registry-policy" | "registry-aliases-purge" | "registry-events-purge" | "registry-mirror-expire" | "registry-webhook" | "registry-scan" | "registry-rescan" | "registry-advice" | "git-backup-tick" | "git-backup-expiry"
 
 // Work the request shouldn't wait for, retried by `npm run worker` until it lands.
 // Failed jobs stay a week for a look; done ones go, since emails carry file names.
@@ -237,6 +243,16 @@ export async function scheduleJobs() {
     { name: "registry-rescan", opts }
   )
   await jobsQueue.upsertJobScheduler(
+    "git-backup-tick",
+    { every: 60_000 },
+    { name: "git-backup-tick", opts }
+  )
+  await jobsQueue.upsertJobScheduler(
+    "git-backup-expiry",
+    { every: 24 * 3600_000 },
+    { name: "git-backup-expiry", opts }
+  )
+  await jobsQueue.upsertJobScheduler(
     "face-cluster",
     { every: 24 * 3600_000 },
     { name: "face-cluster", opts }
@@ -304,4 +320,9 @@ export async function scheduleBackups(s: {
 // is Retry in the UI, a new build); a runner that dies leaves the build to be marked failed on restart.
 export async function enqueueBuild(buildId: string) {
   await buildsQueue.add("build", { buildId }, { jobId: buildId, attempts: 1, removeOnComplete: true, removeOnFail: 50 })
+}
+
+// A Git Backup run the app opened. The run id as job id: queued once. Never retried by BullMQ: the next tick starts a new run.
+export async function enqueueGitBackup(data: { runId: string; repoIds: string[] }) {
+  await gitBackupQueue.add("run", data, { jobId: data.runId, attempts: 1, removeOnComplete: true, removeOnFail: 50 })
 }

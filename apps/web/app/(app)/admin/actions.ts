@@ -774,6 +774,11 @@ export async function revokeTransfer(id: string) {
 
 // Settings a "Reset to default" button may touch. Email has its own form.
 const RESETTABLE: SettingKey[] = [
+  "gitBackupEnabled",
+  "gitBackupMinInterval",
+  "gitBackupConcurrency",
+  "githubOauthClientId",
+  "githubOauthClientSecret",
   "signupMode",
   "require2fa",
   "passwordPolicy",

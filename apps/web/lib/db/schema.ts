@@ -3569,5 +3569,9 @@ export const gitBackupRuns = pgTable(
     startedAt: createdAt(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
   },
-  (t) => [index("git_backup_runs_job_idx").on(t.jobId, t.startedAt)]
+  (t) => [
+    index("git_backup_runs_job_idx").on(t.jobId, t.startedAt),
+    // One running run per job, so a tick and a webhook racing can't both start one.
+    uniqueIndex("git_backup_runs_one_running_idx").on(t.jobId).where(sql`${t.status} = 'running'`),
+  ]
 )

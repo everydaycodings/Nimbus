@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "git_backup_runs_one_running_idx" ON "git_backup_runs" USING btree ("job_id") WHERE "git_backup_runs"."status" = 'running';

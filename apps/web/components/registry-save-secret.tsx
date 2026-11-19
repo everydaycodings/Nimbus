@@ -18,8 +18,9 @@ type Project = { id: string; name: string; role: string }
 type Env = { id: string; name: string }
 
 // "Save to Secrets" under a token that was just made: pick where it goes, and it's stored as a secret.
-// `s3`: an S3 key's secret, saved with its key ID under fixed names.
-export function SaveToSecrets({ token, s3 }: { token: string; s3?: { accessKeyId: string } }) {
+// `s3`: an S3 key's secret, saved with its key ID under fixed names. `save`: another feature's server action
+// (Git Backup) in place of the Registry's, which needs the registry to be on.
+export function SaveToSecrets({ token, s3, defaultName = "NIMBUS_REGISTRY_TOKEN", save = saveRegistryTokenToSecret }: { token: string; s3?: { accessKeyId: string }; defaultName?: string; save?: typeof saveRegistryTokenToSecret }) {
   const id = useId()
   const [open, setOpen] = useState(false)
   const [projects, setProjects] = useState<Project[] | null>(null)
@@ -89,7 +90,7 @@ export function SaveToSecrets({ token, s3 }: { token: string; s3?: { accessKeyId
         start(async () => {
           const r = s3
             ? await saveS3KeyToSecret({ token, name, projectId: project, envId: env, also: [{ name: "NIMBUS_S3_ACCESS_KEY_ID", value: s3.accessKeyId }], what: "S3 access key" })
-            : await saveRegistryTokenToSecret({ token, name, projectId: project, envId: env })
+            : await save({ token, name, projectId: project, envId: env })
           if (r.locked) return setLocked(true)
           if (r.error) return setError(r.error)
           const where = projects?.find((p) => p.id === project)?.name
@@ -144,7 +145,7 @@ export function SaveToSecrets({ token, s3 }: { token: string; s3?: { accessKeyId
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor={`${id}-n`}>{s3 ? "Secret name" : "Name"}</Label>
-            <Input id={`${id}-n`} name="name" defaultValue={s3 ? "NIMBUS_S3_SECRET_ACCESS_KEY" : "NIMBUS_REGISTRY_TOKEN"} className="font-mono pointer-coarse:h-11" autoComplete="off" spellCheck={false} />
+            <Input id={`${id}-n`} name="name" defaultValue={s3 ? "NIMBUS_S3_SECRET_ACCESS_KEY" : defaultName} className="font-mono pointer-coarse:h-11" autoComplete="off" spellCheck={false} />
           </div>
           <FormError>{error}</FormError>
           <div className="flex flex-wrap gap-2">
