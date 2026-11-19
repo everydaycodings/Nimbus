@@ -4,7 +4,8 @@ import Link from "next/link"
 import { ActivityTable } from "@/components/buckets/activity"
 import { ChartSkeleton, TotalCards, Unavailable, UsageChart, type Series } from "@/components/buckets/chart"
 import { RangePicker } from "@/components/buckets/range-picker"
-import { Empty, Heading, SECTION } from "@/components/registry-ui"
+import { Empty } from "@/components/empty-state"
+import { Heading, SECTION } from "@/components/registry-ui"
 import { activity, storageTrend, top, totals, usage, type Range, type Top } from "@/lib/s3api/stats"
 
 const NUM = new Intl.NumberFormat("en")
