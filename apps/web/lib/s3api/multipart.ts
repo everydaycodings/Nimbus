@@ -27,6 +27,7 @@ import { rejectReason, uploadLimits } from "@/lib/uploads"
 import { bodyOf, header, nodeStream, readXml, objectMeta, respond, unwrap, xml, type C } from "./http.ts"
 import { copyFrom, storeError, whenOf } from "./objects.ts"
 import { STALE_MULTIPART_DAYS } from "./rules.ts"
+import { bytesChanged, checkQuota } from "./quota.ts"
 import { allow, childOf, listPrefix, splitKey, type Bucket } from "./resolve.ts"
 import { encodeKey, inner, isoDate, tag, text, S3Error } from "./xml.ts"
 import { mkdirp } from "@/lib/uploads"
@@ -191,7 +192,7 @@ export async function listUploads(c: C, b: Bucket) {
   )
 }
 
-async function abortBacking(row: { backingKey: string; backingUploadId: string }) {
+export async function abortBacking(row: { backingKey: string; backingUploadId: string }) {
   try {
     await s3.send(new AbortMultipartUploadCommand({ Bucket: BUCKET, Key: row.backingKey, UploadId: row.backingUploadId }))
   } catch (e) {
@@ -263,6 +264,7 @@ export async function complete(c: C, b: Bucket) {
     if (left !== null && size > left + row.bytes) throw new S3Error("QuotaExceeded", "The storage quota is full.", 403)
     const why = rejectReason(c.key!.split("/").at(-1)!, size, await uploadLimits())
     if (why) throw new S3Error("EntityTooLarge", why, 400)
+    await checkQuota(b, size)
     const { parts: names } = splitKey(c.key!)
     const made = await mkdirp(db, b.ownerId, b.nodeId, names.slice(0, -1))
     if ("error" in made) throw new S3Error("InvalidRequest", made.error, 409)
@@ -290,6 +292,7 @@ export async function complete(c: C, b: Bucket) {
     throw e
   }
   await db.delete(s3Multipart).where(eq(s3Multipart.id, row.id))
+  await bytesChanged(b.id)
   const loc = `${process.env.S3API_DOMAIN ?? ""}/${b.name}/${c.key}`
   return xml(c, "CompleteMultipartUploadResult", `${tag("Location", loc)}${tag("Bucket", b.name)}${tag("Key", c.key)}${tag("ETag", `"${etag}"`)}`, 200, { "x-amz-version-id": versionId })
 }

@@ -15,6 +15,7 @@ import { mkdirp } from "@/lib/uploads"
 import { etagOf, enqueueVersionEtag } from "./etags.ts"
 import { bodyOf, conditions, header, objectMeta, respond, xml, unwrap, type C } from "./http.ts"
 import { allow, bucketFor, childOf, findObject, pruneEmpty, splitKey, versionOf, walk, type Bucket } from "./resolve.ts"
+import { bytesChanged, checkQuota } from "./quota.ts"
 import { latestMarker, lookupVersion, markerId, removeVersion } from "./versions.ts"
 import { inner, isoDate, tag, text, S3Error } from "./xml.ts"
 
@@ -172,6 +173,12 @@ export async function put(c: C, b: Bucket) {
   const { stream, declared } = bodyOf(c)
   if (declared === null && !header(c, "transfer-encoding"))
     throw new S3Error("MissingContentLength", "You must provide the Content-Length HTTP header.", 411)
+  try {
+    await checkQuota(b, declared ?? 0)
+  } catch (e) {
+    if (!existing) await pruneEmpty(b, parentId)
+    throw e
+  }
   const ct = header(c, "content-type")
   const md5 = header(c, "content-md5")
   let r
@@ -198,6 +205,7 @@ export async function put(c: C, b: Bucket) {
     if (!existing) await pruneEmpty(b, parentId)
     throw storeError(r.error)
   }
+  await bytesChanged(b.id)
   return respond(c, 200, null, { ETag: `"${r.etag}"`, "x-amz-version-id": r.versionId })
 }
 
@@ -293,6 +301,12 @@ export async function copy(c: C, b: Bucket) {
   const { node: sn, v, bucket: sb } = await copyFrom(c, header(c, "x-amz-copy-source")!)
   const replace = header(c, "x-amz-metadata-directive")?.toUpperCase() === "REPLACE"
   const { parentId, name, existing } = await place(c, b, c.key!)
+  try {
+    await checkQuota(b, v.size)
+  } catch (e) {
+    if (!existing) await pruneEmpty(b, parentId)
+    throw e
+  }
   if (existing?.id === sn.id && !replace) {
     throw new S3Error("InvalidRequest", "This copy request is illegal because it is trying to copy an object to itself without changing the object's metadata.", 400)
   }
@@ -320,6 +334,7 @@ export async function copy(c: C, b: Bucket) {
     if (!existing) await pruneEmpty(b, parentId)
     throw storeError(r.error)
   }
+  await bytesChanged(b.id)
   const [saved] = await db.execute<{ at: Date }>(sql`select created_at as at from file_versions where id = ${r.versionId}`)
   return xml(c, "CopyObjectResult", `${tag("ETag", `"${v.etag ?? r.versionId.replace(/-/g, "")}"`)}${tag("LastModified", isoDate(new Date(saved.at)))}`, 200, { "x-amz-version-id": r.versionId })
 }

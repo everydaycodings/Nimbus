@@ -475,6 +475,7 @@ export default async function MemberPage({
                 keys={s3Keys.map((k) => ({
                   id: k.id,
                   name: k.name,
+                  disabled: k.disabled,
                   access: [permsLabel(k.perms), k.disabled && "Disabled", k.rotationDue && "Rotation due"].filter(Boolean).join(" · "),
                   used: `${k.lastUsedAt ? `${k.lastIp && !/^[0:.]*$/.test(k.lastIp) ? `${k.lastIp} · ` : ""}Used ${moment.format(new Date(k.lastUsedAt))}` : "Never used"} · Made ${day.format(new Date(k.createdAt))}`,
                 }))}

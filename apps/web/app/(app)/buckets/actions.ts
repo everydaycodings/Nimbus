@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache"
 import { saveTokenToSecret } from "@/lib/registry/secrets-pull"
 import { requireMember } from "@/lib/session"
 import * as svc from "@/lib/s3api/manage"
+import * as cfg from "@/lib/s3api/bucket-config"
 import { activity, usage, type ActivityFilter } from "@/lib/s3api/stats"
 
 const NOT_ON = { error: "S3 isn't available for your account right now." }
@@ -121,4 +122,25 @@ export async function keyUsage(keyId: string) {
   } catch {
     return null
   }
+}
+
+// Settings tab. The owner is always the signed-in member, never a value from the client.
+export async function setBucketQuota(bucketId: string, bytes: number | null) {
+  const me = await member()
+  return me ? done(await cfg.setQuota(me.id, bucketId, bytes)) : NOT_ON
+}
+
+export async function setBucketCors(bucketId: string, rules: cfg.CorsRule[]) {
+  const me = await member()
+  return me ? done(await cfg.setCors(me.id, bucketId, rules)) : NOT_ON
+}
+
+export async function setBucketLifecycle(bucketId: string, rules: cfg.LifecycleRule[]) {
+  const me = await member()
+  return me ? done(await cfg.setLifecycle(me.id, bucketId, rules)) : NOT_ON
+}
+
+export async function setBucketPublic(bucketId: string, on: boolean, regenerate = false) {
+  const me = await member()
+  return me ? done(await cfg.setPublic(me.id, bucketId, on, regenerate)) : NOT_ON
 }

@@ -14,7 +14,8 @@ const COUNTER_TTL = 2 * 24 * 3600
 
 export type Seen = {
   bucketId: string
-  keyId: string
+  // null: a request through the bucket's public link.
+  keyId: string | null
   method: string
   // The decoded object key; null for bucket-level requests.
   objectKey: string | null

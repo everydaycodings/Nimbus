@@ -150,6 +150,7 @@ function s3KeyText(d: Record<string, string>) {
   if (d.what === "rotation_due") return `${key} is due for rotation. Rotate its secret in S3 buckets, Access keys.`
   if (d.what === "expiring")
     return `${key} ${d.days === "0" ? "expires today" : `expires in ${d.days ?? "a few"} day${d.days === "1" ? "" : "s"}`}. Edit its expiry or make a new key in S3 buckets.`
+  if (d.by === "admin") return `${key} ${S3_KEY_WHAT[d.what] ?? "changed"} by an administrator.`
   return `${key} ${S3_KEY_WHAT[d.what] ?? "changed"}${d.ip ? ` from ${d.ip}` : ""}. Revoke it in S3 buckets if it wasn't you.`
 }
 

@@ -11,7 +11,8 @@ import { ObjectBrowser } from "@/components/buckets/objects"
 import { BucketTabs } from "@/components/buckets/shell"
 import { Empty, SECTION } from "@/components/registry-ui"
 import { Badge } from "@/components/ui/badge"
-import { requireMember } from "@/lib/session"
+import { isAdmin, requireMember } from "@/lib/session"
+import { getBucketConfig } from "@/lib/s3api/bucket-config"
 import { bucketDetail, listBuckets, listKeys, listObjects, s3State } from "@/lib/s3api/manage"
 import { MAX_KEYS_PER_MEMBER, REGION, endpoint, keyReaches } from "@/lib/s3api/rules"
 import type { Range } from "@/lib/s3api/stats"
@@ -109,7 +110,13 @@ export default async function BucketPage({
           region={REGION}
         />
       )}
-      {tab === "settings" && <DetailSettings key={b.name} b={b} />}
+      {tab === "settings" && <Settings me={me} b={b} />}
     </div>
   )
+}
+
+async function Settings({ me, b }: { me: Awaited<ReturnType<typeof requireMember>>; b: NonNullable<Awaited<ReturnType<typeof bucketDetail>>> }) {
+  const c = await getBucketConfig(me.id, b.id)
+  if (!c) notFound()
+  return <DetailSettings key={b.name} b={b} c={c} admin={isAdmin(me.role)} />
 }

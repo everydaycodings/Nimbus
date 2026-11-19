@@ -4,9 +4,10 @@ import { useState, useTransition } from "react"
 
 import { FormError } from "@/components/two-factor"
 import { Button } from "@/components/ui/button"
+import { disableS3Key } from "../system/s3/actions"
 import { revokeMemberS3Key, setMemberS3 } from "./actions"
 
-type Key = { id: string; name: string; access: string; used: string }
+type Key = { id: string; name: string; access: string; used: string; disabled?: boolean }
 
 // Member page: their S3 switch and access keys, for a lost laptop or a leaked key.
 export function MemberS3({
@@ -50,14 +51,25 @@ export function MemberS3({
                 <span className="text-xs text-muted-foreground tabular-nums">{k.used}</span>
               </span>
               {editable && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={pending}
-                  onClick={() => run(() => revokeMemberS3Key(id, k.id))}
-                >
-                  Revoke
-                </Button>
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={pending}
+                    aria-label={`${k.disabled ? "Enable" : "Disable"} ${k.name}`}
+                    onClick={() => run(() => disableS3Key(k.id, !k.disabled))}
+                  >
+                    {k.disabled ? "Enable" : "Disable"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={pending}
+                    onClick={() => run(() => revokeMemberS3Key(id, k.id))}
+                  >
+                    Revoke
+                  </Button>
+                </>
               )}
             </li>
           ))}

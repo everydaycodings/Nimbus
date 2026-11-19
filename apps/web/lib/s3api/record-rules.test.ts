@@ -40,6 +40,7 @@ test("counter keys round-trip", () => {
   assert.equal(h, "2026-11-19T14")
   const k = counterKey(h, "b-1", "k-1")
   assert.deepEqual(parseCounterKey(k), { hour: h, bucketId: "b-1", keyId: "k-1" })
+  assert.equal(parseCounterKey(counterKey(h, "b-1", null)).keyId, null)
 })
 
 test("activityEvent uses bytes in for writes, out otherwise", () => {

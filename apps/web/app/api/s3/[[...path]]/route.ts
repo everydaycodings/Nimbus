@@ -5,12 +5,15 @@
 import { randomBytes } from "node:crypto"
 
 import { rateLimit, s3SignIn } from "@/lib/s3api/auth"
+import { corsRulesByName, corsRulesOf } from "@/lib/s3api/bucket-config"
 import * as buckets from "@/lib/s3api/buckets"
+import { actualHeaders, matchRule, preflightHeaders } from "@/lib/s3api/cors"
 import { list } from "@/lib/s3api/list"
 import { header, readXml, unwrap, type C } from "@/lib/s3api/http"
 import * as mp from "@/lib/s3api/multipart"
 import * as objects from "@/lib/s3api/objects"
 import { listVersions } from "@/lib/s3api/versions"
+import { publicBucket, publicRateLimit } from "@/lib/s3api/public"
 import { record } from "@/lib/s3api/record"
 import { plainIp } from "@/lib/s3api/record-rules"
 import { bucketFor } from "@/lib/s3api/resolve"
@@ -33,7 +36,7 @@ export async function POST(req: Request) {
   const resource = rawPath
   const ip = plainIp(req.headers.get("x-s3-ip") || null)
   // Filled in as the request gets far enough to know who asked and which bucket.
-  const seen: { keyId?: string; bucketId?: string; objectKey?: string | null; q?: URLSearchParams } = {}
+  const seen: { keyId?: string | null; bucketId?: string; objectKey?: string | null; q?: URLSearchParams } = {}
   let res: Response
   try {
     res = await handle()
@@ -47,8 +50,18 @@ export async function POST(req: Request) {
       headers: { "Content-Type": "application/xml", ...s?.headers, "x-amz-request-id": rid, "x-amz-id-2": rid, ...(status === 503 && { "Retry-After": "1" }) },
     })
   }
+  // A browser's cross-origin request gets the CORS headers of the bucket's matching rule, errors included.
+  const origin = req.headers.get("origin")
+  if (origin && seen.bucketId && seen.keyId) {
+    const rule = matchRule(await corsRulesOf(seen.bucketId).catch(() => []), origin, method)
+    if (rule) {
+      const h = new Headers(res.headers)
+      for (const [k, v] of Object.entries(actualHeaders(rule, origin))) h.set(k, v)
+      res = new Response(res.body, { status: res.status, headers: h })
+    }
+  }
   // Requests that never reach a bucket (ListBuckets, failed sign-in) aren't counted.
-  if (seen.keyId && seen.bucketId)
+  if (seen.keyId !== undefined && seen.bucketId)
     record({
       bucketId: seen.bucketId,
       keyId: seen.keyId,
@@ -64,8 +77,47 @@ export async function POST(req: Request) {
     })
   return res
 
+  // Browsers send the preflight unsigned, and bucket names repeat across members, so any bucket
+  // of that name with a matching rule answers it.
+  async function preflight() {
+    const origin = req.headers.get("origin")
+    const asked = req.headers.get("access-control-request-method")
+    const name = decodeURIComponent(rawPath.split("/")[1] ?? "")
+    const rule = origin && asked && name ? matchRule(await corsRulesByName(name), origin, asked, (req.headers.get("access-control-request-headers") ?? "").split(",")) : undefined
+    if (!rule) throw new S3Error("AccessForbidden", "CORSResponse: This CORS request is not allowed.", 403)
+    return new Response(null, { status: 200, headers: { ...preflightHeaders(rule, origin!, req.headers.get("access-control-request-headers")), "x-amz-request-id": rid, "x-amz-id-2": rid } })
+  }
+
+  // /_public/<publicId>/<key>: GET and HEAD only, no listing.
+  async function publicRead() {
+    if (method !== "GET" && method !== "HEAD")
+      throw new S3Error("MethodNotAllowed", "Public buckets can only be read with GET or HEAD.", 405, { Allow: "GET, HEAD" })
+    await publicRateLimit(ip)
+    const [id, ...rest] = rawPath.slice("/_public/".length).split("/")
+    let key: string
+    try {
+      key = decodeURIComponent(rest.join("/"))
+    } catch {
+      throw new S3Error("InvalidURI", "Couldn't parse the specified URI.", 400)
+    }
+    const { who, name, bucketId } = await publicBucket(id)
+    seen.keyId = null
+    seen.bucketId = bucketId
+    if (!key) throw new S3Error("AccessDenied", "Public buckets can't be listed.")
+    seen.objectKey = key
+    const c: C = { who, checked: undefined as never, req, rid, q: new URLSearchParams(), bucket: name, key, payload: "UNSIGNED-PAYLOAD" }
+    const res = await objects.head(c, await bucketFor(who, name), method === "HEAD")
+    // Anyone can open these, so an uploaded page can't run scripts or be sniffed into one.
+    const h = new Headers(res.headers)
+    h.set("Content-Security-Policy", "sandbox")
+    h.set("X-Content-Type-Options", "nosniff")
+    return new Response(res.body, { status: res.status, headers: h })
+  }
+
   async function handle() {
     if (!endpoint()) throw new S3Error("ServiceUnavailable", "The S3 API isn't set up on this server.", 503)
+    if (method === "OPTIONS") return preflight()
+    if (rawPath.startsWith("/_public/")) return publicRead()
     const headers: Record<string, string> = {}
     req.headers.forEach((v, k) => (headers[k] = v))
     headers.host = req.headers.get("x-s3-host") ?? ""

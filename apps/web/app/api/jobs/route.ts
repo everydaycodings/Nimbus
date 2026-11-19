@@ -27,6 +27,7 @@ import { runRescan, runScan } from "@/lib/registry/scan"
 import { abortStale as abortStaleUploads } from "@/lib/registry/uploads"
 import { abortStale } from "@/lib/s3api/multipart"
 import { remindKeys } from "@/lib/s3api/reminders"
+import { runAllLifecycles } from "@/lib/s3api/lifecycle"
 import { flushUsage, rollupUsage } from "@/lib/s3api/usage"
 import { scanNode, scanUser } from "@/lib/secrets/leaks"
 import { sweep as secretsSweep } from "@/lib/secrets/notices"
@@ -79,6 +80,7 @@ const jobs: Record<string, (data: never) => Promise<unknown>> = {
   "s3-etags": computeEtags,
   "s3-multipart-stale": abortStale,
   "s3-key-reminders": remindKeys,
+  "s3-lifecycle": runAllLifecycles,
   "s3-usage-flush": flushUsage,
   "s3-usage-rollup": rollupUsage,
   "registry-uploads-stale": abortStaleUploads,

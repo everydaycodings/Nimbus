@@ -42,18 +42,19 @@ export function agentFamily(ua: string | null | undefined) {
 
 // "2026-11-19T14": the UTC hour a counter belongs to.
 export const hourOf = (d: Date) => d.toISOString().slice(0, 13)
-export const counterKey = (hour: string, bucketId: string, keyId: string) => `s3:u:${hour}:${bucketId}:${keyId}`
+// keyId null is a request through a bucket's public link.
+export const counterKey = (hour: string, bucketId: string, keyId: string | null) => `s3:u:${hour}:${bucketId}:${keyId ?? "public"}`
 export const parseCounterKey = (k: string) => {
   const [, , hour, bucketId, keyId] = k.split(":")
-  return { hour, bucketId, keyId }
+  return { hour, bucketId, keyId: keyId === "public" ? null : keyId }
 }
 
-export type ActivityEvent = { b: string; k: string; at: string; op: string; o: string | null; s: number; n: number; ip: string | null; ua: string }
+export type ActivityEvent = { b: string; k: string | null; at: string; op: string; o: string | null; s: number; n: number; ip: string | null; ua: string }
 
 // n: the object bytes that moved (sent for writes, returned otherwise); 0 where the body is
 // only an XML list (multipart complete, multi-delete).
 export function activityEvent(
-  s: { bucketId: string; keyId: string; objectKey: string | null; status: number; bytesIn: number; bytesOut: number; ip: string | null },
+  s: { bucketId: string; keyId: string | null; objectKey: string | null; status: number; bytesIn: number; bytesOut: number; ip: string | null },
   op: string,
   family: string,
   at: Date

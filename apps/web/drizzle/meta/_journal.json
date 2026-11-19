@@ -442,6 +442,13 @@
       "when": 1796900000000,
       "tag": "0062_s3_usage",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1797000000000,
+      "tag": "0063_s3_bucket_settings",
+      "breakpoints": true
     }
   ]
 }

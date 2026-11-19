@@ -34,6 +34,7 @@ import type {
   RunStatus,
   Trigger,
 } from "../backup-rules"
+import type { CorsRule, LifecycleRule, LifecycleRun } from "../s3api/bucket-config"
 import type { ActivityType } from "../activity-rules"
 import type { Outcome, Service } from "../health-rules"
 import type { PasswordPolicy } from "../password-policy"
@@ -816,6 +817,10 @@ export const settings = pgTable(
     s3Api: boolean("s3_api").notNull().default(true),
     // Requests per second each S3 access key may make; null means no limit.
     s3RpsLimit: integer("s3_rps_limit"),
+    // Members may turn on public read (/_public/<id>/) for a bucket.
+    s3PublicAllowed: boolean("s3_public_allowed").notNull().default(false),
+    // Size limit for buckets without their own; null means none.
+    s3DefaultQuota: bigint("s3_default_quota", { mode: "number" }),
     // The container registry (scripts/registry.ts, only when setup turned it on: REGISTRY_DOMAIN).
     registry: boolean("registry").notNull().default(true),
     // Repos owners may mark public (anonymous pull). Off hides that option server-wide.
@@ -2704,6 +2709,13 @@ export const s3Buckets = pgTable(
     name: text("name").notNull(),
     // Skips thumbnails, indexing, edit notifications and Recent for files that come in over S3.
     quiet: boolean("quiet").notNull().default(false),
+    // Largest size of the bucket's files; null falls back to settings.s3DefaultQuota.
+    quotaBytes: bigint("quota_bytes", { mode: "number" }),
+    // The random part of the /_public/<id>/ URL; null while public read is off.
+    publicId: text("public_id").unique(),
+    cors: jsonb("cors").$type<CorsRule[]>(),
+    lifecycle: jsonb("lifecycle").$type<LifecycleRule[]>(),
+    lifecycleLastRun: jsonb("lifecycle_last_run").$type<LifecycleRun>(),
     createdAt: createdAt(),
   },
   (t) => [

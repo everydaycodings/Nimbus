@@ -584,15 +584,17 @@ export async function rotateKey(
   return { accessKeyId: k.accessKeyId, secret }
 }
 
-export async function setKeyDisabled(userId: string, id: string, disabled: boolean): Promise<Result> {
+export async function setKeyDisabled(userId: string, id: string, disabled: boolean, byAdmin = false): Promise<Result> {
   const k = await mine(userId, id)
   if (!k) return GONE
   await db
     .update(s3Keys)
     .set({ disabledAt: disabled ? new Date() : null })
     .where(eq(s3Keys.id, k.id))
-  await audit(disabled ? "s3_key_disable" : "s3_key_enable", { detail: `${k.name} (${k.accessKeyId})` })
-  await notify(userId, "s3_key", { data: { what: disabled ? "disabled" : "enabled", name: k.name, ip: await here() } })
+  await audit(disabled ? "s3_key_disable" : "s3_key_enable", { targetId: byAdmin ? userId : undefined, detail: `${k.name} (${k.accessKeyId})` })
+  await notify(userId, "s3_key", {
+    data: { what: disabled ? "disabled" : "enabled", name: k.name, ...(byAdmin ? { by: "admin" } : { ip: await here() }) },
+  })
   return {}
 }
 

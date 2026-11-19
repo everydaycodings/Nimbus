@@ -52,15 +52,23 @@ function sentence(e: typeof auditEvents.$inferSelect, who: string) {
     case "s3_key_rotate":
       return `rotated the secret of the S3 access key ${d}`
     case "s3_key_disable":
-      return `disabled the S3 access key ${d}`
+      return e.targetName ? `disabled ${who}'s S3 access key ${d}` : `disabled the S3 access key ${d}`
     case "s3_key_enable":
-      return `enabled the S3 access key ${d}`
+      return e.targetName ? `enabled ${who}'s S3 access key ${d}` : `enabled the S3 access key ${d}`
     case "s3_key_revoke":
       return e.targetName ? `revoked ${who}'s S3 access key ${d}` : `revoked the S3 access key ${d}`
     case "s3_bucket_add":
       return `made the folder “${d}” an S3 bucket`
     case "s3_bucket_rename":
       return `renamed the S3 bucket ${d}`
+    case "s3_bucket_quota":
+      return `changed the size limit of the S3 bucket ${d}`
+    case "s3_bucket_cors":
+      return `changed the CORS rules of the S3 bucket ${d}`
+    case "s3_bucket_lifecycle":
+      return `changed the lifecycle rules of the S3 bucket ${d}`
+    case "s3_bucket_public":
+      return `changed public read of the S3 bucket ${d}`
     case "s3_bucket_remove":
       return `stopped using “${d}” as an S3 bucket`
     case "registry_name_claim":

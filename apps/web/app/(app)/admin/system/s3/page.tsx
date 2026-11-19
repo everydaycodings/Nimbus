@@ -10,11 +10,16 @@ import { ConfirmAction } from "@/components/admin/registry-actions"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { KeyBadges } from "@/components/buckets/key-badges"
+import { SELECT, sizeField } from "@/components/admin/setting"
+import { topBuckets, usageByMember } from "@/lib/s3api/bucket-config"
 import { listKeys } from "@/lib/s3api/manage"
 import { permsLabel } from "@/lib/s3api/perms"
 import { endpoint } from "@/lib/s3api/rules"
 import { getSettings } from "@/lib/signup"
 import { revokeS3Key, setS3 } from "../../actions"
+import { setS3Buckets } from "./actions"
+import { KeyToggle } from "./key-toggle"
+import { TopBuckets, UsageByMember } from "./usage-tables"
 
 export const metadata = { title: "S3 API · Admin · Nimbus" }
 
@@ -48,8 +53,9 @@ export default async function S3Page() {
       </AdminPage>
     )
 
-  const [s, keys] = await Promise.all([getSettings(), listKeys(null)])
+  const [s, keys, members, top] = await Promise.all([getSettings(), listKeys(null), usageByMember(), topBuckets()])
   const reset = resettable(s)
+  const quota = sizeField(s.s3DefaultQuota, "GB", "TB")
 
   return (
     <AdminPage
@@ -103,6 +109,48 @@ export default async function S3Page() {
           />
         </SettingRow>
       </SettingsForm>
+
+      <SettingsForm action={setS3Buckets} title="Buckets">
+        <SettingRow
+          id="s3-public"
+          label="Allow public buckets"
+          htmlFor="s3PublicAllowed"
+          hint="Members can then share a bucket's files with anyone who has the link. Listing stays off."
+          warning="Public files can be downloaded by anyone, and the downloads count toward your bandwidth."
+          tip={{
+            does: "Lets members turn on public read for their own buckets. Turning it off makes every public link stop working until it's back on.",
+            affects: "Every bucket that is already public, at once.",
+            default: "Off",
+          }}
+          reset={reset("s3PublicAllowed")}
+        >
+          <input type="checkbox" id="s3PublicAllowed" name="s3PublicAllowed" defaultChecked={s.s3PublicAllowed} className={CHECK} />
+        </SettingRow>
+        <SettingRow
+          id="s3-default-quota"
+          label="Default bucket quota"
+          htmlFor="s3DefaultQuota"
+          hint="For buckets without their own limit. Blank means no limit."
+          tip={{
+            does: "Uploads that would take a bucket past this size fail with QuotaExceeded.",
+            affects: "Buckets whose owner hasn't set a limit; their own limit wins.",
+            default: "No limit",
+            example: "50 GB",
+          }}
+          reset={reset("s3DefaultQuota")}
+        >
+          <div className="grid grid-cols-[1fr_6rem] gap-2">
+            <Input id="s3DefaultQuota" name="s3DefaultQuota" type="number" min={0.01} step="any" defaultValue={quota.value} placeholder="No limit" />
+            <select key={quota.unit} aria-label="Unit" name="unit" defaultValue={quota.unit === "TB" ? "TB" : "GB"} className={SELECT}>
+              <option value="GB">GB</option>
+              <option value="TB">TB</option>
+            </select>
+          </div>
+        </SettingRow>
+      </SettingsForm>
+
+      <UsageByMember rows={members} />
+      <TopBuckets rows={top} />
 
       <section id="s3-keys" className="flex scroll-mt-24 flex-col gap-3">
         <div className="grid gap-1">
@@ -158,6 +206,7 @@ export default async function S3Page() {
                         : "Never expires"}
                     </span>
                   </p>
+                  <KeyToggle id={k.id} name={k.name} disabled={k.disabled} />
                   <ConfirmAction
                     label="Revoke"
                     aria={`Revoke ${k.name}`}

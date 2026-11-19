@@ -116,7 +116,7 @@ export async function top(scope: Scope, dim: "key" | "bucket" | "ip" | "agent", 
   let rows: R[]
   if (dim === "key")
     rows = await db.execute<R>(sql`
-      select coalesce(k.name, 'Deleted key') label, u.key_id::text id, ${requests} requests, ${bytes} bytes
+      select case when u.key_id is null then 'Public link' else coalesce(k.name, 'Deleted key') end label, u.key_id::text id, ${requests} requests, ${bytes} bytes
       from s3_usage u left join s3_keys k on k.id = u.key_id where ${where}
       group by u.key_id, k.name order by 3 desc limit ${limit}`)
   else if (dim === "bucket")
@@ -166,7 +166,7 @@ export async function activity(
       bucket: r.bucket,
       bucketId: r.bucket_id,
       objectKey: r.object_key,
-      keyName: r.key_name,
+      keyName: r.key_id === null ? "Public link" : r.key_name,
       accessKeyId: r.access_key_id,
       keyId: r.key_id,
       status: r.status,

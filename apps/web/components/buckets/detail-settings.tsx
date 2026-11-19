@@ -11,10 +11,15 @@ import { useNotice } from "@/components/toaster"
 import { FormError } from "@/components/two-factor"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { SettingsCors } from "@/components/buckets/settings-cors"
+import { SettingsLifecycle } from "@/components/buckets/settings-lifecycle"
+import { SettingsPublic } from "@/components/buckets/settings-public"
+import { SettingsQuota } from "@/components/buckets/settings-quota"
+import type { BucketConfig } from "@/lib/s3api/bucket-config"
 import type { BucketRow } from "@/lib/s3api/manage"
 import { bucketNameError } from "@/lib/s3api/rules"
 
-export function DetailSettings({ b }: { b: BucketRow }) {
+export function DetailSettings({ b, c, admin }: { b: BucketRow; c: BucketConfig; admin: boolean }) {
   const router = useRouter()
   const setNotice = useNotice()
   const id = useId()
@@ -54,6 +59,11 @@ export function DetailSettings({ b }: { b: BucketRow }) {
           </Label>
         </div>
       </section>
+
+      <SettingsQuota key={`${c.quotaBytes}`} bucketId={b.id} c={c} />
+      <SettingsLifecycle bucketId={b.id} rules={c.lifecycle} run={c.lastRun} />
+      <SettingsCors bucketId={b.id} rules={c.cors} />
+      <SettingsPublic bucketId={b.id} c={c} admin={admin} />
 
       <section className={SECTION} aria-labelledby="rename-heading">
         <Heading
