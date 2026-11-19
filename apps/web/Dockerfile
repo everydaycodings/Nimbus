@@ -29,8 +29,8 @@ RUN NODE_ENV=production DATABASE_URL=postgres://build@localhost/build REDIS_URL=
 
 FROM node:24-slim
 # ffmpeg: data-saver video copies (the worker) and embedded subtitles (the app).
-# git, git-lfs: Git Backup mirrors repos and browses snapshots.
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg git git-lfs \
+# git, git-lfs: Git Backup mirrors repos and browses snapshots; ca-certificates so git can verify https.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg git git-lfs ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV NODE_ENV=production

@@ -12,3 +12,6 @@ graphify-out
 packages/cli/dist
 packages/cli/release
 packages/cli-go/dist
+# Android build output; the web image only needs apps/web/android (served APKs)
+apps/mobile/android
+apps/mobile/dist
