@@ -1,7 +1,7 @@
 "use client"
 
 import { WarningCircleIcon } from "@phosphor-icons/react"
-import { useState } from "react"
+import { useState, useSyncExternalStore } from "react"
 
 import { formatBytes } from "@/lib/file-types"
 import type { Counts, Range } from "@/lib/s3api/stats"
@@ -21,7 +21,12 @@ export type Series = { key: string; label: string; color: 1 | 2 | 3 | 4 | 5 }
 // Full class names, so Tailwind sees them.
 const BG = { 1: "bg-chart-1", 2: "bg-chart-2", 3: "bg-chart-3", 4: "bg-chart-4", 5: "bg-chart-5" }
 
-const HOUR = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: false, timeZone: "UTC" })
+const HOUR_UTC = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: false, timeZone: "UTC" })
+const HOUR_HERE = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: false })
+const noop = () => () => {}
+// False while rendering on the server and hydrating, so hours show in UTC there and in the
+// viewer's own time zone right after.
+const useInBrowser = () => useSyncExternalStore(noop, () => true, () => false)
 const DAY = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
 const num = (p: ChartPoint, key: string) => Number(p[key]) || 0
 
@@ -67,7 +72,8 @@ export function UsageChart({
 }) {
   const [at, setAt] = useState<number | null>(null)
   const hourly = range === "24h" || range === "7d"
-  const when = (p: ChartPoint) => (hourly ? `${HOUR.format(new Date(p.at))} UTC` : DAY.format(new Date(p.at.length === 10 ? `${p.at}T00:00:00Z` : p.at)))
+  const here = useInBrowser()
+  const when = (p: ChartPoint) => (hourly ? (here ? HOUR_HERE.format(new Date(p.at)) : `${HOUR_UTC.format(new Date(p.at))} UTC`) : DAY.format(new Date(p.at.length === 10 ? `${p.at}T00:00:00Z` : p.at)))
   const stack = (p: ChartPoint) => series.reduce((a, s) => a + num(p, s.key), 0)
   const max = Math.max(0, ...points.map(stack))
   if (!max)

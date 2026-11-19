@@ -78,7 +78,7 @@ export default async function BucketPage({
           usage={
             b.gone ? null : (
               <Suspense fallback={<UsageSkeleton cards />}>
-                <BucketUsage userId={me.id} bucketId={b.id} bytes={b.bytes} />
+                <BucketUsage userId={me.id} bucketId={b.id} name={b.name} bytes={b.bytes} />
               </Suspense>
             )
           }

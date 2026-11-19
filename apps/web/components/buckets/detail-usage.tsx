@@ -73,7 +73,7 @@ function sizeDays(trend: { day: string; bytes: number }[], now: number) {
   })
 }
 
-export async function BucketUsage({ userId, bucketId, bytes }: { userId: string; bucketId: string; bytes: number }) {
+export async function BucketUsage({ userId, bucketId, name, bytes }: { userId: string; bucketId: string; name: string; bytes: number }) {
   const scope = { userId, bucketId }
   let d
   try {
@@ -115,7 +115,7 @@ export async function BucketUsage({ userId, bucketId, bytes }: { userId: string;
       <section className={SECTION} aria-labelledby="recent-heading">
         <Heading id="recent-heading" title="Recent activity" hint="Writes and failed requests.">
           <Link
-            href="/buckets?tab=activity"
+            href={`/buckets?tab=activity&bucket=${encodeURIComponent(name)}`}
             className="flex items-center rounded-sm text-sm underline underline-offset-4 outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:min-h-11"
           >
             See all activity

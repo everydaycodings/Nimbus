@@ -189,11 +189,12 @@ export function BucketTable({
                       </Link>
                       {b.role === "viewer" && <Badge variant="outline">Read only</Badge>}
                       {b.gone && <Badge variant="secondary">Hidden</Badge>}
+                      {/* Most buckets are quiet (new ones start that way), so it's a small mark, not a badge. */}
                       {b.quiet && (
-                        <Badge variant="outline">
-                          <SpeakerSlashIcon aria-hidden />
-                          Quiet
-                        </Badge>
+                        <span className="text-muted-foreground" title="Quiet: no thumbnails, indexing or notifications for S3 uploads">
+                          <SpeakerSlashIcon aria-hidden className="size-3.5" />
+                          <span className="sr-only">Quiet</span>
+                        </span>
                       )}
                     </div>
                     <p className={`mt-0.5 text-xs text-pretty text-muted-foreground ${b.gone ? "" : "md:max-w-64 md:truncate"}`} title={b.gone ? undefined : b.path}>

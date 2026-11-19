@@ -189,13 +189,10 @@ export default async function S3Page() {
                       <code className="font-mono text-xs">{k.accessKeyId}</code>
                     </p>
                   </div>
-                  <p className="basis-64 text-sm text-muted-foreground">
-                    {k.allBuckets
-                      ? "All buckets"
-                      : k.buckets.length
-                        ? <BucketChips names={k.buckets} />
-                        : "No buckets left"}
-                    <br />
+                  <div className="grid basis-64 gap-1 text-sm text-muted-foreground">
+                    <div>
+                      {k.allBuckets ? "All buckets" : k.buckets.length ? <BucketChips names={k.buckets} /> : "No buckets left"}
+                    </div>
                     <span className="tabular-nums">
                       {k.lastUsedAt
                         ? `Used ${when.format(new Date(k.lastUsedAt))}${k.lastIp ? ` from ${k.lastIp}` : ""}`
@@ -205,7 +202,7 @@ export default async function S3Page() {
                         ? `${k.expired ? "Expired" : "Expires"} ${day.format(new Date(k.expiresAt))}`
                         : "Never expires"}
                     </span>
-                  </p>
+                  </div>
                   <KeyToggle id={k.id} name={k.name} disabled={k.disabled} />
                   <ConfirmAction
                     label="Revoke"

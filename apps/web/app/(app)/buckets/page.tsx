@@ -40,7 +40,7 @@ const COPY = (admin: boolean): Record<Exclude<S3State, "ready">, { title: string
   },
 })
 
-export default async function BucketsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+export default async function BucketsPage({ searchParams }: { searchParams: Promise<{ tab?: string; bucket?: string }> }) {
   const me = await requireMember()
   const state = await s3State(me.id)
   if (state !== "ready") {
@@ -56,19 +56,22 @@ export default async function BucketsPage({ searchParams }: { searchParams: Prom
       </div>
     )
   }
-  const { tab: asked } = await searchParams
+  const { tab: asked, bucket: only } = await searchParams
   const tab: Tab = TABS.some(([t]) => t === asked) ? (asked as Tab) : "overview"
   const [buckets, keys] = await Promise.all([listBuckets(me.id), listKeys(me.id)])
   // null when the stats can't be read: the tab shows an error instead of numbers.
+  // /buckets?tab=activity&bucket=<name>, from a bucket's "See all activity".
+  const since = { bucketId: buckets.find((b) => b.name === only)?.id }
   const [totalsNow, feed] = await Promise.all([
     tab === "overview" ? totals({ userId: me.id }, "30d").catch(() => null) : null,
-    tab === "activity" ? activity({ userId: me.id }, {}).catch(() => null) : null,
+    tab === "activity" ? activity({ userId: me.id }, since).catch(() => null) : null,
   ])
   return (
     <BucketsShell
       tab={tab}
       totals={totalsNow}
       feed={feed}
+      feedFilter={since}
       buckets={buckets}
       keys={keys}
       url={endpoint()!}

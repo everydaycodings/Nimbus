@@ -50,7 +50,13 @@ export function SettingsCors({ bucketId, rules }: { bucketId: string; rules: Cor
         title="CORS"
         hint="Lets web pages on these sites call this bucket from the browser. Without a rule, browsers block those calls."
       >
-        <div className="flex flex-wrap gap-2">
+        <Button type="button" variant="outline" size="sm" className={TOUCH} onClick={() => setEditing({ at: rules.length, rule: null })}>
+          Add rule
+        </Button>
+      </Heading>
+      {rules.length === 0 ? (
+        <div className="grid justify-items-center gap-3 rounded-xl border border-dashed px-4 py-8 text-center">
+          <p className="text-sm text-muted-foreground">No CORS rules. Browsers can’t call this bucket.</p>
           <Button
             type="button"
             variant="outline"
@@ -60,13 +66,7 @@ export function SettingsCors({ bucketId, rules }: { bucketId: string; rules: Cor
           >
             Allow browser uploads from one site
           </Button>
-          <Button type="button" variant="outline" size="sm" className={TOUCH} onClick={() => setEditing({ at: rules.length, rule: null })}>
-            Add rule
-          </Button>
         </div>
-      </Heading>
-      {rules.length === 0 ? (
-        <p className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">No CORS rules. Browsers can’t call this bucket.</p>
       ) : (
         <ul className="grid gap-2">
           {rules.map((r, i) => (

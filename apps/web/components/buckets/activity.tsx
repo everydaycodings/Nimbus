@@ -10,7 +10,7 @@ import { Empty, SELECT, TOUCH, WHEN } from "@/components/registry-ui"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { formatBytes } from "@/lib/file-types"
-import type { KeyRow } from "@/lib/s3api/manage"
+import type { BucketRow, KeyRow } from "@/lib/s3api/manage"
 import type { ActivityFilter, ActivityRow } from "@/lib/s3api/stats"
 import { cn } from "@/lib/utils"
 
@@ -93,9 +93,19 @@ export function ActivityTable({ rows, hideBucket }: { rows: ActivityRow[]; hideB
 }
 
 // The Activity tab: the first page comes from the server, filters and "Load more" go through an action.
-export function ActivityView({ initial, keys }: { initial: { rows: ActivityRow[]; next: string | null } | null; keys: KeyRow[] }) {
+export function ActivityView({
+  initial,
+  filter: initialFilter,
+  keys,
+  buckets,
+}: {
+  initial: { rows: ActivityRow[]; next: string | null } | null
+  filter: ActivityFilter
+  keys: KeyRow[]
+  buckets: BucketRow[]
+}) {
   const id = useId()
-  const [filter, setFilter] = useState<ActivityFilter>({})
+  const [filter, setFilter] = useState<ActivityFilter>(initialFilter)
   const [page, setPage] = useState(initial)
   const [failed, setFailed] = useState(initial === null)
   const [pending, start] = useTransition()
@@ -117,11 +127,20 @@ export function ActivityView({ initial, keys }: { initial: { rows: ActivityRow[]
     setFilter(f)
     load(f)
   }
-  const filtered = !!(filter.keyId || filter.op || filter.errorsOnly)
+  const filtered = !!(filter.keyId || filter.bucketId || filter.op || filter.errorsOnly)
 
   return (
     <div className="grid gap-3">
       <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
+        <div className="grid gap-1">
+          <label htmlFor={`${id}-bucket`} className="text-xs text-muted-foreground">Bucket</label>
+          <select id={`${id}-bucket`} className={cn(SELECT, FIELD)} value={filter.bucketId ?? ""} onChange={(e) => change({ bucketId: e.target.value || undefined })}>
+            <option value="">All buckets</option>
+            {buckets.map((b) => (
+              <option key={b.id} value={b.id}>{b.name}</option>
+            ))}
+          </select>
+        </div>
         <div className="grid gap-1">
           <label htmlFor={`${id}-key`} className="text-xs text-muted-foreground">Access key</label>
           <select id={`${id}-key`} className={cn(SELECT, FIELD)} value={filter.keyId ?? ""} onChange={(e) => change({ keyId: e.target.value || undefined })}>
@@ -153,7 +172,7 @@ export function ActivityView({ initial, keys }: { initial: { rows: ActivityRow[]
         ) : !page || page.rows.length === 0 ? (
           <Empty icon={ListChecksIcon} title={filtered ? "Nothing matches" : "No activity yet"}>
             {filtered
-              ? "Try another key or operation, or turn off the filters."
+              ? "Try another bucket, key or operation, or turn off the filters."
               : "We log writes, deletes and failed requests, and keep them for 30 days. Plain reads that work are only counted, not listed."}
           </Empty>
         ) : (

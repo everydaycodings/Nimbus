@@ -53,7 +53,7 @@ export function SettingsPublic({ bucketId, c, admin }: { bucketId: string; c: Bu
           <div className="flex items-center gap-3">
             <Switch
               id={`${id}-public`}
-              checked={on || asking}
+              checked={on}
               disabled={pending}
               onChange={(e) => (e.target.checked ? setAsking(true) : change(false, false, "Public access is off. The link stopped working."))}
             />

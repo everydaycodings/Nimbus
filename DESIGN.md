@@ -36,6 +36,11 @@ Critical `--destructive`, High `--warning`, Medium `--chart-3`, Low `--muted-for
 carry the meaning; the dot never stands alone. A policy that can't judge yet ("Not checked") is never teal or green:
 it is an outline badge, dashed and muted.
 
+S3 access keys that need action (Rotation due, Expiring soon) are a sanctioned meaning colour: an outline badge whose
+icon and word take `--warning`. Disabled and Expired stay neutral (`secondary`); failed requests in S3 activity show their
+status code in an outline badge tinted `--destructive`. Usage charts stack series in `--chart-1`…`--chart-5` with a legend
+that names every colour.
+
 Tags are user-chosen labels with their own `--tag-*` hues (red, orange, yellow, green, blue,
 purple, pink, teal, indigo, brown, gray; `TAG_DOT` in `lib/file-types.ts`), shown only as small dots: after an item's
 name, in menus and on the Tags filter.

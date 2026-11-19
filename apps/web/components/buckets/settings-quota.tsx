@@ -37,6 +37,8 @@ export function SettingsQuota({ bucketId, c }: { bucketId: string; c: BucketConf
   const n = Number(size)
   const bytes = on ? Math.round(n * UNIT_BYTES[unit]) : null
   const invalid = on && !(n > 0)
+  // Say so only once something was typed; an empty field just keeps Save off.
+  const shown = invalid && size.trim() !== ""
   const limit = c.quotaBytes ?? c.defaultQuotaBytes
   const share = limit ? Math.min(100, (c.bytes / limit) * 100) : 0
 
@@ -81,7 +83,7 @@ export function SettingsQuota({ bucketId, c }: { bucketId: string; c: BucketConf
                 inputMode="decimal"
                 value={size}
                 onChange={(e) => setSize(e.target.value)}
-                aria-invalid={invalid || undefined}
+                aria-invalid={shown || undefined}
                 aria-describedby={`${id}-hint`}
               />
               <select aria-label="Unit" value={unit} onChange={(e) => setUnit(e.target.value as Unit)} className={SELECT}>
@@ -91,7 +93,7 @@ export function SettingsQuota({ bucketId, c }: { bucketId: string; c: BucketConf
               </select>
             </div>
             <p id={`${id}-hint`} className="min-h-5 text-sm text-destructive">
-              {invalid && "Enter a size above zero."}
+              {shown && "Enter a size above zero."}
             </p>
           </div>
         )}

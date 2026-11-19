@@ -16,17 +16,17 @@ import { Empty, Heading, SECTION } from "@/components/registry-ui"
 import { useNotice } from "@/components/toaster"
 import { Button } from "@/components/ui/button"
 import type { BucketRow, KeyRow } from "@/lib/s3api/manage"
-import type { ActivityRow, Counts } from "@/lib/s3api/stats"
+import type { ActivityFilter, ActivityRow, Counts } from "@/lib/s3api/stats"
 
 // Same segmented look as the registry's repository tabs; the choice lives in ?tab= so a tab can be linked to.
 export function BucketTabs<T extends string>({ base, tab, tabs, label }: { base: string; tab: T; tabs: [T, string][]; label: string }) {
   const nav = useRef<HTMLElement>(null)
-  // On a narrow screen the row scrolls; a fade on the right edge says there is more.
-  const [more, setMore] = useState(false)
+  // On a narrow screen the row scrolls; a fade on either edge says there is more that way.
+  const [more, setMore] = useState({ left: false, right: false })
   useEffect(() => {
     const el = nav.current
     if (!el) return
-    const check = () => setMore(el.scrollWidth - el.scrollLeft - el.clientWidth > 4)
+    const check = () => setMore({ left: el.scrollLeft > 4, right: el.scrollWidth - el.scrollLeft - el.clientWidth > 4 })
     check()
     el.addEventListener("scroll", check, { passive: true })
     const ro = new ResizeObserver(check)
@@ -36,12 +36,24 @@ export function BucketTabs<T extends string>({ base, tab, tabs, label }: { base:
       ro.disconnect()
     }
   }, [])
+  // Keep the current tab in view when the row scrolls (on a phone, "Activity" starts off-screen).
+  useEffect(() => {
+    const el = nav.current
+    const on = el?.querySelector<HTMLElement>("[aria-current=page]")
+    if (!el || !on) return
+    if (on.offsetLeft + on.offsetWidth > el.scrollLeft + el.clientWidth || on.offsetLeft < el.scrollLeft)
+      el.scrollLeft = on.offsetLeft - (el.clientWidth - on.offsetWidth) / 2
+  }, [tab])
   return (
     <nav
       ref={nav}
       aria-label={label}
       className="flex w-fit max-w-full overflow-x-auto rounded-lg bg-muted p-[3px]"
-      style={more ? { maskImage: "linear-gradient(to right, black calc(100% - 2rem), transparent)" } : undefined}
+      style={
+        more.left || more.right
+          ? { maskImage: `linear-gradient(to right, ${more.left ? "transparent, black 2rem" : "black"}, ${more.right ? "black calc(100% - 2rem), transparent" : "black"})` }
+          : undefined
+      }
     >
       {tabs.map(([id, text], i) => (
         <Link
@@ -61,6 +73,7 @@ export function BucketsShell({
   tab,
   totals,
   feed,
+  feedFilter,
   buckets,
   keys,
   url,
@@ -70,6 +83,7 @@ export function BucketsShell({
   tab: Tab
   totals: (Counts & { requests: number }) | null
   feed: { rows: ActivityRow[]; next: string | null } | null
+  feedFilter: ActivityFilter
   buckets: BucketRow[]
   keys: KeyRow[]
   url: string
@@ -140,7 +154,7 @@ export function BucketsShell({
       {tab === "activity" && (
         <section className={SECTION} aria-labelledby="activity-heading">
           <Heading id="activity-heading" title="Activity" hint="What apps do with your buckets." />
-          <ActivityView initial={feed} keys={keys} />
+          <ActivityView initial={feed} filter={feedFilter} keys={keys} buckets={buckets} />
         </section>
       )}
 

@@ -44,7 +44,7 @@ export type ActivityRow = {
   agent: string | null
 }
 
-export type ActivityFilter = { op?: string; keyId?: string; errorsOnly?: boolean }
+export type ActivityFilter = { op?: string; keyId?: string; bucketId?: string; errorsOnly?: boolean }
 
 const HOUR = 3600_000
 const DAY = 24 * HOUR
@@ -152,6 +152,7 @@ export async function activity(
       ${scope.bucketId ? sql`and a.bucket_id = ${scope.bucketId}` : sql``}
       ${scope.keyId ? sql`and a.key_id = ${scope.keyId}` : sql``}
       ${filter.keyId ? sql`and a.key_id = ${filter.keyId}` : sql``}
+      ${filter.bucketId ? sql`and a.bucket_id = ${filter.bucketId}` : sql``}
       ${filter.op ? sql`and a.op = ${filter.op}` : sql``}
       ${filter.errorsOnly ? sql`and a.status >= 400` : sql``}
       ${cAt && cId ? sql`and (a.at, a.id) < (${cAt}::timestamptz, ${cId}::bigint)` : sql``}
