@@ -56,15 +56,18 @@ export async function runLifecycle(bucketId: string, now = new Date()): Promise<
         }
         for (const p of new Set(old.map((o) => o.parent_id))) await pruneEmpty(bucket, p)
       }
-      if (r.noncurrentDays) {
+      if (r.noncurrentDays || r.keepNewer) {
         if (!atLeast(a.role, "editor")) throw new Error("This member can only view the bucket's folder, so old versions can't be removed.")
         const old = await db.execute<{ id: string }>(sql`
           with recursive ${files(a.ownerId, b.nodeId, r.prefix)}
           select v.id from t join file_versions v on v.node_id = t.id
           where t.kind = 'file' and starts_with(t.path, ${r.prefix}::text) and v.id <> t.current_version_id and not v.keep
             -- Old since the next version replaced it, like S3's noncurrent days.
-            and (select n.created_at from file_versions n where n.node_id = v.node_id and n.number > v.number order by n.number limit 1)
-              < ${ago(r.noncurrentDays)}`)
+            ${r.noncurrentDays ? sql`and (select n.created_at from file_versions n where n.node_id = v.node_id and n.number > v.number order by n.number limit 1)
+              < ${ago(r.noncurrentDays)}` : sql``}
+            -- Past the newest N old versions of its file.
+            ${r.keepNewer ? sql`and (select count(*) from file_versions o where o.node_id = v.node_id and o.id <> t.current_version_id and o.number > v.number)
+              >= ${r.keepNewer}` : sql``}`)
         for (const ids of chunks(old.map((o) => o.id))) {
           // Re-checked in the delete: a version that became current meanwhile stays.
           const gone = await db.execute<{ s3_key: string }>(sql`

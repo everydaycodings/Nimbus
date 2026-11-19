@@ -8,6 +8,7 @@ export const MAX_LIFECYCLE_RULES = 20
 export const MIN_QUOTA = 1024 ** 2
 export const MAX_QUOTA = 1024 ** 5
 export const MAX_DAYS = 36_500
+export const MAX_KEEP_NEWER = 100
 const MAX_LIST = 50
 
 const ORIGIN = /^https?:\/\/[A-Za-z0-9.-]+(:\d{1,5})?$/
@@ -58,8 +59,11 @@ export function checkLifecycle(rules: LifecycleRule[]): { rules: LifecycleRule[]
     if (why) return { error: `${n}: ${why}` }
     const [expireDays, noncurrentDays, abortMultipartDays] = [r.expireDays ?? null, r.noncurrentDays ?? null, r.abortMultipartDays ?? null]
     if (![expireDays, noncurrentDays, abortMultipartDays].every(days)) return { error: `${n}: days must be whole numbers from 1 to ${MAX_DAYS}.` }
-    if (expireDays === null && noncurrentDays === null && abortMultipartDays === null) return { error: `${n} needs at least one action.` }
-    out.push({ id, prefix: prefix!, expireDays, noncurrentDays, abortMultipartDays })
+    const keepNewer = r.keepNewer ?? null
+    if (keepNewer !== null && !(Number.isInteger(keepNewer) && keepNewer >= 1 && keepNewer <= MAX_KEEP_NEWER))
+      return { error: `${n}: keep from 1 to ${MAX_KEEP_NEWER} old versions.` }
+    if (expireDays === null && noncurrentDays === null && keepNewer === null && abortMultipartDays === null) return { error: `${n} needs at least one action.` }
+    out.push({ id, prefix: prefix!, expireDays, noncurrentDays, keepNewer, abortMultipartDays })
   }
   return { rules: out }
 }

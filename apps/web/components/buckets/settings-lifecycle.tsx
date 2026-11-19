@@ -14,10 +14,19 @@ import { Label } from "@/components/ui/label"
 import type { LifecycleRule, LifecycleRun } from "@/lib/s3api/bucket-config"
 
 const MAX_DAYS = 36500
+const MAX_KEEP = 100
+// Field, label, hint, unit, largest value.
 const ACTIONS = [
-  ["expireDays", "Move objects to Trash after", "Objects go to your Nimbus Trash, not deleted for good."],
-  ["noncurrentDays", "Remove old versions after", "Only versions that were replaced or deleted."],
-  ["abortMultipartDays", "Cancel unfinished uploads after", "Large uploads that never finished."],
+  ["expireDays", "Move objects to Trash after", "Objects go to your Nimbus Trash, not deleted for good.", "days", MAX_DAYS],
+  ["noncurrentDays", "Remove old versions after", "Counted from when a newer version replaced it.", "days", MAX_DAYS],
+  [
+    "keepNewer",
+    "Keep only the newest",
+    "Older versions beyond this many are removed. With the option above, a version goes only once it's past both.",
+    "old versions",
+    MAX_KEEP,
+  ],
+  ["abortMultipartDays", "Cancel unfinished uploads after", "Large uploads that never finished.", "days", MAX_DAYS],
 ] as const
 type Field = (typeof ACTIONS)[number][0]
 
@@ -28,6 +37,7 @@ function summary(r: LifecycleRule) {
   const parts = [
     r.expireDays !== null && `Move to Trash after ${days(r.expireDays)}`,
     r.noncurrentDays !== null && `Remove old versions after ${days(r.noncurrentDays)}`,
+    r.keepNewer != null && `Keep the newest ${plural(r.keepNewer, "old version")}`,
     r.abortMultipartDays !== null && `Cancel unfinished uploads after ${days(r.abortMultipartDays)}`,
   ]
   return parts.filter(Boolean) as string[]
@@ -134,16 +144,19 @@ function LifecycleDialog({
   const [vals, setVals] = useState<Record<Field, string>>({
     expireDays: String(rule?.expireDays ?? ""),
     noncurrentDays: String(rule?.noncurrentDays ?? ""),
+    keepNewer: String(rule?.keepNewer ?? ""),
     abortMultipartDays: String(rule?.abortMultipartDays ?? ""),
   })
   const [on, setOn] = useState<Record<Field, boolean>>({
     expireDays: rule?.expireDays != null,
     noncurrentDays: rule?.noncurrentDays != null,
+    keepNewer: rule?.keepNewer != null,
     abortMultipartDays: rule?.abortMultipartDays != null,
   })
   const bad = (f: Field) => {
+    const [, , , unit, max] = ACTIONS.find((a) => a[0] === f)!
     const n = Number(vals[f])
-    return on[f] && !(Number.isInteger(n) && n >= 1 && n <= MAX_DAYS) ? `Enter a whole number of days from 1 to ${MAX_DAYS}.` : null
+    return on[f] && !(Number.isInteger(n) && n >= 1 && n <= max) ? `Enter a whole number from 1 to ${max} (${unit}).` : null
   }
   const none = !ACTIONS.some(([f]) => on[f])
   const prefixBad = prefix.startsWith("/") ? "Leave out the leading slash." : null
@@ -164,6 +177,7 @@ function LifecycleDialog({
           prefix: prefix.trim(),
           expireDays: num("expireDays"),
           noncurrentDays: num("noncurrentDays"),
+          keepNewer: num("keepNewer"),
           abortMultipartDays: num("abortMultipartDays"),
         })
       }
@@ -187,7 +201,7 @@ function LifecycleDialog({
       </div>
       <fieldset className="grid gap-3">
         <legend className="mb-1 text-sm font-medium">What to do</legend>
-        {ACTIONS.map(([f, label, hint]) => (
+        {ACTIONS.map(([f, label, hint, unit, max]) => (
           <div key={f} className="grid gap-1.5">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
               <label className="flex min-h-8 items-center gap-2 text-sm pointer-coarse:min-h-11">
@@ -203,16 +217,16 @@ function LifecycleDialog({
                 <Input
                   type="number"
                   min={1}
-                  max={MAX_DAYS}
+                  max={max}
                   step={1}
-                  aria-label={`${label}, days`}
+                  aria-label={`${label}, ${unit}`}
                   aria-invalid={bad(f) ? true : undefined}
                   disabled={!on[f]}
                   value={vals[f]}
                   onChange={(e) => setVals({ ...vals, [f]: e.target.value })}
                   className="w-24"
                 />
-                days
+                {unit}
               </span>
             </div>
             <p className={bad(f) ? "text-sm text-destructive" : "text-sm text-muted-foreground"}>{bad(f) ?? hint}</p>

@@ -46,6 +46,11 @@ test("checkLifecycle", () => {
   assert.ok("error" in checkLifecycle([{ ...ok, expireDays: 36_501 }]))
   assert.ok("error" in checkLifecycle([{ ...ok, expireDays: null }]))
   assert.ok("error" in checkLifecycle(Array.from({ length: 21 }, (_, i) => ({ ...ok, id: `r${i}` }))))
+  // Keep-newest alone is a whole action; rules saved before it existed have no keepNewer.
+  const keep = { ...ok, expireDays: null, keepNewer: 5 }
+  assert.deepEqual(checkLifecycle([keep]), { rules: [keep] })
+  assert.deepEqual(checkLifecycle([ok]), { rules: [{ ...ok, keepNewer: null }] })
+  for (const keepNewer of [0, 2.5, 101]) assert.ok("error" in checkLifecycle([{ ...keep, keepNewer }]))
 })
 
 test("quotaError", () => {

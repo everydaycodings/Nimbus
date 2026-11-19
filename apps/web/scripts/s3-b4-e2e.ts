@@ -137,16 +137,18 @@ try {
   await run(setPublic(USER, bucketId, false))
   assert.equal((await pub(`${id2}/a.bin`)).status, 404)
 
-  step("lifecycle: validation, then backdated rows expire, lose old versions and abort")
+  step("lifecycle: validation, then backdated rows expire, lose old versions, keep the newest N and abort")
   const rules = [
-    { id: "exp", prefix: "logs/", expireDays: 30, noncurrentDays: null, abortMultipartDays: null },
-    { id: "nc", prefix: "", expireDays: null, noncurrentDays: 10, abortMultipartDays: null },
-    { id: "mp", prefix: "", expireDays: null, noncurrentDays: null, abortMultipartDays: 3 },
+    { id: "exp", prefix: "logs/", expireDays: 30, noncurrentDays: null, keepNewer: null, abortMultipartDays: null },
+    { id: "nc", prefix: "", expireDays: null, noncurrentDays: 10, keepNewer: null, abortMultipartDays: null },
+    { id: "kn", prefix: "many", expireDays: null, noncurrentDays: null, keepNewer: 2, abortMultipartDays: null },
+    { id: "mp", prefix: "", expireDays: null, noncurrentDays: null, keepNewer: null, abortMultipartDays: 3 },
   ]
   assert.ok((await setLifecycle(USER, bucketId, [{ ...rules[0], expireDays: 0 }])).error)
   await run(setLifecycle(USER, bucketId, rules))
   assert.deepEqual((await getBucketConfig(USER, bucketId))!.lifecycle, rules)
-  for (const key of ["logs/old.txt", "logs/new.txt", "keep.txt", "keep.txt", "keep.txt"]) await put(key, `v ${Math.random()}`)
+  // many.txt: a current version and 4 fresh old ones, of which the "kn" rule keeps the newest 2.
+  for (const key of ["logs/old.txt", "logs/new.txt", "keep.txt", "keep.txt", "keep.txt", ...Array(5).fill("many.txt")]) await put(key, `v ${Math.random()}`)
   const ago = (key: string, days: number, which: "all" | "noncurrent") =>
     db.execute(sql`update file_versions v set created_at = now() - ${`${days} days`}::interval from nodes n
       where n.id = v.node_id and n.owner_id = ${USER} and n.name = ${key.split("/").at(-1)!}
@@ -166,13 +168,14 @@ try {
   assert.equal(before.Versions!.length, 3)
 
   const res = await runLifecycle(bucketId)
-  assert.deepEqual([res.trashed, res.versions, res.uploads, res.error], [1, 1, 1, null])
+  assert.deepEqual([res.trashed, res.versions, res.uploads, res.error], [1, 3, 1, null])
   const keys = ((await S.send(new ListObjectsV2Command({ Bucket: BUCKET }))).Contents ?? []).map((o) => o.Key).sort()
-  assert.deepEqual(keys, ["a.bin", "b.bin", "keep.txt", "logs/new.txt"])
+  assert.deepEqual(keys, ["a.bin", "b.bin", "keep.txt", "logs/new.txt", "many.txt"])
+  assert.equal((await S.send(new ListObjectVersionsCommand({ Bucket: BUCKET, Prefix: "many.txt" }))).Versions!.length, 3)
   assert.equal((await S.send(new ListObjectVersionsCommand({ Bucket: BUCKET, Prefix: "keep.txt" }))).Versions!.length, 2)
   assert.deepEqual(((await S.send(new ListMultipartUploadsCommand({ Bucket: BUCKET }))).Uploads ?? []).map((u) => u.Key), ["fresh-upload.bin"])
   const last = (await getBucketConfig(USER, bucketId))!.lastRun!
-  assert.deepEqual([last.trashed, last.versions, last.uploads, last.error], [1, 1, 1, null])
+  assert.deepEqual([last.trashed, last.versions, last.uploads, last.error], [1, 3, 1, null])
   const again = await runLifecycle(bucketId)
   assert.deepEqual([again.trashed, again.versions, again.uploads], [0, 0, 0])
   const [trashed] = await db.select({ t: nodes.trashedAt }).from(nodes).where(and(eq(nodes.ownerId, USER), eq(nodes.name, "old.txt")))

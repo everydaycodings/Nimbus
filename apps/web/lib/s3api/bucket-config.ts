@@ -41,6 +41,10 @@ export type LifecycleRule = {
   expireDays: number | null
   // Old (noncurrent) versions older than this many days are removed.
   noncurrentDays: number | null
+  // The newest this-many old versions of each object always stay (AWS's NewerNoncurrentVersions).
+  // Alone, it keeps only that many; with noncurrentDays, an old version goes once it's past both.
+  // Missing in rules saved before it existed.
+  keepNewer?: number | null
   // Unfinished multipart uploads older than this many days are aborted.
   abortMultipartDays: number | null
 }
