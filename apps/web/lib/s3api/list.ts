@@ -8,7 +8,7 @@ import { db } from "@/lib/db"
 
 import { enqueueBucketEtags, etagOf } from "./etags.ts"
 import { xml, type C } from "./http.ts"
-import { walk, type Bucket } from "./resolve.ts"
+import { listPrefix, walk, type Bucket } from "./resolve.ts"
 import { encodeKey, isoDate, S3Error, tag } from "./xml.ts"
 
 export type Entry = { nodeId: string; key: string; folder: boolean; size: number; etag: string | null; versionId: string | null; at: Date }
@@ -69,7 +69,9 @@ export async function entries(b: Bucket, prefix: string, after: string, limit: n
 // ListObjects (v1) and ListObjectsV2: the shared work.
 export async function list(c: C, b: Bucket, v2: boolean) {
   const q = c.q
-  const prefix = q.get("prefix") ?? ""
+  // A key limited to a prefix scans only that, but folders roll up at the level asked for.
+  const asked = q.get("prefix") ?? ""
+  const prefix = listPrefix(b, asked)
   const delimiter = q.get("delimiter") ?? ""
   const maxRaw = q.get("max-keys")
   const max = maxRaw === null ? 1000 : Number(maxRaw)
@@ -88,7 +90,7 @@ export async function list(c: C, b: Bucket, v2: boolean) {
   let truncated = false
   if (limit === 0) {
     // nothing to list
-  } else if (delimiter === "/" || !delimiter) {
+  } else if ((delimiter === "/" && prefix === asked) || !delimiter) {
     const got = await entries(b, prefix, after, limit + 1, !delimiter)
     for (const x of got) out.push({ key: x.key, prefix: delimiter === "/" && x.folder, e: x })
     if (out.length > limit) {
@@ -96,14 +98,14 @@ export async function list(c: C, b: Bucket, v2: boolean) {
       out.length = limit
     }
   } else {
-    // ponytail: a delimiter other than "/" scans every key under the prefix; only "/" is cheap.
+    // ponytail: a delimiter other than "/" (or a prefix key listing above its prefix) scans every key under the prefix; only "/" is cheap.
     let cursor = after
     let last = ""
     scan: for (;;) {
       const got = await entries(b, prefix, cursor, 1000, true)
       for (const x of got) {
         cursor = x.key
-        const i = x.key.indexOf(delimiter, prefix.length)
+        const i = x.key.indexOf(delimiter, asked.length)
         const key = i < 0 ? x.key : x.key.slice(0, i + delimiter.length)
         if (i >= 0 && key === last) continue
         if (out.length === limit) {
@@ -134,7 +136,7 @@ export async function list(c: C, b: Bucket, v2: boolean) {
     .join("")
   const lastKey = out.at(-1)?.key
   const common = `${tag("MaxKeys", max)}${delimiter ? tag("Delimiter", e(delimiter)) : ""}${url ? tag("EncodingType", "url") : ""}${tag("IsTruncated", truncated)}${contents}${prefixes}`
-  const head = `${tag("Name", b.name)}${tag("Prefix", e(prefix))}`
+  const head = `${tag("Name", b.name)}${tag("Prefix", e(asked))}`
   if (v2) {
     const start = q.get("start-after")
     return xml(

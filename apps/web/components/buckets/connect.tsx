@@ -8,10 +8,9 @@ import { Heading, SECTION } from "@/components/registry-ui"
 
 const CODE = "block overflow-x-auto rounded-lg bg-input/20 p-3 pt-12 font-mono sm:pt-3 sm:pr-20 text-xs leading-relaxed whitespace-pre"
 
-function snippets(url: string, region: string, bucket: string) {
+// Ready configs for each client. With a real `ID` and `SECRET` (a new key's reveal) they paste straight in.
+export function snippets(url: string, region: string, bucket: string, ID = "YOUR_ACCESS_KEY_ID", SECRET = "YOUR_SECRET_ACCESS_KEY") {
   const host = url.replace(/^https?:\/\//, "")
-  const ID = "YOUR_ACCESS_KEY_ID"
-  const SECRET = "YOUR_SECRET_ACCESS_KEY"
   return [
     {
       id: "aws",
@@ -47,6 +46,14 @@ force_path_style = true
 
 rclone lsd nimbus:
 rclone sync ./photos nimbus:${bucket}/photos`,
+    },
+    {
+      id: "mc",
+      label: "MinIO Client (mc)",
+      code: `mc alias set nimbus ${url} ${ID} ${SECRET} --api S3v4 --path on
+
+mc ls nimbus
+mc cp ./notes.txt nimbus/${bucket}/`,
     },
     {
       id: "restic",

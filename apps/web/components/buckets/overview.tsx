@@ -11,12 +11,17 @@ import { cn } from "@/lib/utils"
 
 const NUM = new Intl.NumberFormat("en")
 
-function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function Stat({ label, value, sub, href }: { label: string; value: string; sub?: string; href?: string }) {
   return (
-    <div className="grid content-start gap-1 rounded-xl border bg-card p-4">
+    <div className="relative grid content-start gap-1 rounded-xl border bg-card p-4">
       <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className="text-2xl font-semibold tracking-tight tabular-nums">{value}</dd>
       {sub && <dd className="text-xs text-muted-foreground">{sub}</dd>}
+      {href && (
+        <Link href={href} className="absolute inset-0 rounded-xl outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
+          <span className="sr-only">Review access keys</span>
+        </Link>
+      )}
     </div>
   )
 }
@@ -35,6 +40,8 @@ export function Overview({
   const live = buckets.filter((b) => !b.gone)
   const active = keys.filter((k) => !k.expired).length
   const expired = keys.length - active
+  const due = keys.filter((k) => k.rotationDue).length
+  const soon = keys.filter((k) => k.expiringSoon).length
   const steps = [
     {
       done: buckets.length > 0,
@@ -80,6 +87,14 @@ export function Overview({
             value={NUM.format(active)}
             sub={expired ? `${NUM.format(expired)} expired` : "Active"}
           />
+          {(due > 0 || soon > 0) && (
+            <Stat
+              label="Needs attention"
+              value={NUM.format(due + soon)}
+              sub={[due && `${due} to rotate`, soon && `${soon} expiring soon`].filter(Boolean).join(" · ")}
+              href="/buckets?tab=keys"
+            />
+          )}
         </dl>
       </section>
 

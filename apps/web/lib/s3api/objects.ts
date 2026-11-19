@@ -14,7 +14,7 @@ import { mkdirp } from "@/lib/uploads"
 
 import { etagOf, enqueueVersionEtag } from "./etags.ts"
 import { bodyOf, conditions, header, objectMeta, respond, xml, unwrap, type C } from "./http.ts"
-import { bucketFor, childOf, findObject, mustWrite, pruneEmpty, splitKey, versionOf, walk, type Bucket } from "./resolve.ts"
+import { allow, bucketFor, childOf, findObject, pruneEmpty, splitKey, versionOf, walk, type Bucket } from "./resolve.ts"
 import { latestMarker, lookupVersion, markerId, removeVersion } from "./versions.ts"
 import { inner, isoDate, tag, text, S3Error } from "./xml.ts"
 
@@ -70,6 +70,7 @@ const marked = (id: string) => ({ "x-amz-delete-marker": "true", "x-amz-version-
 // GET and HEAD: the live file's current version, or with ?versionId= any
 // version of the key, including files in the trash.
 export async function head(c: C, b: Bucket, isHead: boolean) {
+  allow(b, "read", c.key!)
   const vid = c.q.get("versionId")
   let node, v
   if (vid) {
@@ -156,7 +157,7 @@ export function whenOf(c: C, prefix: string): When | undefined {
 }
 
 export async function put(c: C, b: Bucket) {
-  mustWrite(b)
+  allow(b, "write", c.key!)
   const key = c.key!
   const { dir, parts } = splitKey(key)
   if (dir) {
@@ -206,6 +207,7 @@ type Removed = { versionId?: string; marker?: boolean }
 // paths made that are now empty. With a versionId, removes that version for good,
 // or brings the file back when the id is its delete marker.
 async function removeOne(c: C, b: Bucket, key: string, versionId?: string): Promise<Removed> {
+  allow(b, "delete", key)
   if (versionId) return removeVersion(c, b, key, versionId)
   const { dir, parts } = splitKey(key)
   const found = await findObject(b, key)
@@ -225,7 +227,6 @@ async function removeOne(c: C, b: Bucket, key: string, versionId?: string): Prom
 }
 
 export async function remove(c: C, b: Bucket) {
-  mustWrite(b)
   const r = await removeOne(c, b, c.key!, c.q.get("versionId") ?? undefined)
   return respond(c, 204, null, {
     ...(r.marker && { "x-amz-delete-marker": "true" }),
@@ -234,7 +235,7 @@ export async function remove(c: C, b: Bucket) {
 }
 
 export async function removeMany(c: C, b: Bucket, body: string) {
-  mustWrite(b)
+  allow(b, "delete")
   const quiet = text(body, "Quiet") === "true"
   const objs = inner(body, "Object").flatMap((o) => {
     const key = text(o, "Key")
@@ -276,6 +277,7 @@ function copySource(raw: string) {
 export async function copyFrom(c: C, raw: string) {
   const src = copySource(raw)
   const sb = await bucketFor(c.who, src.bucket)
+  allow(sb, "read", src.key)
   const { node } = await findObject(sb, src.key)
   if (!node || node.kind !== "file") throw new S3Error("NoSuchKey", "The specified key does not exist.", 404)
   const v = await versionOf(node.currentVersionId)
@@ -287,7 +289,7 @@ export async function copyFrom(c: C, raw: string) {
 }
 
 export async function copy(c: C, b: Bucket) {
-  mustWrite(b)
+  allow(b, "write", c.key!)
   const { node: sn, v, bucket: sb } = await copyFrom(c, header(c, "x-amz-copy-source")!)
   const replace = header(c, "x-amz-metadata-directive")?.toUpperCase() === "REPLACE"
   const { parentId, name, existing } = await place(c, b, c.key!)

@@ -6,7 +6,7 @@ import { FormError } from "@/components/two-factor"
 import { Button } from "@/components/ui/button"
 import { revokeMemberS3Key, setMemberS3 } from "./actions"
 
-type Key = { id: string; name: string; access: "rw" | "ro"; used: string }
+type Key = { id: string; name: string; access: string; used: string }
 
 // Member page: their S3 switch and access keys, for a lost laptop or a leaked key.
 export function MemberS3({
@@ -44,7 +44,7 @@ export function MemberS3({
                   {k.name}
                   <span className="text-muted-foreground">
                     {" "}
-                    · {k.access === "ro" ? "Read only" : "Read & write"}
+                    · {k.access}
                   </span>
                 </span>
                 <span className="text-xs text-muted-foreground tabular-nums">{k.used}</span>

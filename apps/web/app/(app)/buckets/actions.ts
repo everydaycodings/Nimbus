@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 
+import { saveTokenToSecret } from "@/lib/registry/secrets-pull"
 import { requireMember } from "@/lib/session"
 import * as svc from "@/lib/s3api/manage"
 
@@ -20,6 +21,27 @@ const done = <T extends { error?: string }>(r: T) => {
 export async function createKey(o: svc.NewKey): ReturnType<typeof svc.createKey> {
   const me = await member()
   return me ? done(await svc.createKey(me.id, o)) : NOT_ON
+}
+
+export async function updateKey(id: string, o: svc.NewKey) {
+  const me = await member()
+  return me ? done(await svc.updateKey(me.id, id, o)) : NOT_ON
+}
+
+export async function rotateKey(id: string, graceSeconds: number): ReturnType<typeof svc.rotateKey> {
+  const me = await member()
+  return me ? done(await svc.rotateKey(me.id, id, graceSeconds)) : NOT_ON
+}
+
+export async function setKeyDisabled(id: string, disabled: boolean) {
+  const me = await requireMember()
+  return done(await svc.setKeyDisabled(me.id, id, disabled))
+}
+
+// "Save to Secrets" on the key reveal: the secret and the key ID as secrets.
+export async function saveS3KeyToSecret(o: Parameters<typeof saveTokenToSecret>[1]) {
+  const me = await member()
+  return me ? saveTokenToSecret(me.id, o) : { ...NOT_ON, locked: false, requested: false }
 }
 
 export async function revokeKey(id: string) {

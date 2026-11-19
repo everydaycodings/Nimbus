@@ -9,6 +9,8 @@ import { db } from "@/lib/db"
 import { s3KeyBuckets, s3Keys, settings, user } from "@/lib/db/schema"
 import { redis } from "@/lib/redis"
 
+import { ipAllowed } from "./cidr.ts"
+import { PERMS, type Perm } from "./perms.ts"
 import { S3Error } from "./xml.ts"
 import { parseAuthorization, parsePresigned, verifyHeaderAuth, verifyPresigned, type Checked, type Parsed, type Signed } from "./sigv4.ts"
 
@@ -18,7 +20,9 @@ const WINDOW = 15 * 60
 export type Who = {
   keyId: string
   userId: string
-  write: boolean
+  perms: Set<Perm>
+  // Object keys must start with this; null for no limit.
+  prefix: string | null
   all: boolean
   bucketIds: Set<string>
   rps: number | null
@@ -62,7 +66,12 @@ export async function s3SignIn(
       id: s3Keys.id,
       userId: s3Keys.userId,
       secret: s3Keys.secretEnc,
-      access: s3Keys.access,
+      prev: s3Keys.secretPrevEnc,
+      prevUntil: s3Keys.secretPrevUntil,
+      perms: s3Keys.perms,
+      prefix: s3Keys.prefix,
+      ips: s3Keys.allowedIps,
+      keyOff: s3Keys.disabledAt,
       all: s3Keys.allBuckets,
       expiresAt: s3Keys.expiresAt,
       lastUsedAt: s3Keys.lastUsedAt,
@@ -81,13 +90,23 @@ export async function s3SignIn(
     await fail(ip)
     throw new S3Error("InvalidAccessKeyId", "The access key ID you provided does not exist in our records.")
   }
+  // After a rotation the old secret works until its grace period ends.
+  const old = row.prev && row.prevUntil && row.prevUntil.getTime() > Date.now() ? decrypt(row.prev) : null
+  const check = (s: string) => (pre ? verifyPresigned(req, pre, s) : verifyHeaderAuth(req, authorization!, s))
   let checked: Checked
   try {
-    checked = pre ? verifyPresigned(req, pre, secret) : verifyHeaderAuth(req, authorization!, secret)
+    try {
+      checked = check(secret)
+    } catch (e) {
+      if (!old) throw e
+      checked = check(old)
+    }
   } catch (e) {
     await fail(ip)
     throw e
   }
+  if (row.keyOff) throw new S3Error("AccessDenied", "This access key is disabled.")
+  if (!ipAllowed(ip, row.ips)) throw new S3Error("AccessDenied", "This access key can't be used from this address.")
   if (row.expiresAt && row.expiresAt.getTime() < Date.now())
     throw new S3Error("ExpiredToken", "This access key has expired.")
   if (!row.on) throw new S3Error("ServiceUnavailable", "The S3 API is turned off.", 503)
@@ -104,7 +123,8 @@ export async function s3SignIn(
     who: {
       keyId: row.id,
       userId: row.userId,
-      write: row.access === "rw",
+      perms: new Set(PERMS.filter((p) => row.perms.includes(p))),
+      prefix: row.prefix || null,
       all: row.all,
       bucketIds: new Set(bucketIds),
       rps: row.rps,

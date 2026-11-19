@@ -85,22 +85,25 @@ export const revokePullToken = (leaseId: string) => db.delete(registryTokens).wh
 // when it isn't, `locked` is true and the page should send the member there. A key that exists is an error, never overwritten.
 export async function saveTokenToSecret(
   userId: string,
-  o: { token: string; name: string; projectId: string; envId: string; folder?: string }
+  // `also`: more values saved with it (an S3 key's ID); `what` words the secret's comment and audit line.
+  o: { token: string; name: string; projectId: string; envId: string; folder?: string; also?: { name: string; value: string }[]; what?: string }
 ): Promise<{ error?: string; locked?: boolean; requested?: boolean }> {
   try {
     if (!(await policy()).enabled) return { error: "An admin turned Secrets off on this server." }
     if (!kmsConfigured()) return { error: "Secrets isn't set up on this server." }
     if (!(await unlockState())?.unlocked) return { error: "Unlock Secrets first.", locked: true }
     const key = o.name.trim()
-    if (!KEY_RE.test(key)) return { error: "Name the secret with letters, numbers and _ (like REGISTRY_TOKEN)." }
+    const what = o.what ?? "Registry token"
+    const all = [{ name: key, value: o.token }, ...(o.also ?? []).map((a) => ({ name: a.name.trim(), value: a.value }))]
+    if (!all.every((a) => KEY_RE.test(a.name))) return { error: "Name the secret with letters, numbers and _ (like REGISTRY_TOKEN)." }
     const c = await projectCtx(userId, o.projectId)
     if (!c) return { error: "That project isn't here, or you can't open it." }
     const [env] = await db.select({ slug: secretEnvs.slug }).from(secretEnvs).where(and(eq(secretEnvs.id, o.envId), eq(secretEnvs.projectId, o.projectId)))
     if (!env) return { error: "That environment isn't here." }
     const at = await envSlugAndFolder(c, env.slug, o.folder?.trim().replace(/^\/+|\/+$/g, "") ?? "")
     const r = await auditScope.run({ projectId: c.projectId }, async () => {
-      const r = await applyOps(c, at.envId, at.folderId, [{ key, value: o.token, comment: "Registry token" }], [], "strict", { via: "registry" })
-      if (r.created.length) await audit("secrets_write", { detail: `${r.env}: added ${names(r.created)} (registry token)`, env: r.env })
+      const r = await applyOps(c, at.envId, at.folderId, all.map((a) => ({ key: a.name, value: a.value, comment: what })), [], "strict", { via: "registry" })
+      if (r.created.length) await audit("secrets_write", { detail: `${r.env}: added ${names(r.created)} (${what.toLowerCase()})`, env: r.env })
       return r
     })
     return "request" in r && r.request ? { requested: true } : {}

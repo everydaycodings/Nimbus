@@ -9,7 +9,9 @@ import {
 import { ConfirmAction } from "@/components/admin/registry-actions"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import { KeyBadges } from "@/components/buckets/key-badges"
 import { listKeys } from "@/lib/s3api/manage"
+import { permsLabel } from "@/lib/s3api/perms"
 import { endpoint } from "@/lib/s3api/rules"
 import { getSettings } from "@/lib/signup"
 import { revokeS3Key, setS3 } from "../../actions"
@@ -17,7 +19,6 @@ import { revokeS3Key, setS3 } from "../../actions"
 export const metadata = { title: "S3 API · Admin · Nimbus" }
 
 const CHECK = "size-4 shrink-0 accent-primary self-start sm:self-end"
-const ACCESS = { rw: "Read & write", ro: "Read only" }
 const when = new Intl.DateTimeFormat("en", {
   dateStyle: "medium",
   timeStyle: "short",
@@ -132,8 +133,8 @@ export default async function S3Page() {
                   <div className="min-w-0 flex-1 basis-56">
                     <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium">
                       <span className="truncate">{k.name}</span>
-                      <Badge variant="outline">{ACCESS[k.access]}</Badge>
-                      {k.expired && <Badge variant="secondary">Expired</Badge>}
+                      <Badge variant="outline">{permsLabel(k.perms)}</Badge>
+                      <KeyBadges k={k} />
                     </p>
                     <p className="truncate text-sm text-muted-foreground">
                       {k.member} ·{" "}

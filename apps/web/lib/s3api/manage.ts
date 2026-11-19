@@ -24,7 +24,9 @@ import { getSettings } from "@/lib/signup"
 import { createFolderAs } from "@/lib/tree-ops"
 import { isClash } from "@/lib/uploads"
 import type { Who } from "./auth"
+import { cidrError } from "./cidr"
 import { enqueueBucketEtags, etagOf } from "./etags"
+import { EXPIRING_SOON_DAYS, GRACES, MAX_IPS, MAX_ROTATE_DAYS, PERMS, legacyAccess, prefixError } from "./perms"
 import { entries } from "./list"
 import { bucketFor } from "./resolve"
 import { S3Error } from "./xml"
@@ -170,7 +172,7 @@ export async function listObjects(
     .where(and(eq(s3Buckets.id, bucketId), eq(s3Buckets.userId, userId)))
   if (!row) return null
   // The member browsing their own bucket: the same walk a key with full access gets.
-  const who: Who = { keyId: "", userId, write: false, all: true, bucketIds: new Set(), rps: null }
+  const who: Who = { keyId: "", userId, perms: new Set(["list", "read"]), prefix: null, all: true, bucketIds: new Set(), rps: null }
   let got
   try {
     got = await entries(await bucketFor(who, row.name), prefix, cursor, PAGE + 1, false)
@@ -225,6 +227,11 @@ export async function presign(
       and(
         eq(s3Keys.userId, userId),
         sql`(${s3Keys.expiresAt} is null or ${s3Keys.expiresAt} > now())`,
+        // A link is opened by anyone, so the key behind it can't be limited by place or prefix.
+        isNull(s3Keys.disabledAt),
+        isNull(s3Keys.prefix),
+        sql`coalesce(cardinality(${s3Keys.allowedIps}), 0) = 0`,
+        sql`'read' = any(${s3Keys.perms})`,
         sql`(${s3Keys.allBuckets} or exists (select 1 from s3_key_buckets kb where kb.key_id = ${s3Keys.id} and kb.bucket_id = ${bucketId}))`
       )
     )
@@ -368,12 +375,22 @@ export type KeyRow = {
   id: string
   name: string
   accessKeyId: string
-  access: "rw" | "ro"
+  perms: string[]
+  prefix: string | null
+  allowedIps: string[]
   allBuckets: boolean
   buckets: string[]
+  bucketIds: string[]
   expiresAt: string | null
   expired: boolean
+  expiringSoon: boolean
   createdAt: string
+  rotatedAt: string | null
+  rotateEveryDays: number | null
+  rotationDue: boolean
+  // The old secret still signs until then, after a rotation with a grace period.
+  oldSecretUntil: string | null
+  disabled: boolean
   lastUsedAt: string | null
   lastIp: string | null
   // Admin lists only.
@@ -396,37 +413,57 @@ export async function listKeys(userId: string | null): Promise<KeyRow[]> {
   const scoped = rows.filter((r) => !r.k.allBuckets).map((r) => r.k.id)
   const picked = scoped.length
     ? await db
-        .select({ keyId: s3KeyBuckets.keyId, name: s3Buckets.name })
+        .select({ keyId: s3KeyBuckets.keyId, id: s3Buckets.id, name: s3Buckets.name })
         .from(s3KeyBuckets)
         .innerJoin(s3Buckets, eq(s3Buckets.id, s3KeyBuckets.bucketId))
         .where(inArray(s3KeyBuckets.keyId, scoped))
         .orderBy(asc(s3Buckets.name))
     : []
   const now = Date.now()
-  return rows.map(({ k, member, email }) => ({
-    id: k.id,
-    name: k.name,
-    accessKeyId: k.accessKeyId,
-    access: k.access,
-    allBuckets: k.allBuckets,
-    buckets: picked.filter((p) => p.keyId === k.id).map((p) => p.name),
-    expiresAt: k.expiresAt?.toISOString() ?? null,
-    expired: Boolean(k.expiresAt && k.expiresAt.getTime() <= now),
-    createdAt: k.createdAt.toISOString(),
-    lastUsedAt: k.lastUsedAt?.toISOString() ?? null,
-    lastIp: k.lastIp,
-    member: member || email,
-    memberId: k.userId,
-  }))
+  return rows.map(({ k, member, email }) => {
+    const exp = k.expiresAt?.getTime()
+    const mine = picked.filter((p) => p.keyId === k.id)
+    return {
+      id: k.id,
+      name: k.name,
+      accessKeyId: k.accessKeyId,
+      perms: PERMS.filter((p) => k.perms.includes(p)),
+      prefix: k.prefix,
+      allowedIps: k.allowedIps ?? [],
+      allBuckets: k.allBuckets,
+      buckets: mine.map((p) => p.name),
+      bucketIds: mine.map((p) => p.id),
+      expiresAt: k.expiresAt?.toISOString() ?? null,
+      expired: exp !== undefined && exp <= now,
+      expiringSoon: exp !== undefined && exp > now && exp - now <= EXPIRING_SOON_DAYS * 86_400_000,
+      createdAt: k.createdAt.toISOString(),
+      rotatedAt: k.rotatedAt?.toISOString() ?? null,
+      rotateEveryDays: k.rotateEveryDays,
+      rotationDue: dueAt(k) !== null && dueAt(k)! <= now,
+      oldSecretUntil: k.secretPrevUntil && k.secretPrevEnc && k.secretPrevUntil.getTime() > now ? k.secretPrevUntil.toISOString() : null,
+      disabled: k.disabledAt !== null,
+      lastUsedAt: k.lastUsedAt?.toISOString() ?? null,
+      lastIp: k.lastIp,
+      member: member || email,
+      memberId: k.userId,
+    }
+  })
 }
+
+// When a key's "remind me to rotate" falls due, or null when it has none.
+export const dueAt = (k: { rotateEveryDays: number | null; rotatedAt: Date | null; createdAt: Date }) =>
+  k.rotateEveryDays ? (k.rotatedAt ?? k.createdAt).getTime() + k.rotateEveryDays * 86_400_000 : null
 
 export type NewKey = {
   name: string
-  access: string
+  perms: string[]
   allBuckets: boolean
   bucketIds: string[]
-  // "never", 30, 90 or 365 days, or a date as YYYY-MM-DD.
+  // "never", 30, 90 or 365 days, or a date as YYYY-MM-DD. Editing also takes "keep".
   expiry: string
+  prefix: string
+  allowedIps: string[]
+  rotateEveryDays: number | null
 }
 
 function expiryDate(raw: string): Date | null | undefined {
@@ -439,15 +476,25 @@ function expiryDate(raw: string): Date | null | undefined {
   return Number.isNaN(d.getTime()) || d.getTime() <= Date.now() ? undefined : d
 }
 
-export async function createKey(
-  userId: string,
-  o: NewKey
-): Promise<Result & { accessKeyId?: string; secret?: string }> {
+// The checked values for a key row and its bucket list, or the message to show.
+async function checkKey(userId: string, o: NewKey, editing: boolean) {
   const name = String(o.name ?? "").trim().slice(0, 60)
   if (!name) return { error: "Name the key, like “Backups” or “Laptop – rclone”." }
-  if (o.access !== "rw" && o.access !== "ro") return { error: "Pick an access level." }
-  const expiresAt = expiryDate(String(o.expiry))
-  if (expiresAt === undefined) return { error: "Pick a date in the future, or choose Never." }
+  const perms = PERMS.filter((p) => (o.perms ?? []).includes(p))
+  if (!perms.length) return { error: "Pick at least one permission." }
+  const keep = editing && o.expiry === "keep"
+  const expiresAt = keep ? undefined : expiryDate(String(o.expiry))
+  if (!keep && expiresAt === undefined) return { error: "Pick a date in the future, or choose Never." }
+  const prefix = String(o.prefix ?? "").trim()
+  const badPrefix = prefixError(prefix)
+  if (badPrefix) return { error: badPrefix }
+  const ips = [...new Set((o.allowedIps ?? []).map((x) => String(x).trim()).filter(Boolean))]
+  if (ips.length > MAX_IPS) return { error: `Up to ${MAX_IPS} addresses or ranges.` }
+  const badIp = ips.map(cidrError).find(Boolean)
+  if (badIp) return { error: badIp }
+  const every = o.rotateEveryDays
+  if (every !== null && (!Number.isInteger(every) || every < 1 || every > MAX_ROTATE_DAYS))
+    return { error: `Remind every 1 to ${MAX_ROTATE_DAYS} days, or leave it off.` }
   const ids = [...new Set(o.bucketIds ?? [])].filter((i) => UUID.test(i))
   if (!o.allBuckets) {
     if (!ids.length) return { error: "Pick at least one bucket, or choose all buckets." }
@@ -457,6 +504,29 @@ export async function createKey(
       .where(and(eq(s3Buckets.userId, userId), inArray(s3Buckets.id, ids)))
     if (mine.length !== ids.length) return { error: "One of those buckets is gone. Refresh and try again." }
   }
+  return {
+    ids,
+    row: {
+      name,
+      perms,
+      access: legacyAccess(perms) as "rw" | "ro",
+      allBuckets: o.allBuckets,
+      prefix: prefix || null,
+      allowedIps: ips.length ? ips : null,
+      rotateEveryDays: every,
+      ...(expiresAt !== undefined && { expiresAt }),
+    },
+  }
+}
+
+const here = async () => ipFrom(await headers()) || ""
+
+export async function createKey(
+  userId: string,
+  o: NewKey
+): Promise<Result & { accessKeyId?: string; secret?: string }> {
+  const c = await checkKey(userId, o, false)
+  if ("error" in c) return { error: c.error }
   const [{ n }] = await db
     .select({ n: count() })
     .from(s3Keys)
@@ -467,24 +537,81 @@ export async function createKey(
   await db.transaction(async (tx) => {
     const [k] = await tx
       .insert(s3Keys)
-      .values({
-        userId,
-        name,
-        accessKeyId,
-        secretEnc: encrypt(secret),
-        access: o.access as "rw" | "ro",
-        allBuckets: o.allBuckets,
-        expiresAt,
-      })
+      .values({ ...c.row, userId, accessKeyId, secretEnc: encrypt(secret) })
       .returning({ id: s3Keys.id })
-    if (!o.allBuckets)
-      await tx.insert(s3KeyBuckets).values(ids.map((bucketId) => ({ keyId: k.id, bucketId })))
+    if (!c.row.allBuckets)
+      await tx.insert(s3KeyBuckets).values(c.ids.map((bucketId) => ({ keyId: k.id, bucketId })))
   })
-  await audit("s3_key_create", { detail: `${name} (${accessKeyId})` })
-  await notify(userId, "app_password", {
-    data: { name, ip: ipFrom(await headers()) || "", s3: "1" },
-  })
+  await audit("s3_key_create", { detail: `${c.row.name} (${accessKeyId})` })
+  await notify(userId, "s3_key", { data: { what: "created", name: c.row.name, ip: await here() } })
   return { accessKeyId, secret }
+}
+
+// One of the member's keys by id.
+async function mine(userId: string, id: string) {
+  if (!UUID.test(id)) return undefined
+  const [k] = await db.select().from(s3Keys).where(and(eq(s3Keys.id, id), eq(s3Keys.userId, userId)))
+  return k
+}
+
+const GONE = { error: "That key is gone. Refresh and try again." }
+
+export async function updateKey(userId: string, id: string, o: NewKey): Promise<Result> {
+  const k = await mine(userId, id)
+  if (!k) return GONE
+  const c = await checkKey(userId, o, true)
+  if ("error" in c) return { error: c.error }
+  await db.transaction(async (tx) => {
+    // A new reminder period starts counting again.
+    await tx
+      .update(s3Keys)
+      .set({ ...c.row, ...(c.row.rotateEveryDays !== k.rotateEveryDays && { rotateNotifiedAt: null }), ...("expiresAt" in c.row && { expiryNotifiedAt: null }) })
+      .where(eq(s3Keys.id, k.id))
+    await tx.delete(s3KeyBuckets).where(eq(s3KeyBuckets.keyId, k.id))
+    if (!c.row.allBuckets)
+      await tx.insert(s3KeyBuckets).values(c.ids.map((bucketId) => ({ keyId: k.id, bucketId })))
+  })
+  await audit("s3_key_update", { detail: `${c.row.name} (${k.accessKeyId})` })
+  await notify(userId, "s3_key", { data: { what: "edited", name: c.row.name, ip: await here() } })
+  return {}
+}
+
+// A new secret under the same key ID. The old one keeps working for `graceSeconds`.
+export async function rotateKey(
+  userId: string,
+  id: string,
+  graceSeconds: number
+): Promise<Result & { accessKeyId?: string; secret?: string }> {
+  if (!(GRACES as readonly number[]).includes(graceSeconds)) return { error: "Pick how long the old secret keeps working." }
+  const k = await mine(userId, id)
+  if (!k) return GONE
+  const { secret } = newKeyPair()
+  const now = new Date()
+  await db
+    .update(s3Keys)
+    .set({
+      secretEnc: encrypt(secret),
+      secretPrevEnc: graceSeconds ? k.secretEnc : null,
+      secretPrevUntil: graceSeconds ? new Date(now.getTime() + graceSeconds * 1000) : null,
+      rotatedAt: now,
+      rotateNotifiedAt: null,
+    })
+    .where(eq(s3Keys.id, k.id))
+  await audit("s3_key_rotate", { detail: `${k.name} (${k.accessKeyId})` })
+  await notify(userId, "s3_key", { data: { what: "rotated", name: k.name, ip: await here() } })
+  return { accessKeyId: k.accessKeyId, secret }
+}
+
+export async function setKeyDisabled(userId: string, id: string, disabled: boolean): Promise<Result> {
+  const k = await mine(userId, id)
+  if (!k) return GONE
+  await db
+    .update(s3Keys)
+    .set({ disabledAt: disabled ? new Date() : null })
+    .where(eq(s3Keys.id, k.id))
+  await audit(disabled ? "s3_key_disable" : "s3_key_enable", { detail: `${k.name} (${k.accessKeyId})` })
+  await notify(userId, "s3_key", { data: { what: disabled ? "disabled" : "enabled", name: k.name, ip: await here() } })
+  return {}
 }
 
 // `userId` set: only that member's key (the member's own page); null: any

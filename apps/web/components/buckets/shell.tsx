@@ -125,7 +125,7 @@ export function BucketsShell({
               New access key
             </Button>
           </Heading>
-          <KeyTable keys={keys} />
+          <KeyTable keys={keys} buckets={buckets} url={url} region={region} />
         </section>
       )}
 
@@ -148,7 +148,7 @@ export function BucketsShell({
           setNotice({ text: `“${name}” is now an S3 bucket.` })
         }}
       />
-      <NewKey open={newKey !== null} preset={newKey?.preset} buckets={buckets} onClose={() => setNewKey(null)} />
+      <NewKey open={newKey !== null} preset={newKey?.preset} buckets={buckets} url={url} region={region} onClose={() => setNewKey(null)} />
     </div>
   )
 }

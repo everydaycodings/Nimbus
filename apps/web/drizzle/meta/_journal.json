@@ -428,6 +428,13 @@
       "when": 1796700000000,
       "tag": "0060_registry_git_connections",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1796800000000,
+      "tag": "0061_s3_key_controls",
+      "breakpoints": true
     }
   ]
 }

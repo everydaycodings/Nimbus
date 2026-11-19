@@ -88,6 +88,8 @@ export default async function BucketPage({
           buckets={await listBuckets(me.id)}
           keys={keys}
           atMax={allKeys.length >= MAX_KEYS_PER_MEMBER}
+          url={url}
+          region={REGION}
         />
       )}
       {tab === "settings" && <DetailSettings key={b.name} b={b} />}

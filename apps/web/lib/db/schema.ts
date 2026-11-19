@@ -614,6 +614,8 @@ export const NOTIFICATION_KINDS = [
   "registry_build",
   // A saved git connection's token or key expires within 7 days (or already has).
   "registry_connection",
+  // S3 access keys: made, rotated, edited, disabled, due for rotation, or about to expire.
+  "s3_key",
 ] as const
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number]
 // Only admins get these, so only admins see their settings.
@@ -2729,6 +2731,20 @@ export const s3Keys = pgTable(
     createdAt: createdAt(),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     lastIp: text("last_ip"),
+    // What the key may do: list, read, write, delete. `access` is the old rw/ro switch, kept in step but no longer read.
+    perms: text("perms").array().notNull().default(sql`'{list,read,write,delete}'`),
+    // Limits the key to object keys starting with this.
+    prefix: text("prefix"),
+    // IPv4/IPv6 addresses or CIDR ranges; null or empty means anywhere.
+    allowedIps: text("allowed_ips").array(),
+    // After a rotation the old secret still signs until secretPrevUntil.
+    secretPrevEnc: text("secret_prev_enc"),
+    secretPrevUntil: timestamp("secret_prev_until", { withTimezone: true }),
+    rotatedAt: timestamp("rotated_at", { withTimezone: true }),
+    rotateEveryDays: integer("rotate_every_days"),
+    disabledAt: timestamp("disabled_at", { withTimezone: true }),
+    rotateNotifiedAt: timestamp("rotate_notified_at", { withTimezone: true }),
+    expiryNotifiedAt: timestamp("expiry_notified_at", { withTimezone: true }),
   },
   (t) => [
     index("s3_keys_user_idx").on(t.userId),

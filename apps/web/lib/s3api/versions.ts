@@ -16,7 +16,7 @@ import { deleteNodes, deleteUnreferenced, isClash, mkdirp } from "@/lib/uploads"
 
 import { etagOf } from "./etags.ts"
 import { xml, type C } from "./http.ts"
-import { mustWrite, pruneEmpty, versionOf, type Bucket } from "./resolve.ts"
+import { listPrefix, pruneEmpty, versionOf, type Bucket } from "./resolve.ts"
 import { encodeKey, isoDate, S3Error, tag } from "./xml.ts"
 
 export type Item = {
@@ -85,7 +85,8 @@ const groups = (rows: Row[]) => {
 // ListObjectVersions. Folder markers ("dir/") aren't listed.
 export async function listVersions(c: C, b: Bucket) {
   const q = c.q
-  const prefix = q.get("prefix") ?? ""
+  const asked = q.get("prefix") ?? ""
+  const prefix = listPrefix(b, asked)
   const delimiter = q.get("delimiter") ?? ""
   const keyMarker = q.get("key-marker") ?? ""
   const idMarker = keyMarker ? (q.get("version-id-marker") ?? "") : ""
@@ -107,7 +108,7 @@ export async function listVersions(c: C, b: Bucket) {
     const byKey = groups(rows)
     for (const [key, krows] of byKey) {
       if (delimiter && keyMarker.endsWith(delimiter) && key.startsWith(keyMarker)) continue
-      const i = delimiter ? key.indexOf(delimiter, prefix.length) : -1
+      const i = delimiter ? key.indexOf(delimiter, asked.length) : -1
       if (i >= 0) {
         const cp = key.slice(0, i + delimiter.length)
         if (cp === lastPrefix) continue
@@ -152,7 +153,7 @@ export async function listVersions(c: C, b: Bucket) {
   return xml(
     c,
     "ListVersionsResult",
-    `${tag("Name", b.name)}${tag("Prefix", e(prefix))}${tag("KeyMarker", e(keyMarker))}${tag("VersionIdMarker", idMarker)}${next}${tag("MaxKeys", max)}${delimiter ? tag("Delimiter", e(delimiter)) : ""}${url ? tag("EncodingType", "url") : ""}${tag("IsTruncated", truncated)}${body}`
+    `${tag("Name", b.name)}${tag("Prefix", e(asked))}${tag("KeyMarker", e(keyMarker))}${tag("VersionIdMarker", idMarker)}${next}${tag("MaxKeys", max)}${delimiter ? tag("Delimiter", e(delimiter)) : ""}${url ? tag("EncodingType", "url") : ""}${tag("IsTruncated", truncated)}${body}`
   )
 }
 
@@ -200,7 +201,6 @@ export async function latestMarker(b: Bucket, key: string) {
 // it becomes current if it was); a delete marker, when it's the latest, brings
 // its file back out of the trash.
 export async function removeVersion(c: C, b: Bucket, key: string, vid: string) {
-  mustWrite(b)
   const found = await lookupVersion(b, key, vid)
   const { node } = found
   if (found.marker) {

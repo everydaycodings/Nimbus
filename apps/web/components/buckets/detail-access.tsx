@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import type { BucketRow, KeyRow } from "@/lib/s3api/manage"
 
 // The keys that open this bucket.
-export function DetailAccess({ bucket, buckets, keys, atMax }: { bucket: BucketRow; buckets: BucketRow[]; keys: KeyRow[]; atMax: boolean }) {
+export function DetailAccess({ bucket, buckets, keys, atMax, url, region }: { bucket: BucketRow; buckets: BucketRow[]; keys: KeyRow[]; atMax: boolean; url: string; region: string }) {
   const [open, setOpen] = useState(false)
   return (
     <section className={SECTION} aria-labelledby="access-heading">
@@ -29,9 +29,9 @@ export function DetailAccess({ bucket, buckets, keys, atMax }: { bucket: BucketR
           Make a key for it, then give the key to your app.
         </Empty>
       ) : (
-        <KeyTable keys={keys} />
+        <KeyTable keys={keys} buckets={buckets} url={url} region={region} />
       )}
-      <NewKey open={open} preset={bucket.id} buckets={buckets} onClose={() => setOpen(false)} />
+      <NewKey open={open} preset={bucket.id} buckets={buckets} url={url} region={region} onClose={() => setOpen(false)} />
     </section>
   )
 }

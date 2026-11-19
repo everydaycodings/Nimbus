@@ -137,6 +137,22 @@ export type Notification = {
   pending: boolean
 }
 
+const S3_KEY_WHAT: Record<string, string> = {
+  created: "was made for your account",
+  rotated: "got a new secret",
+  edited: "was changed",
+  disabled: "was disabled",
+  enabled: "was enabled again",
+}
+
+function s3KeyText(d: Record<string, string>) {
+  const key = `The S3 access key “${d.name ?? "unnamed"}”`
+  if (d.what === "rotation_due") return `${key} is due for rotation. Rotate its secret in S3 buckets, Access keys.`
+  if (d.what === "expiring")
+    return `${key} ${d.days === "0" ? "expires today" : `expires in ${d.days ?? "a few"} day${d.days === "1" ? "" : "s"}`}. Edit its expiry or make a new key in S3 buckets.`
+  return `${key} ${S3_KEY_WHAT[d.what] ?? "changed"}${d.ip ? ` from ${d.ip}` : ""}. Revoke it in S3 buckets if it wasn't you.`
+}
+
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`
 
 // Notifications as sentences, newest first.
@@ -195,6 +211,7 @@ async function describe(userId: string, ids?: string[]) {
       app_password: d.s3
         ? `A new S3 access key “${d.name ?? "unnamed"}” was made for your account${d.ip ? ` from ${d.ip}` : ""}. Revoke it in S3 buckets if it wasn't you.`
         : `A new app password “${d.name ?? "unnamed"}” was made for your account${d.ip ? ` from ${d.ip}` : ""}. Revoke it in Account if it wasn't you.`,
+      s3_key: s3KeyText(d),
       backup: `${KIND_LABEL[d.backup as Kind] ?? "A"} backup ${d.event === "stale" ? "hasn't succeeded in a while" : d.event === "warning" ? "finished with a warning" : "failed"}`,
       transfer_download:
         r.count > 1
@@ -247,6 +264,8 @@ async function describe(userId: string, ids?: string[]) {
               : "/account#connect"
           : r.kind === "storage_low"
             ? "/storage"
+          : r.kind === "s3_key"
+            ? "/buckets?tab=keys"
           : r.kind === "registry_build" || r.kind === "registry_connection"
             ? (d.href ?? "/registry")
           : r.kind === "registry_token" || r.kind === "registry_cleanup" || r.kind === "registry_quota" || r.kind === "registry_scan"

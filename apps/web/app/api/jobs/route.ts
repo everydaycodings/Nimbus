@@ -26,6 +26,7 @@ import { runAdvice } from "@/lib/registry/advice"
 import { runRescan, runScan } from "@/lib/registry/scan"
 import { abortStale as abortStaleUploads } from "@/lib/registry/uploads"
 import { abortStale } from "@/lib/s3api/multipart"
+import { remindKeys } from "@/lib/s3api/reminders"
 import { scanNode, scanUser } from "@/lib/secrets/leaks"
 import { sweep as secretsSweep } from "@/lib/secrets/notices"
 import { runRootRotation } from "@/lib/secrets/root-rotate"
@@ -76,6 +77,7 @@ const jobs: Record<string, (data: never) => Promise<unknown>> = {
   "orphan-sweep": sweepOrphans,
   "s3-etags": computeEtags,
   "s3-multipart-stale": abortStale,
+  "s3-key-reminders": remindKeys,
   "registry-uploads-stale": abortStaleUploads,
   "registry-gc": () => runGc(),
   "registry-trash-purge": purgeTrash,

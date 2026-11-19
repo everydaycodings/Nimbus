@@ -641,6 +641,7 @@ export type NotificationKind =
   | "registry_scan"
   | "registry_build"
   | "registry_connection"
+  | "s3_key"
 export type Notification = {
   id: string
   kind: NotificationKind

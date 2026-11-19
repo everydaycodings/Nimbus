@@ -27,7 +27,7 @@ import { rejectReason, uploadLimits } from "@/lib/uploads"
 import { bodyOf, header, nodeStream, readXml, objectMeta, respond, unwrap, xml, type C } from "./http.ts"
 import { copyFrom, storeError, whenOf } from "./objects.ts"
 import { STALE_MULTIPART_DAYS } from "./rules.ts"
-import { childOf, mustWrite, splitKey, type Bucket } from "./resolve.ts"
+import { allow, childOf, listPrefix, splitKey, type Bucket } from "./resolve.ts"
 import { encodeKey, inner, isoDate, tag, text, S3Error } from "./xml.ts"
 import { mkdirp } from "@/lib/uploads"
 
@@ -48,7 +48,7 @@ async function upload(c: C, b: Bucket, uploadId: string | null) {
 }
 
 export async function create(c: C, b: Bucket) {
-  mustWrite(b)
+  allow(b, "write", c.key!)
   splitKey(c.key!)
   const ct = header(c, "content-type")
   const backingKey = `s3-${randomBytes(16).toString("hex")}`
@@ -88,7 +88,7 @@ const addBytes = (id: string, n: number) =>
   db.update(s3Multipart).set({ bytes: sql`${s3Multipart.bytes} + ${n}` }).where(eq(s3Multipart.id, id))
 
 export async function uploadPart(c: C, b: Bucket) {
-  mustWrite(b)
+  allow(b, "write", c.key!)
   const row = await upload(c, b, c.q.get("uploadId"))
   const n = partNumber(c)
   const { stream, declared } = bodyOf(c)
@@ -114,7 +114,7 @@ export async function uploadPart(c: C, b: Bucket) {
 }
 
 export async function uploadPartCopy(c: C, b: Bucket) {
-  mustWrite(b)
+  allow(b, "write", c.key!)
   const row = await upload(c, b, c.q.get("uploadId"))
   const n = partNumber(c)
   const { v } = await copyFrom(c, header(c, "x-amz-copy-source")!)
@@ -143,6 +143,7 @@ export async function uploadPartCopy(c: C, b: Bucket) {
 }
 
 export async function listParts(c: C, b: Bucket) {
+  allow(b, "write", c.key!)
   const row = await upload(c, b, c.q.get("uploadId"))
   const max = Math.min(Number(c.q.get("max-parts") ?? 1000) || 1000, 1000)
   const r = await s3.send(
@@ -165,7 +166,7 @@ export async function listParts(c: C, b: Bucket) {
 }
 
 export async function listUploads(c: C, b: Bucket) {
-  const prefix = c.q.get("prefix") ?? ""
+  const prefix = listPrefix(b, c.q.get("prefix") ?? "")
   const keyMarker = c.q.get("key-marker") ?? ""
   const idMarker = c.q.get("upload-id-marker") ?? ""
   const max = Math.min(Number(c.q.get("max-uploads") ?? 1000) || 1000, 1000)
@@ -200,7 +201,7 @@ async function abortBacking(row: { backingKey: string; backingUploadId: string }
 }
 
 export async function abort(c: C, b: Bucket) {
-  mustWrite(b)
+  allow(b, "delete", c.key!)
   const row = await upload(c, b, c.q.get("uploadId"))
   await abortBacking(row)
   await db.delete(s3Multipart).where(eq(s3Multipart.id, row.id))
@@ -226,7 +227,7 @@ export async function abortStale() {
 }
 
 export async function complete(c: C, b: Bucket) {
-  mustWrite(b)
+  allow(b, "write", c.key!)
   const row = await upload(c, b, c.q.get("uploadId"))
   const body = await readXml(c)
   const parts = inner(body, "Part").map((p) => ({ PartNumber: Number(text(p, "PartNumber")), ETag: text(p, "ETag") }))

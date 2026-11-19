@@ -10,6 +10,7 @@ import { fileVersions, nodes, s3Buckets } from "@/lib/db/schema"
 import { trashNodes } from "@/lib/tree"
 
 import type { Who } from "./auth.ts"
+import type { Perm } from "./perms.ts"
 import { S3Error } from "./xml.ts"
 
 export type Bucket = {
@@ -20,8 +21,9 @@ export type Bucket = {
   ownerId: string
   role: Access
   quiet: boolean
-  // This key may change things here: a read-write key and at least an editor.
-  canWrite: boolean
+  // What the key may do and the key prefix it is limited to, from its row.
+  perms: Set<Perm>
+  prefix: string | null
 }
 
 const live = and(isNull(nodes.trashedAt), isNull(nodes.vaultId))
@@ -42,11 +44,26 @@ export async function bucketFor(who: Who, name: string): Promise<Bucket> {
   if (!mayReach(who, b.id)) throw new S3Error("AccessDenied", "This access key can't use that bucket.")
   const a = await accessOne(who.userId, b.nodeId)
   if (!a || a.kind !== "folder" || a.trashed) throw noBucket()
-  return { ...b, ownerId: a.ownerId, role: a.role, canWrite: who.write && atLeast(a.role, "editor") }
+  return { ...b, ownerId: a.ownerId, role: a.role, perms: who.perms, prefix: who.prefix }
 }
 
-export function mustWrite(b: Bucket) {
-  if (!b.canWrite) throw new S3Error("AccessDenied", "This access key can't change that bucket.")
+// Throws unless the key has `perm` here (changing things also needs at least an
+// editor on the folder) and, given an object `key`, the key is inside its prefix.
+export function allow(b: Bucket, perm: Perm, key?: string) {
+  if (!b.perms.has(perm)) throw new S3Error("AccessDenied", `This access key isn't allowed to ${perm} here.`)
+  if ((perm === "write" || perm === "delete") && !atLeast(b.role, "editor"))
+    throw new S3Error("AccessDenied", "This access key can't change that bucket.")
+  if (key !== undefined && b.prefix && !key.startsWith(b.prefix))
+    throw new S3Error("AccessDenied", "This access key can't use that object key.")
+}
+
+// The prefix a listing starts from. A key limited to a prefix may ask for a
+// prefix of it (like the bucket's root) and sees only its own part.
+export function listPrefix(b: Bucket, asked: string) {
+  allow(b, "list")
+  if (!b.prefix || asked.startsWith(b.prefix)) return asked
+  if (b.prefix.startsWith(asked)) return b.prefix
+  throw new S3Error("AccessDenied", "This access key can't list that prefix.")
 }
 
 // Bucket-name resolution for ListBuckets: only ones the key reaches, still live and accessible.

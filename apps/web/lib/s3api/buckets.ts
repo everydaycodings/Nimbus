@@ -13,7 +13,7 @@ import { enqueueBucketEtags } from "./etags.ts"
 import { respond, xml, type C } from "./http.ts"
 import { abortUploads } from "./multipart.ts"
 import { BUCKETS_FOLDER, REGION, bucketNameError } from "./rules.ts"
-import { bucketFor, mustWrite, reachable } from "./resolve.ts"
+import { allow, bucketFor, reachable } from "./resolve.ts"
 import { isoDate, tag, S3Error } from "./xml.ts"
 
 export async function listBuckets(c: C) {
@@ -29,7 +29,7 @@ export async function listBuckets(c: C) {
 }
 
 export async function createBucket(c: C, name: string) {
-  if (!c.who.write) throw new S3Error("AccessDenied", "This access key can't create buckets.")
+  if (!c.who.perms.has("write") || c.who.prefix) throw new S3Error("AccessDenied", "This access key can't create buckets.")
   const bad = bucketNameError(name)
   if (bad) throw new S3Error("InvalidBucketName", bad, 400)
   const [mine] = await db
@@ -61,7 +61,8 @@ export async function createBucket(c: C, name: string) {
 
 export async function deleteBucket(c: C, name: string) {
   const b = await bucketFor(c.who, name)
-  mustWrite(b)
+  allow(b, "delete")
+  if (b.prefix) throw new S3Error("AccessDenied", "A key limited to a prefix can't delete the bucket.")
   if (b.role !== "owner") throw new S3Error("AccessDenied", "Only the folder's owner can delete a bucket.")
   const [kid] = await db
     .select({ id: nodes.id })

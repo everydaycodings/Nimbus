@@ -27,6 +27,7 @@ import {
 import { formatBytes } from "@/lib/file-rules"
 import { listTokens } from "@/lib/registry/manage"
 import { listKeys } from "@/lib/s3api/manage"
+import { permsLabel } from "@/lib/s3api/perms"
 import { endpoint as registryEndpoint } from "@/lib/registry/rules"
 import { endpoint } from "@/lib/s3api/rules"
 import { usedByOwner } from "@/lib/quota"
@@ -474,7 +475,7 @@ export default async function MemberPage({
                 keys={s3Keys.map((k) => ({
                   id: k.id,
                   name: k.name,
-                  access: k.access,
+                  access: [permsLabel(k.perms), k.disabled && "Disabled", k.rotationDue && "Rotation due"].filter(Boolean).join(" · "),
                   used: `${k.lastUsedAt ? `${k.lastIp && !/^[0:.]*$/.test(k.lastIp) ? `${k.lastIp} · ` : ""}Used ${moment.format(new Date(k.lastUsedAt))}` : "Never used"} · Made ${day.format(new Date(k.createdAt))}`,
                 }))}
               />
