@@ -105,7 +105,7 @@ function PickerBody({ connection, picked, onPick, exclude = [] }: { connection: 
             {data.owners.map((o) => (
               <option key={o.login} value={o.login}>
                 {o.login}
-                {o.type === "User" ? " (you)" : ""}
+                {o.me ? " (you)" : ""}
               </option>
             ))}
           </select>

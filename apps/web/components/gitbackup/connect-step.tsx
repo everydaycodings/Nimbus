@@ -62,6 +62,9 @@ export function ConnectStep({ connections, registry, oauth, value, onChange }: {
           {picked.account ? `Signed in as ${picked.account}. ` : ""}
           {picked.scopes.length ? `Scopes: ${picked.scopes.join(", ")}. ` : "A fine-grained token: it sees only what you gave it. "}
           {picked.expiresAt ? `Expires ${DAY.format(new Date(picked.expiresAt))}.` : "No expiry."}
+          {picked.scopes.length > 0 && !picked.scopes.some((s) => s === "read:org" || s === "admin:org") && (
+            <span className="block">Without the read:org scope, private repos of organizations you belong to may be missing.</span>
+          )}
         </p>
       )}
       <div className="flex flex-wrap items-center gap-2">

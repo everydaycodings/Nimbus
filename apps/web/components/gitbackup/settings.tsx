@@ -51,7 +51,10 @@ export function Settings({ job, connections, registry, oauth, min }: { job: JobV
 
   return (
     <div className="flex flex-col gap-10">
+      <div className="flex flex-col gap-8">
+      {/* The token and storage forms below are their own forms, so this one ends before them; Save submits it by id. */}
       <form
+        id="gb-job-settings"
         className="flex flex-col gap-8"
         onSubmit={(e) => {
           e.preventDefault()
@@ -78,6 +81,7 @@ export function Settings({ job, connections, registry, oauth, min }: { job: JobV
         <Section title="What to back up" hint="Everything this token can see, whole accounts or organizations, or just the repos you chose. Wider scopes add their repos at once and pick up new ones on their own.">
           <ScopeFields connection={conn} value={scope} onChange={setScope} picker={false} />
         </Section>
+      </form>
         <Section title="GitHub connection" hint="Which token this job uses to read your repos.">
           <ConnectStep connections={connections} registry={registry} oauth={oauth} value={conn} onChange={setConn} />
         </Section>
@@ -102,13 +106,14 @@ export function Settings({ job, connections, registry, oauth, min }: { job: JobV
           )}
         </Section>
         <div className="flex flex-wrap items-center gap-3">
-          <SubmitButton pending={pending} disabled={(changeDest && !dest) || sched.intervalMin < min || (scope.mode === "owners" && !scope.owners.length)} className={TOUCH}>
+          <SubmitButton form="gb-job-settings" pending={pending} disabled={(changeDest && !dest) || sched.intervalMin < min || (scope.mode === "owners" && !scope.owners.length)} className={TOUCH}>
             Save changes
           </SubmitButton>
           {saved && <p role="status" className="text-sm text-muted-foreground">Saved.</p>}
+          <p className="text-sm text-muted-foreground">Saves the job, what to back up, the connection and the storage.</p>
         </div>
         <FormError>{error}</FormError>
-      </form>
+      </div>
 
       <Section title="Push webhook" hint="Back up a repo within moments of a push instead of waiting for the next check. Nimbus adds a webhook to each repo, so the token needs permission to manage hooks.">
         <label className="flex min-h-11 cursor-pointer items-center justify-between gap-4 rounded-lg border px-3 py-2.5 text-sm">

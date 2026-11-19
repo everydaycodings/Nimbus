@@ -23,7 +23,8 @@ export type RepoInfo = {
   cloneUrl: string
   defaultBranch: string
 }
-export type Owner = { login: string; type: "User" | "Organization" }
+// me: the token's own account (other "User" owners are people whose repos you collaborate on).
+export type Owner = { login: string; type: "User" | "Organization"; me?: boolean }
 
 const api = (host: string | null) => (host ? `https://${host}/api/v3` : (process.env.GITHUB_API_URL ?? "https://api.github.com").replace(/\/+$/, ""))
 
@@ -114,7 +115,7 @@ async function fetchAll(c: Cfg): Promise<RepoList> {
     cloneUrl: r.clone_url,
     defaultBranch: r.default_branch,
   }))
-  const owners = new Map<string, Owner>([[me.login.toLowerCase(), { login: me.login, type: "User" }]])
+  const owners = new Map<string, Owner>([[me.login.toLowerCase(), { login: me.login, type: "User", me: true }]])
   for (const o of orgs) owners.set(o.login.toLowerCase(), { login: o.login, type: "Organization" })
   for (const r of repos) if (!owners.has(r.owner.toLowerCase())) owners.set(r.owner.toLowerCase(), { login: r.owner, type: r.ownerType })
   return { repos, owners: [...owners.values()], at: new Date().toISOString() }

@@ -58,9 +58,9 @@ export function ScopeFields({ connection, value, onChange, picker }: { connectio
             ) : null}
             <span className="min-w-0 flex-1 truncate text-sm font-medium" title={o.login}>
               {o.login}
-              {o.type === "User" ? <span className="font-normal text-muted-foreground"> (you)</span> : null}
+              {o.me ? <span className="font-normal text-muted-foreground"> (you)</span> : null}
             </span>
-            <span className="text-sm text-muted-foreground tabular-nums">{counts.get(o.login.toLowerCase()) ?? 0} repos</span>
+            <span className="text-sm text-muted-foreground tabular-nums">{counts.get(o.login.toLowerCase()) ?? 0} {(counts.get(o.login.toLowerCase()) ?? 0) === 1 ? "repo" : "repos"}</span>
             {!showCount && <Switch aria-label={`New repos from ${o.login}`} checked={list.some((x) => same(x, o.login))} onChange={(e) => set(toggle(list, o.login, e.target.checked))} />}
           </label>
         </li>
