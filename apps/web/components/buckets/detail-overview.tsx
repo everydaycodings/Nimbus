@@ -54,8 +54,11 @@ export function DetailOverview({ b, url, region, usage }: { b: BucketRow & { all
           <div className="sm:col-span-2">
             <Field label="Endpoint" value={url} />
           </div>
+          <Field label="Bucket name" value={b.name} />
           <Field label="Region" value={region} />
-          <Field label="S3 address" value={`s3://${b.name}`} />
+          <div className="sm:col-span-2">
+            <Field label="S3 address" value={`s3://${b.name}`} />
+          </div>
         </dl>
       </section>
       <section className={SECTION} aria-labelledby="folder-heading">
