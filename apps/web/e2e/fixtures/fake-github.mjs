@@ -96,7 +96,7 @@ createServer((req, res) => {
     if (!hook) return json(res, { error: "no hook" }, 404)
     const body = JSON.stringify({ ref: "refs/heads/main", repository: { full_name: `${owner}/${name}` } })
     const sig = url.searchParams.get("bad") ? "sha256=00" : `sha256=${createHmac("sha256", hook.secret).update(body).digest("hex")}`
-    return fetch(hook.url, { method: "POST", headers: { "content-type": "application/json", "x-github-event": url.searchParams.get("event") ?? "push", "x-hub-signature-256": sig }, body }).then(async (r) => json(res, { status: r.status, body: await r.text() }), (e) => json(res, { error: String(e) }, 502))
+    return fetch(hook.url.replace("host.docker.internal", "localhost"), { method: "POST", headers: { "content-type": "application/json", "x-github-event": url.searchParams.get("event") ?? "push", "x-hub-signature-256": sig }, body }).then(async (r) => json(res, { status: r.status, body: await r.text() }), (e) => json(res, { error: String(e) }, 502))
   }
   if (p === "/_test/lfs") {
     const name = url.searchParams.get("name")

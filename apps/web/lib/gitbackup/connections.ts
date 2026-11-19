@@ -9,13 +9,16 @@ import { decrypt, encrypt } from "@/lib/crypto"
 import { db } from "@/lib/db"
 import { gitBackupConnections, gitBackupJobs, registryGitConnections } from "@/lib/db/schema"
 import { listConnections as registryConnections, secretOf } from "@/lib/registry/connections"
-import * as github from "./github.ts"
+import { whoami, type HostCfg } from "./hosts.ts"
+import { cleanHost, gitUser, type Provider } from "./refs.ts"
+
+export { cleanHost }
 
 type Row = typeof gitBackupConnections.$inferSelect
 
 export type ConnView = {
   id: string
-  provider: "github"
+  provider: Provider
   name: string
   account: string | null
   host: string | null
@@ -27,13 +30,6 @@ export type ConnView = {
 }
 export type RegistryPick = { id: string; name: string; account: string | null; host: string | null; owner: string; expiresAt: string | null }
 export type Ref = { connectionId: string; registryConnectionId?: never } | { registryConnectionId: string; connectionId?: never }
-
-// "git.example.com" from what was typed; null for github.com or nothing.
-export function cleanHost(h: string | null | undefined): { host: string | null } | { error: string } {
-  const s = (h ?? "").trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "").toLowerCase()
-  if (!s || s === "github.com") return { host: null }
-  return /^[a-z0-9.-]+(:\d{1,5})?$/.test(s) ? { host: s } : { error: "Enter the server address like github.example.com." }
-}
 
 const cleanName = (raw: string) => {
   const n = raw.trim().replace(/\s+/g, " ")
@@ -49,7 +45,7 @@ export async function listConnections(userId: string): Promise<ConnView[]> {
     .groupBy(gitBackupJobs.connectionId)
   return rows.map((c) => ({
     id: c.id,
-    provider: "github",
+    provider: c.provider,
     name: c.name,
     account: c.account,
     host: c.host,
@@ -70,26 +66,26 @@ export async function listRegistryConnections(userId: string): Promise<RegistryP
 
 // The token and host behind a connection the member owns or manages; used by the picker and job checks.
 // The cache key carries the member too: a Registry connection can be managed by several members.
-export async function connCfg(userId: string, ref: Ref): Promise<{ token: string; host: string | null; key: string } | { error: string }> {
+export async function connCfg(userId: string, ref: Ref): Promise<(HostCfg & { key: string }) | { error: string }> {
   if (ref?.connectionId) {
     const c = await mine(userId, ref.connectionId)
     const token = c && decrypt(c.secretEnc)
-    return c && token ? { token, host: c.host, key: `${userId}:c:${c.id}` } : { error: "That connection isn't here." }
+    return c && token ? { provider: c.provider, token, host: c.host, account: c.account, key: `${userId}:c:${c.id}` } : { error: "That connection isn't here." }
   }
   const ok = typeof ref?.registryConnectionId === "string" && (await listRegistryConnections(userId)).some((c) => c.id === ref.registryConnectionId)
   const [c] = ok ? await db.select().from(registryGitConnections).where(eq(registryGitConnections.id, ref.registryConnectionId!)) : []
   const token = c && secretOf(c)
-  return c && token ? { token, host: c.host && c.host !== "github.com" ? c.host : null, key: `${userId}:r:${c.id}` } : { error: "That Registry connection isn't available to you." }
+  return c && token ? { provider: "github", token, host: c.host && c.host !== "github.com" ? c.host : null, key: `${userId}:r:${c.id}` } : { error: "That Registry connection isn't available to you." }
 }
 
 // For the runner: the token a job backs up with.
-export async function jobToken(job: typeof gitBackupJobs.$inferSelect): Promise<{ provider: "github"; host: string | null; token: string }> {
+export async function jobToken(job: typeof gitBackupJobs.$inferSelect): Promise<HostCfg> {
   if (job.connectionId) {
     const [c] = await db.select().from(gitBackupConnections).where(eq(gitBackupConnections.id, job.connectionId))
     const token = c && decrypt(c.secretEnc)
     if (!c || !token) throw new Error("The job's connection is gone or its token can't be read.")
     void db.update(gitBackupConnections).set({ lastUsedAt: new Date() }).where(eq(gitBackupConnections.id, c.id)).catch(() => {})
-    return { provider: "github", host: c.host, token }
+    return { provider: c.provider, host: c.host, token, account: c.account }
   }
   // Only while the job's owner still manages it (an org owner can lose that role).
   const ok = job.registryConnectionId && (await listRegistryConnections(job.userId)).some((c) => c.id === job.registryConnectionId)
@@ -104,19 +100,21 @@ async function nameTaken(userId: string, name: string, except?: string) {
   return rows.some((r) => r.id !== except)
 }
 
-// github.ts checks an Enterprise host's address before each call.
-const check = (token: string, host: string | null) => github.whoami({ token, host })
+// The host modules check a self-hosted address before each call.
+const check = (provider: Provider, token: string, host: string | null) => whoami({ provider, token, host })
 
-export type Saved = { id?: string; account?: string; scopes?: string[]; expiresAt?: string | null; error?: string }
+export type Saved = { id?: string; account?: string; host?: string | null; scopes?: string[]; expiresAt?: string | null; error?: string }
 
-export async function createConnection(userId: string, v: { name?: string; token: string; host?: string; via?: "pat" | "oauth" }): Promise<Saved> {
+export async function createConnection(userId: string, v: { provider?: Provider; name?: string; token: string; host?: string; via?: "pat" | "oauth" }): Promise<Saved> {
   const token = String(v.token ?? "").trim()
   if (!token || token.length > 1000) return { error: "Paste the token." }
-  const h = cleanHost(v.host)
+  const provider = v.provider ?? "github"
+  if (!["github", "gitlab", "gitea", "forgejo"].includes(provider)) return { error: "Pick GitHub, GitLab, Gitea or Forgejo." }
+  const h = cleanHost(provider, v.host)
   if ("error" in h) return h
   let who
   try {
-    who = await check(token, h.host)
+    who = await check(provider, token, h.host)
   } catch (e) {
     return { error: (e as Error).message }
   }
@@ -125,10 +123,10 @@ export async function createConnection(userId: string, v: { name?: string; token
   if (await nameTaken(userId, name)) return { error: `You already have a connection called “${name}”.` }
   const [c] = await db
     .insert(gitBackupConnections)
-    .values({ userId, provider: "github", name, account: who.login, host: h.host, via: v.via ?? "pat", secretEnc: encrypt(token), last4: token.slice(-4), scopes: who.scopes, expiresAt: who.expiresAt })
+    .values({ userId, provider, name, account: who.login, host: h.host, via: v.via ?? "pat", secretEnc: encrypt(token), last4: token.slice(-4), scopes: who.scopes, expiresAt: who.expiresAt })
     .returning({ id: gitBackupConnections.id })
   await audit("git_backup_connection_create", { detail: `${name} (${who.login})` })
-  return { id: c.id, account: who.login, scopes: who.scopes, expiresAt: who.expiresAt?.toISOString() ?? null }
+  return { id: c.id, account: who.login, host: h.host, scopes: who.scopes, expiresAt: who.expiresAt?.toISOString() ?? null }
 }
 
 async function mine(userId: string, id: string): Promise<Row | null> {
@@ -156,7 +154,7 @@ export async function replaceToken(userId: string, id: string, raw: string): Pro
   if (!token || token.length > 1000) return { error: "Paste the token." }
   let who
   try {
-    who = await check(token, c.host)
+    who = await check(c.provider, token, c.host)
   } catch (e) {
     return { error: (e as Error).message }
   }
@@ -175,3 +173,13 @@ export async function deleteConnection(userId: string, id: string): Promise<{ er
   await audit("git_backup_connection_delete", { detail: c.name })
   return {}
 }
+
+// Which host a job's connection is on (a Registry connection is always GitHub). The webhook route needs it before it trusts anything.
+export async function providerOf(job: typeof gitBackupJobs.$inferSelect): Promise<Provider> {
+  if (!job.connectionId) return "github"
+  const [c] = await db.select({ p: gitBackupConnections.provider }).from(gitBackupConnections).where(eq(gitBackupConnections.id, job.connectionId))
+  return c?.p ?? "github"
+}
+
+// The Basic-auth user the runner sends with a job's token.
+export const authUser = (c: HostCfg) => gitUser(c.provider, c.account)

@@ -13,15 +13,18 @@ import { parseRefs } from "./refs.ts"
 export const WORK = join(tmpdir(), "nimbus-gitbackup")
 // protocols: what git may speak for this call (GIT_ALLOW_PROTOCOL); tests add "file".
 // noRedirects: a user-typed remote may not send git elsewhere (it was checked as dialable, its redirect wasn't).
-export type Auth = { token?: string; protocols?: string; noRedirects?: boolean }
+// user: the name sent with the token (refs.ts gitUser; GitHub-style x-access-token when unset).
+export type Auth = { token?: string; user?: string; protocols?: string; noRedirects?: boolean }
 
-const scrub = (s: string, token?: string) => {
+const basic = (a: Auth) => Buffer.from(`${a.user ?? "x-access-token"}:${a.token}`).toString("base64")
+
+const scrub = (s: string, token?: string, user?: string) => {
   let out = s.replace(/\/\/[^/@\s]+@/g, "//***@")
-  if (token) for (const t of [token, Buffer.from(`x-access-token:${token}`).toString("base64")]) out = out.split(t).join("***")
+  if (token) for (const t of [token, basic({ token, user })]) out = out.split(t).join("***")
   return out
 }
 
-function gitEnv(url: string | null, a: Auth) {
+export function gitEnv(url: string | null, a: Auth) {
   const env: Record<string, string> = {
     PATH: process.env.PATH ?? "/usr/bin:/bin",
     HOME: WORK,
@@ -32,7 +35,7 @@ function gitEnv(url: string | null, a: Auth) {
     LC_ALL: "C",
   }
   const cfg: [string, string][] = []
-  if (a.token && url?.startsWith("http")) cfg.push([`http.${new URL(url).origin}/.extraHeader`, `Authorization: Basic ${Buffer.from(`x-access-token:${a.token}`).toString("base64")}`])
+  if (a.token && url?.startsWith("http")) cfg.push([`http.${new URL(url).origin}/.extraHeader`, `Authorization: Basic ${basic(a)}`])
   if (a.noRedirects) cfg.push(["http.followRedirects", "false"])
   cfg.forEach(([k, v], i) => ((env[`GIT_CONFIG_KEY_${i}`] = k), (env[`GIT_CONFIG_VALUE_${i}`] = v)))
   if (cfg.length) env.GIT_CONFIG_COUNT = String(cfg.length)
@@ -40,7 +43,7 @@ function gitEnv(url: string | null, a: Auth) {
 }
 
 // Runs a command to the end. cap: stop reading after that many bytes (a file view) and kill it.
-function run(cmd: string, args: string[], o: { cwd?: string; env: Record<string, string>; token?: string; cap?: number }) {
+function run(cmd: string, args: string[], o: { cwd?: string; env: Record<string, string>; token?: string; user?: string; cap?: number }) {
   return new Promise<Buffer>((resolve, reject) => {
     const p = spawn(cmd, args, { cwd: o.cwd ?? process.cwd(), env: o.env as NodeJS.ProcessEnv, stdio: ["ignore", "pipe", "pipe"] })
     const out: Buffer[] = []
@@ -57,15 +60,15 @@ function run(cmd: string, args: string[], o: { cwd?: string; env: Record<string,
       }
     })
     p.stderr.on("data", (b: Buffer) => (err = (err + b).slice(-4000)))
-    p.on("error", (e) => reject(new Error(scrub(`${cmd}: ${e.message}`, o.token))))
+    p.on("error", (e) => reject(new Error(scrub(`${cmd}: ${e.message}`, o.token, o.user))))
     p.on("close", (code) => {
       if (code === 0 || capped) return resolve(Buffer.concat(out))
       const msg = err.trim().split("\n").filter(Boolean).slice(-3).join(" ")
-      reject(new Error(scrub(`${cmd} ${args[0]} failed: ${msg || `exit ${code}`}`, o.token).slice(0, 400)))
+      reject(new Error(scrub(`${cmd} ${args[0]} failed: ${msg || `exit ${code}`}`, o.token, o.user).slice(0, 400)))
     })
   })
 }
-const git = (args: string[], url: string | null, a: Auth, cwd?: string) => run("git", args, { cwd, env: gitEnv(url, a), token: a.token })
+const git = (args: string[], url: string | null, a: Auth, cwd?: string) => run("git", args, { cwd, env: gitEnv(url, a), token: a.token, user: a.user })
 
 // The branches and tags on the remote, as name -> sha.
 export async function lsRemote(url: string, a: Auth = {}) {

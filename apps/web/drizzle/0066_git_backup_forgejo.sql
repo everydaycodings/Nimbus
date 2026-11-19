@@ -1,0 +1,2 @@
+ALTER TABLE "git_backup_connections" DROP CONSTRAINT "git_backup_connections_provider_check";--> statement-breakpoint
+ALTER TABLE "git_backup_connections" ADD CONSTRAINT "git_backup_connections_provider_check" CHECK ("git_backup_connections"."provider" in ('github', 'gitlab', 'gitea', 'forgejo'));

@@ -1,11 +1,12 @@
-// GitHub's push webhook for a Git Backup job (made by setWebhook). Signature checked against the job's own secret;
-// a push starts a run for that repo only.
+// A git host's push webhook for a Git Backup job (made by setWebhook). Checked against the job's own secret in the way
+// the job's host signs it (refs.ts hookOk); a push starts a run for that repo only.
 import { and, eq, sql } from "drizzle-orm"
 
 import { db } from "@/lib/db"
 import { gitBackupJobs, gitBackupRepos } from "@/lib/db/schema"
+import { providerOf } from "@/lib/gitbackup/connections"
+import { hookOk, hookRepo } from "@/lib/gitbackup/refs"
 import { requestRun, webhookSecret } from "@/lib/gitbackup/runner"
-import { verifySignature } from "@/lib/registry/github"
 
 export const dynamic = "force-dynamic"
 
@@ -16,19 +17,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ jobId: 
   const secret = job?.webhookEnabled ? webhookSecret(job) : null
   if (!job || !secret) return new Response(null, { status: 404 })
   const raw = await req.text()
-  if (!verifySignature(secret, raw, req.headers.get("x-hub-signature-256"))) return new Response(null, { status: 401 })
-  const event = req.headers.get("x-github-event")
-  if (event === "ping") return Response.json({ ok: true })
-  if ((event !== "push" && event !== "create") || job.paused) return Response.json({ started: 0 })
-  let full: string | undefined
+  const provider = await providerOf(job)
+  if (!hookOk(provider, secret, raw, (n) => req.headers.get(n))) return new Response(null, { status: 401 })
+  let body: { object_kind?: string; zen?: string } | null
   try {
-    full = (JSON.parse(raw) as { repository?: { full_name?: string } }).repository?.full_name
+    body = JSON.parse(raw)
   } catch {
     return new Response("Not JSON.", { status: 400 })
   }
-  const [owner, name] = (full ?? "").split("/")
-  const [repo] = owner && name
-    ? await db.select({ id: gitBackupRepos.id }).from(gitBackupRepos).where(and(eq(gitBackupRepos.jobId, jobId), sql`lower(${gitBackupRepos.owner}) = ${owner.toLowerCase()}`, sql`lower(${gitBackupRepos.name}) = ${name.toLowerCase()}`))
+  // GitHub names the event in a header (a ping when set up); Gitea and Forgejo the same, GitLab in the body.
+  // A new branch or tag: "create" (GitHub, Gitea, Forgejo; same repository.full_name), "tag_push" (GitLab).
+  const event = provider === "gitlab" ? body?.object_kind : (req.headers.get("x-github-event") ?? req.headers.get("x-gitea-event") ?? req.headers.get("x-forgejo-event"))
+  if (event === "ping") return Response.json({ ok: true })
+  if (!["push", "create", "tag_push"].includes(event ?? "") || job.paused) return Response.json({ started: 0 })
+  const target = hookRepo(provider, body)
+  const [repo] = target
+    ? await db.select({ id: gitBackupRepos.id }).from(gitBackupRepos).where(and(eq(gitBackupRepos.jobId, jobId), sql`lower(${gitBackupRepos.owner}) = ${target.owner.toLowerCase()}`, sql`lower(${gitBackupRepos.name}) = ${target.name.toLowerCase()}`))
     : []
   if (!repo) return Response.json({ started: 0 })
   // Turned off by an admin (or the repo just left the job): accept the delivery, run nothing.

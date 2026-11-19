@@ -114,7 +114,7 @@ export function Overview({ job, progress, kick }: { job: JobView; progress: Prog
       </dl>
       {job.gone > 0 && (
         <p className="text-sm text-pretty text-muted-foreground">
-          {job.gone} repo{job.gone === 1 ? " is" : "s are"} gone from GitHub or no longer reachable with this token. Their snapshots are kept.
+          {job.gone} repo{job.gone === 1 ? " is" : "s are"} gone from the git host or no longer reachable with this token. Their snapshots are kept.
         </p>
       )}
     </div>

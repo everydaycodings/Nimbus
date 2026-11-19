@@ -3432,7 +3432,7 @@ export const gitBackupConnections = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    provider: text("provider").$type<"github" | "gitlab" | "gitea">().notNull(),
+    provider: text("provider").$type<"github" | "gitlab" | "gitea" | "forgejo">().notNull(),
     name: text("name").notNull(),
     account: text("account"),
     host: text("host"),
@@ -3448,7 +3448,7 @@ export const gitBackupConnections = pgTable(
   },
   (t) => [
     uniqueIndex("git_backup_connections_name_idx").on(t.userId, sql`lower(${t.name})`),
-    check("git_backup_connections_provider_check", sql`${t.provider} in ('github', 'gitlab', 'gitea')`),
+    check("git_backup_connections_provider_check", sql`${t.provider} in ('github', 'gitlab', 'gitea', 'forgejo')`),
   ]
 )
 

@@ -463,6 +463,13 @@
       "when": 1797200000000,
       "tag": "0065_git_backup_one_running",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1797300000000,
+      "tag": "0066_git_backup_forgejo",
+      "breakpoints": true
     }
   ]
 }

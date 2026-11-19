@@ -32,7 +32,7 @@ export const checkUrl = (raw: string) => {
   return u
 }
 
-const allowPrivate = async () => Boolean((await db.select({ on: settings.secretAllowPrivate }).from(settings))[0]?.on)
+export const allowPrivate = async () => Boolean((await db.select({ on: settings.secretAllowPrivate }).from(settings))[0]?.on)
 
 // Where a delivery may go: public addresses unless an admin allows private ones (lib/secrets/egress.ts).
 export async function dialable(u: URL) {

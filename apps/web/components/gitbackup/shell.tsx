@@ -53,7 +53,7 @@ export function Shell({ jobs, job, tab, repos, runs, connections, registry, oaut
       <header className="flex flex-wrap items-end gap-x-4 gap-y-3">
         <div className="mr-auto grid min-w-0 gap-1">
           <h1 className="text-2xl font-semibold tracking-tight">Git Backup</h1>
-          <p className="max-w-prose text-sm text-pretty text-muted-foreground">Keep full copies of your GitHub repos, with every branch and tag, in S3 storage. A new snapshot is made only when something changed.</p>
+          <p className="max-w-prose text-sm text-pretty text-muted-foreground">Keep full copies of your repos from GitHub, GitLab, Gitea or Forgejo, with every branch and tag, in S3 storage. A new snapshot is made only when something changed.</p>
         </div>
         {job && !showWizard && (
           <div className="flex flex-wrap items-center gap-2">

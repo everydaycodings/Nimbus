@@ -1,14 +1,15 @@
 // Self-check for Git Backup: node lib/gitbackup/runner.check.ts (needs git and tar).
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
+import { createHmac } from "node:crypto"
 import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { pipeline } from "node:stream/promises"
 import { createReadStream } from "node:fs"
 
-import { catFile, extract, headInfo, lsRemote, lsTree, mirror, pack, refNames, sealBare } from "./archive.ts"
-import { failureKind, hashRefs, inScope, manifestKey, parseRefs, pickPrune, snapshotKey } from "./refs.ts"
+import { gitEnv, catFile, extract, headInfo, lsRemote, lsTree, mirror, pack, refNames, sealBare } from "./archive.ts"
+import { cleanHost, failureKind, gitUser, hashRefs, hookOk, hookRepo, inScope, manifestKey, parseRefs, pickPrune, snapshotKey } from "./refs.ts"
 
 // --- pure parts
 const out = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\trefs/heads/main\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\trefs/tags/v1\n"
@@ -32,6 +33,14 @@ assert.ok(!inScope(["acme"], { owner: "octo" }))
 assert.ok(!inScope([`acme@${t}`], { owner: "acme", createdAt: "2026-10-31T00:00:00Z" }))
 assert.ok(inScope([`acme@${t}`], { owner: "ACME", createdAt: "2026-11-02T00:00:00Z" }))
 assert.ok(!inScope([`acme@${t}`], { owner: "acme", createdAt: null }))
+// GitLab subgroups fall under their parent group; a longer name that merely starts the same doesn't.
+assert.ok(inScope(["Acme"], { owner: "acme/Platform/infra" }))
+assert.ok(inScope(["acme/platform"], { owner: "ACME/platform/infra" }))
+assert.ok(!inScope(["acme"], { owner: "acme2" }))
+assert.ok(!inScope(["acme"], { owner: "acme2/sub" }))
+assert.ok(!inScope(["acme/platform"], { owner: "acme" }))
+assert.ok(inScope([`acme@${t}`], { owner: "acme/sub", createdAt: "2026-11-02T00:00:00Z" }))
+assert.ok(!inScope([`acme@${t}`], { owner: "acme/sub", createdAt: "2026-10-31T00:00:00Z" }))
 
 const key = snapshotKey("git-backup/", "github.com", "acme", "app", new Date("2026-11-19T04:05:06Z"), "0123456789abcdef")
 assert.equal(key, "git-backup/github.com/acme/app/20261119T040506Z-0123456.tar.gz")
@@ -44,6 +53,42 @@ assert.equal(failureKind("git ls-remote failed: fatal: repository 'https://h/o/r
 assert.equal(failureKind("fatal: unable to access 'https://github.com/a/b.git/': The requested URL returned error: 403"), "auth")
 assert.equal(failureKind("remote: Invalid username or token. Password authentication is not supported"), "auth")
 assert.equal(failureKind("git-lfs: command not found"), null)
+
+// Per host: the git user, the Basic header the token travels in, the host as typed, the webhook signature.
+assert.equal(gitUser("github"), "x-access-token")
+assert.equal(gitUser("gitlab", "me"), "oauth2")
+assert.equal(gitUser("gitea", "me"), "me")
+assert.equal(gitUser("forgejo", null), "x-access-token")
+for (const [provider, user] of [["github", "x-access-token"], ["gitlab", "oauth2"], ["gitea", "me"]] as const) {
+  const env = gitEnv("https://git.example.com/o/r.git", { token: "tok", user: gitUser(provider, "me") })
+  assert.equal(env.GIT_CONFIG_KEY_0, "http.https://git.example.com/.extraHeader")
+  assert.equal(env.GIT_CONFIG_VALUE_0, `Authorization: Basic ${Buffer.from(`${user}:tok`).toString("base64")}`)
+}
+assert.equal(gitEnv("http://localhost:3992/o/r.git", { token: "t" }).GIT_CONFIG_KEY_0, "http.http://localhost:3992/.extraHeader")
+assert.deepEqual(cleanHost("gitlab", ""), { host: null })
+assert.deepEqual(cleanHost("gitlab", "https://GitLab.com/"), { host: null })
+assert.deepEqual(cleanHost("gitlab", "gitlab.example.com/sub"), { host: "gitlab.example.com" })
+assert.deepEqual(cleanHost("gitea", "http://localhost:3910"), { host: "http://localhost:3910" })
+assert.deepEqual(cleanHost("gitea", "gitea.com"), { host: "gitea.com" })
+assert.ok("error" in cleanHost("forgejo", ""))
+assert.ok("error" in cleanHost("gitea", "bad host!"))
+assert.deepEqual(cleanHost("github", "github.com"), { host: null })
+const body = JSON.stringify({ repository: { full_name: "a/b" } })
+const hex = createHmac("sha256", "sec").update(body).digest("hex")
+assert.ok(hookOk("github", "sec", body, (n) => (n === "x-hub-signature-256" ? `sha256=${hex}` : null)))
+assert.ok(hookOk("gitea", "sec", body, (n) => (n === "x-gitea-signature" ? hex : null)))
+assert.ok(hookOk("forgejo", "sec", body, (n) => (n === "x-forgejo-signature" ? hex : null)))
+assert.ok(!hookOk("forgejo", "sec", body, (n) => (n === "x-forgejo-signature" ? "00" : null)))
+assert.ok(!hookOk("gitea", "other", body, (n) => (n === "x-gitea-signature" ? hex : null)))
+assert.ok(hookOk("gitlab", "sec", body, (n) => (n === "x-gitlab-token" ? "sec" : null)))
+assert.ok(!hookOk("gitlab", "sec", body, (n) => (n === "x-gitlab-token" ? "sed" : null)))
+assert.ok(!hookOk("gitlab", "sec", body, () => null))
+assert.deepEqual(hookRepo("gitea", { repository: { full_name: "acme/api" } }), { owner: "acme", name: "api" })
+assert.deepEqual(hookRepo("gitlab", { project: { path_with_namespace: "g/sub/repo" } }), { owner: "g/sub", name: "repo" })
+assert.equal(hookRepo("gitlab", { repository: { full_name: "a/b" } }), null)
+// Gitea/Forgejo "create" (new branch or tag) and GitLab "tag_push" name the repo the same way as a push.
+assert.deepEqual(hookRepo("forgejo", { ref: "v1", ref_type: "tag", repository: { full_name: "acme/api" } }), { owner: "acme", name: "api" })
+assert.deepEqual(hookRepo("gitlab", { object_kind: "tag_push", project: { path_with_namespace: "g/repo" } }), { owner: "g", name: "repo" })
 
 // --- against a local repo over file://
 const base = mkdtempSync(join(tmpdir(), "gbcheck-"))

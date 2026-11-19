@@ -82,7 +82,7 @@ export function Settings({ job, connections, registry, oauth, min }: { job: JobV
           <ScopeFields connection={conn} value={scope} onChange={setScope} picker={false} />
         </Section>
       </form>
-        <Section title="GitHub connection" hint="Which token this job uses to read your repos.">
+        <Section title="Git connection" hint="Which token this job uses to read your repos.">
           <ConnectStep connections={connections} registry={registry} oauth={oauth} value={conn} onChange={setConn} />
         </Section>
         <Section title="Storage" hint={job.destKind === "nimbus" ? "Archives go to a bucket on this server." : "Archives go to your own S3 storage."}>
@@ -144,11 +144,11 @@ export function Settings({ job, connections, registry, oauth, min }: { job: JobV
         )}
       </Section>
 
-      <Section title="Saved tokens" hint="Every GitHub token you added for backups. Keep them current: an expired token stops backups.">
+      <Section title="Saved tokens" hint="Every git token you added for backups. Keep them current: an expired token stops backups.">
         <ConnectionsManager connections={connections} />
       </Section>
 
-      <Section title="Delete this job" hint="Stops all backups for it. Your repos on GitHub are not touched.">
+      <Section title="Delete this job" hint="Stops all backups for it. Your repos on the git host are not touched.">
         <Button variant="outline" className={`${TOUCH} w-fit text-destructive hover:text-destructive`} onClick={() => setDeleting(true)}>
           Delete job…
         </Button>

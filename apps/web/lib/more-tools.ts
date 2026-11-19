@@ -16,7 +16,7 @@ export const MORE_TOOLS: {
     id: "github-backup",
     href: "/more/github-backup",
     name: "Git Backup",
-    text: "Back up your GitHub repos to S3 on a schedule",
+    text: "Back up your git repos to S3 on a schedule",
     icon: GitBranchIcon,
     enabled: (s) => s.gitBackupEnabled,
   },

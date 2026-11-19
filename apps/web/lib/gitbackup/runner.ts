@@ -18,8 +18,9 @@ import pkg from "../../package.json"
 import { alertFailing } from "./alerts"
 import { catFile, extract, headInfo, sealBare, lfsFetch, lsRemote, lsTree, mirror, pack, push, refNames, usesLfs, WORK } from "./archive"
 import { download, open, presign, putJson, removeArchives, upload } from "./dest"
-import { jobToken } from "./connections"
-import { repoList } from "./github"
+import { authUser, jobToken } from "./connections"
+import { GhError, guard } from "./host"
+import { repoList, setHook, whoami } from "./hosts"
 import { failureKind, hashRefs, inScope, manifestKey, pickPrune, snapshotKey } from "./refs"
 
 export type Trigger = "schedule" | "manual" | "webhook" | "first"
@@ -141,13 +142,15 @@ export async function runJob(runId: string, repoIds: string[]) {
     // Runs started through requestRun ("first", "manual") already looked for new repos.
     const ids = run.trigger === "schedule" ? [...repoIds, ...(await addAutoRepos(job))] : repoIds
     const conn = await jobToken(job)
+    // A self-hosted address is checked again (allow-private may be off now, or the name may point elsewhere).
+    await guard(conn.host)
     const dest = open(job)
     // Asked once per run, only after an access error: is the token itself still good?
     let checked: Promise<TokenState> | undefined
     const tokenState = () =>
-      (checked ??= gh(apiBase(conn.host), conn.token, "GET", "/user").then(
+      (checked ??= whoami(conn).then(
         () => "ok" as const,
-        (e: Error) => (/answered 401/.test(e.message) ? ("rejected" as const) : ("unknown" as const))
+        (e: Error) => (e instanceof GhError && e.status === 401 ? ("rejected" as const) : ("unknown" as const))
       ))
     const repos = ids.length ? await db.select().from(gitBackupRepos).where(inArray(gitBackupRepos.id, ids)).orderBy(asc(gitBackupRepos.owner), asc(gitBackupRepos.name)) : []
     prog.repos = repos.map((r) => ({ repoId: r.id, repo: `${r.owner}/${r.name}`, stage: "queued" as const }))
@@ -157,7 +160,7 @@ export async function runJob(runId: string, repoIds: string[]) {
         prog.repos[i] = { ...prog.repos[i], stage: s, ...(n !== undefined && { bytes: n }) }
         return writeProgress(job.id, prog)
       }
-      const r = await backupRepo({ job, repo, token: conn.token, dest, runId, force: run.force, work: join(work, repo.id), stage, tokenState })
+      const r = await backupRepo({ job, repo, token: conn.token, user: authUser(conn), noRedirects: Boolean(conn.host), dest, runId, force: run.force, work: join(work, repo.id), stage, tokenState })
       results.push(r)
       bytes += r.size ?? 0
     }
@@ -187,6 +190,9 @@ type Ctx = {
   job: Job
   repo: Repo
   token: string
+  user: string
+  // Self-hosted: git may not follow a redirect (the address was checked as dialable, a redirect target wasn't).
+  noRedirects: boolean
   dest: ReturnType<typeof open>
   runId: string
   force: boolean
@@ -200,7 +206,7 @@ async function backupRepo(c: Ctx): Promise<Result> {
   const { job, repo } = c
   const name = `${repo.owner}/${repo.name}`
   const next = () => new Date(Date.now() + minutes(repo, job) * 60_000)
-  const auth = { token: c.token }
+  const auth = { token: c.token, user: c.user, noRedirects: c.noRedirects }
   try {
     await c.stage("checking")
     const refs = await lsRemote(repo.cloneUrl, auth)
@@ -370,36 +376,21 @@ export async function purgeJobArchives(userId: string, jobId: string): Promise<v
 
 // ---- push webhook ---------------------------------------------------------------------------------
 
-const hookUrl = (jobId: string) => appUrl(`/api/gitbackup/webhook/${jobId}`)
-const apiBase = (host: string | null) => (host ? `https://${host}/api/v3` : (process.env.GITHUB_API_URL ?? "https://api.github.com").replace(/\/+$/, ""))
+// GITBACKUP_WEBHOOK_BASE: where the host should deliver to, when it can't reach this app at its public address (tests).
+const hookUrl = (jobId: string) => `${(process.env.GITBACKUP_WEBHOOK_BASE ?? appUrl()).replace(/\/+$/, "")}/api/gitbackup/webhook/${jobId}`
 
-// ponytail: GitHub only; and repos added to the job later (auto-include) get no hook until this is toggled again.
-async function gh(base: string, token: string, method: string, path: string, body?: unknown) {
-  const res = await fetch(`${base}${path}`, {
-    method,
-    headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json", "user-agent": "nimbus-gitbackup", ...(body ? { "content-type": "application/json" } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
-    signal: AbortSignal.timeout(15_000),
-  })
-  if (!res.ok) throw new Error(`GitHub answered ${res.status}.`)
-  return res.status === 204 ? null : res.json()
-}
-
+// ponytail: repos added to the job later (auto-include) get no hook until this is toggled again.
 // Turns the job's push webhook on (a hook on each repo, one shared secret) or off. Returns the repos it couldn't reach.
 export async function setWebhook(userId: string, jobId: string, on: boolean): Promise<{ failed: string[] }> {
   const job = await ownJob(userId, jobId)
   const conn = await jobToken(job)
-  const base = apiBase(conn.host)
   const secret = randomBytes(24).toString("hex")
   const url = hookUrl(jobId)
   const failed: string[] = []
   for (const r of await db.select().from(gitBackupRepos).where(eq(gitBackupRepos.jobId, jobId))) {
     const full = `${r.owner}/${r.name}`
     try {
-      // Ours only (by URL), so a second toggle doesn't stack hooks.
-      const hooks = (await gh(base, conn.token, "GET", `/repos/${full}/hooks?per_page=100`)) as { id: number; config?: { url?: string } }[]
-      for (const h of hooks.filter((h) => h.config?.url === url)) await gh(base, conn.token, "DELETE", `/repos/${full}/hooks/${h.id}`)
-      if (on) await gh(base, conn.token, "POST", `/repos/${full}/hooks`, { name: "web", active: true, events: ["push", "create"], config: { url, content_type: "json", secret, insecure_ssl: "0" } })
+      await setHook(conn, full, url, secret, on)
     } catch (e) {
       failed.push(`${full}: ${(e as Error).message}`)
     }

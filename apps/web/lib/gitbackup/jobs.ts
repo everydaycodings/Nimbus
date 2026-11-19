@@ -10,7 +10,7 @@ import { db } from "@/lib/db"
 import { gitBackupConnections, gitBackupJobs, gitBackupRepos, gitBackupRuns, gitBackupSnapshots, registryGitConnections } from "@/lib/db/schema"
 import { getSettings } from "@/lib/signup"
 import { connCfg, type Ref } from "./connections.ts"
-import { repoList } from "./github.ts"
+import { repoList } from "./hosts.ts"
 import { inScope, scopeRule } from "./refs.ts"
 import * as runner from "./runner.ts"
 import { prepareDest, releaseKey, type DestInput } from "./setup.ts"
@@ -136,7 +136,7 @@ function prefixOf(raw: string): { prefix: string } | { error: string } {
 function scopeOf(raw: unknown, newOnly: boolean, prev: string[]): string[] | { error: string } {
   const list = (Array.isArray(raw) ? raw : []).map((o) => String(o).trim())
   if (list.includes("*")) return list.length === 1 && !newOnly ? ["*"] : { error: "“Everything” can't be combined with owners." }
-  if (list.length > 100 || list.some((o) => !/^[\w.-]{1,100}$/.test(o))) return { error: "That list of owners isn't valid." }
+  if (list.length > 100 || list.some((o) => o.length > 200 || !/^[\w.-]+(\/[\w.-]+)*$/.test(o) || o.split("/").some((s) => /^\.+$/.test(s)))) return { error: "That list of owners isn't valid." }
   const logins = [...new Map(list.map((o) => [o.toLowerCase(), o])).values()]
   if (!newOnly) return logins
   const now = Math.floor(Date.now() / 1000)

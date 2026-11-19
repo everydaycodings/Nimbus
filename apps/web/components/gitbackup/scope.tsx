@@ -44,7 +44,11 @@ export function ScopeFields({ connection, value, onChange, picker }: { connectio
   }, [key])
   const counts = useMemo(() => {
     const m = new Map<string, number>()
-    for (const r of data?.repos ?? []) m.set(r.owner.toLowerCase(), (m.get(r.owner.toLowerCase()) ?? 0) + 1)
+    // A GitLab group counts its subgroups' repos too, as its scope takes them (refs.ts inScope).
+    for (const r of data?.repos ?? []) {
+      const parts = r.owner.toLowerCase().split("/")
+      for (let i = 1; i <= parts.length; i++) m.set(parts.slice(0, i).join("/"), (m.get(parts.slice(0, i).join("/")) ?? 0) + 1)
+    }
     return m
   }, [data])
   const toggle = (list: string[], login: string, on: boolean) => (on ? [...list, login] : list.filter((o) => !same(o, login)))

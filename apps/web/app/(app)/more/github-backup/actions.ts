@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache"
 import * as conn from "@/lib/gitbackup/connections"
 import * as jobs from "@/lib/gitbackup/jobs"
 import * as runner from "@/lib/gitbackup/runner"
+import type { Provider } from "@/lib/gitbackup/refs"
 import * as setup from "@/lib/gitbackup/setup"
 import { saveTokenToSecret as saveSecret } from "@/lib/registry/secrets-pull"
 import { requireMember } from "@/lib/session"
@@ -32,7 +33,7 @@ async function safe<T>(f: () => Promise<T>): Promise<T | { error: string }> {
 }
 
 // ---- connections ----
-export async function addToken(v: { name?: string; token: string; host?: string }) {
+export async function addToken(v: { provider?: Provider; name?: string; token: string; host?: string }) {
   const me = await member()
   return done(await conn.createConnection(me.id, v))
 }

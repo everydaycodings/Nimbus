@@ -134,7 +134,7 @@ export function ReposTab({ job, repos, connection, progress, kick }: { job: JobV
                   {r.snapshots ? ` · ${formatBytes(r.bytes)}` : ""}
                 </p>
                 {r.status === "error" && r.lastError && <p className="line-clamp-2 text-xs text-pretty text-destructive" title={r.lastError}>{r.lastError}</p>}
-                {r.status === "gone" && <p className="text-xs text-pretty text-muted-foreground">GitHub no longer shows this repo to this token. Checks stopped; snapshots are kept.</p>}
+                {r.status === "gone" && <p className="text-xs text-pretty text-muted-foreground">The git host no longer shows this repo to this token. Checks stopped; snapshots are kept.</p>}
               </div>
               <RowMenu label={`Actions for ${r.owner}/${r.name}`}>
                 <Menu.Item className={MENU_ITEM} disabled={r.status === "gone" || stage.has(r.id)} onClick={() => run({ repoId: r.id }, `Backup of ${r.name} started`)}>

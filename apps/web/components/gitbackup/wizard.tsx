@@ -16,7 +16,7 @@ import { DestStep } from "./dest-step"
 import { emptyScope, ScopeFields, scopeNewOnly, scopeOwners, scopeReady, type Scope } from "./scope"
 import { ScheduleFields, type Sched } from "./schedule-fields"
 
-const STEPS = ["Connect GitHub", "Storage", "What to back up", "Schedule"] as const
+const STEPS = ["Connect", "Storage", "What to back up", "Schedule"] as const
 
 export function Wizard({ connections, registry, oauth, min, connected, intro, onCancel }: { connections: ConnView[]; registry: RegistryPick[]; oauth: boolean; min: number; connected?: string; intro?: boolean; onCancel?: () => void }) {
   const router = useRouter()
@@ -24,7 +24,7 @@ export function Wizard({ connections, registry, oauth, min, connected, intro, on
   const [conn, setConn] = useState<Ref | null>(connected && connections.some((c) => c.id === connected) ? { connectionId: connected } : null)
   const [dest, setDest] = useState<DestInput | null>(null)
   const [scope, setScope] = useState<Scope>(emptyScope)
-  const [sched, setSched] = useState<Sched>({ name: "GitHub backup", prefix: "git-backup", intervalMin: Math.max(60, min), keepLast: 10, lfs: true })
+  const [sched, setSched] = useState<Sched>({ name: "Git backup", prefix: "git-backup", intervalMin: Math.max(60, min), keepLast: 10, lfs: true })
   const [error, setError] = useState<string>()
   const [pending, start] = useTransition()
 
@@ -44,7 +44,7 @@ export function Wizard({ connections, registry, oauth, min, connected, intro, on
           Step {step + 1} of {STEPS.length}
         </p>
         <h2 className="text-base font-semibold">{STEPS[step]}</h2>
-        {intro && step === 0 && <p className="max-w-prose text-sm text-pretty text-muted-foreground">Connect GitHub, choose where to store the copies and pick what to back up. It takes about a minute.</p>}
+        {intro && step === 0 && <p className="max-w-prose text-sm text-pretty text-muted-foreground">Connect your git host, choose where to store the copies and pick what to back up. It takes about a minute.</p>}
       </div>
       {step === 0 && <ConnectStep connections={connections} registry={registry} oauth={oauth} value={conn} onChange={setConn} />}
       <div hidden={step !== 1}>

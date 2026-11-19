@@ -1,7 +1,7 @@
 "use client"
 
 import { Menu } from "@base-ui/react/menu"
-import { GithubLogoIcon, KeyIcon, PencilSimpleIcon, TrashIcon } from "@phosphor-icons/react"
+import { KeyIcon, PencilSimpleIcon, TrashIcon } from "@phosphor-icons/react"
 import { useId, useState, useTransition } from "react"
 
 import { deleteConnection, renameConnection, replaceToken } from "@/app/(app)/more/github-backup/actions"
@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import type { ConnView } from "@/lib/gitbackup/connections"
+import { PROVIDERS, ProviderIcon } from "./providers"
 
 type Mode = { id: string; kind: "rename" | "replace" | "delete" }
 
@@ -29,10 +30,11 @@ export function ConnectionsManager({ connections }: { connections: ConnView[] })
       {connections.map((c) => (
         <li key={c.id} className="grid gap-3 px-3 py-3 sm:px-4">
           <div className="flex items-center gap-3">
-            <GithubLogoIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+            <ProviderIcon provider={c.provider} />
             <div className="grid min-w-0 flex-1 gap-0.5">
               <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                 <span className="truncate text-sm font-medium" title={c.name}>{c.name}</span>
+                <Badge variant="outline">{PROVIDERS[c.provider].label}</Badge>
                 <Badge variant="outline">{c.via === "oauth" ? "OAuth" : "Token"}</Badge>
                 <ExpiryBadge at={c.expiresAt} />
               </div>
