@@ -318,8 +318,12 @@ export default async function AppLayout({
   const sidebar = (
     <div className="flex h-full flex-col gap-4 p-2">
       <Brand icon={CloudIcon} title="Nimbus" fade={label} />
-      <nav className="flex flex-col gap-4" aria-label="Main">
-        <NewMenu />
+      <NewMenu />
+      {/* The list scrolls on its own; brand, New, storage and account stay put (same as the admin sidebar). */}
+      <nav
+        className="-mx-2 flex min-h-0 flex-1 [scrollbar-width:thin] flex-col gap-4 overflow-y-auto px-2"
+        aria-label="Main"
+      >
         <div className="flex flex-col gap-0.5">
           <p
             className={`flex h-8 items-center px-2 text-xs font-medium whitespace-nowrap text-muted-foreground ${label}`}
