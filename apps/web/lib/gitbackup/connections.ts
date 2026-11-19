@@ -9,7 +9,9 @@ import { decrypt, encrypt } from "@/lib/crypto"
 import { db } from "@/lib/db"
 import { gitBackupConnections, gitBackupJobs, registryGitConnections } from "@/lib/db/schema"
 import { listConnections as registryConnections, secretOf } from "@/lib/registry/connections"
-import { whoami, type HostCfg } from "./hosts.ts"
+import { blocked, type Perm } from "./perms.ts"
+import { checkAccess, whoami, type HostCfg } from "./hosts.ts"
+import { GhError } from "./host.ts"
 import { cleanHost, gitUser, type Provider } from "./refs.ts"
 
 export { cleanHost }
@@ -101,9 +103,24 @@ async function nameTaken(userId: string, name: string, except?: string) {
 }
 
 // The host modules check a self-hosted address before each call.
-const check = (provider: Provider, token: string, host: string | null) => whoami({ provider, token, host })
+// A 403 on the very first call usually means the permission that reads the account is missing (it isn't
+// proven, so it's a hint, not a "missing" in the checklist).
+const WHO_PERM: Partial<Record<Provider, string>> = { gitlab: "read_api", gitea: "user: Read", forgejo: "user: Read" }
+const check = (provider: Provider, token: string, host: string | null) =>
+  whoami({ provider, token, host }).catch((e: GhError) => {
+    throw e.status === 403 && WHO_PERM[provider] ? new GhError(`${e.message} The token may be missing the ${WHO_PERM[provider]} permission.`, 403) : e
+  })
 
-export type Saved = { id?: string; account?: string; host?: string | null; scopes?: string[]; expiresAt?: string | null; error?: string }
+// checks: the permission checklist (shown after Check and save, saved or not); fix: what to change when something is missing.
+export type Saved = { id?: string; account?: string; host?: string | null; scopes?: string[]; expiresAt?: string | null; error?: string; checks?: Perm[]; fix?: string; note?: string }
+
+// A token missing a required permission isn't saved: the member gets the checklist and the fix.
+async function permissions(cfg: HostCfg): Promise<Saved> {
+  const a = await checkAccess(cfg)
+  const out = { checks: a.perms, fix: a.fix, note: a.note }
+  const need = blocked(a)
+  return need.length ? { ...out, error: `The token is missing ${need.map((p) => p.name).join(", ")}.` } : out
+}
 
 export async function createConnection(userId: string, v: { provider?: Provider; name?: string; token: string; host?: string; via?: "pat" | "oauth" }): Promise<Saved> {
   const token = String(v.token ?? "").trim()
@@ -121,12 +138,14 @@ export async function createConnection(userId: string, v: { provider?: Provider;
   const name = cleanName(v.name || who.login)
   if (!name) return { error: "Give the connection a name of up to 60 characters." }
   if (await nameTaken(userId, name)) return { error: `You already have a connection called “${name}”.` }
+  const perms = await permissions({ provider, token, host: h.host, account: who.login })
+  if (perms.error) return perms
   const [c] = await db
     .insert(gitBackupConnections)
     .values({ userId, provider, name, account: who.login, host: h.host, via: v.via ?? "pat", secretEnc: encrypt(token), last4: token.slice(-4), scopes: who.scopes, expiresAt: who.expiresAt })
     .returning({ id: gitBackupConnections.id })
   await audit("git_backup_connection_create", { detail: `${name} (${who.login})` })
-  return { id: c.id, account: who.login, host: h.host, scopes: who.scopes, expiresAt: who.expiresAt?.toISOString() ?? null }
+  return { ...perms, id: c.id, account: who.login, host: h.host, scopes: who.scopes, expiresAt: who.expiresAt?.toISOString() ?? null }
 }
 
 async function mine(userId: string, id: string): Promise<Row | null> {
@@ -159,9 +178,19 @@ export async function replaceToken(userId: string, id: string, raw: string): Pro
     return { error: (e as Error).message }
   }
   if (c.account && who.login.toLowerCase() !== c.account.toLowerCase()) return { error: `That token belongs to ${who.login}, not ${c.account}. Add it as a new connection instead.` }
+  const perms = await permissions({ provider: c.provider, token, host: c.host, account: who.login })
+  if (perms.error) return perms
   await db.update(gitBackupConnections).set({ secretEnc: encrypt(token), last4: token.slice(-4), scopes: who.scopes, expiresAt: who.expiresAt, warnedAt: null }).where(eq(gitBackupConnections.id, id))
   await audit("git_backup_connection_replace", { detail: c.name })
-  return { id, account: who.login, scopes: who.scopes, expiresAt: who.expiresAt?.toISOString() ?? null }
+  return { ...perms, id, account: who.login, scopes: who.scopes, expiresAt: who.expiresAt?.toISOString() ?? null }
+}
+
+// A saved token's permissions, checked now (it may have been edited on the host since).
+export async function checkConnection(userId: string, id: string): Promise<{ checks?: Perm[]; fix?: string; note?: string; error?: string }> {
+  const cfg = await connCfg(userId, { connectionId: id })
+  if ("error" in cfg) return cfg
+  const a = await checkAccess(cfg)
+  return { checks: a.perms, fix: a.fix, note: a.note }
 }
 
 export async function deleteConnection(userId: string, id: string): Promise<{ error?: string }> {

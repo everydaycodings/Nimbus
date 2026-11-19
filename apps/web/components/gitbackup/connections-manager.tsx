@@ -1,10 +1,10 @@
 "use client"
 
 import { Menu } from "@base-ui/react/menu"
-import { KeyIcon, PencilSimpleIcon, TrashIcon } from "@phosphor-icons/react"
-import { useId, useState, useTransition } from "react"
+import { KeyIcon, PencilSimpleIcon, ShieldCheckIcon, TrashIcon } from "@phosphor-icons/react"
+import { useEffect, useId, useState, useTransition } from "react"
 
-import { deleteConnection, renameConnection, replaceToken } from "@/app/(app)/more/github-backup/actions"
+import { checkConnection, deleteConnection, renameConnection, replaceToken } from "@/app/(app)/more/github-backup/actions"
 import { Empty } from "@/components/empty-state"
 import { MENU_ITEM } from "@/components/overlay-styles"
 import { ExpiryBadge } from "@/components/registry-connections"
@@ -16,10 +16,12 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import type { ConnView } from "@/lib/gitbackup/connections"
+import type { ConnView, Saved } from "@/lib/gitbackup/connections"
+import { hostBase } from "@/lib/gitbackup/refs"
+import { PermChecklist } from "./perm-checklist"
 import { PROVIDERS, ProviderIcon } from "./providers"
 
-type Mode = { id: string; kind: "rename" | "replace" | "delete" }
+type Mode = { id: string; kind: "rename" | "replace" | "delete" | "check" }
 
 // The member's saved tokens: rename, replace the token, delete (blocked while a job uses it).
 export function ConnectionsManager({ connections }: { connections: ConnView[] }) {
@@ -49,6 +51,10 @@ export function ConnectionsManager({ connections }: { connections: ConnView[] })
                 <PencilSimpleIcon />
                 Rename
               </Menu.Item>
+              <Menu.Item className={MENU_ITEM} onClick={() => setMode({ id: c.id, kind: "check" })}>
+                <ShieldCheckIcon />
+                Check permissions
+              </Menu.Item>
               {c.via === "pat" && (
                 <Menu.Item className={MENU_ITEM} onClick={() => setMode({ id: c.id, kind: "replace" })}>
                   <KeyIcon />
@@ -61,10 +67,36 @@ export function ConnectionsManager({ connections }: { connections: ConnView[] })
               </Menu.Item>
             </RowMenu>
           </div>
-          {mode?.id === c.id && <Edit c={c} kind={mode.kind} onClose={() => setMode(null)} />}
+          {mode?.id === c.id && (mode.kind === "check" ? <Check c={c} onClose={() => setMode(null)} /> : <Edit c={c} kind={mode.kind} onClose={() => setMode(null)} />)}
         </li>
       ))}
     </ul>
+  )
+}
+
+// Checks a saved token against its host now and lists what it can and can't do.
+function Check({ c, onClose }: { c: ConnView; onClose: () => void }) {
+  const [r, setR] = useState<Saved>()
+  useEffect(() => {
+    let live = true
+    checkConnection(c.id).then((x) => live && setR(x))
+    return () => {
+      live = false
+    }
+  }, [c.id])
+  return (
+    <div className="grid gap-3 rounded-lg border bg-background/40 p-3">
+      {!r ? (
+        <p role="status" className="text-sm text-muted-foreground">Checking the permissions of “{c.name}”…</p>
+      ) : r.checks ? (
+        <PermChecklist provider={c.provider} checks={r.checks} fix={r.fix} note={r.note} link={PROVIDERS[c.provider].link(c.host ? hostBase(c.host) : "")} />
+      ) : (
+        <FormError>{r.error}</FormError>
+      )}
+      <div>
+        <Button type="button" variant="ghost" className={TOUCH} onClick={onClose}>Close</Button>
+      </div>
+    </div>
   )
 }
 
@@ -73,13 +105,19 @@ function Edit({ c, kind, onClose }: { c: ConnView; kind: Mode["kind"]; onClose: 
   const setNotice = useNotice()
   const [v, setV] = useState(kind === "rename" ? c.name : "")
   const [error, setError] = useState<string>()
+  const [checks, setChecks] = useState<Saved>()
   const [pending, start] = useTransition()
   const run = () =>
     start(async () => {
       setError(undefined)
+      setChecks(undefined)
       const r = kind === "rename" ? await renameConnection(c.id, v) : kind === "replace" ? await replaceToken(c.id, v) : await deleteConnection(c.id)
+      if ("checks" in r && r.checks) setChecks(r as Saved)
       if (r.error) return setError(r.error)
-      setNotice({ text: kind === "rename" ? "Renamed." : kind === "replace" ? `Replaced the token of “${c.name}”.` : `Deleted “${c.name}”.` })
+      // The form closes on success, so a missing optional permission goes in the toast.
+      const lacks = ((r as Saved).checks ?? []).filter((p) => !p.required && p.ok === false).map((p) => p.name)
+      const warn = lacks.length ? ` It lacks ${lacks.join(", ")}, so backups on push won't work.` : ""
+      setNotice({ text: kind === "rename" ? "Renamed." : kind === "replace" ? `Replaced the token of “${c.name}”.${warn}` : `Deleted “${c.name}”.` })
       onClose()
     })
   return (
@@ -102,6 +140,7 @@ function Edit({ c, kind, onClose }: { c: ConnView; kind: Mode["kind"]; onClose: 
         </div>
       )}
       <FormError>{error}</FormError>
+      {checks?.checks && <PermChecklist provider={c.provider} checks={checks.checks} fix={checks.fix} note={checks.note} link={PROVIDERS[c.provider].link(c.host ? hostBase(c.host) : "")} />}
       <div className="flex gap-2">
         <SubmitButton pending={pending} disabled={kind !== "delete" && !v.trim()} variant={kind === "delete" ? "destructive" : "default"} className={TOUCH}>
           {kind === "rename" ? "Save" : kind === "replace" ? "Replace" : "Delete"}

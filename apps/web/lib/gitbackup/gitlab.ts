@@ -3,6 +3,7 @@
 import "server-only"
 
 import { cached, call, GhError, owners as ownerList, type Cfg, type RepoInfo, type RepoList, type Who } from "./host.ts"
+import { gitlabFix, gitlabPerms, unknownPerms, type Access } from "./perms.ts"
 import { hostBase } from "./refs.ts"
 
 const base = (host: string | null) => host ? hostBase(host) : "https://gitlab.com"
@@ -75,4 +76,12 @@ export async function setHook(c: Cfg, full: string, url: string, secret: string,
   const hooks = (await (await get(c, `${p}?per_page=100`)).json()) as { id: number; url?: string }[]
   for (const h of hooks.filter((h) => h.url === url)) await get(c, `${p}/${h.id}`, { method: "DELETE" })
   if (on) await get(c, p, { method: "POST", body: { url, push_events: true, tag_push_events: true, token: secret, enable_ssl_verification: url.startsWith("https:") } })
+}
+
+// Scopes from /personal_access_tokens/self. Other kinds of token (OAuth, CI job) have no such page: then nothing can be judged.
+export async function checkAccess(c: Cfg): Promise<Access> {
+  const self = (await (await get(c, "/personal_access_tokens/self").catch((e: GhError) => (e.status === 404 || e.status === 403 ? null : Promise.reject(e))))?.json().catch(() => null)) as { scopes?: string[] } | null
+  if (!self?.scopes) return unknownPerms(gitlabPerms([]), "GitLab doesn't list this kind of token's scopes.")
+  const perms = gitlabPerms(self.scopes)
+  return { perms, fix: gitlabFix(perms) }
 }

@@ -117,7 +117,7 @@ test("provider cards: four choices, instructions and the server URL field per ho
   await expect(page.getByRole("link", { name: /Create one on GitLab/ })).toHaveAttribute("href", /^https:\/\/git\.example\.com\/-\/user_settings/)
   await shot(page, "cards-gitlab")
 
-  for (const [n, scope] of [["Gitea", "read:repository"], ["Forgejo", "read:organization"]] as const) {
+  for (const [n, scope] of [["Gitea", "repository: Read"], ["Forgejo", "organization: Read"]] as const) {
     await card(n).check()
     await expect(page.getByText(scope).first()).toBeVisible()
     await expect(page.getByLabel("Server URL", { exact: true })).toBeVisible()

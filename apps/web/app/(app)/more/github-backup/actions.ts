@@ -45,6 +45,10 @@ export async function replaceToken(id: string, token: string) {
   const me = await member()
   return done(await conn.replaceToken(me.id, id, token))
 }
+export async function checkConnection(id: string) {
+  const me = await member()
+  return safe(() => conn.checkConnection(me.id, id))
+}
 export async function deleteConnection(id: string) {
   const me = await member()
   return done(await conn.deleteConnection(me.id, id))

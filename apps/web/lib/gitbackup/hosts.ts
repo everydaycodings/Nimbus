@@ -5,15 +5,16 @@ import * as github from "./github.ts"
 import * as gitea from "./gitea.ts"
 import * as gitlab from "./gitlab.ts"
 import type { Cfg, RepoList, Who } from "./host.ts"
+import { githubPerms, giteaPerms, gitlabPerms, unknownPerms, type Access } from "./perms.ts"
 import type { Provider } from "./refs.ts"
 
 export type HostCfg = Cfg & { provider: Provider }
 export const LABEL: Record<Provider, string> = { github: "GitHub", gitlab: "GitLab", gitea: "Gitea", forgejo: "Forgejo" }
 
-const giteaLike = (p: "gitea" | "forgejo") => ({ whoami: gitea.whoami(LABEL[p]), repoList: gitea.repoList(LABEL[p]), setHook: (c: Cfg, ...a: [string, string, string, boolean]) => gitea.setHook(p, c, ...a) })
+const giteaLike = (p: "gitea" | "forgejo") => ({ whoami: gitea.whoami(LABEL[p]), repoList: gitea.repoList(LABEL[p]), checkAccess: gitea.checkAccess(LABEL[p]), setHook: (c: Cfg, ...a: [string, string, string, boolean]) => gitea.setHook(p, c, ...a) })
 const MODULES = {
-  github: { whoami: github.whoami, repoList: github.repoList, setHook: github.setHook },
-  gitlab: { whoami: gitlab.whoami, repoList: gitlab.repoList, setHook: gitlab.setHook },
+  github: { whoami: github.whoami, repoList: github.repoList, checkAccess: github.checkAccess, setHook: github.setHook },
+  gitlab: { whoami: gitlab.whoami, repoList: gitlab.repoList, checkAccess: gitlab.checkAccess, setHook: gitlab.setHook },
   gitea: giteaLike("gitea"),
   forgejo: giteaLike("forgejo"),
 }
@@ -22,3 +23,13 @@ export const whoami = (c: HostCfg): Promise<Who> => MODULES[c.provider].whoami(c
 export const repoList = (key: string, c: HostCfg, refresh = false): Promise<RepoList> => MODULES[c.provider].repoList(key, c, refresh)
 // full: "owner/name" (GitLab: "group/sub/name"). One repo's push hook, on or off.
 export const setHook = (c: HostCfg, full: string, url: string, secret: string, on: boolean) => MODULES[c.provider].setHook(c, full, url, secret, on)
+
+// Whether the token has what backups need. Never throws: a rate limit or a network error is "couldn't check", not a missing permission.
+export async function checkAccess(c: HostCfg): Promise<Access> {
+  try {
+    return await MODULES[c.provider].checkAccess(c)
+  } catch (e) {
+    const perms = c.provider === "github" ? githubPerms([]) : c.provider === "gitlab" ? gitlabPerms([]) : giteaPerms({ user: null, orgs: null, repos: null })
+    return unknownPerms(perms, `Couldn't check the permissions: ${(e as Error).message}`)
+  }
+}

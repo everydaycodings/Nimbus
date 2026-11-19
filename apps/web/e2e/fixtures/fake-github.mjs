@@ -45,10 +45,14 @@ const json = (res, body, status = 200, headers = {}) => {
   res.end(JSON.stringify(body))
 }
 // The token is "bad" → rejected, whether sent as Bearer or as a Basic password.
-const authed = (req) => {
+const tokenOf = (req) => {
   const [kind, v = ""] = (req.headers.authorization ?? "").split(" ")
-  const token = /^basic$/i.test(kind) ? Buffer.from(v, "base64").toString().split(":").slice(1).join(":") : v
-  return token !== "bad" && !revoked
+  return /^basic$/i.test(kind) ? Buffer.from(v, "base64").toString().split(":").slice(1).join(":") : v
+}
+const authed = (req) => tokenOf(req) !== "bad" && !revoked
+const scopesOf = (token) => {
+  if (token.includes("fine")) return null
+  return ["repo", token.includes("writeorg") ? "write:org" : "read:org", "admin:repo_hook"].filter((s) => !(token.includes("norepo") && s === "repo") && !(token.includes("noorg") && (s === "read:org" || s === "write:org")) && !(token.includes("nohook") && s === "admin:repo_hook")).join(", ")
 }
 const hooks = new Map() // "owner/name" -> { url, secret }
 const removed = new Map() // deleted hooks, so ?stale=1 can still deliver to one (a hook GitHub kept sending after Nimbus turned it off)
@@ -168,7 +172,10 @@ createServer((req, res) => {
     return
   }
   if (!authed(req)) return json(res, { message: "Bad credentials" }, 401)
-  if (p === "/user") return json(res, { login: "octo" }, 200, { "x-oauth-scopes": "repo, read:org", "github-authentication-token-expiration": "2027-01-01 00:00:00 UTC" })
+  if (p === "/user") {
+    const scopes = scopesOf(tokenOf(req))
+    return json(res, { login: "octo" }, 200, { ...(scopes === null ? {} : { "x-oauth-scopes": scopes }), "github-authentication-token-expiration": "2027-01-01 00:00:00 UTC" })
+  }
   if (p === "/user/orgs") return json(res, url.searchParams.get("page") === "1" || !url.searchParams.get("page") ? [{ login: "acme" }] : [])
   if (p === "/user/repos") {
     if ((url.searchParams.get("page") ?? "1") !== "1") return json(res, [])

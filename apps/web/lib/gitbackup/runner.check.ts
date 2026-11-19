@@ -9,6 +9,7 @@ import { pipeline } from "node:stream/promises"
 import { createReadStream } from "node:fs"
 
 import { gitEnv, catFile, extract, headInfo, lsRemote, lsTree, mirror, pack, refNames, sealBare } from "./archive.ts"
+import { blocked, githubFix, githubPerms, giteaPerms, gitlabFix, gitlabPerms, unknownPerms } from "./perms.ts"
 import { cleanHost, failureKind, gitUser, hashRefs, hookOk, hookRepo, inScope, manifestKey, parseRefs, pickPrune, snapshotKey } from "./refs.ts"
 
 // --- pure parts
@@ -24,6 +25,29 @@ const snaps = [d(3), d(1), d(5), d(2), d(4)]
 assert.deepEqual(pickPrune(snaps, 3).map((s) => s.id).sort(), ["1", "2"])
 assert.equal(pickPrune(snaps, 10).length, 0)
 assert.equal(pickPrune(snaps, 0).length, 4) // always keeps the newest
+
+// Token permissions per host. Blocking = a required one plainly missing; null (can't tell) never blocks.
+const names = (a: { name: string }[]) => a.map((p) => p.name)
+const gh = (...s: string[]) => githubPerms(s)
+assert.deepEqual(blocked({ perms: gh("repo", "read:org") }).length, 0)
+assert.deepEqual(names(blocked({ perms: gh("read:org") })), ["repo"])
+assert.deepEqual(names(blocked({ perms: gh("repo") })), ["read:org"])
+for (const org of ["write:org", "admin:org"]) assert.equal(blocked({ perms: gh("repo", org) }).length, 0, org)
+assert.equal(gh("repo", "read:org").find((p) => p.name === "admin:repo_hook")!.ok, false)
+assert.equal(gh("repo", "read:org", "write:repo_hook").find((p) => p.name === "admin:repo_hook")!.ok, true)
+assert.match(githubFix(gh("repo"))!, /tick read:org \(and admin:repo_hook if you want backups on push\), and Update token/)
+assert.match(githubFix(gh("repo", "read:org"))!, /^For backups on push: On GitHub .* tick admin:repo_hook, and Update token/)
+assert.equal(githubFix(gh("repo", "read:org", "admin:repo_hook")), undefined)
+assert.deepEqual(names(blocked({ perms: gitlabPerms(["read_api"]) })), ["read_repository"])
+assert.equal(blocked({ perms: gitlabPerms(["api"]) }).length, 0, "api implies read_api and read_repository")
+assert.equal(gitlabPerms(["read_api", "read_repository"]).find((p) => p.name === "api")!.ok, false)
+assert.match(gitlabFix(gitlabPerms([]))!, /create a new token with read_api, read_repository \(and api if you want backups on push\) and paste it here/)
+assert.match(gitlabFix(gitlabPerms(["read_api", "read_repository"]))!, /^For backups on push: .*create a new token with api and paste it here/)
+const gt = giteaPerms({ user: 200, orgs: 403, repos: 403 })
+assert.deepEqual(names(blocked({ perms: gt })), ["organization: Read", "repository: Read"])
+assert.equal(blocked({ perms: giteaPerms({ user: 200, orgs: 200, repos: 200 }) }).length, 0)
+assert.equal(blocked({ perms: giteaPerms({ user: 429, orgs: null, repos: 500 }) }).length, 0, "rate limit and network are not a missing permission")
+assert.ok(unknownPerms(gh(), "x").perms.every((p) => p.ok === null))
 
 // Scope: "*" all, "login" the whole owner, "login@t" only repos made after t (unknown time: not new).
 const t = Date.parse("2026-11-01T00:00:00Z") / 1000

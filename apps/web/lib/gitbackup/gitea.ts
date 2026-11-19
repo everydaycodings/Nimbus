@@ -3,6 +3,7 @@
 import "server-only"
 
 import { cached, call, GhError, owners as ownerList, type Cfg, type RepoInfo, type RepoList, type Who } from "./host.ts"
+import { giteaFix, giteaPerms, type Access, type Probe } from "./perms.ts"
 import { hostBase, type Provider } from "./refs.ts"
 
 export const apiBase = (host: string | null) => `${hostBase(host!)}/api/v1`
@@ -71,4 +72,21 @@ export async function setHook(provider: Provider, c: Cfg, full: string, url: str
   const hooks = (await (await get(c, label, `${p}?limit=50`)).json()) as { id: number; config?: { url?: string } }[]
   for (const h of hooks.filter((h) => h.config?.url === url)) await get(c, label, `${p}/${h.id}`, { method: "DELETE" })
   if (on) await get(c, label, p, { method: "POST", body: { type: provider, active: true, events: ["push", "create"], config: { url, content_type: "json", secret } } })
+}
+
+// One GET per permission: 403 means the token lacks it. Anything else that fails (rate limit, network) is "can't tell".
+export const checkAccess = (label: string) => async (c: Cfg): Promise<Access> => {
+  let note: string | undefined
+  const probe = async (path: string): Promise<Probe> => {
+    try {
+      return (await get(c, label, path)).status
+    } catch (e) {
+      const status = (e as GhError).status
+      if (status !== 403) note = (e as Error).message
+      return status ?? null
+    }
+  }
+  const [user, orgs, repos] = await Promise.all([probe("/user"), probe("/user/orgs"), probe("/user/repos?limit=1")])
+  const perms = giteaPerms({ user, orgs, repos })
+  return { perms, note, fix: giteaFix(perms) }
 }

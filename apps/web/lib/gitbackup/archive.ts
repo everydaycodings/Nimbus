@@ -13,8 +13,8 @@ import { parseRefs } from "./refs.ts"
 export const WORK = join(tmpdir(), "nimbus-gitbackup")
 // protocols: what git may speak for this call (GIT_ALLOW_PROTOCOL); tests add "file".
 // noRedirects: a user-typed remote may not send git elsewhere (it was checked as dialable, its redirect wasn't).
-// user: the name sent with the token (refs.ts gitUser; GitHub-style x-access-token when unset).
-export type Auth = { token?: string; user?: string; protocols?: string; noRedirects?: boolean }
+// user: the name sent with the token (refs.ts gitUser; GitHub-style x-access-token when unset). timeout: ms before git is killed.
+export type Auth = { token?: string; user?: string; protocols?: string; noRedirects?: boolean; timeout?: number }
 
 const basic = (a: Auth) => Buffer.from(`${a.user ?? "x-access-token"}:${a.token}`).toString("base64")
 
@@ -43,9 +43,9 @@ export function gitEnv(url: string | null, a: Auth) {
 }
 
 // Runs a command to the end. cap: stop reading after that many bytes (a file view) and kill it.
-function run(cmd: string, args: string[], o: { cwd?: string; env: Record<string, string>; token?: string; user?: string; cap?: number }) {
+function run(cmd: string, args: string[], o: { cwd?: string; env: Record<string, string>; token?: string; user?: string; cap?: number; timeout?: number }) {
   return new Promise<Buffer>((resolve, reject) => {
-    const p = spawn(cmd, args, { cwd: o.cwd ?? process.cwd(), env: o.env as NodeJS.ProcessEnv, stdio: ["ignore", "pipe", "pipe"] })
+    const p = spawn(cmd, args, { cwd: o.cwd ?? process.cwd(), env: o.env as NodeJS.ProcessEnv, stdio: ["ignore", "pipe", "pipe"], timeout: o.timeout })
     const out: Buffer[] = []
     let n = 0
     let err = ""
@@ -68,7 +68,7 @@ function run(cmd: string, args: string[], o: { cwd?: string; env: Record<string,
     })
   })
 }
-const git = (args: string[], url: string | null, a: Auth, cwd?: string) => run("git", args, { cwd, env: gitEnv(url, a), token: a.token, user: a.user })
+const git = (args: string[], url: string | null, a: Auth, cwd?: string) => run("git", args, { cwd, env: gitEnv(url, a), token: a.token, user: a.user, timeout: a.timeout })
 
 // The branches and tags on the remote, as name -> sha.
 export async function lsRemote(url: string, a: Auth = {}) {

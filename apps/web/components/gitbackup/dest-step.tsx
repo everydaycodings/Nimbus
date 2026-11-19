@@ -29,8 +29,9 @@ export function DestStep({ onChange, existing, jobName }: { onChange: (d: DestIn
   const [kind, setKind] = useState<"nimbus" | "s3">(existing ? "s3" : "nimbus")
   const [opts, setOpts] = useState<Opts | null>(null)
   const [loadError, setLoadError] = useState(false)
-  const [mode, setMode] = useState<"existing" | "new">("new")
-  const [bucketId, setBucketId] = useState("")
+  // null until the member picks: the default follows the loaded buckets, so late data never overrides a choice.
+  const [picked, setMode] = useState<"existing" | "new" | null>(null)
+  const [pickedBucket, setBucketId] = useState("")
   const [newBucket, setNewBucket] = useState(suggestBucketName(jobName || "git backup"))
   const [s3, setS3] = useState({ endpoint: existing?.endpoint ?? "", region: existing?.region ?? "us-east-1", bucket: existing?.bucket ?? "", accessKey: existing?.accessKey ?? "", secret: "", pathStyle: existing?.pathStyle ?? true })
   // The values the last passing test was for.
@@ -40,18 +41,21 @@ export function DestStep({ onChange, existing, jobName }: { onChange: (d: DestIn
   const sig = JSON.stringify(s3)
 
   useEffect(() => {
+    let live = true
     nimbusOptions().then(
       (o) => {
+        if (!live) return
         setOpts(o)
-        if (o.buckets.length) {
-          setMode("existing")
-          setBucketId(o.buckets[0].id)
-        }
         if (o.state !== "ready") setKind("s3")
       },
-      () => (setLoadError(true), setKind("s3"))
+      () => live && (setLoadError(true), setKind("s3"))
     )
+    return () => {
+      live = false
+    }
   }, [])
+  const mode = picked ?? (opts?.buckets.length ? "existing" : "new")
+  const bucketId = pickedBucket || opts?.buckets[0]?.id || ""
 
   const bucketBad = mode === "new" ? bucketNameError(newBucket.trim()) : null
   useEffect(() => {

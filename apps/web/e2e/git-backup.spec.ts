@@ -39,6 +39,8 @@ const jobId = (page: Page) => new URL(page.url()).searchParams.get("job")!
 
 async function newBucket(page: Page, name: string) {
   const make = page.getByRole("radio", { name: "Make a new bucket" })
+  // Wait for the bucket list: the radio only shows when there are buckets.
+  await make.or(page.getByLabel("New bucket name")).first().waitFor()
   if (await make.isVisible().catch(() => false)) await make.check()
   await page.getByLabel("New bucket name").fill(name)
 }

@@ -12,9 +12,10 @@ import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import type { ConnView, Ref, RegistryPick } from "@/lib/gitbackup/connections"
-import type { Provider } from "@/lib/gitbackup/refs"
+import type { ConnView, Ref, RegistryPick, Saved } from "@/lib/gitbackup/connections"
+import { hostBase, type Provider } from "@/lib/gitbackup/refs"
 import { cn } from "@/lib/utils"
+import { PermChecklist } from "./perm-checklist"
 import { ORDER, PROVIDERS, ProviderIcon } from "./providers"
 import { SecretsDialog } from "./secrets-dialog"
 
@@ -26,6 +27,8 @@ export function ConnectStep({ connections, registry, oauth, value, onChange }: {
   const [added, setAdded] = useState<ConnView[]>([])
   const [adding, setAdding] = useState(connections.length === 0 && registry.length === 0)
   const [secretToken, setSecretToken] = useState<string | null>(null)
+  // What the last save found, kept after the form closes so a missing optional permission still shows.
+  const [found, setFound] = useState<{ provider: Provider; r: Saved } | null>(null)
   const all = [...connections, ...added.filter((a) => !connections.some((c) => c.id === a.id))]
   const picked = all.find((c) => refKey(value) === `c:${c.id}`)
   return (
@@ -70,7 +73,7 @@ export function ConnectStep({ connections, registry, oauth, value, onChange }: {
       )}
       <div className="flex flex-wrap items-center gap-2">
         {!adding && (
-          <button type="button" onClick={() => setAdding(true)} className={cn(buttonVariants({ variant: "outline", size: "sm" }), TOUCH)}>
+          <button type="button" onClick={() => (setFound(null), setAdding(true))} className={cn(buttonVariants({ variant: "outline", size: "sm" }), TOUCH)}>
             <PlusIcon />
             Add a token
           </button>
@@ -82,9 +85,11 @@ export function ConnectStep({ connections, registry, oauth, value, onChange }: {
           </a>
         )}
       </div>
+      {found?.r.checks && !adding && <PermChecklist provider={found.provider} checks={found.r.checks} fix={found.r.fix} note={found.r.note} link={PROVIDERS[found.provider].link(found.r.host ? hostBase(found.r.host) : "")} />}
       {adding && (
         <TokenForm
-          onSaved={(c, token) => {
+          onSaved={(c, token, r) => {
+            setFound({ provider: c.provider, r })
             setAdded((a) => [...a, c])
             setAdding(false)
             onChange({ connectionId: c.id })
@@ -98,7 +103,7 @@ export function ConnectStep({ connections, registry, oauth, value, onChange }: {
   )
 }
 
-function TokenForm({ onSaved, onCancel }: { onSaved: (c: ConnView, token: string) => void; onCancel?: () => void }) {
+function TokenForm({ onSaved, onCancel }: { onSaved: (c: ConnView, token: string, r: Saved) => void; onCancel?: () => void }) {
   const id = useId()
   const [provider, setProvider] = useState<Provider>("github")
   const [token, setToken] = useState("")
@@ -106,6 +111,7 @@ function TokenForm({ onSaved, onCancel }: { onSaved: (c: ConnView, token: string
   const [host, setHost] = useState("")
   const [enterprise, setEnterprise] = useState(false)
   const [error, setError] = useState<string>()
+  const [result, setResult] = useState<Saved>()
   const [pending, start] = useTransition()
   const P = PROVIDERS[provider]
   const own = provider === "gitea" || provider === "forgejo"
@@ -121,11 +127,13 @@ function TokenForm({ onSaved, onCancel }: { onSaved: (c: ConnView, token: string
         // In Settings this form sits inside the job's form; React would hand the submit to that one too.
         e.stopPropagation()
         setError(undefined)
+        setResult(undefined)
         start(async () => {
           const r = await addToken({ provider, token, name, host: showHost ? host : undefined })
+          setResult(r)
           if (r.error || !r.id) return setError(r.error ?? "Couldn't save the token.")
           const c: ConnView = { id: r.id, provider, name: name.trim() || r.account!, account: r.account!, host: r.host ?? null, via: "pat", last4: token.slice(-4), scopes: r.scopes ?? [], expiresAt: r.expiresAt ?? null, jobs: 0 }
-          onSaved(c, token)
+          onSaved(c, token, r)
           setToken("")
         })
       }}
@@ -135,7 +143,7 @@ function TokenForm({ onSaved, onCancel }: { onSaved: (c: ConnView, token: string
         <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
           {ORDER.map((p) => (
             <label key={p} className={cn(RADIO, "items-start")}>
-              <input type="radio" name={`${id}-provider`} className={cn(RADIO_INPUT, "mt-0.5")} checked={provider === p} onChange={() => (setProvider(p), setHost(""), setEnterprise(false), setError(undefined))} />
+              <input type="radio" name={`${id}-provider`} className={cn(RADIO_INPUT, "mt-0.5")} checked={provider === p} onChange={() => (setProvider(p), setHost(""), setEnterprise(false), setError(undefined), setResult(undefined))} />
               <span className="grid min-w-0 gap-0.5">
                 <span className="flex items-center gap-2 font-medium">
                   <ProviderIcon provider={p} />
@@ -147,25 +155,47 @@ function TokenForm({ onSaved, onCancel }: { onSaved: (c: ConnView, token: string
           ))}
         </div>
       </fieldset>
-      <div className="grid gap-1">
-        <p className="text-sm font-medium">Add a personal access token</p>
-        <p className="text-sm text-pretty text-muted-foreground">
-          It needs the {P.scopes.map((s, i) => (
-            <span key={s}>
-              {i > 0 && (i === P.scopes.length - 1 ? " and " : ", ")}
-              <span className="font-mono">{s}</span>
-            </span>
-          ))}{" "}
-          scopes {P.extra}.{" "}
-          {link ? (
-            <a href={link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-sm text-foreground underline underline-offset-4 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
-              {P.linkText}
-              <ArrowSquareOutIcon aria-hidden className="size-3.5" />
-            </a>
-          ) : (
-            <span>Enter the server address to get a link to your token page.</span>
-          )}
-        </p>
+      <div className="grid gap-3">
+        <div className="grid gap-1">
+          <p className="text-sm font-medium">Add a personal access token</p>
+          <p className="text-sm text-pretty text-muted-foreground">
+            Give it these permissions, nothing more. Nimbus only reads your repos.{" "}
+            {link ? (
+              <a href={link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-sm text-foreground underline underline-offset-4 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
+                {P.linkText}
+                <ArrowSquareOutIcon aria-hidden className="size-3.5" />
+              </a>
+            ) : (
+              <span>Enter the server address to get a link to your token page.</span>
+            )}
+          </p>
+        </div>
+        <ul aria-label={`Permissions for a ${P.label} token`} className="divide-y rounded-lg border text-sm">
+          {P.need.map((p) => (
+            <li key={p.name} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-3 py-2">
+              <span className="font-mono text-xs">{p.name}</span>
+              <span className="text-pretty text-muted-foreground">{p.why}</span>
+            </li>
+          ))}
+          {P.push.map((p) => (
+            <li key={p.name} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-3 py-2">
+              <span className="font-mono text-xs">{p.name}</span>
+              <span className="text-pretty text-muted-foreground">
+                <span className="text-foreground">Optional:</span> {p.why}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <details className="group text-sm">
+          <summary className="w-fit cursor-pointer rounded-sm text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50">
+            Tips if the token doesn&apos;t work
+          </summary>
+          <ul className="mt-2 grid list-disc gap-1.5 pl-5 text-pretty text-muted-foreground">
+            {P.tips.map((t) => (
+              <li key={t}>{t}</li>
+            ))}
+          </ul>
+        </details>
       </div>
       {provider === "github" && (
         <label className="flex min-h-9 items-center gap-2 text-sm">
@@ -189,6 +219,7 @@ function TokenForm({ onSaved, onCancel }: { onSaved: (c: ConnView, token: string
         <Input id={`${id}-n`} value={name} maxLength={60} onChange={(e) => setName(e.target.value)} placeholder={`Defaults to your ${P.label} username`} autoComplete="off" className="pointer-coarse:h-11" />
       </div>
       <FormError>{error}</FormError>
+      {result?.checks && <PermChecklist provider={provider} checks={result.checks} fix={result.fix} note={result.note} link={link} />}
       <div className="flex flex-wrap items-center gap-2">
         <SubmitButton pending={pending} disabled={!token.trim() || (own && !host.trim()) || (provider === "github" && enterprise && !host.trim())} className={TOUCH}>
           Check and save

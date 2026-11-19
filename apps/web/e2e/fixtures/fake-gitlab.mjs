@@ -1,6 +1,7 @@
 // A tiny GitLab for Git Backup e2e: the /api/v4 calls Nimbus makes plus real git smart-HTTP (git http-backend).
 // Usage: node e2e/fixtures/fake-gitlab.mjs <dir> [port]   — repos live in <dir>/<full path>.git. Point a connection's server URL at http://localhost:<port>.
 // Token "bad" is rejected (401). POST /_test/revoke?on=1 rejects every token. POST /_test/push/<full/path> adds a commit.
+// Scopes follow the token string: default read_api, read_repository, api; "norepo" has only read_api, "noapi" lacks api, "apionly" has only api.
 // Projects are served 3 per page (x-next-page) so paging gets exercised. Hooks: POST /api/v4/projects/<id>/hooks keeps url+token;
 // POST /_test/deliver/<full/path> sends a push event with the hook's token (?bad=1 sends a wrong one).
 import { execFileSync, spawn } from "node:child_process"
@@ -50,11 +51,12 @@ const readBody = async (req) => {
   return Buffer.concat(c)
 }
 // "PRIVATE-TOKEN: <t>" for the API, Basic oauth2:<t> for git.
-const authed = (req) => {
+const tokenOf = (req) => {
   const [kind, v = ""] = (req.headers.authorization ?? "").split(" ")
-  const token = /^basic$/i.test(kind) ? Buffer.from(v, "base64").toString().split(":").slice(1).join(":") : req.headers["private-token"]
-  return Boolean(token) && token !== "bad" && !revoked
+  return /^basic$/i.test(kind) ? Buffer.from(v, "base64").toString().split(":").slice(1).join(":") : req.headers["private-token"]
 }
+const authed = (req) => Boolean(tokenOf(req)) && tokenOf(req) !== "bad" && !revoked
+const scopesOf = (t) => (t.includes("apionly") ? ["api"] : t.includes("norepo") ? ["read_api"] : t.includes("noapi") ? ["read_api", "read_repository"] : ["read_api", "read_repository", "api"])
 const project = (p) => ({
   id: PROJECTS.indexOf(p) + 1,
   path: p.path,
@@ -117,7 +119,7 @@ createServer((req, res) => {
   if (!authed(req)) return json(res, { message: "401 Unauthorized" }, 401)
   const a = p.slice(7)
   if (a === "/user") return json(res, { username: "octo" })
-  if (a === "/personal_access_tokens/self") return json(res, { scopes: ["read_api", "read_repository", "api"], expires_at: "2027-02-01" })
+  if (a === "/personal_access_tokens/self") return json(res, { scopes: scopesOf(tokenOf(req)), expires_at: "2027-02-01" })
   if (a === "/groups") return json(res, [{ full_path: "acme" }, { full_path: "acme/platform" }])
   if (a === "/projects") {
     const page = Number(url.searchParams.get("page") ?? 1)

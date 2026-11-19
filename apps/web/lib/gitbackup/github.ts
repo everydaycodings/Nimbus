@@ -2,8 +2,10 @@
 // host: a GitHub Enterprise server (null = github.com). GITHUB_API_URL points tests at a fake when host is null.
 import "server-only"
 
+import { lsRemote } from "./archive.ts"
 import { cached, GhError, guard, owners as ownerList, type Cfg, type Owner, type RepoInfo, type RepoList, type Who } from "./host.ts"
-import { hostBase } from "./refs.ts"
+import { FINE_FIX_CONTENTS, FINE_FIX_REPOS, githubFix, githubPerms, type Access } from "./perms.ts"
+import { failureKind, hostBase } from "./refs.ts"
 
 export { GhError }
 export type { Cfg, Owner, RepoInfo, RepoList }
@@ -68,15 +70,10 @@ async function pages<T>(c: Cfg, path: string, max = 30): Promise<T[]> {
 }
 
 
-async function fetchAll(c: Cfg): Promise<RepoList> {
-  const [raw, orgs, me] = await Promise.all([
-    pages<Raw>(c, "/user/repos?affiliation=owner,collaborator,organization_member&sort=pushed"),
-    pages<{ login: string }>(c, "/user/orgs", 5).catch(() => []),
-    whoami(c),
-  ])
-  // The runner clones (with the token) from cloneUrl, so only https addresses on the API's own host are kept.
+// The runner clones (with the token) from cloneUrl, so only https addresses on the API's own host are kept.
+const cloneOk = (c: Cfg) => {
   const home = c.host ? new URL(hostBase(c.host)) : process.env.GITHUB_API_URL ? null : new URL("https://github.com")
-  const safe = (u: string) => {
+  return (u: string) => {
     try {
       const x = new URL(u)
       return home ? x.protocol === home.protocol && x.host === home.host : true
@@ -84,6 +81,15 @@ async function fetchAll(c: Cfg): Promise<RepoList> {
       return false
     }
   }
+}
+
+async function fetchAll(c: Cfg): Promise<RepoList> {
+  const [raw, orgs, me] = await Promise.all([
+    pages<Raw>(c, "/user/repos?affiliation=owner,collaborator,organization_member&sort=pushed"),
+    pages<{ login: string }>(c, "/user/orgs", 5).catch(() => []),
+    whoami(c),
+  ])
+  const safe = cloneOk(c)
   const repos = raw.filter((r) => safe(r.clone_url)).map((r) => ({
     owner: r.owner.login,
     ownerType: (r.owner.type === "Organization" ? "Organization" : "User") as RepoInfo["ownerType"],
@@ -110,4 +116,37 @@ export async function setHook(c: Cfg, full: string, url: string, secret: string,
   const hooks = (await (await get(c, `/repos/${full}/hooks?per_page=100`)).json()) as { id: number; config?: { url?: string } }[]
   for (const h of hooks.filter((h) => h.config?.url === url)) await get(c, `/repos/${full}/hooks/${h.id}`, { method: "DELETE" })
   if (on) await get(c, `/repos/${full}/hooks`, { method: "POST", body: { name: "web", active: true, events: ["push", "create"], config: { url, content_type: "json", secret, insecure_ssl: "0" } } })
+}
+
+// Which permissions the token has. A classic token lists its scopes in a header. A fine-grained one doesn't, so the honest
+// check is access: can it see a repo, and can git read one (a real ls-remote, the token sent as a header, never in argv or URL).
+// Webhook rights can't be tried without adding a webhook, so those say "can't tell".
+export async function checkAccess(c: Cfg): Promise<Access> {
+  const header = (await get(c, "/user")).headers.get("x-oauth-scopes")
+  if (header !== null) {
+    const perms = githubPerms(header.split(",").map((s) => s.trim()).filter(Boolean))
+    return { perms, fix: githubFix(perms) }
+  }
+  const rows = (await (await get(c, "/user/repos?affiliation=owner,collaborator,organization_member&sort=pushed&per_page=100")).json()) as Raw[]
+  const safe = cloneOk(c)
+  const repos = rows.filter((r) => safe(r.clone_url))
+  const pick = repos.find((r) => r.private) ?? repos[0]
+  let contents: boolean | null = null
+  let note: string | undefined
+  if (pick) {
+    try {
+      await lsRemote(pick.clone_url, { token: c.token, user: "x-access-token", noRedirects: Boolean(c.host), timeout: 20_000 })
+      contents = true
+    } catch (e) {
+      const kind = failureKind((e as Error).message)
+      contents = kind ? false : null
+      if (!kind) note = "Couldn't read a repo to check the Contents permission."
+    }
+  }
+  const perms = [
+    { name: "Repository access", ok: pick ? true : false, required: true, why: "see at least one repo" },
+    { name: "Contents: Read-only", ok: contents, required: true, why: "clone your repos, private ones included" },
+    { name: "Webhooks: Read and write", ok: null, required: false, why: "add the webhook that starts a backup on push" },
+  ]
+  return { perms, note, fix: !pick ? FINE_FIX_REPOS : contents === false ? FINE_FIX_CONTENTS : undefined }
 }
