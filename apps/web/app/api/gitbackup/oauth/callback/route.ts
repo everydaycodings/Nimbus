@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
   if (!s.gitBackupEnabled || !s.githubOauthClientId || !secret) return back("oauth_error=off")
   let token: string | undefined
   try {
-    const r = await fetch("https://github.com/login/oauth/access_token", {
+    const r = await fetch(`${(process.env.GITHUB_OAUTH_URL ?? "https://github.com").replace(/\/+$/, "")}/login/oauth/access_token`, {
       method: "POST",
       headers: { accept: "application/json", "content-type": "application/json", "user-agent": "nimbus-gitbackup" },
       body: JSON.stringify({ client_id: s.githubOauthClientId, client_secret: secret, code, redirect_uri: `${base()}/api/gitbackup/oauth/callback` }),
