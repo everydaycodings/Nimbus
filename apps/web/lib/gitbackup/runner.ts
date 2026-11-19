@@ -6,7 +6,7 @@ import { randomBytes } from "node:crypto"
 import { readdir, rm, stat, utimes } from "node:fs/promises"
 import { join } from "node:path"
 
-import { and, asc, desc, eq, inArray, ne } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, lte, ne, sql } from "drizzle-orm"
 
 import { db } from "@/lib/db"
 import { gitBackupJobs, gitBackupRepos, gitBackupRuns, gitBackupSnapshots, settings } from "@/lib/db/schema"
@@ -177,6 +177,12 @@ export async function runJob(runId: string, repoIds: string[]) {
     .set({ status, checked: results.length, changed: results.filter((r) => r.outcome === "backed_up").length, failed, bytes, results, finishedAt: new Date() })
     .where(eq(gitBackupRuns.id, runId))
   if (!job) return
+  // A run that failed before reaching its repos leaves them due; move them on so the tick doesn't retry every minute.
+  if (repoIds.length)
+    await db
+      .update(gitBackupRepos)
+      .set({ nextDueAt: sql`now() + make_interval(mins => coalesce(${gitBackupRepos.intervalMin}, ${job.intervalMin}))` })
+      .where(and(inArray(gitBackupRepos.id, repoIds), lte(gitBackupRepos.nextDueAt, new Date())))
   const streak = status === "ok" ? 0 : job.failStreak + 1
   await db
     .update(gitBackupJobs)

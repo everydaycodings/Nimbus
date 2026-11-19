@@ -5,7 +5,8 @@
 // thumbnails (scripts/derive.ts) and video copies (scripts/transcode.ts) run here, since they're heavy and native.
 // Run: npm run worker
 import { Worker } from "bullmq"
-import { request } from "node:http"
+import { request as httpRequest } from "node:http"
+import { request as httpsRequest } from "node:https"
 import postgres from "postgres"
 
 import {
@@ -87,8 +88,10 @@ const gitRuns = new Worker(
   (job) =>
     new Promise<void>((resolve, reject) => {
       const body = JSON.stringify({ name: "git-backup-run", data: job.data })
-      const req = request(
-        new URL("/api/jobs", app),
+      const url = new URL("/api/jobs", app)
+      // BETTER_AUTH_URL is https:// in production; node:http alone throws on it before sending anything.
+      const req = (url.protocol === "https:" ? httpsRequest : httpRequest)(
+        url,
         {
           method: "POST",
           headers: {
@@ -107,7 +110,15 @@ const gitRuns = new Worker(
       req.on("error", reject)
       req.end(body)
     }).catch(async (e) => {
-      await sql`update git_backup_runs set status = 'failed', finished_at = now() where id = ${job.data.runId} and status = 'running'`
+      // Say why on the run (History shows it), and move its repos on by their interval so a broken
+      // setup isn't retried every minute.
+      const error = `Couldn't start the backup: ${(e as Error).message}`.slice(0, 300)
+      const [run] = await sql`update git_backup_runs set status = 'failed', finished_at = now(),
+        results = ${sql.json([{ repoId: "", repo: "", outcome: "failed", error }])}
+        where id = ${job.data.runId} and status = 'running' returning job_id`
+      if (run && job.data.repoIds?.length)
+        await sql`update git_backup_repos r set next_due_at = now() + make_interval(mins => coalesce(r.interval_min, j.interval_min))
+          from git_backup_jobs j where j.id = r.job_id and r.id in ${sql(job.data.repoIds)}`
       throw e
     }),
   { connection: workerConnection(), concurrency: Math.max(1, gitConcurrency) }

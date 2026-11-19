@@ -45,8 +45,8 @@ function RunRow({ run }: { run: RunView }) {
         <ul id={id} className="border-t bg-background/40">
           {run.results.length === 0 && <li className="px-4 py-3 text-sm text-muted-foreground">No repo results were recorded.</li>}
           {run.results.map((r) => (
-            <li key={r.repoId} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-2 text-sm">
-              <span className="min-w-0 truncate" title={r.repo}>{r.repo}</span>
+            <li key={r.repoId || "run"} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-2 text-sm">
+              <span className={cn("min-w-0 truncate", !r.repo && "text-muted-foreground")} title={r.repo || undefined}>{r.repo || "Whole run"}</span>
               <span className={cn("text-xs", r.outcome === "failed" ? "text-destructive" : "text-muted-foreground")}>{OUTCOME[r.outcome]}</span>
               {r.size ? <span className="text-xs text-muted-foreground tabular-nums">{formatBytes(r.size)}</span> : null}
               {r.error && <span className="w-full text-xs text-pretty text-destructive">{r.error}</span>}
