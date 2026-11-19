@@ -618,6 +618,8 @@ export const NOTIFICATION_KINDS = [
   "registry_connection",
   // S3 access keys: made, rotated, edited, disabled, due for rotation, or about to expire.
   "s3_key",
+  // Git Backup (/more/github-backup): 2+ failed runs in a row, or a connection token expiring.
+  "git_backup",
 ] as const
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number]
 // Only admins get these, so only admins see their settings.
@@ -796,6 +798,13 @@ export const settings = pgTable(
     secretAllowPrivate: boolean("secret_allow_private").notNull().default(false),
     // Documents section: off hides it; docsMl lets nimbus-ml (CLIP) hint the type of scanned images.
     documentsEnabled: boolean("documents_enabled").notNull().default(true),
+    // More tools (/more). Git Backup: off hides it and stops runs; nothing is deleted.
+    gitBackupEnabled: boolean("git_backup_enabled").notNull().default(true),
+    gitBackupMinInterval: integer("git_backup_min_interval").notNull().default(15),
+    gitBackupConcurrency: integer("git_backup_concurrency").notNull().default(2),
+    // "Connect GitHub" OAuth app; the button shows only when both are set. Secret sealed by lib/crypto.
+    githubOauthClientId: text("github_oauth_client_id"),
+    githubOauthClientSecret: text("github_oauth_client_secret"),
     docsMl: boolean("docs_ml").notNull().default(true),
     // Where action messages (toasts) appear for everyone.
     toastPosition: text("toast_position")
@@ -3410,4 +3419,155 @@ export const registryBuilds = pgTable(
     index("registry_builds_repo_idx").on(t.repoId, t.createdAt),
     check("registry_builds_status_check", sql`${t.status} in ('queued', 'waiting', 'running', 'success', 'failed', 'cancelled', 'stopped')`),
   ]
+)
+
+// ---- Git Backup (/more/github-backup, lib/gitbackup/) -------------------------------------------
+
+// A git host token kept for backups only. secretEnc is sealed with lib/crypto.ts. host: base URL for
+// self-hosted servers (null = the provider's cloud). Jobs may instead use a Registry connection.
+export const gitBackupConnections = pgTable(
+  "git_backup_connections",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    provider: text("provider").$type<"github" | "gitlab" | "gitea">().notNull(),
+    name: text("name").notNull(),
+    account: text("account"),
+    host: text("host"),
+    // "pat" or "oauth".
+    via: text("via").$type<"pat" | "oauth">().notNull().default("pat"),
+    secretEnc: text("secret_enc").notNull(),
+    last4: text("last4").notNull(),
+    scopes: text("scopes").array().notNull().default([]),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    warnedAt: timestamp("warned_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("git_backup_connections_name_idx").on(t.userId, sql`lower(${t.name})`),
+    check("git_backup_connections_provider_check", sql`${t.provider} in ('github', 'gitlab', 'gitea')`),
+  ]
+)
+
+// One backup job: a connection + repos + one S3 destination + a schedule.
+export const gitBackupJobs = pgTable(
+  "git_backup_jobs",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    // Exactly one of these is set.
+    connectionId: uuid("connection_id").references(() => gitBackupConnections.id, { onDelete: "restrict" }),
+    registryConnectionId: uuid("registry_connection_id").references(() => registryGitConnections.id, { onDelete: "restrict" }),
+    destKind: text("dest_kind").$type<"nimbus" | "s3">().notNull(),
+    // Nimbus S3: the bucket and the scoped key made for this job.
+    bucketId: uuid("bucket_id").references(() => s3Buckets.id, { onDelete: "set null" }),
+    keyId: uuid("key_id").references(() => s3Keys.id, { onDelete: "set null" }),
+    // External S3 (also filled for Nimbus S3 so the runner treats both the same). Secret sealed.
+    s3Endpoint: text("s3_endpoint"),
+    s3Region: text("s3_region"),
+    s3Bucket: text("s3_bucket"),
+    s3AccessKey: text("s3_access_key"),
+    s3SecretEnc: text("s3_secret_enc"),
+    s3PathStyle: boolean("s3_path_style").notNull().default(true),
+    prefix: text("prefix").notNull().default("git-backup"),
+    intervalMin: integer("interval_min").notNull().default(60),
+    keepLast: integer("keep_last").notNull().default(10),
+    lfs: boolean("lfs").notNull().default(true),
+    paused: boolean("paused").notNull().default(false),
+    // Owners (user or org logins) whose new repos join automatically.
+    autoOwners: text("auto_owners").array().notNull().default([]),
+    webhookEnabled: boolean("webhook_enabled").notNull().default(false),
+    webhookSecretEnc: text("webhook_secret_enc"),
+    failStreak: integer("fail_streak").notNull().default(0),
+    alertedAt: timestamp("alerted_at", { withTimezone: true }),
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    lastStatus: text("last_status").$type<"ok" | "partial" | "failed">(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("git_backup_jobs_user_idx").on(t.userId),
+    check("git_backup_jobs_dest_check", sql`${t.destKind} in ('nimbus', 's3')`),
+    check("git_backup_jobs_conn_check", sql`(${t.connectionId} is null) <> (${t.registryConnectionId} is null)`),
+  ]
+)
+
+// A repo in a job. refsHash: sha256 of the sorted `git ls-remote` output at the last snapshot.
+export const gitBackupRepos = pgTable(
+  "git_backup_repos",
+  {
+    id: id(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => gitBackupJobs.id, { onDelete: "cascade" }),
+    owner: text("owner").notNull(),
+    name: text("name").notNull(),
+    cloneUrl: text("clone_url").notNull(),
+    private: boolean("private").notNull().default(true),
+    // Null: the job's interval.
+    intervalMin: integer("interval_min"),
+    autoAdded: boolean("auto_added").notNull().default(false),
+    refsHash: text("refs_hash"),
+    status: text("status").$type<"pending" | "ok" | "error" | "gone">().notNull().default("pending"),
+    lastError: text("last_error"),
+    lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+    lastBackupAt: timestamp("last_backup_at", { withTimezone: true }),
+    nextDueAt: timestamp("next_due_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("git_backup_repos_job_repo_idx").on(t.jobId, sql`lower(${t.owner})`, sql`lower(${t.name})`),
+    index("git_backup_repos_due_idx").on(t.nextDueAt),
+    check("git_backup_repos_status_check", sql`${t.status} in ('pending', 'ok', 'error', 'gone')`),
+  ]
+)
+
+// One uploaded archive. key: object key of the .tar.gz; manifest.json sits next to it.
+export const gitBackupSnapshots = pgTable(
+  "git_backup_snapshots",
+  {
+    id: id(),
+    repoId: uuid("repo_id")
+      .notNull()
+      .references(() => gitBackupRepos.id, { onDelete: "cascade" }),
+    runId: uuid("run_id"),
+    key: text("key").notNull(),
+    // HEAD of the default branch at snapshot time.
+    sha: text("sha").notNull(),
+    refs: integer("refs").notNull().default(0),
+    size: bigint("size", { mode: "number" }).notNull().default(0),
+    lfs: boolean("lfs").notNull().default(false),
+    createdAt: createdAt(),
+  },
+  (t) => [index("git_backup_snapshots_repo_idx").on(t.repoId, t.createdAt)]
+)
+
+// One run of a job (scheduled, manual, webhook or first). results: per-repo outcome list.
+export const gitBackupRuns = pgTable(
+  "git_backup_runs",
+  {
+    id: id(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => gitBackupJobs.id, { onDelete: "cascade" }),
+    trigger: text("trigger").$type<"schedule" | "manual" | "webhook" | "first">().notNull(),
+    force: boolean("force").notNull().default(false),
+    status: text("status").$type<"running" | "ok" | "partial" | "failed">().notNull().default("running"),
+    checked: integer("checked").notNull().default(0),
+    changed: integer("changed").notNull().default(0),
+    failed: integer("failed").notNull().default(0),
+    bytes: bigint("bytes", { mode: "number" }).notNull().default(0),
+    results: jsonb("results")
+      .$type<{ repoId: string; repo: string; outcome: "skipped" | "backed_up" | "failed" | "gone"; error?: string; size?: number; snapshotId?: string }[]>()
+      .notNull()
+      .default([]),
+    startedAt: createdAt(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [index("git_backup_runs_job_idx").on(t.jobId, t.startedAt)]
 )

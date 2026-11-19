@@ -65,6 +65,7 @@ const KIND_LABEL = {
   backup: "A backup fails, warns, or hasn't run (Admin → Backups)",
   app_password: "A new app password is made for my account",
   s3_key: "An S3 access key is made, rotated, changed or disabled, is due for rotation, or is about to expire",
+  git_backup: "Git Backup fails twice in a row, or a git connection's token is about to expire",
   storage_low: "My storage is nearly full (90%)",
   phone_backup: "My phone hasn't backed up contacts or calendar for 7 days",
   document_expiring: "A document is about to expire or fall due (Documents)",

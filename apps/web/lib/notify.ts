@@ -213,6 +213,10 @@ async function describe(userId: string, ids?: string[]) {
         ? `A new S3 access key “${d.name ?? "unnamed"}” was made for your account${d.ip ? ` from ${d.ip}` : ""}. Revoke it in S3 buckets if it wasn't you.`
         : `A new app password “${d.name ?? "unnamed"}” was made for your account${d.ip ? ` from ${d.ip}` : ""}. Revoke it in Account if it wasn't you.`,
       s3_key: s3KeyText(d),
+      git_backup:
+        d.event === "expiring"
+          ? `The git connection “${d.name ?? "unnamed"}” ${d.days === "0" ? "has expired" : `expires in ${d.days} days`}. Replace its token so backups keep running.`
+          : `Git Backup “${d.job ?? "unnamed"}” failed ${d.streak ?? "2"} times in a row${d.error ? `: ${d.error}` : ""}`,
       backup: `${KIND_LABEL[d.backup as Kind] ?? "A"} backup ${d.event === "stale" ? "hasn't succeeded in a while" : d.event === "warning" ? "finished with a warning" : "failed"}`,
       transfer_download:
         r.count > 1
@@ -267,6 +271,8 @@ async function describe(userId: string, ids?: string[]) {
             ? "/storage"
           : r.kind === "s3_key"
             ? "/buckets?tab=keys"
+          : r.kind === "git_backup"
+            ? (d.href ?? "/more/github-backup")
           : r.kind === "registry_build" || r.kind === "registry_connection"
             ? (d.href ?? "/registry")
           : r.kind === "registry_token" || r.kind === "registry_cleanup" || r.kind === "registry_quota" || r.kind === "registry_scan"

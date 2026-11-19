@@ -642,6 +642,7 @@ export type NotificationKind =
   | "registry_build"
   | "registry_connection"
   | "s3_key"
+  | "git_backup"
 export type Notification = {
   id: string
   kind: NotificationKind
