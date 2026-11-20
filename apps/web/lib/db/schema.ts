@@ -620,6 +620,17 @@ export const NOTIFICATION_KINDS = [
   "s3_key",
   // Git Backup (/more/github-backup): 2+ failed runs in a row, or a connection token expiring.
   "git_backup",
+  // Registry Cleanup & Mirror (/more/registry-tools): an upstream tag changed, or a rule or mirror failed twice in a row.
+  "registry_mirror",
+  // A conversion finished or failed (/more/convert).
+  "convert_done",
+  // Cloud Import (/more/import): the first import finished, or a scheduled pull failed twice in a row.
+  "import_done",
+  "import_failed",
+  // A saved page failed to capture twice in a row (/more/archive).
+  "archive_failed",
+  // Server Backup (/more/server-backup): 2+ failed runs in a row.
+  "server_backup",
 ] as const
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number]
 // Only admins get these, so only admins see their settings.
@@ -802,9 +813,33 @@ export const settings = pgTable(
     gitBackupEnabled: boolean("git_backup_enabled").notNull().default(true),
     gitBackupMinInterval: integer("git_backup_min_interval").notNull().default(15),
     gitBackupConcurrency: integer("git_backup_concurrency").notNull().default(2),
+    cleanupToolEnabled: boolean("cleanup_tool_enabled").notNull().default(true),
+    registryToolsEnabled: boolean("registry_tools_enabled").notNull().default(true),
+    // Website Archiver (/more/archive). The browser is a CDP websocket URL (ws://browser:3000?token=…); empty = the tool says it needs the browser service.
+    archiverToolEnabled: boolean("archiver_tool_enabled").notNull().default(true),
+    archiverBrowserUrl: text("archiver_browser_url"),
+    // Media Converter (/more/convert). maxBytes/maxSeconds null = no cap; dailyMinutes is per member, 0 = unlimited; hwaccel: off | vaapi | nvenc.
+    convertToolEnabled: boolean("convert_tool_enabled").notNull().default(true),
+    convertConcurrency: integer("convert_concurrency").notNull().default(1),
+    convertMaxBytes: bigint("convert_max_bytes", { mode: "number" }),
+    convertMaxSeconds: integer("convert_max_seconds"),
+    convertDailyMinutes: integer("convert_daily_minutes").notNull().default(0),
+    convertHwaccel: text("convert_hwaccel").$type<"off" | "vaapi" | "nvenc">().notNull().default("off"),
     // "Connect GitHub" OAuth app; the button shows only when both are set. Secret sealed by lib/crypto.
     githubOauthClientId: text("github_oauth_client_id"),
     githubOauthClientSecret: text("github_oauth_client_secret"),
+    // Cloud Import (/more/import): off hides it and stops runs. OAuth apps for the cloud sources (secrets sealed by lib/crypto); a source's button shows only when both are set.
+    importToolEnabled: boolean("import_tool_enabled").notNull().default(true),
+    importGoogleClientId: text("import_google_client_id"),
+    importGoogleClientSecret: text("import_google_client_secret"),
+    importDropboxClientId: text("import_dropbox_client_id"),
+    importDropboxClientSecret: text("import_dropbox_client_secret"),
+    importOnedriveClientId: text("import_onedrive_client_id"),
+    importOnedriveClientSecret: text("import_onedrive_client_secret"),
+    // Server Backup (/more/server-backup): off hides it and stops runs; members off = admins only.
+    serverBackupEnabled: boolean("server_backup_enabled").notNull().default(true),
+    serverBackupMembers: boolean("server_backup_members").notNull().default(true),
+    serverBackupMinInterval: integer("server_backup_min_interval").notNull().default(60),
     docsMl: boolean("docs_ml").notNull().default(true),
     // Where action messages (toasts) appear for everyone.
     toastPosition: text("toast_position")
@@ -3574,4 +3609,423 @@ export const gitBackupRuns = pgTable(
     // One running run per job, so a tick and a webhook racing can't both start one.
     uniqueIndex("git_backup_runs_one_running_idx").on(t.jobId).where(sql`${t.status} = 'running'`),
   ]
+)
+
+// Registry Cleanup & Mirror (/more/registry-tools). A rule trims tags and untagged images of one repo
+// (repoId) or of every repo the member manages whose "namespace/name" matches `pattern`, on an interval.
+export const registryRules = pgTable(
+  "registry_rules",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    // Exactly one of these is set.
+    repoId: uuid("repo_id").references(() => registryRepos.id, { onDelete: "cascade" }),
+    pattern: text("pattern"),
+    keepLast: integer("keep_last"),
+    olderThanDays: integer("older_than_days"),
+    keepRegex: text("keep_regex"),
+    deleteUntagged: boolean("delete_untagged").notNull().default(false),
+    intervalMin: integer("interval_min").notNull().default(1440),
+    enabled: boolean("enabled").notNull().default(true),
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    lastStatus: text("last_status").$type<"ok" | "failed">(),
+    failStreak: integer("fail_streak").notNull().default(0),
+    alertedAt: timestamp("alerted_at", { withTimezone: true }),
+    nextDueAt: timestamp("next_due_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("registry_rules_user_idx").on(t.userId),
+    index("registry_rules_due_idx").on(t.nextDueAt),
+    check("registry_rules_scope_check", sql`(${t.repoId} is null) <> (${t.pattern} is null)`),
+  ]
+)
+
+// Copies tags of an upstream image into a Nimbus repo. `upstream`: "alpine", "ghcr.io/org/app", "host:5000/x/y".
+// `tags`: comma-separated names or globs; at most `cap` of them (newest by version order) are mirrored.
+// lastDigests: tag -> digest at the last run, so an unchanged tag is skipped. The password is sealed by lib/crypto.
+export const registryMirrors = pgTable(
+  "registry_mirrors",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    upstream: text("upstream").notNull(),
+    tags: text("tags").notNull().default("latest"),
+    cap: integer("cap").notNull().default(5),
+    targetRepoId: uuid("target_repo_id")
+      .notNull()
+      .references(() => registryRepos.id, { onDelete: "cascade" }),
+    username: text("username"),
+    passwordEnc: text("password_enc"),
+    intervalMin: integer("interval_min").notNull().default(1440),
+    enabled: boolean("enabled").notNull().default(true),
+    lastDigests: jsonb("last_digests").$type<Record<string, string>>().notNull().default({}),
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    lastStatus: text("last_status").$type<"ok" | "failed">(),
+    failStreak: integer("fail_streak").notNull().default(0),
+    alertedAt: timestamp("alerted_at", { withTimezone: true }),
+    nextDueAt: timestamp("next_due_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("registry_mirrors_user_idx").on(t.userId), index("registry_mirrors_due_idx").on(t.nextDueAt)]
+)
+
+// History of rule and mirror runs. refId is the rule or mirror (no foreign key: history outlives it); label its name then.
+export const registryToolRuns = pgTable(
+  "registry_tool_runs",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<"rule" | "mirror">().notNull(),
+    refId: uuid("ref_id").notNull(),
+    label: text("label").notNull(),
+    trigger: text("trigger").$type<"schedule" | "manual">().notNull(),
+    status: text("status").$type<"running" | "ok" | "failed">().notNull().default("running"),
+    // Tags and images removed (rule) or tags copied (mirror).
+    changed: integer("changed").notNull().default(0),
+    bytes: bigint("bytes", { mode: "number" }).notNull().default(0),
+    lines: jsonb("lines").$type<string[]>().notNull().default([]),
+    error: text("error"),
+    startedAt: createdAt(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("registry_tool_runs_user_idx").on(t.userId, t.startedAt),
+    // One running run per rule or mirror, so a tick and a manual run racing can't both start one.
+    uniqueIndex("registry_tool_runs_one_running_idx").on(t.refId).where(sql`${t.status} = 'running'`),
+  ]
+)
+
+// ---- Media Converter (/more/convert) ----
+// A member's own presets; the built-in ones are constants in lib/convert/rules.ts.
+export const convertPresets = pgTable(
+  "convert_presets",
+  {
+    id: id(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    preset: jsonb("preset").$type<import("../convert/rules").Preset>().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("convert_presets_user_name_idx").on(t.userId, sql`lower(${t.name})`)]
+)
+
+// One conversion. preset is a copy of what ran; seconds is the media length once the worker has probed it (the daily quota counts it).
+export const convertJobs = pgTable(
+  "convert_jobs",
+  {
+    id: id(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+    status: text("status").$type<"queued" | "running" | "done" | "failed" | "cancelled">().notNull().default("queued"),
+    progress: integer("progress").notNull().default(0),
+    etaSec: integer("eta_sec"),
+    inputNodeId: uuid("input_node_id").references(() => nodes.id, { onDelete: "set null" }),
+    inputName: text("input_name").notNull(),
+    outputNodeId: uuid("output_node_id").references(() => nodes.id, { onDelete: "set null" }),
+    outputName: text("output_name"),
+    presetName: text("preset_name").notNull(),
+    preset: jsonb("preset").$type<import("../convert/rules").Preset>().notNull(),
+    seconds: integer("seconds"),
+    watchId: uuid("watch_id"),
+    error: text("error"),
+    createdAt: createdAt(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("convert_jobs_user_idx").on(t.userId, t.createdAt),
+    index("convert_jobs_input_idx").on(t.inputNodeId),
+  ]
+)
+
+// New files in this folder (not its subfolders) are converted with the preset.
+export const convertWatches = pgTable(
+  "convert_watches",
+  {
+    id: id(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+    folderNodeId: uuid("folder_node_id").notNull().references(() => nodes.id, { onDelete: "cascade" }),
+    presetName: text("preset_name").notNull(),
+    preset: jsonb("preset").$type<import("../convert/rules").Preset>().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("convert_watches_folder_preset_idx").on(t.folderNodeId, t.presetName)]
+)
+
+// ---- Cloud Import (/more/import) ----
+// A saved source. configEnc is the sealed rclone remote (JSON of rclone options, token included); root is a path prefix
+// inside it (an S3 bucket). error is why the last check failed.
+export const importConnections = pgTable(
+  "import_connections",
+  {
+    id: id(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+    provider: text("provider").$type<"gdrive" | "gphotos" | "dropbox" | "onedrive" | "s3" | "webdav" | "sftp">().notNull(),
+    label: text("label").notNull(),
+    account: text("account"),
+    root: text("root").notNull().default(""),
+    configEnc: text("config_enc").notNull(),
+    lastChecked: timestamp("last_checked", { withTimezone: true }),
+    error: text("error"),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("import_connections_label_idx").on(t.userId, sql`lower(${t.label})`)]
+)
+
+// One import: a source (a connection and the folders picked, or Takeout zips picked in Files), a target folder, options and a schedule.
+// intervalMin null = once. sources: remote folder paths, or node ids for kind "takeout".
+export const importJobs = pgTable(
+  "import_jobs",
+  {
+    id: id(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    kind: text("kind").$type<"rclone" | "takeout">().notNull().default("rclone"),
+    connectionId: uuid("connection_id").references(() => importConnections.id, { onDelete: "restrict" }),
+    sources: text("sources").array().notNull().default(sql`'{}'::text[]`),
+    targetNodeId: uuid("target_node_id").references(() => nodes.id, { onDelete: "set null" }),
+    options: jsonb("options").$type<import("../import/rules").ImportOptions>().notNull(),
+    intervalMin: integer("interval_min"),
+    paused: boolean("paused").notNull().default(false),
+    estFiles: integer("est_files"),
+    estBytes: bigint("est_bytes", { mode: "number" }),
+    failStreak: integer("fail_streak").notNull().default(0),
+    alertedAt: timestamp("alerted_at", { withTimezone: true }),
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    lastStatus: text("last_status").$type<"ok" | "partial" | "failed" | "cancelled">(),
+    nextDueAt: timestamp("next_due_at", { withTimezone: true }),
+    // The "import finished" bell rings once, after the first run that brings files over.
+    doneNotified: boolean("done_notified").notNull().default(false),
+    createdAt: createdAt(),
+  },
+  (t) => [index("import_jobs_user_idx").on(t.userId), index("import_jobs_due_idx").on(t.nextDueAt)]
+)
+
+export const importRuns = pgTable(
+  "import_runs",
+  {
+    id: id(),
+    jobId: uuid("job_id").notNull().references(() => importJobs.id, { onDelete: "cascade" }),
+    trigger: text("trigger").$type<"first" | "manual" | "schedule">().notNull(),
+    status: text("status").$type<"running" | "ok" | "partial" | "failed" | "cancelled">().notNull().default("running"),
+    filesTotal: integer("files_total").notNull().default(0),
+    filesDone: integer("files_done").notNull().default(0),
+    filesSkipped: integer("files_skipped").notNull().default(0),
+    filesFailed: integer("files_failed").notNull().default(0),
+    bytesTotal: bigint("bytes_total", { mode: "number" }).notNull().default(0),
+    bytesDone: bigint("bytes_done", { mode: "number" }).notNull().default(0),
+    // The first failures (capped), for History.
+    errors: text("errors").array().notNull().default(sql`'{}'::text[]`),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("import_runs_job_idx").on(t.jobId, t.startedAt),
+    uniqueIndex("import_runs_one_running_idx").on(t.jobId).where(sql`${t.status} = 'running'`),
+  ]
+)
+
+// What a job has looked at, by its path at the source: a file that is here is never brought over twice, even if the member
+// moved or deleted the copy. A failed row is tried again on the next run.
+export const importItems = pgTable(
+  "import_items",
+  {
+    id: id(),
+    jobId: uuid("job_id").notNull().references(() => importJobs.id, { onDelete: "cascade" }),
+    sourcePath: text("source_path").notNull(),
+    sourceId: text("source_id"),
+    nodeId: uuid("node_id").references(() => nodes.id, { onDelete: "set null" }),
+    size: bigint("size", { mode: "number" }).notNull().default(0),
+    mtime: timestamp("mtime", { withTimezone: true }),
+    status: text("status").$type<"imported" | "skipped" | "failed">().notNull(),
+    error: text("error"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("import_items_path_idx").on(t.jobId, t.sourcePath), index("import_items_node_idx").on(t.nodeId)]
+)
+
+// ---- Website Archiver (/more/archive) ----
+// A saved page. intervalMin null = captured by hand only. folderNodeId null = the member's default folder (archivePrefs), else "Web archive".
+// cookieDomain: which saved cookie to send (null = the one matching the page's host). lastStatus: running | ok | unchanged | failed.
+export const archivePages = pgTable(
+  "archive_pages",
+  {
+    id: id(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    title: text("title").notNull().default(""),
+    site: text("site").notNull(),
+    tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
+    folderNodeId: uuid("folder_node_id").references(() => nodes.id, { onDelete: "set null" }),
+    intervalMin: integer("interval_min"),
+    nextDueAt: timestamp("next_due_at", { withTimezone: true }),
+    cookieDomain: text("cookie_domain"),
+    lastStatus: text("last_status").$type<"running" | "ok" | "unchanged" | "failed">(),
+    lastError: text("last_error"),
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    runningAt: timestamp("running_at", { withTimezone: true }),
+    failStreak: integer("fail_streak").notNull().default(0),
+    alertedAt: timestamp("alerted_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("archive_pages_user_url_idx").on(t.userId, t.url), index("archive_pages_due_idx").on(t.nextDueAt)]
+)
+
+// One kept capture: the four files (a file the member deleted leaves null) and the hash of the reader text that decided it was new.
+export const archiveSnapshots = pgTable(
+  "archive_snapshots",
+  {
+    id: id(),
+    pageId: uuid("page_id").notNull().references(() => archivePages.id, { onDelete: "cascade" }),
+    capturedAt: timestamp("captured_at", { withTimezone: true }).notNull().defaultNow(),
+    title: text("title").notNull().default(""),
+    textHash: text("text_hash").notNull(),
+    htmlNodeId: uuid("html_node_id").references(() => nodes.id, { onDelete: "set null" }),
+    pdfNodeId: uuid("pdf_node_id").references(() => nodes.id, { onDelete: "set null" }),
+    pngNodeId: uuid("png_node_id").references(() => nodes.id, { onDelete: "set null" }),
+    textNodeId: uuid("text_node_id").references(() => nodes.id, { onDelete: "set null" }),
+    bytes: bigint("bytes", { mode: "number" }).notNull().default(0),
+  },
+  (t) => [index("archive_snapshots_page_idx").on(t.pageId, t.capturedAt)]
+)
+
+// A member's cookies for one site, as a Cookie header sealed with lib/crypto.
+export const archiveCookies = pgTable(
+  "archive_cookies",
+  {
+    id: id(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+    domain: text("domain").notNull(),
+    valueEnc: text("value_enc").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("archive_cookies_user_domain_idx").on(t.userId, t.domain)]
+)
+
+// The member's default archive folder.
+export const archivePrefs = pgTable("archive_prefs", {
+  userId: text("user_id").primaryKey().references(() => user.id, { onDelete: "cascade" }),
+  folderNodeId: uuid("folder_node_id").references(() => nodes.id, { onDelete: "set null" }),
+})
+
+// Server Backup (/more/server-backup). A host is a server Nimbus reaches over SSH with its own ed25519 key (mode "ssh"),
+// one that runs nimbus-agent.sh and pushes (mode "agent"), or this Nimbus server itself (isSelf, admins only).
+export const serverBackupHosts = pgTable(
+  "server_backup_hosts",
+  {
+    id: id(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+    label: text("label").notNull(),
+    host: text("host").notNull().default(""),
+    port: integer("port").notNull().default(22),
+    username: text("username").notNull().default("root"),
+    // The OpenSSH private key, sealed by lib/crypto; the public half is shown for authorized_keys.
+    privateKeyEnc: text("private_key_enc"),
+    publicKey: text("public_key"),
+    // "ssh-ed25519 AAAA…" recorded on the first good test; a later mismatch blocks runs.
+    hostKey: text("host_key"),
+    mode: text("mode").$type<"ssh" | "agent">().notNull().default("ssh"),
+    // sha256 of the agent's token (shown once).
+    agentTokenHash: text("agent_token_hash"),
+    isSelf: boolean("is_self").notNull().default(false),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("server_backup_hosts_user_idx").on(t.userId),
+    uniqueIndex("server_backup_hosts_label_idx").on(t.userId, sql`lower(${t.label})`),
+    uniqueIndex("server_backup_hosts_agent_idx").on(t.agentTokenHash).where(sql`${t.agentTokenHash} is not null`),
+  ]
+)
+
+export const serverBackupJobs = pgTable(
+  "server_backup_jobs",
+  {
+    id: id(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+    hostId: uuid("host_id").notNull().references(() => serverBackupHosts.id, { onDelete: "restrict" }),
+    name: text("name").notNull(),
+    paths: text("paths").array().notNull().default(sql`'{}'::text[]`),
+    excludes: text("excludes").array().notNull().default(sql`'{}'::text[]`),
+    volumes: text("volumes").array().notNull().default(sql`'{}'::text[]`),
+    stopContainers: boolean("stop_containers").notNull().default(false),
+    preHook: text("pre_hook").notNull().default(""),
+    postHook: text("post_hook").notNull().default(""),
+    destKind: text("dest_kind").$type<"nimbus" | "s3">().notNull(),
+    bucketId: uuid("bucket_id").references(() => s3Buckets.id, { onDelete: "set null" }),
+    keyId: uuid("key_id").references(() => s3Keys.id, { onDelete: "set null" }),
+    s3Endpoint: text("s3_endpoint"),
+    s3Region: text("s3_region"),
+    s3Bucket: text("s3_bucket"),
+    s3AccessKey: text("s3_access_key"),
+    s3SecretEnc: text("s3_secret_enc"),
+    s3PathStyle: boolean("s3_path_style").notNull().default(true),
+    prefix: text("prefix").notNull().default("server-backup"),
+    // The restic repository password, sealed; shown once after the wizard.
+    resticPasswordEnc: text("restic_password_enc").notNull(),
+    retention: jsonb("retention").$type<{ daily: number; weekly: number; monthly: number }>().notNull().default({ daily: 7, weekly: 4, monthly: 12 }),
+    intervalMin: integer("interval_min").notNull().default(1440),
+    nextDueAt: timestamp("next_due_at", { withTimezone: true }).notNull().defaultNow(),
+    paused: boolean("paused").notNull().default(false),
+    failStreak: integer("fail_streak").notNull().default(0),
+    alertedAt: timestamp("alerted_at", { withTimezone: true }),
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    lastStatus: text("last_status").$type<"ok" | "failed">(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("server_backup_jobs_user_idx").on(t.userId),
+    index("server_backup_jobs_due_idx").on(t.nextDueAt),
+    uniqueIndex("server_backup_jobs_name_idx").on(t.userId, sql`lower(${t.name})`),
+    check("server_backup_jobs_dest_check", sql`${t.destKind} in ('nimbus', 's3')`),
+  ]
+)
+
+export const serverBackupRuns = pgTable(
+  "server_backup_runs",
+  {
+    id: id(),
+    jobId: uuid("job_id").notNull().references(() => serverBackupJobs.id, { onDelete: "cascade" }),
+    trigger: text("trigger").$type<"schedule" | "manual" | "first" | "agent">().notNull(),
+    status: text("status").$type<"running" | "ok" | "failed">().notNull().default("running"),
+    // 0..1 while restic reports it; stage names what it is doing.
+    progress: doublePrecision("progress"),
+    stage: text("stage").notNull().default("starting"),
+    bytes: bigint("bytes", { mode: "number" }).notNull().default(0),
+    files: bigint("files", { mode: "number" }).notNull().default(0),
+    snapshotId: text("snapshot_id"),
+    error: text("error"),
+    logTail: text("log_tail").notNull().default(""),
+    startedAt: createdAt(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("server_backup_runs_job_idx").on(t.jobId, t.startedAt),
+    uniqueIndex("server_backup_runs_one_running_idx").on(t.jobId).where(sql`${t.status} = 'running'`),
+  ]
+)
+
+// Cached from `restic snapshots --json` after each run. kind: "tar" = one tar per source made by the SSH pull
+// (browsed through the tar); "files" = real files from the push agent.
+export const serverBackupSnapshots = pgTable(
+  "server_backup_snapshots",
+  {
+    id: id(),
+    jobId: uuid("job_id").notNull().references(() => serverBackupJobs.id, { onDelete: "cascade" }),
+    resticId: text("restic_id").notNull(),
+    takenAt: timestamp("taken_at", { withTimezone: true }).notNull(),
+    source: text("source").notNull().default(""),
+    kind: text("kind").$type<"tar" | "files">().notNull().default("tar"),
+    paths: text("paths").array().notNull().default(sql`'{}'::text[]`),
+    bytes: bigint("bytes", { mode: "number" }),
+    addedBytes: bigint("added_bytes", { mode: "number" }),
+  },
+  (t) => [uniqueIndex("server_backup_snapshots_idx").on(t.jobId, t.resticId), index("server_backup_snapshots_time_idx").on(t.jobId, t.takenAt)]
 )

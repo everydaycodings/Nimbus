@@ -10,12 +10,17 @@ import { request as httpsRequest } from "node:https"
 import postgres from "postgres"
 
 import {
+  ARCHIVE_QUEUE,
+  CONVERT_QUEUE,
   DERIVE_QUEUE,
   HEALTH_QUEUE,
   HEARTBEAT_KEY,
   INDEXER_KEY,
   DOCS_KEY,
   GIT_BACKUP_QUEUE,
+  IMPORT_QUEUE,
+  SERVER_BACKUP_QUEUE,
+  REGISTRY_TOOLS_QUEUE,
   ML_KEY,
   JOBS_QUEUE,
   redis,
@@ -25,6 +30,7 @@ import {
   workerConnection,
 } from "../lib/redis.ts"
 import { signToken } from "../lib/upload-rules.ts"
+import { convert, convertBoot } from "./convert.ts"
 import { derive, deriveMisses, exifMisses, hashMisses } from "./derive.ts"
 import { fetchLang } from "../lib/extract.ts"
 import { docsStatus, docsSweep } from "./documents.ts"
@@ -127,6 +133,171 @@ gitRuns.on("failed", (job, e) =>
   console.error(`${new Date().toISOString()} git backup ${job?.data.runId} failed: ${e.message}`)
 )
 
+// Media Converter: ffmpeg and sharp are heavy, so the admin's setting (Admin → More tools) says how many run at once.
+await convertBoot()
+const [{ convertN }] = await sql`select convert_concurrency as "convertN" from settings`
+const converts = new Worker(CONVERT_QUEUE, (job) => convert(job.data.jobId), {
+  connection: workerConnection(),
+  concurrency: Math.max(1, convertN),
+})
+converts.on("failed", (job, e) =>
+  console.error(`${new Date().toISOString()} convert ${job?.data.jobId} failed: ${e.message}`)
+)
+
+// Registry Cleanup & Mirror: a mirror run can take long (big layers), so, like Git Backup, this holds the
+// request to the app open and marks the run failed if the app drops it. One at a time: a mirror is bandwidth-heavy.
+const registryTools = new Worker(
+  REGISTRY_TOOLS_QUEUE,
+  (job) =>
+    new Promise<void>((resolve, reject) => {
+      const body = JSON.stringify({ name: "registry-mirror-run", data: job.data })
+      const url = new URL("/api/jobs", app)
+      const req = (url.protocol === "https:" ? httpsRequest : httpRequest)(
+        url,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${signToken("job", {}, 60_000)}`,
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(body),
+          },
+        },
+        (res) => {
+          let text = ""
+          res.on("data", (c) => (text += c))
+          res.on("end", () => (res.statusCode! < 300 ? resolve() : reject(new Error(`${app} answered ${res.statusCode}: ${text}`))))
+          res.on("error", reject)
+        }
+      )
+      req.on("error", reject)
+      req.end(body)
+    }).catch(async (e) => {
+      await sql`update registry_tool_runs set status = 'failed', finished_at = now(), error = ${`Couldn't start the mirror: ${(e as Error).message}`.slice(0, 300)}
+        where id = ${job.data.runId} and status = 'running'`
+      throw e
+    }),
+  { connection: workerConnection(), concurrency: 1 }
+)
+registryTools.on("failed", (job, e) =>
+  console.error(`${new Date().toISOString()} registry mirror ${job?.data.runId} failed: ${e.message}`)
+)
+
+// Cloud Import: the app runs rclone (it has the database and storage), so, like Git Backup, this holds the request open for hours
+// and marks the run failed if the app drops it. Two at a time: each one is a long download.
+const importRuns = new Worker(
+  IMPORT_QUEUE,
+  (job) =>
+    new Promise<void>((resolve, reject) => {
+      const body = JSON.stringify({ name: "import-run", data: job.data })
+      const url = new URL("/api/jobs", app)
+      const req = (url.protocol === "https:" ? httpsRequest : httpRequest)(
+        url,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${signToken("job", {}, 60_000)}`,
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(body),
+          },
+        },
+        (res) => {
+          let text = ""
+          res.on("data", (c) => (text += c))
+          res.on("end", () => (res.statusCode! < 300 ? resolve() : reject(new Error(`${app} answered ${res.statusCode}: ${text}`))))
+          res.on("error", reject)
+        }
+      )
+      req.on("error", reject)
+      req.end(body)
+    }).catch(async (e) => {
+      await sql`update import_runs set status = 'failed', finished_at = now(), errors = ${[`Couldn't run the import: ${(e as Error).message}`.slice(0, 300)]}
+        where id = ${job.data.runId} and status = 'running'`
+      throw e
+    }),
+  { connection: workerConnection(), concurrency: 2 }
+)
+importRuns.on("failed", (job, e) =>
+  console.error(`${new Date().toISOString()} import ${job?.data.runId} failed: ${e.message}`)
+)
+
+// Server Backup: the app runs restic and ssh (the image has both), and a run can take hours, so like Git Backup this
+// holds the request open and marks the run failed if the app drops it. Two at a time: each streams a whole server.
+const serverBackups = new Worker(
+  SERVER_BACKUP_QUEUE,
+  (job) =>
+    new Promise<void>((resolve, reject) => {
+      const body = JSON.stringify({ name: "server-backup-run", data: job.data })
+      const url = new URL("/api/jobs", app)
+      const req = (url.protocol === "https:" ? httpsRequest : httpRequest)(
+        url,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${signToken("job", {}, 60_000)}`,
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(body),
+          },
+        },
+        (res) => {
+          let text = ""
+          res.on("data", (c) => (text += c))
+          res.on("end", () => (res.statusCode! < 300 ? resolve() : reject(new Error(`${app} answered ${res.statusCode}: ${text}`))))
+          res.on("error", reject)
+        }
+      )
+      req.on("error", reject)
+      req.end(body)
+    }).catch(async (e) => {
+      await sql`update server_backup_runs set status = 'failed', finished_at = now(), error = ${`Couldn't start the backup: ${(e as Error).message}`.slice(0, 300)}
+        where id = ${job.data.runId} and status = 'running'`
+      throw e
+    }),
+  { connection: workerConnection(), concurrency: 2 }
+)
+serverBackups.on("failed", (job, e) =>
+  console.error(`${new Date().toISOString()} server backup ${job?.data.runId} failed: ${e.message}`)
+)
+
+// Website Archiver: the app does the work (it has the database, S3 and storeFile; the browser is a separate
+// service it reaches over CDP). Like Git Backup, this holds the request to the app open, and clears the page's
+// "running" mark if the app drops it. Two at a time: Chromium pages are heavy.
+const archives = new Worker(
+  ARCHIVE_QUEUE,
+  (job) =>
+    new Promise<void>((resolve, reject) => {
+      const body = JSON.stringify({ name: "archive-run", data: job.data })
+      const url = new URL("/api/jobs", app)
+      const req = (url.protocol === "https:" ? httpsRequest : httpRequest)(
+        url,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${signToken("job", {}, 60_000)}`,
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(body),
+          },
+        },
+        (res) => {
+          let text = ""
+          res.on("data", (c) => (text += c))
+          res.on("end", () => (res.statusCode! < 300 ? resolve() : reject(new Error(`${app} answered ${res.statusCode}: ${text}`))))
+          res.on("error", reject)
+        }
+      )
+      req.on("error", reject)
+      req.end(body)
+    }).catch(async (e) => {
+      await sql`update archive_pages set running_at = null, last_status = 'failed', last_run_at = now(),
+        last_error = ${`Couldn't start the capture: ${(e as Error).message}`.slice(0, 300)}
+        where id = ${job.data.pageId} and last_status = 'running'`
+      throw e
+    }),
+  { connection: workerConnection(), concurrency: 2 }
+)
+archives.on("failed", (job, e) =>
+  console.error(`${new Date().toISOString()} archive ${job?.data.pageId} failed: ${e.message}`)
+)
+
 // Data-saver video copies, one at a time: ffmpeg is heavy.
 const transcodes = new Worker(
   TRANSCODE_QUEUE,
@@ -171,6 +342,8 @@ async function index() {
       derives.concurrency = Math.max(1, n)
       const [{ g }] = await indexSql`select git_backup_concurrency as g from settings`
       gitRuns.concurrency = Math.max(1, g)
+      const [{ c }] = await indexSql`select convert_concurrency as c from settings`
+      converts.concurrency = Math.max(1, c)
     })().finally(() => (sweeping = undefined)))
   await redis.set(DOCS_KEY, JSON.stringify({ at: Date.now(), ...docsStatus }), "PX", 3 * 60_000)
   // Admin → Health shows the indexer as running while this key lives.

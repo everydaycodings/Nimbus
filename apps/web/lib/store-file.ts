@@ -12,6 +12,7 @@ import { recordSaved } from "@/lib/activity"
 import { db } from "@/lib/db"
 import { fileVersions } from "@/lib/db/schema"
 import { isJunk } from "@/lib/file-rules"
+import { watchHook } from "@/lib/convert/jobs"
 import { notifyEdit } from "@/lib/notify"
 import { checkStorage, spaceLeft } from "@/lib/quota"
 import { enqueue, enqueueDerive } from "@/lib/redis"
@@ -210,6 +211,8 @@ export async function saveVersion(o: {
       await enqueueDerive(saved.versionId!)
       // The worker checks text and code files for leaked keys (if an admin left that on).
       if (scannable(name, mime, size)) await enqueue("leak-scan", { nodeId: saved.nodeId }).catch(() => {})
+      // A folder being watched by the Media Converter queues the new file.
+      await watchHook(saved.nodeId).catch(() => {})
     }
   }
   await checkStorage(at.ownerId)

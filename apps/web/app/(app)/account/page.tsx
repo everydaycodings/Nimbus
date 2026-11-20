@@ -66,6 +66,11 @@ const KIND_LABEL = {
   app_password: "A new app password is made for my account",
   s3_key: "An S3 access key is made, rotated, changed or disabled, is due for rotation, or is about to expire",
   git_backup: "Git Backup fails twice in a row, or a git connection's token is about to expire",
+  convert_done: "A file finishes converting, or fails (Media Converter)",
+  archive_failed: "A saved page fails to capture twice in a row (Website Archiver)",
+  server_backup: "A server backup fails twice in a row (More → Server Backup)",
+  import_done: "My first import from a cloud service finishes (More → Cloud import)",
+  import_failed: "A scheduled import fails twice in a row (More → Cloud import)",
   storage_low: "My storage is nearly full (90%)",
   phone_backup: "My phone hasn't backed up contacts or calendar for 7 days",
   document_expiring: "A document is about to expire or fall due (Documents)",
@@ -75,6 +80,7 @@ const KIND_LABEL = {
   registry_scan: "A registry image scan finds critical vulnerabilities",
   registry_connection: "A saved git connection for registry builds is about to expire (7 days before)",
   registry_build: "An image build I started fails or is stopped (or finishes, for builds I start by hand)",
+  registry_mirror: "A registry mirror's upstream tag changes, or a cleanup rule or mirror fails twice in a row (More → Registry tools)",
   secrets: "Secrets: change and access requests, rotation reminders, expiring tokens, project invites",
 } as const
 

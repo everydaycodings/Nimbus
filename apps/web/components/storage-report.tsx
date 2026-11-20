@@ -1,6 +1,7 @@
 "use client"
 
 import {
+  BroomIcon,
   CaretRightIcon,
   ClockCounterClockwiseIcon,
   TrashIcon,
@@ -11,7 +12,7 @@ import { useState } from "react"
 import { emptyTrash, restoreItems, trashItems } from "@/app/(app)/file-actions"
 import { deleteOlderVersions } from "@/app/(app)/upload-actions"
 import { useNotice } from "@/components/toaster"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { VersionsDialog } from "@/components/versions-dialog"
 import { formatBytes } from "@/lib/file-rules"
 import { fileType } from "@/lib/file-types"
@@ -76,6 +77,12 @@ export function StorageReport({
 
   return (
     <div className="flex flex-col gap-10">
+      {!readOnly && (
+        <Link href="/more/cleanup" className={cn(buttonVariants({ variant: "outline" }), "w-fit pointer-coarse:h-11")}>
+          <BroomIcon />
+          Clean up
+        </Link>
+      )}
       <Section
         title="Largest files"
         note="The 50 biggest files outside the trash and vaults."

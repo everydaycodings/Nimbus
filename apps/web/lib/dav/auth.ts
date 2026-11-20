@@ -53,9 +53,14 @@ async function fail(ip: string | null) {
   } catch {}
 }
 
-export async function davSignIn(
+// WebDAV needs the server's WebDAV switch on and the account not barred from it; other users of an app password
+// (the archive API) leave `dav` off.
+export const davSignIn = (header: string | null, ip: string | null) => appPasswordAuth(header, ip, true)
+
+export async function appPasswordAuth(
   header: string | null,
-  ip: string | null
+  ip: string | null,
+  dav = false
 ): Promise<DavUser | "blocked" | null> {
   if ((await failures(ip)) >= TRIES) return "blocked"
   const m = header?.match(/^Basic\s+(.+)$/i)
@@ -93,7 +98,7 @@ export async function davSignIn(
     row &&
     Date.now() - (row.lastUsedAt ?? row.createdAt).getTime() <
       APP_PASSWORD_DAYS * 86_400_000
-  if (!row || !fresh || row.status !== "active" || row.temp || row.disabled || !row.on) {
+  if (!row || !fresh || row.status !== "active" || row.temp || (dav && (row.disabled || !row.on))) {
     await fail(ip)
     return null
   }

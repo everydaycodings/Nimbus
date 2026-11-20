@@ -10,7 +10,8 @@ import { PRESETS } from "./format"
 export type Sched = { name: string; prefix: string; intervalMin: number; keepLast: number; lfs: boolean }
 
 // Interval, how many snapshots to keep, LFS and the folder in the bucket. `name` shows only when the job has none yet.
-export function ScheduleFields({ value, onChange, min, showName }: { value: Sched; onChange: (v: Sched) => void; min: number; showName?: boolean }) {
+// `compact`: only the name and interval (Server Backup keeps its own retention and folder; no LFS).
+export function ScheduleFields({ value, onChange, min, showName, compact }: { value: Sched; onChange: (v: Sched) => void; min: number; showName?: boolean; compact?: boolean }) {
   const id = useId()
   const set = (p: Partial<Sched>) => onChange({ ...value, ...p })
   // Custom stays open while typing, even through a preset's value (60, 360…).
@@ -45,24 +46,28 @@ export function ScheduleFields({ value, onChange, min, showName }: { value: Sche
             {tooLow && <p className="text-sm text-destructive">The shortest allowed is {min} minutes.</p>}
           </div>
         )}
-        <p className="text-sm text-muted-foreground">A new snapshot is made only when a branch or tag changed.</p>
+        {!compact && <p className="text-sm text-muted-foreground">A new snapshot is made only when a branch or tag changed.</p>}
       </fieldset>
-      <div className="grid gap-1.5">
-        <Label htmlFor={`${id}-keep`}>Snapshots to keep per repo</Label>
-        <Input id={`${id}-keep`} type="number" inputMode="numeric" min={1} max={1000} value={value.keepLast || ""} onChange={(e) => set({ keepLast: Number(e.target.value) })} className="w-40 tabular-nums pointer-coarse:h-11" />
-        <p className="text-sm text-muted-foreground">Older ones are deleted. Each snapshot is a full copy.</p>
-      </div>
-      <div className="grid gap-1.5">
-        <Label htmlFor={`${id}-prefix`}>Folder in the bucket</Label>
-        <Input id={`${id}-prefix`} value={value.prefix} onChange={(e) => set({ prefix: e.target.value })} placeholder="git-backup" autoComplete="off" spellCheck={false} className="font-mono pointer-coarse:h-11" />
-      </div>
-      <label className="flex min-h-11 cursor-pointer items-center justify-between gap-4 rounded-lg border px-3 py-2.5 text-sm">
-        <span className="grid gap-0.5">
-          <span className="font-medium">Include Git LFS files</span>
-          <span className="text-muted-foreground">Large files stored with Git LFS are backed up too. Uses more space.</span>
-        </span>
-        <Switch checked={value.lfs} onChange={(e) => set({ lfs: e.target.checked })} />
-      </label>
+      {!compact && (
+        <>
+          <div className="grid gap-1.5">
+            <Label htmlFor={`${id}-keep`}>Snapshots to keep per repo</Label>
+            <Input id={`${id}-keep`} type="number" inputMode="numeric" min={1} max={1000} value={value.keepLast || ""} onChange={(e) => set({ keepLast: Number(e.target.value) })} className="w-40 tabular-nums pointer-coarse:h-11" />
+            <p className="text-sm text-muted-foreground">Older ones are deleted. Each snapshot is a full copy.</p>
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor={`${id}-prefix`}>Folder in the bucket</Label>
+            <Input id={`${id}-prefix`} value={value.prefix} onChange={(e) => set({ prefix: e.target.value })} placeholder="git-backup" autoComplete="off" spellCheck={false} className="font-mono pointer-coarse:h-11" />
+          </div>
+          <label className="flex min-h-11 cursor-pointer items-center justify-between gap-4 rounded-lg border px-3 py-2.5 text-sm">
+            <span className="grid gap-0.5">
+              <span className="font-medium">Include Git LFS files</span>
+              <span className="text-muted-foreground">Large files stored with Git LFS are backed up too. Uses more space.</span>
+            </span>
+            <Switch checked={value.lfs} onChange={(e) => set({ lfs: e.target.checked })} />
+          </label>
+        </>
+      )}
     </div>
   )
 }

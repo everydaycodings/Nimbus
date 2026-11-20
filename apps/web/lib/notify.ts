@@ -217,6 +217,9 @@ async function describe(userId: string, ids?: string[]) {
         d.event === "expiring"
           ? `The git connection “${d.name ?? "unnamed"}” ${d.days === "0" ? "has expired" : `expires in ${d.days} days`}. Replace its token so backups keep running.`
           : `Git Backup “${d.job ?? "unnamed"}” failed ${d.streak ?? "2"} times in a row${d.error ? `: ${d.error}` : ""}`,
+      import_done: `Import “${d.name ?? "unnamed"}” finished: ${d.files ?? "0"} file${d.files === "1" ? "" : "s"} brought into Nimbus${d.skipped && d.skipped !== "0" ? `, ${d.skipped} already there` : ""}`,
+      import_failed: `Import “${d.name ?? "unnamed"}” failed ${d.streak ?? "2"} times in a row${d.error ? `: ${d.error}` : ""}`,
+      convert_done: d.error ? `Couldn't convert “${d.name ?? "a file"}”: ${d.error}` : `“${d.name ?? "A file"}” is converted${d.to ? ` to ${d.to}` : ""}`,
       backup: `${KIND_LABEL[d.backup as Kind] ?? "A"} backup ${d.event === "stale" ? "hasn't succeeded in a while" : d.event === "warning" ? "finished with a warning" : "failed"}`,
       transfer_download:
         r.count > 1
@@ -243,6 +246,12 @@ async function describe(userId: string, ids?: string[]) {
       registry_scan: `A registry scan found ${d.critical ?? "some"} critical vulnerabilit${d.critical === "1" ? "y" : "ies"} in ${d.name ?? "an image"}`,
       registry_connection: `The ${d.name ?? "git"} connection ${Number(d.days) > 0 ? `expires in ${d.days} day${d.days === "1" ? "" : "s"}` : "has expired"}. Replace its token in Registry, Access.`,
       registry_build: `Build of ${d.name ?? "an image"} ${d.status === "success" ? "finished" : d.status === "stopped" ? "was stopped to protect the server" : d.status === "cancelled" ? "was cancelled" : "failed"}${d.reason ? `: ${d.reason}` : ""}`,
+      registry_mirror:
+        d.event === "changed"
+          ? `Mirror “${d.name ?? "unnamed"}”: ${d.tags ?? "a tag"} changed upstream and was copied to ${d.target ?? "its repo"}`
+          : `Registry ${d.what ?? "mirror"} “${d.name ?? "unnamed"}” failed ${d.streak ?? "2"} times in a row${d.error ? `: ${d.error}` : ""}`,
+      server_backup: `Server backup “${d.job ?? "unnamed"}” failed ${d.streak ?? "2"} times in a row${d.error ? `: ${d.error}` : ""}`,
+      archive_failed: `Couldn't archive “${d.name ?? "a page"}” ${d.streak ?? "2"} times in a row${d.error ? `: ${d.error}` : ""}`,
       secrets: d.text ?? "Something needs a look in Secrets",
     }[r.kind]
     const seen = r.nodeId ? access.get(r.nodeId) : undefined
@@ -273,6 +282,16 @@ async function describe(userId: string, ids?: string[]) {
             ? "/buckets?tab=keys"
           : r.kind === "git_backup"
             ? (d.href ?? "/more/github-backup")
+          : r.kind === "registry_mirror"
+            ? (d.href ?? "/more/registry-tools")
+          : r.kind === "import_done" || r.kind === "import_failed"
+            ? (d.href ?? "/more/import")
+          : r.kind === "convert_done"
+            ? "/more/convert"
+          : r.kind === "server_backup"
+            ? (d.href ?? "/more/server-backup")
+          : r.kind === "archive_failed"
+            ? `/more/archive/${d.id}`
           : r.kind === "registry_build" || r.kind === "registry_connection"
             ? (d.href ?? "/registry")
           : r.kind === "registry_token" || r.kind === "registry_cleanup" || r.kind === "registry_quota" || r.kind === "registry_scan"

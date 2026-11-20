@@ -110,6 +110,10 @@ export type Policy = {
   deletePattern?: string
   // Delete tags not pulled for N days (pushedAt when never pulled).
   notPulledDays?: number
+  // Delete tags pushed more than N days ago (Registry Cleanup rules).
+  olderThanDays?: number
+  // Regex (case-sensitive, on the tag name): matching tags are never deleted and don't count toward keepLast.
+  keepRegex?: string
 }
 
 export type PolicyTag = { name: string; pushedAt: Date; lastPulledAt: Date | null }
@@ -132,7 +136,8 @@ export function evaluatePolicy(policy: Policy, tags: PolicyTag[], now: Date = ne
     const byPattern = !!policy.deletePattern && matchPattern(policy.deletePattern, t.name)
     const idle = (t.lastPulledAt ?? t.pushedAt).getTime()
     const stale = !!policy.notPulledDays && now.getTime() - idle > policy.notPulledDays * DAY
-    if (byPattern || stale) out.push(t.name)
+    const old = !!policy.olderThanDays && now.getTime() - t.pushedAt.getTime() > policy.olderThanDays * DAY
+    if (byPattern || stale || old) out.push(t.name)
   }
   return out
 }

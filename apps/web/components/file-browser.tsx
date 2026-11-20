@@ -16,6 +16,7 @@ import {
   ArrowUpIcon,
   CalendarBlankIcon,
   HardDrivesIcon,
+  FilmSlateIcon,
   ImageSquareIcon,
   ImagesIcon,
   ShapesIcon,
@@ -80,8 +81,10 @@ import { BucketDialog } from "@/components/s3-bucket-dialog"
 import { useS3Enabled } from "@/components/s3-context"
 import { useNotice, type Notice } from "@/components/toaster"
 import { AddToAlbumDialog } from "@/components/album-dialogs"
+import { ConvertDialog } from "@/components/convert/convert-dialog"
 import { AddToPersonDialog } from "@/components/people"
 import { ShareDialog } from "@/components/share-dialog"
+import { inKind } from "@/lib/convert/rules"
 import { IMAGE, VIDEO } from "@/lib/file-rules"
 import { UserAvatar } from "@/components/user-avatar"
 import { canEditImage } from "@/components/image-editor"
@@ -105,6 +108,7 @@ import {
 } from "@/components/overlay-styles"
 import { DocChips, type DocInfo } from "@/components/doc-bits"
 import { useDocsEnabled } from "@/components/docs-context"
+import { useConvertEnabled } from "@/components/convert/convert-context"
 import { SubmitButton } from "@/components/submit-button"
 import { TagColors, useTagEditor } from "@/components/tag-edit"
 import { useTransfer } from "@/components/transfer-dialog"
@@ -244,6 +248,7 @@ export function FileBrowser({
   const { upload, download } = useUploads()
   const transfer = useTransfer()
   const docsOn = useDocsEnabled()
+  const convertOn = useConvertEnabled()
   const s3On = useS3Enabled()
   const [bucketFor, setBucketFor] = useState<Item | null>(null)
   const [bucketOpen, setBucketOpen] = useState(false)
@@ -299,6 +304,7 @@ export function FileBrowser({
   const [requesting, setRequesting] = useState(false)
   // Photos waiting for the Add to album picker.
   const [albumIds, setAlbumIds] = useState<string[] | null>(null)
+  const [convertFor, setConvertFor] = useState<{ id: string; name: string }[] | null>(null)
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>(
     view === "recent" || view === "search"
       ? { key: "rank", desc: false }
@@ -872,6 +878,19 @@ export function FileBrowser({
         icon: ImagesIcon,
         group: 1,
         run: () => setAlbumIds(t.map((i) => i.id)),
+      },
+      convertOn &&
+      t.every(
+        (i) =>
+          i.kind === "file" &&
+          roleOf(i) === "owner" &&
+          !i.shortcut &&
+          inKind(i.name) !== null
+      ) && {
+        label: "Convert…",
+        icon: FilmSlateIcon,
+        group: 1,
+        run: () => setConvertFor(t.map((i) => ({ id: i.id, name: i.name }))),
       },
       one &&
         one.kind === "file" &&
@@ -2228,6 +2247,7 @@ export function FileBrowser({
       />
 
       <AddToAlbumDialog ids={albumIds} onClose={() => setAlbumIds(null)} />
+      <ConvertDialog items={convertFor} onClose={() => setConvertFor(null)} />
       <AddToPersonDialog item={personFor} onClose={() => setPersonFor(null)} />
 
       <ShareDialog

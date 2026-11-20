@@ -125,7 +125,7 @@ async function ownFolder(ownerId: string, id: string) {
 }
 
 // "Reports/2026" for each folder id, from the top down.
-async function folderPaths(ids: string[]) {
+export async function folderPaths(ids: string[]) {
   const unique = [...new Set(ids)]
   if (!unique.length) return new Map<string, string>()
   const rows = await db.execute<{ id: string; path: string }>(sql`

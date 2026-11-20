@@ -22,6 +22,11 @@ const globalForRedis = globalThis as unknown as {
   transcodeQueue?: Queue
   buildsQueue?: Queue
   gitBackupQueue?: Queue
+  registryToolsQueue?: Queue
+  convertQueue?: Queue
+  archiveQueue?: Queue
+  importQueue?: Queue
+  serverBackupQueue?: Queue
 }
 export const redis =
   globalForRedis.redis ??
@@ -50,6 +55,16 @@ export const TRANSCODE_QUEUE = "transcode"
 export const BUILDS_QUEUE = "registry-builds"
 // Git Backup runs (lib/gitbackup/runner.ts), one job per run, started by the worker.
 export const GIT_BACKUP_QUEUE = "git-backup"
+// Registry Cleanup & Mirror: one job per mirror run (lib/registry/tools.ts), started by the worker.
+export const REGISTRY_TOOLS_QUEUE = "registry-tools"
+// Media Converter jobs (scripts/convert.ts), one per convert_jobs row.
+export const CONVERT_QUEUE = "convert"
+// Website Archiver captures (lib/archive/run.ts), one job per capture, started by the worker.
+export const ARCHIVE_QUEUE = "archive"
+// Cloud Import runs (lib/import/runner.ts), one job per import_runs row, started by the worker.
+export const IMPORT_QUEUE = "import"
+// Server Backup runs (lib/server-backup/runner.ts), one job per run, started by the worker.
+export const SERVER_BACKUP_QUEUE = "server-backup"
 // Set by npm run worker:backup while it's up.
 export const BACKUP_HEARTBEAT_KEY = "backups:heartbeat"
 
@@ -68,6 +83,16 @@ export const buildsQueue =
   globalForRedis.buildsQueue ?? new Queue(BUILDS_QUEUE, { connection: redis })
 export const gitBackupQueue =
   globalForRedis.gitBackupQueue ?? new Queue(GIT_BACKUP_QUEUE, { connection: redis })
+export const registryToolsQueue =
+  globalForRedis.registryToolsQueue ?? new Queue(REGISTRY_TOOLS_QUEUE, { connection: redis })
+export const convertQueue =
+  globalForRedis.convertQueue ?? new Queue(CONVERT_QUEUE, { connection: redis })
+export const archiveQueue =
+  globalForRedis.archiveQueue ?? new Queue(ARCHIVE_QUEUE, { connection: redis })
+export const importQueue =
+  globalForRedis.importQueue ?? new Queue(IMPORT_QUEUE, { connection: redis })
+export const serverBackupQueue =
+  globalForRedis.serverBackupQueue ?? new Queue(SERVER_BACKUP_QUEUE, { connection: redis })
 if (process.env.NODE_ENV !== "production")
   Object.assign(globalForRedis, {
     redis,
@@ -78,6 +103,11 @@ if (process.env.NODE_ENV !== "production")
     transcodeQueue,
     buildsQueue,
     gitBackupQueue,
+    registryToolsQueue,
+    convertQueue,
+    archiveQueue,
+    importQueue,
+    serverBackupQueue,
   })
 
 // Runs the checks every `minutes`, or stops the schedule when null.
@@ -92,7 +122,7 @@ export async function scheduleHealth(minutes: number | null) {
 }
 
 export type JobName =
-  "email" | "leak-scan" | "leak-scan-user" | "secrets-rotate-root" | "secrets-sweep" | "secrets-push" | "secrets-webhook" | "secrets-lease-expire" | "delete-keys" | "tus-finish" | "backup-alert" | "orphan-sweep" | "push" | "ocr-langs" | "s3-etags" | "s3-multipart-stale" | "s3-key-reminders" | "s3-lifecycle" | "s3-usage-flush" | "s3-usage-rollup" | "registry-uploads-stale" | "registry-gc" | "registry-trash-purge" | "registry-policy" | "registry-aliases-purge" | "registry-events-purge" | "registry-mirror-expire" | "registry-webhook" | "registry-scan" | "registry-rescan" | "registry-advice" | "git-backup-tick" | "git-backup-expiry"
+  "email" | "leak-scan" | "leak-scan-user" | "secrets-rotate-root" | "secrets-sweep" | "secrets-push" | "secrets-webhook" | "secrets-lease-expire" | "delete-keys" | "tus-finish" | "backup-alert" | "orphan-sweep" | "push" | "ocr-langs" | "s3-etags" | "s3-multipart-stale" | "s3-key-reminders" | "s3-lifecycle" | "s3-usage-flush" | "s3-usage-rollup" | "registry-uploads-stale" | "registry-gc" | "registry-trash-purge" | "registry-policy" | "registry-aliases-purge" | "registry-events-purge" | "registry-mirror-expire" | "registry-webhook" | "registry-scan" | "registry-rescan" | "registry-advice" | "git-backup-tick" | "git-backup-expiry" | "registry-tools-tick" | "registry-mirror-run" | "archive-tick" | "archive-run" | "sha256-backfill" | "import-tick" | "import-run" | "server-backup-tick" | "server-backup-run"
 
 // Work the request shouldn't wait for, retried by `npm run worker` until it lands.
 // Failed jobs stay a week for a look; done ones go, since emails carry file names.
@@ -243,9 +273,34 @@ export async function scheduleJobs() {
     { name: "registry-rescan", opts }
   )
   await jobsQueue.upsertJobScheduler(
+    "sha256-backfill",
+    { every: 5 * 60_000 },
+    { name: "sha256-backfill", opts }
+  )
+  await jobsQueue.upsertJobScheduler(
     "git-backup-tick",
     { every: 60_000 },
     { name: "git-backup-tick", opts }
+  )
+  await jobsQueue.upsertJobScheduler(
+    "registry-tools-tick",
+    { every: 60_000 },
+    { name: "registry-tools-tick", opts }
+  )
+  await jobsQueue.upsertJobScheduler(
+    "import-tick",
+    { every: 60_000 },
+    { name: "import-tick", opts }
+  )
+  await jobsQueue.upsertJobScheduler(
+    "server-backup-tick",
+    { every: 60_000 },
+    { name: "server-backup-tick", opts }
+  )
+  await jobsQueue.upsertJobScheduler(
+    "archive-tick",
+    { every: 60_000 },
+    { name: "archive-tick", opts }
   )
   await jobsQueue.upsertJobScheduler(
     "git-backup-expiry",
@@ -325,4 +380,28 @@ export async function enqueueBuild(buildId: string) {
 // A Git Backup run the app opened. The run id as job id: queued once. Never retried by BullMQ: the next tick starts a new run.
 export async function enqueueGitBackup(data: { runId: string; repoIds: string[] }) {
   await gitBackupQueue.add("run", data, { jobId: data.runId, attempts: 1, removeOnComplete: true, removeOnFail: 50 })
+}
+
+// A Website Archiver capture the app opened. Random job id (a failed job would otherwise block the same id); the page row says it is running, so a page is never captured twice at once.
+export async function enqueueArchive(pageId: string) {
+  await archiveQueue.add("capture", { pageId }, { attempts: 1, removeOnComplete: true, removeOnFail: 50 })
+}
+
+// A conversion the app opened. The row id as job id: queued once. Never retried by BullMQ: a failed one says why and is converted again by hand.
+export async function enqueueConvert(jobId: string) {
+  await convertQueue.add("convert", { jobId }, { jobId, attempts: 1, removeOnComplete: true, removeOnFail: 50 })
+}
+
+// A Cloud Import run the app opened. The run id as job id: queued once. Never retried by BullMQ: the next tick starts a new run.
+export async function enqueueServerBackup(data: { runId: string }) {
+  await serverBackupQueue.add("run", data, { jobId: data.runId, attempts: 1, removeOnComplete: true, removeOnFail: 50 })
+}
+
+export async function enqueueImport(data: { runId: string }) {
+  await importQueue.add("run", data, { jobId: data.runId, attempts: 1, removeOnComplete: true, removeOnFail: 50 })
+}
+
+// A Registry Cleanup & Mirror run the app opened. The run id as job id: queued once. Never retried by BullMQ: the next tick starts a new run.
+export async function enqueueRegistryMirror(data: { runId: string; mirrorId: string }) {
+  await registryToolsQueue.add("run", data, { jobId: data.runId, attempts: 1, removeOnComplete: true, removeOnFail: 50 })
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "settings" ADD COLUMN "cleanup_tool_enabled" boolean DEFAULT true NOT NULL;

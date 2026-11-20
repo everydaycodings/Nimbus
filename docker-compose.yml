@@ -173,6 +173,24 @@ services:
       interval: 30s
       retries: 3
 
+  # Optional browser service (profile "browser") for the Website archive: headless Chromium over the
+  # Chrome DevTools protocol. Nothing is published; Nimbus reaches it inside the compose network.
+  # Then set Admin → More tools → Website archive → Browser service address to ws://browser:3000?token=<BROWSER_TOKEN, default nimbus-browser>.
+  browser:
+    image: ghcr.io/browserless/chromium:v2.24.3
+    profiles: [browser]
+    restart: unless-stopped
+    mem_limit: ${NIMBUS_BROWSER_MEMORY:-2g}
+    shm_size: 1gb
+    environment:
+      TOKEN: ${BROWSER_TOKEN:-nimbus-browser}
+      CONCURRENT: "2"
+      TIMEOUT: "120000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/json/version?token='+process.env.TOKEN).then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      retries: 3
+
   # WebDAV at /dav (nginx forwards it here). Next can't route WebDAV's methods,
   # so this hands each request to the app as a signed POST.
   webdav:

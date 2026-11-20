@@ -27,6 +27,7 @@ import {
   user,
   vaults,
 } from "@/lib/db/schema"
+import { watchHook } from "@/lib/convert/jobs"
 import { notify, notifyEdit } from "@/lib/notify"
 import { checkStorage, release } from "@/lib/quota"
 import { UUID, formatBytes, typeAllowed, zipName } from "@/lib/file-rules"
@@ -517,6 +518,8 @@ export async function finishTusUpload(
     if (result.versionId) await enqueueDerive(result.versionId, token.k === "camera")
     // Text and code files are checked for leaked keys by the worker (if an admin left that on).
     if (result.versionId && scannable(name, mime, size)) await enqueue("leak-scan", { nodeId: result.nodeId }).catch(() => {})
+    // A folder being watched by the Media Converter queues the new file.
+    await watchHook(result.nodeId).catch(() => {})
     if (token.b) await notifyEdit(token.b, result.nodeId)
     if (token.s) {
       const link = await dropLink(token.s)

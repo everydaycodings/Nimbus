@@ -55,7 +55,8 @@ export async function testS3(v: Extract<DestInput, { kind: "s3" }>): Promise<{ e
 }
 
 // Turns what the member chose into the job's destination columns (making the bucket and scoped key, or testing the S3).
-export async function prepareDest(userId: string, jobName: string, v: DestInput): Promise<{ fields: DestFields } | { error: string }> {
+// label: the tool the access key is named after.
+export async function prepareDest(userId: string, jobName: string, v: DestInput, label = "Git Backup"): Promise<{ fields: DestFields } | { error: string }> {
   if (v.kind === "s3") {
     const t = await testS3(v)
     if (t.error) return { error: t.error }
@@ -89,7 +90,7 @@ export async function prepareDest(userId: string, jobName: string, v: DestInput)
   const [bucket] = await db.select({ id: s3Buckets.id, nodeId: s3Buckets.nodeId }).from(s3Buckets).where(and(eq(s3Buckets.userId, userId), eq(s3Buckets.name, name)))
   if (!bucket) return { error: "Couldn't find the bucket." }
   const key = await createKey(userId, {
-    name: `Git Backup — ${jobName}`.slice(0, 60),
+    name: `${label} — ${jobName}`.slice(0, 60),
     perms: ["list", "read", "write", "delete"],
     allBuckets: false,
     bucketIds: [bucket.id],

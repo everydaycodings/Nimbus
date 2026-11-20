@@ -4,8 +4,10 @@ import { AdminPage, SettingRow, SettingsForm, resettable } from "@/components/ad
 import { CopyButton } from "@/components/copy-button"
 import { Input } from "@/components/ui/input"
 import { appUrl } from "@/lib/email"
+import { ImportSettings } from "./import-form"
+import { ServerBackupSettings } from "./server-backup-form"
 import { getSettings } from "@/lib/signup"
-import { setMoreTools } from "./actions"
+import { setArchiverTool, setCleanupTool, setConvertTool, setMoreTools, setRegistryTools } from "./actions"
 
 export const metadata = { title: "More tools · Admin · Nimbus" }
 
@@ -121,6 +123,134 @@ export default async function MoreToolsAdminPage() {
           </div>
         </SettingRow>
       </SettingsForm>
+      <SettingsForm action={setCleanupTool} title="Clean up" description="Members find duplicates, similar photos, big files and ones they never open.">
+        <SettingRow
+          id="cleanup-enabled"
+          label="Allow Clean up"
+          htmlFor="cleanupToolEnabled"
+          hint="Off hides it from everyone. Nothing is deleted."
+          tip={{
+            does: "Shows Clean up under More. The worker keeps reading file hashes either way.",
+            affects: "Everyone.",
+            default: "On",
+          }}
+          reset={reset("cleanupToolEnabled")}
+        >
+          <input type="checkbox" id="cleanupToolEnabled" name="cleanupToolEnabled" defaultChecked={s.cleanupToolEnabled} className={CHECK} />
+        </SettingRow>
+      </SettingsForm>
+      <SettingsForm action={setConvertTool} title="Media converter" description="Members convert, compress and trim video, audio and images. The worker runs ffmpeg, so heavy use takes CPU from everything else.">
+        <SettingRow
+          id="convert-enabled"
+          label="Allow the media converter"
+          htmlFor="convertToolEnabled"
+          hint="Off hides it from everyone. Waiting conversions fail and watch folders pause."
+          tip={{ does: "Shows the media converter under More and Convert… in the file menu.", affects: "Everyone. Converted files and presets are kept.", default: "On" }}
+          reset={reset("convertToolEnabled")}
+        >
+          <input type="checkbox" id="convertToolEnabled" name="convertToolEnabled" defaultChecked={s.convertToolEnabled} className={CHECK} />
+        </SettingRow>
+        <SettingRow
+          id="convert-concurrency"
+          label="Conversions at the same time"
+          htmlFor="convertConcurrency"
+          hint="1 to 8. Each one uses CPU until it finishes; the rest wait in line."
+          tip={{ does: "How many files are converted together across all members.", affects: "The worker, within a minute.", default: "1" }}
+          reset={reset("convertConcurrency")}
+        >
+          <Input id="convertConcurrency" name="convertConcurrency" type="number" min={1} max={8} step={1} defaultValue={s.convertConcurrency} />
+        </SettingRow>
+        <SettingRow
+          id="convert-max-size"
+          label="Largest file"
+          htmlFor="convertMaxMb"
+          hint="Megabytes. 0 means no limit."
+          tip={{ does: "Refuses to convert a file bigger than this.", affects: "New conversions and watch folders.", default: "No limit" }}
+          reset={reset("convertMaxBytes")}
+        >
+          <div className="flex items-center gap-2">
+            <Input id="convertMaxMb" name="convertMaxMb" type="number" min={0} step={1} defaultValue={s.convertMaxBytes ? Math.round(s.convertMaxBytes / 1024 / 1024) : 0} />
+            <span className="shrink-0 text-sm text-muted-foreground">MB</span>
+          </div>
+        </SettingRow>
+        <SettingRow
+          id="convert-max-length"
+          label="Longest video or audio"
+          htmlFor="convertMaxMinutes"
+          hint="Minutes. 0 means no limit."
+          tip={{ does: "Fails a conversion whose media is longer than this.", affects: "New conversions.", default: "No limit" }}
+          reset={reset("convertMaxSeconds")}
+        >
+          <div className="flex items-center gap-2">
+            <Input id="convertMaxMinutes" name="convertMaxMinutes" type="number" min={0} step={1} defaultValue={s.convertMaxSeconds ? Math.round(s.convertMaxSeconds / 60) : 0} />
+            <span className="shrink-0 text-sm text-muted-foreground">minutes</span>
+          </div>
+        </SettingRow>
+        <SettingRow
+          id="convert-daily"
+          label="Minutes per member per day"
+          htmlFor="convertDailyMinutes"
+          hint="Minutes of video and audio each member can convert a day. 0 means no limit. Images don't count."
+          tip={{ does: "Stops a member from converting more media than this each day (server midnight).", affects: "New conversions.", default: "No limit" }}
+          reset={reset("convertDailyMinutes")}
+        >
+          <Input id="convertDailyMinutes" name="convertDailyMinutes" type="number" min={0} step={1} defaultValue={s.convertDailyMinutes} />
+        </SettingRow>
+        <SettingRow
+          id="convert-hwaccel"
+          label="Hardware video encoding"
+          htmlFor="convertHwaccel"
+          hint="The server needs the device (/dev/dri for VAAPI, an NVIDIA runtime for NVENC). If it fails, conversion falls back to software."
+          tip={{ does: "Encodes video on the graphics card instead of the CPU.", affects: "Video conversions, not GIFs, audio or images.", default: "Off" }}
+          reset={reset("convertHwaccel")}
+        >
+          <select id="convertHwaccel" name="convertHwaccel" defaultValue={s.convertHwaccel} className="h-8 w-full rounded-lg border border-input bg-input/30 px-3 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
+            <option value="off">Off (software)</option>
+            <option value="vaapi">VAAPI (Intel, AMD)</option>
+            <option value="nvenc">NVENC (NVIDIA)</option>
+          </select>
+        </SettingRow>
+      </SettingsForm>
+      <SettingsForm action={setRegistryTools} title="Registry tools" description="Members trim old tags and untagged images with rules, and mirror images from other registries. Needs the container registry.">
+        <SettingRow
+          id="registry-tools-enabled"
+          label="Allow Registry tools"
+          htmlFor="registryToolsEnabled"
+          hint="Off hides it from everyone and pauses rules and mirrors. Nothing is deleted."
+          tip={{
+            does: "Shows Registry tools under More and lets the worker run cleanup rules and mirrors.",
+            affects: "Everyone. Rules and mirrors are kept while it is off.",
+            default: "On",
+          }}
+          reset={reset("registryToolsEnabled")}
+        >
+          <input type="checkbox" id="registryToolsEnabled" name="registryToolsEnabled" defaultChecked={s.registryToolsEnabled} className={CHECK} />
+        </SettingRow>
+      </SettingsForm>
+      <SettingsForm action={setArchiverTool} title="Website archive" description="Members save web pages as HTML, PDF, a screenshot and text. Pages are opened in a separate browser service, so nothing runs inside Nimbus itself.">
+        <SettingRow
+          id="archiver-enabled"
+          label="Allow the Website archive"
+          htmlFor="archiverToolEnabled"
+          hint="Off hides it from everyone and stops scheduled captures. Saved pages and files are kept."
+          tip={{ does: "Shows Website archive under More and lets the worker capture pages.", affects: "Everyone. Saved pages and their files stay while it is off.", default: "On" }}
+          reset={reset("archiverToolEnabled")}
+        >
+          <input type="checkbox" id="archiverToolEnabled" name="archiverToolEnabled" defaultChecked={s.archiverToolEnabled} className={CHECK} />
+        </SettingRow>
+        <SettingRow
+          id="archiver-browser"
+          label="Browser service address"
+          htmlFor="archiverBrowserUrl"
+          hint="The Chromium container's websocket address, like ws://browser:3000?token=nimbus-browser (the BROWSER_TOKEN, if you set one). Start it with: docker compose --profile browser up -d browser. Blank means the tool says it needs the browser service."
+          tip={{ does: "Where Nimbus connects to open pages (Chrome DevTools protocol, the browserless image).", affects: "Every capture. Members' links and cookies are sent to this browser.", default: "Blank (off)" }}
+          reset={reset("archiverBrowserUrl")}
+        >
+          <Input id="archiverBrowserUrl" name="archiverBrowserUrl" type="text" pattern={"wss?://\\S+"} title="Starts with ws:// or wss://" autoComplete="off" spellCheck={false} placeholder="ws://browser:3000?token=…" defaultValue={s.archiverBrowserUrl ?? ""} />
+        </SettingRow>
+      </SettingsForm>
+      <ImportSettings s={s} />
+      <ServerBackupSettings s={s} />
     </AdminPage>
   )
 }

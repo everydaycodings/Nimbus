@@ -65,7 +65,7 @@ const bearers = new Map<string, { token: string; exp: number }>()
 
 // One upstream request, answering a 401 challenge once: Bearer (token service, with the upstream's
 // login when set) or Basic.
-export async function upstream(u: Upstream, path: string, repo: string, o: { accept?: string; method?: string; signal?: AbortSignal } = {}) {
+export async function upstream(u: Pick<Upstream, "id" | "url" | "username" | "passwordEnc">, path: string, repo: string, o: { accept?: string; method?: string; signal?: AbortSignal } = {}) {
   const url = `${u.url.replace(/\/+$/, "")}/v2/${path}`
   const pw = u.passwordEnc ? decrypt(u.passwordEnc) : null
   const basic = u.username && pw !== null ? `Basic ${Buffer.from(`${u.username}:${pw}`).toString("base64")}` : null
@@ -114,7 +114,7 @@ async function ensureRepo(name: string): Promise<Repo> {
 
 // Keeps a fetched manifest (and its tag) the way putManifest would, minus the blob checks:
 // the layers arrive on the first pull. Index children arrive as clients ask for them.
-async function keep(repo: Repo, bytes: Buffer, type: string | null, ref: string) {
+export async function keep(repo: Repo, bytes: Buffer, type: string | null, ref: string) {
   let doc: Record<string, unknown>
   try {
     doc = JSON.parse(bytes.toString("utf8"))

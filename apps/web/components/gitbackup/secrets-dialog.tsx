@@ -9,7 +9,8 @@ import { DIALOG_BACKDROP, DIALOG_POPUP } from "@/components/overlay-styles"
 import { Button } from "@/components/ui/button"
 
 // Offered once after a token is saved: keep a copy in Secrets too. Dismissable; nothing is saved unless they choose to.
-export function SecretsDialog({ token, onClose }: { token: string | null; onClose: () => void }) {
+// `save` and `defaultName` let another tool (Registry tools' mirror login) reuse it.
+export function SecretsDialog({ token, onClose, save = saveTokenToSecret, defaultName = "GITHUB_BACKUP_TOKEN" }: { token: string | null; onClose: () => void; save?: typeof saveTokenToSecret; defaultName?: string }) {
   return (
     <Dialog.Root open={token !== null} onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
@@ -18,10 +19,10 @@ export function SecretsDialog({ token, onClose }: { token: string | null; onClos
           <div className="grid gap-1.5">
             <Dialog.Title className="text-base font-semibold">Keep a copy in Secrets?</Dialog.Title>
             <Dialog.Description className="text-sm text-pretty text-muted-foreground">
-              Nimbus stores this token sealed and never shows it again. If you may need it elsewhere, save it to a Secrets project now.
+              Nimbus stores this sealed and never shows it again. If you may need it elsewhere, save it to a Secrets project now.
             </Dialog.Description>
           </div>
-          {token && <SaveToSecrets token={token} defaultName="GITHUB_BACKUP_TOKEN" save={saveTokenToSecret} />}
+          {token && <SaveToSecrets token={token} defaultName={defaultName} save={save} />}
           <div className="flex justify-end">
             <Button variant="outline" className={TOUCH} onClick={onClose}>
               Not now

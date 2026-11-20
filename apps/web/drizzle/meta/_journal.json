@@ -470,6 +470,20 @@
       "when": 1797300000000,
       "tag": "0066_git_backup_forgejo",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1797400000000,
+      "tag": "0067_cleanup_tool",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1797500000000,
+      "tag": "0068_more_tools_batch2",
+      "breakpoints": true
     }
   ]
 }

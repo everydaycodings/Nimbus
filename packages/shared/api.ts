@@ -643,6 +643,12 @@ export type NotificationKind =
   | "registry_connection"
   | "s3_key"
   | "git_backup"
+  | "registry_mirror"
+  | "convert_done"
+  | "archive_failed"
+  | "server_backup"
+  | "import_done"
+  | "import_failed"
 export type Notification = {
   id: string
   kind: NotificationKind

@@ -72,6 +72,7 @@ import { registryState } from "@/lib/registry/manage"
 import { s3State } from "@/lib/s3api/manage"
 import { getSettings } from "@/lib/signup"
 import { moreTools } from "@/lib/more-tools"
+import { ConvertProvider } from "@/components/convert/convert-context"
 import { signOut } from "./actions"
 
 const ROLE_LABEL = { owner: "Owner", admin: "Admin", member: "Member" }
@@ -415,6 +416,7 @@ export default async function AppLayout({
       <AiProvider flags={ai}>
       <TransferProvider enabled={settings.transfersEnabled}>
       <DocsProvider enabled={settings.documentsEnabled}>
+      <ConvertProvider enabled={settings.convertToolEnabled}>
       <S3Provider enabled={s3 === "ready"}>
       <UploadProvider
         tusUrl={process.env.TUS_URL ?? ""}
@@ -448,6 +450,7 @@ export default async function AppLayout({
         )}
       </UploadProvider>
       </S3Provider>
+      </ConvertProvider>
       </DocsProvider>
       </TransferProvider>
       </AiProvider>

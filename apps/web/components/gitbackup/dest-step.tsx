@@ -3,7 +3,7 @@
 import { CheckCircleIcon } from "@phosphor-icons/react"
 import { useEffect, useId, useState, useTransition } from "react"
 
-import { nimbusOptions, testS3 } from "@/app/(app)/more/github-backup/actions"
+import { nimbusOptions as gitNimbusOptions, testS3 as gitTestS3 } from "@/app/(app)/more/github-backup/actions"
 import { RADIO, RADIO_INPUT, SELECT, TOUCH, Switch } from "@/components/registry-ui"
 import { FormError } from "@/components/two-factor"
 import { Button } from "@/components/ui/button"
@@ -13,7 +13,8 @@ import type { DestInput } from "@/lib/gitbackup/setup"
 import { bucketNameError, suggestBucketName } from "@/lib/s3api/rules"
 import { cn } from "@/lib/utils"
 
-type Opts = Awaited<ReturnType<typeof nimbusOptions>>
+type Opts = Awaited<ReturnType<typeof gitNimbusOptions>>
+export type DestActions = { nimbusOptions: typeof gitNimbusOptions; testS3: typeof gitTestS3 }
 export type Existing = { endpoint: string; region: string; bucket: string; accessKey: string; pathStyle: boolean }
 
 const NOT_READY: Record<string, string> = {
@@ -24,7 +25,8 @@ const NOT_READY: Record<string, string> = {
 
 // Where archives go. onChange gets the destination when it is complete (a tested manual S3 counts only after "Test connection" passes), else null.
 // `existing`: editing a manual S3 job; a blank secret keeps the stored one.
-export function DestStep({ onChange, existing, jobName }: { onChange: (d: DestInput | null) => void; existing?: Existing; jobName?: string }) {
+// `actions` and `label`: another tool (Server Backup) uses the same step with its own server actions and key name.
+export function DestStep({ onChange, existing, jobName, actions = { nimbusOptions: gitNimbusOptions, testS3: gitTestS3 }, label = "Git Backup" }: { onChange: (d: DestInput | null) => void; existing?: Existing; jobName?: string; actions?: DestActions; label?: string }) {
   const id = useId()
   const [kind, setKind] = useState<"nimbus" | "s3">(existing ? "s3" : "nimbus")
   const [opts, setOpts] = useState<Opts | null>(null)
@@ -32,7 +34,7 @@ export function DestStep({ onChange, existing, jobName }: { onChange: (d: DestIn
   // null until the member picks: the default follows the loaded buckets, so late data never overrides a choice.
   const [picked, setMode] = useState<"existing" | "new" | null>(null)
   const [pickedBucket, setBucketId] = useState("")
-  const [newBucket, setNewBucket] = useState(suggestBucketName(jobName || "git backup"))
+  const [newBucket, setNewBucket] = useState(suggestBucketName(jobName || label.toLowerCase()))
   const [s3, setS3] = useState({ endpoint: existing?.endpoint ?? "", region: existing?.region ?? "us-east-1", bucket: existing?.bucket ?? "", accessKey: existing?.accessKey ?? "", secret: "", pathStyle: existing?.pathStyle ?? true })
   // The values the last passing test was for.
   const [tested, setTested] = useState<string | null>(null)
@@ -42,7 +44,7 @@ export function DestStep({ onChange, existing, jobName }: { onChange: (d: DestIn
 
   useEffect(() => {
     let live = true
-    nimbusOptions().then(
+    actions.nimbusOptions().then(
       (o) => {
         if (!live) return
         setOpts(o)
@@ -53,6 +55,8 @@ export function DestStep({ onChange, existing, jobName }: { onChange: (d: DestIn
     return () => {
       live = false
     }
+    // Runs once; `actions` is fixed for the step's life.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const mode = picked ?? (opts?.buckets.length ? "existing" : "new")
   const bucketId = pickedBucket || opts?.buckets[0]?.id || ""
@@ -130,7 +134,7 @@ export function DestStep({ onChange, existing, jobName }: { onChange: (d: DestIn
               {newBucket && bucketBad && <p className="text-sm text-destructive">{bucketBad}</p>}
             </div>
           )}
-          <p className="text-sm text-pretty text-muted-foreground">Nimbus makes an access key called “Git Backup — {jobName || "job name"}” that can reach only this bucket. You&apos;ll see it under S3 buckets.</p>
+          <p className="text-sm text-pretty text-muted-foreground">Nimbus makes an access key called “{label} — {jobName || "job name"}” that can reach only this bucket. You&apos;ll see it under S3 buckets.</p>
         </div>
       )}
 
@@ -166,7 +170,7 @@ export function DestStep({ onChange, existing, jobName }: { onChange: (d: DestIn
                   setError(undefined)
                   // A blank secret on an existing job keeps the stored one; the server tests it on save.
                   if (!s3.secret) return setTested(sig)
-                  const r = await testS3({ kind: "s3", ...s3 })
+                  const r = await actions.testS3({ kind: "s3", ...s3 })
                   if (r.error) return (setTested(null), setError(r.error))
                   setTested(sig)
                 })

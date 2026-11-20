@@ -1,11 +1,8 @@
 import Link from "next/link"
 
-import type { MORE_TOOLS } from "@/lib/more-tools"
-import { ago } from "@/lib/health-rules"
+import type { MORE_TOOLS, ToolStatus } from "@/lib/more-tools"
 
-export type ToolStatus = { jobs: number; repos: number; lastRunAt: string | null; failed: boolean }
-
-export function ToolCard({ tool, status, now }: { tool: (typeof MORE_TOOLS)[number]; status: ToolStatus; now: number }) {
+export function ToolCard({ tool, status }: { tool: (typeof MORE_TOOLS)[number]; status: ToolStatus | null }) {
   const Icon = tool.icon
   return (
     <Link
@@ -21,24 +18,17 @@ export function ToolCard({ tool, status, now }: { tool: (typeof MORE_TOOLS)[numb
           <span className="line-clamp-2 text-sm text-pretty text-muted-foreground" title={tool.text}>{tool.text}</span>
         </span>
       </span>
-      <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground tabular-nums">
-        {status.jobs === 0 ? (
-          "Not set up"
-        ) : (
-          <>
-            <span>
-              {status.lastRunAt ? `Last backup ${ago(status.lastRunAt, now)}` : "No backup yet"} ·{" "}
-              {status.repos === 1 ? "1 repo" : `${status.repos} repos`}
+      {status && (
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground tabular-nums">
+          <span>{status.text}</span>
+          {status.failing && (
+            <span className="flex items-center gap-1.5 text-foreground">
+              <span aria-hidden className="size-2 rounded-full bg-destructive" />
+              Last run failed
             </span>
-            {status.failed && (
-              <span className="flex items-center gap-1.5 text-foreground">
-                <span aria-hidden className="size-2 rounded-full bg-destructive" />
-                Last run failed
-              </span>
-            )}
-          </>
-        )}
-      </span>
+          )}
+        </span>
+      )}
     </Link>
   )
 }

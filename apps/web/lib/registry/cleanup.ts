@@ -17,7 +17,14 @@ function overflow(policy: Policy, tags: PolicyTag[]) {
     .filter((n) => !(policy.keepPattern && matchPattern(policy.keepPattern, n)))
 }
 
-const images = (tags: PolicyTag[]) => tags.filter((t) => t.name !== "buildcache")
+// Tags a keepRegex matches are left out of the selection (and out of the keepLast count).
+const images = (tags: PolicyTag[], policy: Policy) => {
+  let keep: RegExp | null = null
+  try {
+    keep = policy.keepRegex ? new RegExp(policy.keepRegex) : null
+  } catch {}
+  return tags.filter((t) => t.name !== "buildcache" && !keep?.test(t.name))
+}
 
 export function selectCleanup(
   policy: Policy,
@@ -28,7 +35,7 @@ export function selectCleanup(
 ) {
   return {
     // The build cache tag never counts or goes: losing it makes the next build start cold.
-    tags: [...new Set([...evaluatePolicy(policy, images(tags), now), ...overflow(policy, images(tags))])].filter(
+    tags: [...new Set([...evaluatePolicy(policy, images(tags, policy), now), ...overflow(policy, images(tags, policy))])].filter(
       (t) => !(immutablePattern && matchPattern(immutablePattern, t))
     ),
     untagged: untaggedToDelete(

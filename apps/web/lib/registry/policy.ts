@@ -40,11 +40,12 @@ async function select(repoId: string, policy: Policy | null | undefined) {
 
 export const previewPolicy = (repoId: string, policy?: Policy | null) => select(repoId, policy)
 
-export async function applyPolicy(repoId: string) {
+// `policy`: a Registry Cleanup rule's own; without one the repo's or namespace's applies.
+export async function applyPolicy(repoId: string, policy?: Policy | null) {
   // Archived repos are read-only, cleanup included.
   const [r] = await db.select({ archivedAt: registryRepos.archivedAt }).from(registryRepos).where(eq(registryRepos.id, repoId))
   if (!r || r.archivedAt) return { tags: [], untagged: [] }
-  const sel = await select(repoId, undefined)
+  const sel = await select(repoId, policy)
   const now = new Date()
   if (sel.tags.length)
     await db
