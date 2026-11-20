@@ -242,8 +242,8 @@ export default async function MoreToolsAdminPage() {
           id="archiver-browser"
           label="Browser service address"
           htmlFor="archiverBrowserUrl"
-          hint="The Chromium container's websocket address, like ws://browser:3000?token=nimbus-browser (the BROWSER_TOKEN, if you set one). Start it with: docker compose --profile browser up -d browser. Blank means the tool says it needs the browser service."
-          tip={{ does: "Where Nimbus connects to open pages (Chrome DevTools protocol, the browserless image).", affects: "Every capture. Members' links and cookies are sent to this browser.", default: "Blank (off)" }}
+          hint="The Chromium container's websocket address, like ws://browser:3000?token=nimbus-browser (the BROWSER_TOKEN, if you set one). Start it with: docker compose --profile browser up -d browser. Blank uses ARCHIVER_BROWSER_URL from .env (setup.sh writes it); with neither, the tool says it needs the browser service."
+          tip={{ does: "Where Nimbus connects to open pages (Chrome DevTools protocol, the browserless image).", affects: "Every capture. Members' links and cookies are sent to this browser.", default: "Blank (ARCHIVER_BROWSER_URL, else off)" }}
           reset={reset("archiverBrowserUrl")}
         >
           <Input id="archiverBrowserUrl" name="archiverBrowserUrl" type="text" pattern={"wss?://\\S+"} title="Starts with ws:// or wss://" autoComplete="off" spellCheck={false} placeholder="ws://browser:3000?token=…" defaultValue={s.archiverBrowserUrl ?? ""} />

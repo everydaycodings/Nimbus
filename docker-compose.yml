@@ -175,7 +175,7 @@ services:
 
   # Optional browser service (profile "browser") for the Website archive: headless Chromium over the
   # Chrome DevTools protocol. Nothing is published; Nimbus reaches it inside the compose network.
-  # Then set Admin → More tools → Website archive → Browser service address to ws://browser:3000?token=<BROWSER_TOKEN, default nimbus-browser>.
+  # setup.sh writes ARCHIVER_BROWSER_URL=ws://browser:3000?token=<BROWSER_TOKEN> to .env; Admin → More tools → Website archive can override it.
   browser:
     image: ghcr.io/browserless/chromium:v2.24.3
     profiles: [browser]

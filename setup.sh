@@ -234,6 +234,18 @@ default=n
 [ "$write_env" = n ] && [[ ",$(env_value COMPOSE_PROFILES)," == *",ml,"* ]] && default=y
 confirm "Run the AI service (nimbus-ml)?" "$default" && PROFILES="${PROFILES:+$PROFILES,}ml"
 
+bold "Website archive (optional)"
+echo "Members save web pages as HTML, PDF, a screenshot and text (More → Website archive)."
+echo "Pages open in a separate headless Chromium container, capped at 2 GB of RAM by default."
+PROFILES=$(tr ',' '\n' <<<"$PROFILES" | grep -vx -e browser -e '' | paste -sd, || true)
+default=n
+[ "$write_env" = n ] && [[ ",$(env_value COMPOSE_PROFILES)," == *",browser,"* ]] && default=y
+BROWSER=n
+if confirm "Run the browser service for Website archive?" "$default"; then
+  PROFILES="${PROFILES:+$PROFILES,}browser"
+  BROWSER=y
+fi
+
 bold "S3-compatible API (optional)"
 echo "Lets aws cli, rclone, restic, Terraform and backup tools use your folders as S3 buckets,"
 echo "on its own subdomain (members make keys and buckets in Nimbus under S3 buckets)."
@@ -397,6 +409,12 @@ fi
 set_env COMPOSE_PROFILES "$PROFILES"
 [ -n "$(env_value ML_TOKEN)" ] || set_env ML_TOKEN "$(openssl rand -hex 24)"
 set_env S3API_DOMAIN "$S3API_DOMAIN"
+if [ "$BROWSER" = y ]; then
+  [ -n "$(env_value BROWSER_TOKEN)" ] || set_env BROWSER_TOKEN "$(openssl rand -hex 24)"
+  set_env ARCHIVER_BROWSER_URL "ws://browser:3000?token=$(env_value BROWSER_TOKEN)"
+else
+  set_env ARCHIVER_BROWSER_URL ""
+fi
 set_env REGISTRY_DOMAIN "$REGISTRY_DOMAIN"
 if [ "$REGISTRY_SCAN" = y ]; then
   # The scanner reads images through the registry service on the compose network (plain http).

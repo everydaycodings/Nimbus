@@ -105,9 +105,12 @@ export async function getPage(userId: string, id: string): Promise<{ page: PageV
   return { page: view(p, { n: snaps.length, last: snaps[0] ? new Date(snaps[0].capturedAt) : null, thumb: snaps[0]?.pngNodeId ?? null }), snapshots }
 }
 
+// The admin's address, else ARCHIVER_BROWSER_URL (setup.sh writes it when it starts the browser service).
+const browserUrl = (s: { archiverBrowserUrl: string | null }) => s.archiverBrowserUrl?.trim() || process.env.ARCHIVER_BROWSER_URL?.trim() || ""
+
 // "off" = no URL saved, "down" = saved but not answering, "ok".
 export async function browserStatus() {
-  return browserState((await getSettings()).archiverBrowserUrl)
+  return browserState(browserUrl(await getSettings()))
 }
 
 // ---- Folder and cookies ---------------------------------------------------
@@ -279,7 +282,7 @@ export async function runCapture(pageId: string) {
   if (!p || p.lastStatus !== "running") return
   try {
     const s = await getSettings()
-    if (!s.archiverBrowserUrl?.trim()) throw new Error("Needs the browser service. Ask an admin to set it up.")
+    if (!browserUrl(s)) throw new Error("Needs the browser service. Ask an admin to set it up.")
     const u = new URL(p.url)
     await checkAddress(u.hostname, Number(u.port) || (u.protocol === "http:" ? 80 : 443), !blockPrivateHosts())
 
@@ -288,7 +291,7 @@ export async function runCapture(pageId: string) {
     const row = saved.find((c) => c.domain === domain)
     const cookies = row ? parseCookieHeader(decrypt(row.valueEnc) ?? "") : []
 
-    const got = await capture(s.archiverBrowserUrl, p.url, cookies)
+    const got = await capture(browserUrl(s), p.url, cookies)
     const body = `# ${got.title || p.url}\n\n<${p.url}>\n\n${got.text}\n`
     const hash = textHash(got.text)
     const [last] = await db.select({ hash: archiveSnapshots.textHash }).from(archiveSnapshots).where(eq(archiveSnapshots.pageId, p.id)).orderBy(desc(archiveSnapshots.capturedAt)).limit(1)
@@ -327,7 +330,7 @@ export async function tick() {
     .set({ lastStatus: "failed", lastError: "The capture didn't finish.", runningAt: null })
     .where(and(eq(archivePages.lastStatus, "running"), sql`${archivePages.runningAt} < now() - ${HUNG}`))
   const s = await getSettings()
-  if (!s.archiverToolEnabled || !s.archiverBrowserUrl?.trim()) return 0
+  if (!s.archiverToolEnabled || !browserUrl(s)) return 0
   const due = await db
     .select({ id: archivePages.id, userId: archivePages.userId })
     .from(archivePages)
