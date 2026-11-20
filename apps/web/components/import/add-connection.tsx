@@ -67,6 +67,7 @@ export function AddConnection({ oauth, onAdded, onCancel }: { oauth: Ready; onAd
             </label>
           ))}
         </div>
+        <p className="text-sm text-pretty text-muted-foreground">Google Photos? Google no longer lets apps read your library. Export it at takeout.google.com, upload the zips to Files, then pick Google Takeout zips as the source.</p>
       </fieldset>
 
       {button && (

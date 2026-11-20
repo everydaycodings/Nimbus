@@ -39,9 +39,10 @@ export function oauthApp(s: Settings, p: Provider): App | null {
     const secret = sealed ? decrypt(sealed) : null
     return id && secret ? { id, secret } : null
   }
-  if (p === "gdrive" || p === "gphotos") {
+  // Google Photos is left out: Google removed photoslibrary.readonly (2025-03-31), so its API no longer lists a library. Takeout covers it.
+  if (p === "gdrive") {
     const c = pick(s.importGoogleClientId, s.importGoogleClientSecret)
-    return c && { ...c, auth: "https://accounts.google.com/o/oauth2/v2/auth", token: "https://oauth2.googleapis.com/token", scope: p === "gdrive" ? "https://www.googleapis.com/auth/drive.readonly" : "https://www.googleapis.com/auth/photoslibrary.readonly", extra: { access_type: "offline", prompt: "consent" } }
+    return c && { ...c, auth: "https://accounts.google.com/o/oauth2/v2/auth", token: "https://oauth2.googleapis.com/token", scope: "https://www.googleapis.com/auth/drive.readonly", extra: { access_type: "offline", prompt: "consent" } }
   }
   if (p === "dropbox") {
     const c = pick(s.importDropboxClientId, s.importDropboxClientSecret)
@@ -158,6 +159,7 @@ export async function build(v: NewConnection, s: Settings): Promise<{ fields: Re
       account: `${text(v.user, 100)}@${host}`,
     }
   }
+  if (v.provider === "gphotos") return { error: "Google no longer lets apps read a Google Photos library. Export it with Google Takeout and import the zips instead." }
   // The cloud services: the token pasted from `rclone authorize`, and the admin's app when there is one.
   const tok = parseTokenPaste(v.token)
   if (!tok) return { error: "That doesn't look like the token. Paste everything rclone printed, from the first { to the last }." }

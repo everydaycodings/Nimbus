@@ -12,7 +12,8 @@ const ICONS: Record<Provider, Icon> = {
   sftp: TerminalWindowIcon,
 }
 
-export const ORDER = Object.keys(PROVIDERS) as Provider[]
+// Google Photos stays in PROVIDERS so old connections still show, but can't be added: Takeout replaces it.
+export const ORDER = (Object.keys(PROVIDERS) as Provider[]).filter((p) => p !== "gphotos")
 export const label = (p: Provider) => PROVIDERS[p].label
 
 // The `rclone authorize` argument for each cloud service.

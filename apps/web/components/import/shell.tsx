@@ -52,7 +52,7 @@ export function Shell({ jobs, job, tab, view, runs, items, connections, oauth, w
       <header className="flex flex-wrap items-end gap-x-4 gap-y-3">
         <div className="mr-auto grid min-w-0 gap-1">
           <h1 className="text-2xl font-semibold tracking-tight">Cloud import</h1>
-          <p className="max-w-prose text-sm text-pretty text-muted-foreground">Bring your files over from Google Drive and Photos, Dropbox, OneDrive, S3, WebDAV, SFTP or a Google Takeout. Dates and folders come along, and nothing in Nimbus is ever deleted.</p>
+          <p className="max-w-prose text-sm text-pretty text-muted-foreground">Bring your files over from Google Drive, Dropbox, OneDrive, S3, WebDAV, SFTP or a Google Takeout (the way to bring Google Photos). Dates and folders come along, and nothing in Nimbus is ever deleted.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {view === "jobs" && job && !showWizard && jobs.length > 1 && (
