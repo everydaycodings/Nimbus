@@ -18,7 +18,7 @@ import {
 } from "better-auth/api"
 import { symmetricDecrypt } from "better-auth/crypto"
 import { createOTP } from "@better-auth/utils/otp"
-import { setSessionCookie } from "better-auth/cookies"
+import { deleteSessionCookie, setSessionCookie } from "better-auth/cookies"
 import { drizzleAdapter } from "better-auth/adapters/drizzle"
 import { nextCookies } from "better-auth/next-js"
 import {
@@ -291,6 +291,10 @@ const providerTwoFactor = {
             ctx.setHeader("location", url.toString())
             return
           }
+          // Like the two-factor plugin: expire the browser's session cookie too.
+          // Otherwise, when adding an account, the one already signed in still
+          // holds it, and verify-totp checks the code against that account.
+          deleteSessionCookie(ctx, true)
           const base = new URL(ctx.context.baseURL)
           const to = new URL(location, base)
           const next = to.origin === base.origin ? to.pathname + to.search : "/"
